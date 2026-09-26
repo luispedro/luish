@@ -1,11 +1,18 @@
 //! Tab completion for the line editor.
 //!
 //! The completer (and the highlighter, in `highlight.rs`) never touches `Shell`: before each prompt the REPL gives it
-//! a snapshot of the names it needs (`Names`). It completes command names in
-//! command position (built-ins, reserved words, functions, aliases and
-//! `PATH`), variable names after `$` and `${`, and filenames elsewhere.
-//! Completions keep the text already typed and quote what they add, according
-//! to the quoting in effect at the cursor.
+//! a snapshot of the names it needs (`Names`). Completion goes in four steps:
+//!
+//! 1. `analyze` finds the word under the cursor, what kind of word it is (a
+//!    command name, an argument, a redirection target, a variable name), the
+//!    quoting in effect, and the words of its command.
+//! 2. A generator lists `Candidate`s for it: command names, filenames,
+//!    variable names, or what a command's arguments complete to (`ARGS`).
+//! 3. The candidates are matched against the text typed (`matches`).
+//! 4. Each match becomes a replacement for the line: the text already typed
+//!    is kept, and what is added is quoted for the quoting at the cursor.
+//!
+//! How the matches are shown and chosen is left to rustyline.
 
 use std::cell::RefCell;
 use std::os::unix::ffi::OsStrExt;
@@ -35,6 +42,42 @@ pub struct ShellHelper {
     path_cache: RefCell<PathCache>,
 }
 
+/// A possible completion of the word under the cursor.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Candidate {
+    /// The completed text, unquoted. It replaces the part of the word being
+    /// completed, so it starts with the text typed if it is a match.
+    pub value: Vec<u8>,
+    /// What the list of matches shows, if not `value`: a file's name
+    /// without its directory.
+    pub display: Option<Vec<u8>>,
+    /// Shown after the candidate in the list.
+    pub desc: Option<Vec<u8>>,
+    /// What follows the candidate when it is the only match.
+    pub suffix: Suffix,
+}
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Suffix {
+    /// Nothing: the word goes on (a directory's `/` is part of its value).
+    None,
+    /// The closing quote, if the word is quoted, then this text (usually
+    /// a space).
+    Close(Vec<u8>),
+}
+
+impl Candidate {
+    /// A candidate that ends the word.
+    fn word(value: &[u8]) -> Candidate {
+        Candidate {
+            value: value.to_vec(),
+            display: None,
+            desc: None,
+            suffix: Suffix::Close(b" ".to_vec()),
+        }
+    }
+}
+
 /// The executables found in `PATH`, rescanned when `PATH` or one of its
 /// directories changes (see `path::dir_stamps`).
 #[derive(Default)]
@@ -56,6 +99,33 @@ pub(super) const PRECOMMANDS: &[&[u8]] = &[
     b"command", b"exec", b"nohup", b"sudo", b"doas", b"env", b"time", b"nice", b"xargs",
 ];
 
+/// Commands whose arguments can be assignments.
+const DECLARATIONS: &[&[u8]] = &[b"export", b"readonly", b"local"];
+
+/// What the arguments of a command complete to, if not filenames.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Args {
+    Dirs,
+    /// Variable names (and filenames after `NAME=`).
+    Vars,
+    Commands,
+    Builtins,
+}
+
+const ARGS: &[(&[u8], Args)] = &[
+    (b"cd", Args::Dirs),
+    (b"pushd", Args::Dirs),
+    (b"rmdir", Args::Dirs),
+    (b"export", Args::Vars),
+    (b"local", Args::Vars),
+    (b"readonly", Args::Vars),
+    (b"unset", Args::Vars),
+    (b"hash", Args::Commands),
+    (b"type", Args::Commands),
+    (b"which", Args::Commands),
+    (b"help", Args::Builtins),
+];
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Quote {
     None,
@@ -66,6 +136,9 @@ enum Quote {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Kind {
     Command,
+    /// An argument of a command (`Word::words` is not empty).
+    Arg,
+    /// A redirection target or the value of an assignment.
     File,
     /// A variable name after `$` (or after `${`, when the flag is set).
     Var(bool),
@@ -79,8 +152,13 @@ struct Word {
     start: usize,
     kind: Kind,
     quote: Quote,
-    /// The unquoted text to complete.
+    /// The unquoted text of the word up to the cursor.
     text: Vec<u8>,
+    /// Where in `text` a filename starts (after `=` or `:`).
+    split: usize,
+    /// The words of the command before this one, unquoted, starting with
+    /// the command name. A word containing a substitution is empty.
+    words: Vec<Vec<u8>>,
 }
 
 /// The tokenizer's state while scanning the line up to the cursor.
@@ -91,9 +169,9 @@ struct Scan {
     redirect: bool,
     /// Whether the last command word takes a command as its argument.
     precommand: bool,
-    /// The state outside each open `$(`, `(` or backquote: its quoting, and
-    /// whether it was opened by a backquote.
-    stack: Vec<(Quote, bool)>,
+    /// The state outside each open `$(`, `(` or backquote: its quoting,
+    /// whether it was opened by a backquote, and its command's words.
+    stack: Vec<(Quote, bool, Vec<Vec<u8>>)>,
     /// Start of the current word, if in one.
     start: Option<usize>,
     /// The current word, unquoted.
@@ -101,6 +179,8 @@ struct Scan {
     /// Where in `text` the part to complete begins (after `=` or `:`).
     split: usize,
     quote: Quote,
+    /// The words of the current command so far.
+    words: Vec<Vec<u8>>,
 }
 
 impl Scan {
@@ -109,26 +189,37 @@ impl Scan {
         if self.start.take().is_none() {
             return;
         }
-        let w = &self.text[..];
+        let w = std::mem::take(&mut self.text);
         if self.redirect {
             self.redirect = false;
-        } else if !self.cmd_pos || is_assignment(w) || (self.precommand && w.starts_with(b"-")) {
+        } else if !self.cmd_pos {
+            self.words.push(w);
+        } else if is_assignment(&w) || (self.precommand && w.starts_with(b"-")) {
             // no change
-        } else if BEFORE_COMMAND.contains(&w) {
+        } else if BEFORE_COMMAND.contains(&&w[..]) {
             self.precommand = false;
-        } else if PRECOMMANDS.contains(&w) {
-            self.precommand = true;
+            self.words.clear();
         } else {
-            self.cmd_pos = false;
-            self.precommand = false;
+            self.precommand = PRECOMMANDS.contains(&&w[..]);
+            self.cmd_pos = self.precommand;
+            self.words = vec![w];
         }
-        self.text.clear();
+    }
+
+    /// Ends the current command, at an operator.
+    fn end_command(&mut self) {
+        self.end_word();
+        self.cmd_pos = true;
+        self.precommand = false;
+        self.redirect = false;
+        self.words.clear();
     }
 
     /// Starts a nested command (`$(`, `(` or a backquote).
     fn open(&mut self, backquote: bool) {
         self.end_word();
-        self.stack.push((self.quote, backquote));
+        self.stack
+            .push((self.quote, backquote, std::mem::take(&mut self.words)));
         self.quote = Quote::None;
         self.cmd_pos = true;
         self.precommand = false;
@@ -139,14 +230,24 @@ impl Scan {
     /// can't be completed, so it is treated as a new argument.
     fn close(&mut self) {
         self.end_word();
-        if let Some((q, _)) = self.stack.pop() {
+        if let Some((q, _, words)) = self.stack.pop() {
             self.quote = q;
+            self.words = words;
         }
+        self.words.push(Vec::new());
         self.cmd_pos = false;
     }
 
     fn in_backquote(&self) -> bool {
         self.stack.last().is_some_and(|s| s.1)
+    }
+
+    /// Whether the current word is an assignment, where filenames are
+    /// completed after `=` and `:`.
+    fn in_assignment(&self) -> bool {
+        !self.redirect
+            && is_assignment(&self.text)
+            && (self.cmd_pos || self.words.first().is_some_and(|c| DECLARATIONS.contains(&&c[..])))
     }
 }
 
@@ -163,6 +264,7 @@ fn analyze(line: &[u8]) -> Word {
         text: Vec::new(),
         split: 0,
         quote: Quote::None,
+        words: Vec::new(),
     };
     let mut i = 0;
     while i < line.len() {
@@ -189,12 +291,7 @@ fn analyze(line: &[u8]) -> Word {
             }
             (Quote::Double, _) => s.text.push(c),
             (Quote::None, b' ' | b'\t') => s.end_word(),
-            (Quote::None, b'\n' | b';' | b'&' | b'|') => {
-                s.end_word();
-                s.cmd_pos = true;
-                s.precommand = false;
-                s.redirect = false;
-            }
+            (Quote::None, b'\n' | b';' | b'&' | b'|') => s.end_command(),
             (Quote::None, b'(') => s.open(false),
             (Quote::None, b')') => s.close(),
             (Quote::None, b'<' | b'>') => {
@@ -215,6 +312,8 @@ fn analyze(line: &[u8]) -> Word {
                     kind: Kind::Nothing,
                     quote: Quote::None,
                     text: Vec::new(),
+                    split: 0,
+                    words: Vec::new(),
                 };
             }
             (Quote::None, _) => {
@@ -233,7 +332,7 @@ fn analyze(line: &[u8]) -> Word {
                     b'"' => s.quote = Quote::Double,
                     _ => {
                         s.text.push(c);
-                        let assignment = s.cmd_pos && !s.redirect && is_assignment(&s.text);
+                        let assignment = s.in_assignment();
                         if (c == b'=' && (assignment || s.text.starts_with(b"--"))) || (c == b':' && assignment) {
                             s.split = s.text.len();
                         }
@@ -261,26 +360,27 @@ fn analyze(line: &[u8]) -> Word {
                     kind: Kind::Var(brace),
                     quote: s.quote,
                     text: line[name_start..].to_vec(),
+                    split: 0,
+                    words: Vec::new(),
                 };
             }
         }
     }
 
-    let kind = if !s.redirect && s.cmd_pos && !is_assignment(&s.text) {
+    let kind = if s.redirect || (s.cmd_pos && is_assignment(&s.text)) {
+        Kind::File
+    } else if s.cmd_pos {
         Kind::Command
     } else {
-        Kind::File
-    };
-    let text = if kind == Kind::File {
-        s.text[s.split..].to_vec()
-    } else {
-        s.text
+        Kind::Arg
     };
     Word {
         start: s.start.unwrap_or(line.len()),
         kind,
         quote: s.quote,
-        text,
+        text: s.text,
+        split: s.split,
+        words: s.words,
     }
 }
 
@@ -290,6 +390,11 @@ fn is_assignment(w: &[u8]) -> bool {
         Some(eq) => crate::lexer::is_valid_name(&w[..eq]),
         None => false,
     }
+}
+
+/// Whether a candidate matches the text typed.
+fn matches(c: &Candidate, typed: &[u8]) -> bool {
+    c.value.starts_with(typed)
 }
 
 /// Quotes `s` for insertion where the quoting state is `quote`. `at_start`
@@ -335,16 +440,43 @@ fn closing(quote: Quote) -> &'static [u8] {
     }
 }
 
-/// Builds a candidate: `typed` (the raw text already in the line) followed by
-/// the quoted rest of `name` and `end`.
-fn candidate(display: &[u8], typed: &[u8], rest: &[u8], quote: Quote, end: &[u8]) -> Option<Pair> {
+/// The text replacing `typed` (the raw text already in the line, whose
+/// unquoted form `base` is a prefix of the candidate's value): `typed`,
+/// then the quoted rest of the value and the suffix.
+fn replacement(c: &Candidate, typed: &[u8], base: &[u8], quote: Quote) -> Vec<u8> {
     let mut r = typed.to_vec();
-    quote_suffix(rest, quote, typed.is_empty(), &mut r);
-    r.extend_from_slice(end);
-    Some(Pair {
-        display: String::from_utf8(display.to_vec()).ok()?,
-        replacement: String::from_utf8(r).ok()?,
-    })
+    quote_suffix(&c.value[base.len()..], quote, typed.is_empty(), &mut r);
+    if let Suffix::Close(s) = &c.suffix {
+        r.extend_from_slice(closing(quote));
+        r.extend_from_slice(s);
+    }
+    r
+}
+
+/// The candidates as rustyline's pairs. A description follows its
+/// candidate, aligned with the others.
+fn pairs(cands: &[Candidate], typed: &[u8], base: &[u8], quote: Quote) -> Vec<Pair> {
+    let show = |c: &Candidate| String::from_utf8_lossy(c.display.as_ref().unwrap_or(&c.value)).into_owned();
+    let width = cands
+        .iter()
+        .filter(|c| c.desc.is_some())
+        .map(|c| show(c).chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut out = Vec::new();
+    for c in cands {
+        let Ok(replacement) = String::from_utf8(replacement(c, typed, base, quote)) else {
+            continue;
+        };
+        let mut display = show(c);
+        if let Some(d) = &c.desc {
+            display = format!("{display:width$}  -- {}", String::from_utf8_lossy(d));
+        }
+        out.push(Pair { display, replacement });
+    }
+    out.sort_unstable_by(|a, b| a.replacement.cmp(&b.replacement));
+    out.dedup_by(|a, b| a.replacement == b.replacement);
+    out
 }
 
 pub(super) fn is_executable(path: &[u8]) -> bool {
@@ -384,47 +516,106 @@ impl PathCache {
     }
 }
 
+/// Which files `ShellHelper::files` lists.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Files {
+    All,
+    Executables,
+    Dirs,
+}
+
 impl ShellHelper {
     fn complete_bytes(&self, line: &[u8]) -> (usize, Vec<Pair>) {
         let w = analyze(line);
-        let typed = &line[w.start..];
-        let mut out = Vec::new();
-        match w.kind {
-            Kind::Nothing => {}
-            Kind::Var(brace) => {
-                for v in &self.names.vars {
-                    if let Some(rest) = v.strip_prefix(&w.text[..]) {
-                        out.extend(candidate(v, typed, rest, Quote::None, if brace { b"}" } else { b"" }));
-                    }
-                }
-            }
-            Kind::Command if !w.text.contains(&b'/') => {
-                let mut cache = self.path_cache.borrow_mut();
-                cache.refresh(&self.names.path);
-                // (The `map` shortens the built-in names' `'static` lifetime.)
-                let all = crate::builtins::names()
-                    .map(|b: &[u8]| b)
-                    .chain(RESERVED.iter().copied())
-                    .chain(self.names.commands.iter().map(|c| &c[..]))
-                    .chain(cache.names.iter().map(|c| &c[..]));
-                let end = [closing(w.quote), b" "].concat();
-                for name in all {
-                    if let Some(rest) = name.strip_prefix(&w.text[..]) {
-                        out.extend(candidate(name, typed, rest, w.quote, &end));
-                    }
-                }
-            }
-            Kind::Command | Kind::File => self.complete_file(&w, typed, w.kind == Kind::Command, &mut out),
-        }
-        out.sort_unstable_by(|a, b| a.replacement.cmp(&b.replacement));
-        out.dedup_by(|a, b| a.replacement == b.replacement);
-        (w.start, out)
+        let (from, cands) = self.generate(&w);
+        let base = &w.text[from..];
+        let cands: Vec<Candidate> = cands.into_iter().filter(|c| matches(c, base)).collect();
+        // A variable name needs no quoting, and a `}` after it ends the
+        // expansion, not the quoted word.
+        let quote = if matches!(w.kind, Kind::Var(_)) {
+            Quote::None
+        } else {
+            w.quote
+        };
+        (w.start, pairs(&cands, &line[w.start..], base, quote))
     }
 
-    fn complete_file(&self, w: &Word, typed: &[u8], executables: bool, out: &mut Vec<Pair>) {
-        let slash = w.text.iter().rposition(|&c| c == b'/').map_or(0, |i| i + 1);
-        let (dir, prefix) = w.text.split_at(slash);
-        let mut dir = dir.to_vec();
+    /// The candidates for the word, and where in its text the part they
+    /// complete starts.
+    fn generate(&self, w: &Word) -> (usize, Vec<Candidate>) {
+        let mut out = Vec::new();
+        let files = |which, out: &mut Vec<Candidate>| {
+            self.files(&w.text[w.split..], which, out);
+            w.split
+        };
+        let from = match w.kind {
+            Kind::Nothing => 0,
+            Kind::Var(brace) => {
+                let suffix = if brace {
+                    Suffix::Close(b"}".to_vec())
+                } else {
+                    Suffix::None
+                };
+                for v in &self.names.vars {
+                    out.push(Candidate {
+                        suffix: suffix.clone(),
+                        ..Candidate::word(v)
+                    });
+                }
+                0
+            }
+            Kind::Command if !w.text.contains(&b'/') => {
+                self.commands(&mut out);
+                0
+            }
+            Kind::Command => {
+                self.files(&w.text, Files::Executables, &mut out);
+                0
+            }
+            Kind::Arg => {
+                let cmd = w.words.first().map_or(&b""[..], |c| &c[..]);
+                match ARGS.iter().find(|a| a.0 == cmd).map(|a| a.1) {
+                    Some(Args::Vars) if !w.text.contains(&b'=') => {
+                        out.extend(self.names.vars.iter().map(|v| Candidate::word(v)));
+                        0
+                    }
+                    Some(Args::Commands) => {
+                        self.commands(&mut out);
+                        0
+                    }
+                    Some(Args::Builtins) => {
+                        out.extend(crate::builtins::names().map(Candidate::word));
+                        0
+                    }
+                    Some(Args::Dirs) => files(Files::Dirs, &mut out),
+                    Some(Args::Vars) | None => files(Files::All, &mut out),
+                }
+            }
+            Kind::File => files(Files::All, &mut out),
+        };
+        (from, out)
+    }
+
+    /// Command names: built-ins, reserved words, functions, aliases and
+    /// the executables in `PATH`.
+    fn commands(&self, out: &mut Vec<Candidate>) {
+        let mut cache = self.path_cache.borrow_mut();
+        cache.refresh(&self.names.path);
+        // (The `map` shortens the built-in names' `'static` lifetime.)
+        let all = crate::builtins::names()
+            .map(|b: &[u8]| b)
+            .chain(RESERVED.iter().copied())
+            .chain(self.names.commands.iter().map(|c| &c[..]))
+            .chain(cache.names.iter().map(|c| &c[..]));
+        out.extend(all.map(Candidate::word));
+    }
+
+    /// The files that `text` (a path, unquoted) could complete to. Dot
+    /// files are listed only for a name starting with `.`.
+    fn files(&self, text: &[u8], which: Files, out: &mut Vec<Candidate>) {
+        let slash = text.iter().rposition(|&c| c == b'/').map_or(0, |i| i + 1);
+        let (typed_dir, prefix) = text.split_at(slash);
+        let mut dir = typed_dir.to_vec();
         if dir.starts_with(b"~/")
             && let Some(home) = &self.names.home
         {
@@ -435,10 +626,7 @@ impl ShellHelper {
             names.push(b"..".to_vec());
         }
         for name in names {
-            let Some(rest) = name.strip_prefix(prefix) else {
-                continue;
-            };
-            if name.starts_with(b".") && !prefix.starts_with(b".") {
+            if !name.starts_with(prefix) || (name.starts_with(b".") && !prefix.starts_with(b".")) {
                 continue;
             }
             let mut full = if dir.is_empty() { b"./".to_vec() } else { dir.clone() };
@@ -446,10 +634,17 @@ impl ShellHelper {
             let is_dir = sys::stat(&full).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR);
             if is_dir {
                 let display = [&name[..], b"/"].concat();
-                out.extend(candidate(&display, typed, rest, w.quote, b"/"));
-            } else if !executables || is_executable(&full) {
-                let end = [closing(w.quote), b" "].concat();
-                out.extend(candidate(&name, typed, rest, w.quote, &end));
+                out.push(Candidate {
+                    value: [typed_dir, &display].concat(),
+                    display: Some(display),
+                    desc: None,
+                    suffix: Suffix::None,
+                });
+            } else if which == Files::All || (which == Files::Executables && is_executable(&full)) {
+                out.push(Candidate {
+                    display: Some(name.clone()),
+                    ..Candidate::word(&[typed_dir, &name].concat())
+                });
             }
         }
     }
@@ -475,7 +670,12 @@ mod tests {
 
     fn kind(line: &str) -> (Kind, String) {
         let w = analyze(line.as_bytes());
-        (w.kind, String::from_utf8(w.text).unwrap())
+        (w.kind, String::from_utf8(w.text[w.split..].to_vec()).unwrap())
+    }
+
+    fn words(line: &str) -> Vec<String> {
+        let w = analyze(line.as_bytes());
+        w.words.into_iter().map(|w| String::from_utf8(w).unwrap()).collect()
     }
 
     #[test]
@@ -483,7 +683,7 @@ mod tests {
         use Kind::*;
         assert_eq!(kind("ec"), (Command, "ec".into()));
         assert_eq!(kind("echo hi; ca"), (Command, "ca".into()));
-        assert_eq!(kind("echo ca"), (File, "ca".into()));
+        assert_eq!(kind("echo ca"), (Arg, "ca".into()));
         assert_eq!(kind("x=1 y=2 ca"), (Command, "ca".into()));
         assert_eq!(kind("if tr"), (Command, "tr".into()));
         assert_eq!(kind("if true; then ec"), (Command, "ec".into()));
@@ -494,7 +694,7 @@ mod tests {
         assert_eq!(kind("(cd"), (Command, "cd".into()));
         assert_eq!(kind("cat <fo"), (File, "fo".into()));
         assert_eq!(kind("2>fo"), (File, "fo".into()));
-        assert_eq!(kind("x >&2 fo"), (File, "fo".into()));
+        assert_eq!(kind("x >&2 fo"), (Arg, "fo".into()));
         assert_eq!(kind(">out ca"), (Command, "ca".into()));
         assert_eq!(kind("./a"), (Command, "./a".into()));
         assert_eq!(kind("echo # co"), (Nothing, "".into()));
@@ -503,18 +703,31 @@ mod tests {
     #[test]
     fn quoting_and_splitting() {
         use Kind::*;
-        assert_eq!(kind("ls 'a b"), (File, "a b".into()));
-        assert_eq!(kind("ls a\\ b"), (File, "a b".into()));
-        assert_eq!(kind("ls \"a\\$b"), (File, "a$b".into()));
+        assert_eq!(kind("ls 'a b"), (Arg, "a b".into()));
+        assert_eq!(kind("ls a\\ b"), (Arg, "a b".into()));
+        assert_eq!(kind("ls \"a\\$b"), (Arg, "a$b".into()));
         assert_eq!(kind("PATH=/bin:/usr/b"), (File, "/usr/b".into()));
-        assert_eq!(kind("ls --file=fo"), (File, "fo".into()));
-        assert_eq!(kind("ls a=b"), (File, "a=b".into()));
+        assert_eq!(kind("ls --file=fo"), (Arg, "fo".into()));
+        assert_eq!(kind("ls a=b"), (Arg, "a=b".into()));
+        assert_eq!(kind("export a=b:c"), (Arg, "c".into()));
         assert_eq!(kind("echo $HO"), (Var(false), "HO".into()));
         assert_eq!(kind("echo \"${HO"), (Var(true), "HO".into()));
-        assert_eq!(kind("echo '$HO"), (File, "$HO".into()));
-        assert_eq!(kind("echo \\$HO"), (File, "$HO".into()));
+        assert_eq!(kind("echo '$HO"), (Arg, "$HO".into()));
+        assert_eq!(kind("echo \\$HO"), (Arg, "$HO".into()));
         let w = analyze(b"ls 'a b");
         assert_eq!((w.start, w.quote), (3, Quote::Single));
+    }
+
+    #[test]
+    fn command_words() {
+        assert_eq!(words("git -C 'my dir' ad"), ["git", "-C", "my dir"]);
+        assert_eq!(words("sudo -E git ad"), ["git"]);
+        assert_eq!(words("x=1 git >out ad"), ["git"]);
+        assert_eq!(words("echo $(git ad"), ["git"]);
+        assert_eq!(words("a; git ad"), ["git"]);
+        assert_eq!(words("if git ad"), ["git"]);
+        assert_eq!(words("git $(x) ad"), ["git", ""]);
+        assert_eq!(words("$(x) ad"), [""]);
     }
 
     fn complete(h: &ShellHelper, line: &str) -> Vec<String> {
@@ -562,6 +775,34 @@ mod tests {
         assert_eq!(complete(&h, "~/f"), Vec::<String>::new());
         assert_eq!(complete(&h, "echo $HO"), ["HOME", "HOSTNAME"]);
         assert_eq!(complete(&h, "echo ${HOM"), ["HOME}"]);
+        assert_eq!(complete(&h, "echo \"${HOM"), ["HOME}"]);
+        assert_eq!(complete(&h, "X=~/f"), ["X=~/file\\ one "]);
+        // Commands whose arguments aren't filenames.
+        assert_eq!(complete(&h, "cd ~/"), ["~/sub\\ dir/"]);
+        assert_eq!(complete(&h, "unset HO"), ["HOME ", "HOSTNAME "]);
+        assert_eq!(complete(&h, "export HOME=~/f"), ["HOME=~/file\\ one "]);
+        assert_eq!(complete(&h, "type myf"), ["myfunc "]);
+        assert_eq!(complete(&h, "help ech"), ["echo "]);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn descriptions() {
+        let c = |v: &str, d: Option<&str>| Candidate {
+            desc: d.map(|d| d.as_bytes().to_vec()),
+            ..Candidate::word(v.as_bytes())
+        };
+        let p = pairs(
+            &[
+                c("add", Some("Add files")),
+                c("commit", Some("Record changes")),
+                c("x", None),
+            ],
+            b"",
+            b"",
+            Quote::None,
+        );
+        let shown: Vec<_> = p.iter().map(|p| p.display.as_str()).collect();
+        assert_eq!(shown, ["add     -- Add files", "commit  -- Record changes", "x"]);
     }
 }

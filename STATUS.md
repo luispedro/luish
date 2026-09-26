@@ -446,8 +446,16 @@ pass**.
   in `PATH` (cached until `PATH` or one of its directories changes, judged
   as for the command cache); a word
   with a `/` completes executables and directories. Elsewhere it completes
-  filenames (with `~/`, and after `=` or `:` in an assignment or `=` in a
-  `--option=`), and variable names after `$` or `${`. The text already
+  filenames (with `~/`, and after `=` or `:` in an assignment, including an
+  argument of `export`, `readonly` or `local`, or `=` in a `--option=`),
+  and variable names after `$` or `${`. Some commands' arguments complete
+  to something else: directories for `cd`, `pushd` and `rmdir`, variable
+  names for `export`, `local`, `readonly` and `unset`, command names for
+  `hash`, `type` and `which`, and built-ins for `help`. The completer
+  analyses the line (the word, its kind, the quoting and the words of its
+  command), generates candidates (with optional descriptions, shown
+  aligned after them in the list), matches them against the text typed
+  (by prefix), and builds the replacements. The text already
   typed is kept, and what is added is quoted for the quoting in effect at
   the cursor. Directories get a `/`, other unique matches a space (and the
   closing quote). Dot files are listed only for a prefix starting with `.`.
