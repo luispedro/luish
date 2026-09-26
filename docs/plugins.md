@@ -5,7 +5,7 @@ embedding. Plugins are opt-in: nothing is loaded unless you ask for it, and a sh
 for them.
 
 Plugin support is new. For now, a plugin can run code whenever the current directory changes (the `chpwd` hook),
-and give the prompt (the `prompt` hook).
+give the prompt (the `prompt` hook), and query files (the `fs` module).
 
 ## Loading plugins
 
@@ -93,6 +93,34 @@ the same after the hooks as before them.
 | `sh::write(fd, text)` | Write text, unbuffered, to fd 1 or 2 |
 
 Rhai's `print(text)` and `debug(text)` write a line to standard output and standard error.
+
+## The `fs` module
+
+The `fs` module answers common questions about files without starting a process, which matters for code that runs
+at every prompt or directory change. Relative paths are relative to the current directory. A question about a file
+that doesn't exist gives `false` or `()` (use `??` for a default), not an error.
+
+| Function | Description |
+|---|---|
+| `fs::exists(path)` | Whether the file exists (following symbolic links, as `test -e`) |
+| `fs::is_file(path)`, `fs::is_dir(path)` | Whether it is a regular file or a directory (following symbolic links) |
+| `fs::is_link(path)` | Whether it is a symbolic link (even one that points nowhere) |
+| `fs::kind(path)` | `"file"`, `"dir"`, `"link"`, `"fifo"`, `"socket"`, `"block"` or `"char"` (not following a symbolic link), or `()` |
+| `fs::is_readable(path)`, `fs::is_writable(path)`, `fs::is_executable(path)` | Access checks, as `test -r`, `-w` and `-x` |
+| `fs::size(path)` | The size in bytes, or `()` |
+| `fs::mtime(path)` | The modification time, in seconds since 1970, or `()` |
+| `fs::newer(a, b)`, `fs::older(a, b)` | Whether `a` was modified after (before) `b`. A file that exists is newer than one that doesn't, as in `make`, so `fs::newer(source, cache)` is true when the cache is missing |
+| `fs::read_file(path)` | The file's contents, or `()` if it can't be read |
+| `fs::list_dir(path)` | The names in a directory, sorted, without `.` and `..`, or `()` if it can't be read |
+| `fs::readlink(path)` | Where a symbolic link points, or `()` |
+| `fs::find_up(name)`, `fs::find_up(name, dir)` | The path of the nearest `name` in the current directory (or `dir`) or one of its parents, or `()`. For example, `fs::find_up(".git")` |
+
+```rust
+// Rebuild a cache only when its source changed.
+if fs::newer("aliases.txt", `${sh::getvar("HOME")}/.cache/aliases`) {
+    sh::run("make-alias-cache");
+}
+```
 
 Integers in Rhai are 64-bit, as in shell arithmetic. Floating-point numbers are available too, for example to time
 things with `timestamp()` and `.elapsed`.

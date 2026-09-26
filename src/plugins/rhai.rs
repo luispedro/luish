@@ -1,5 +1,6 @@
 //! The Rhai plugin host (PLAN.md §6.4): one engine, one AST per plugin, and
-//! the `sh` module through which plugins reach the shell.
+//! the `sh` module through which plugins reach the shell (and the `fs`
+//! module, `fs.rs`).
 //!
 //! The `sh` functions reach the `Shell` through a pointer that is set for
 //! the length of each call into Rhai (`enter`). Calls are re-entrant: a hook
@@ -17,7 +18,7 @@ use super::bytes::{to_bytes, to_str};
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::{signals, sys};
 
-type RhaiResult<T> = Result<T, Box<EvalAltResult>>;
+pub(super) type RhaiResult<T> = Result<T, Box<EvalAltResult>>;
 
 struct Plugin {
     id: u32,
@@ -75,7 +76,7 @@ fn stopped(e: &EvalAltResult) -> Option<String> {
     }
 }
 
-fn error<T>(msg: impl Into<String>) -> RhaiResult<T> {
+pub(super) fn error<T>(msg: impl Into<String>) -> RhaiResult<T> {
     Err(msg.into().into())
 }
 
@@ -94,7 +95,7 @@ fn enter<R>(sh: &mut Shell, id: u32, f: impl FnOnce() -> R) -> Result<R, Flow> {
 }
 
 /// Gives an `sh` function the shell.
-fn with_shell<R>(f: impl FnOnce(&mut Shell) -> RhaiResult<R>) -> RhaiResult<R> {
+pub(super) fn with_shell<R>(f: impl FnOnce(&mut Shell) -> RhaiResult<R>) -> RhaiResult<R> {
     let p = SHELL.get();
     if p.is_null() {
         return error("the shell is not available here");
@@ -122,7 +123,7 @@ fn check_name(name: &str) -> RhaiResult<()> {
 
 /// Converts a Rhai string to shell bytes that can't hold NUL (arguments,
 /// variable values).
-fn to_shell(s: &str) -> RhaiResult<Vec<u8>> {
+pub(super) fn to_shell(s: &str) -> RhaiResult<Vec<u8>> {
     let b = to_bytes(s);
     if b.contains(&0) {
         return error("string contains a NUL byte");
@@ -235,6 +236,7 @@ impl Host {
     pub fn new() -> Host {
         let mut engine = Engine::new();
         engine.register_static_module("sh", sh_module().into());
+        engine.register_static_module("fs", super::fs::module().into());
         engine.on_print(|s| write_line(1, s));
         engine.on_debug(|s, _, _| write_line(2, s));
         // Ctrl-C (or a trapped SIGINT) stops plugin code, as it would a

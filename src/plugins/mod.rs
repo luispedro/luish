@@ -5,6 +5,8 @@
 #[cfg(feature = "plugins")]
 mod bytes;
 #[cfg(feature = "plugins")]
+mod fs;
+#[cfg(feature = "plugins")]
 mod rhai;
 
 #[cfg(feature = "plugins")]

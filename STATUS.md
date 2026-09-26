@@ -35,7 +35,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **121 differential cases, 11 plugin cases, 50 unit tests and 12 pty tests
+Current state: **121 differential cases, 12 plugin cases, 50 unit tests and 12 pty tests
 pass**.
 
 ## Environment
@@ -531,6 +531,12 @@ pass**.
 - `sh` module: `hook`, `getvar`, `setvar`, `export`, `unsetvar`, `cwd`,
   `last_status`, `interactive`, `run` (shell code in the current shell;
   `exit` in it stops the plugin and exits the shell), `write` (fds 1 and 2).
+- `fs` module (`plugins/fs.rs`), without forking: `exists`, `is_file`,
+  `is_dir`, `is_link`, `kind` (lstat), `is_readable`, `is_writable`,
+  `is_executable`, `size`, `mtime`, `newer` and `older` (nanoseconds; a
+  missing file is older, as in make), `read_file`, `list_dir` (sorted),
+  `readlink`, `find_up` (lexically up from `$PWD` or a directory). Missing
+  files give `false` or `()`.
 - Hooks: `chpwd`, called with the old and new directory after each
   successful `cd`, `pushd` or `popd` (after `cd -` prints the directory, or
   `pushd` the stack), also in subshells.
@@ -546,7 +552,7 @@ pass**.
   exits the shell.
 - `plugins/bytes.rs`: non-UTF-8 bytes map to U+10FF80–U+10FFFF and back
   (PLAN.md §6.5); strings with NUL can't be set as variables.
-- Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `floats`, `reload`,
+- Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `floats`, `fs`, `reload`,
   `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`, `prompt`), unit
   tests for the byte conversion, `builtins/plugin.sh`,
   `builtins/internal_plugin.sh`, and `plugin_builtin` in
@@ -586,10 +592,10 @@ notes how to rerun them):
   are reported only before a prompt. Job notifications are given only for
   input read a line at a time (interactive or stdin), not in scripts run
   with `set -m`.
-- Plugins (Phase 11) support only the `chpwd` and `prompt` hooks and part
-  of the `sh` module: no plugin built-ins, completers, other hooks, time
-  budgets (so a slow `prompt` hook delays the prompt),
-  `capture`, file functions or `parse_json`. The native built-ins have not
+- Plugins (Phase 11) support only the `chpwd` and `prompt` hooks, part
+  of the `sh` module and the `fs` module: no plugin built-ins, completers,
+  other hooks, time budgets (so a slow `prompt` hook delays the prompt),
+  `capture` or `parse_json`. The native built-ins have not
   been moved onto a `Builtin` trait (PLAN.md Phase 11, step 1). `import`
   in a plugin is not resolved relative to the plugin's directory.
 - With the `plugins` feature, `-c true` starts about 250 µs slower than

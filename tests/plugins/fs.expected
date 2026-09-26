@@ -1,0 +1,27 @@
+f: exists=true file=true dir=false link=false kind=file
+d: exists=true file=false dir=true link=false kind=dir
+link: exists=true file=true dir=false link=true kind=link
+broken: exists=false file=false dir=false link=true kind=link
+fifo: exists=true file=false dir=false link=false kind=fifo
+missing: exists=false file=false dir=false link=false kind=none
+/dev/null: exists=true file=false dir=false link=false kind=char
+: exists=false file=false dir=false link=false kind=none
+readable: true false
+writable: true false
+executable: true false
+size: 6 0 none
+mtime: 1577836800 none
+newer: true false true false false
+older: true false true false
+read_file: hello
+none none
+list_dir: [".hidden", "a", "b", "bin\u{10ffff}", "dir"]
+list_dir: ["sub"] none none
+readlink: f nowhere none
+binary name: true 3
+find_up: /f none
+find_up: /f /a/b /a/b/c
+find_up: /d /etc
+load: 0
+binary contents
+nul: string contains a NUL byte

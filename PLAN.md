@@ -120,6 +120,7 @@ luish/
 │   └── plugins/
 │       ├── mod.rs          # plugin-agnostic traits (Builtin, Hook), registry
 │       ├── rhai.rs         # #[cfg(feature = "plugins")] Rhai engine and the `sh` module
+│       ├── fs.rs           # the `fs` module (file tests without forking)
 │       └── bytes.rs        # byte <-> string conversion at the plugin boundary (§6.5)
 ├── plugins/                # example plugins (*.rhai) and the plugin API reference
 ├── tests/
@@ -703,8 +704,14 @@ being completed, and returns an array of candidates.
 | `capture(script)` | Like `$(...)`: run in a subshell and return `#{status, out}`, with trailing newlines removed from `out` |
 | `cwd()`, `chdir(path)` | `chdir` changes the directory as `cd` would, updating `PWD` and running `chpwd` hooks |
 | `write(fd, text)`, `read_line()` | Unbuffered I/O on the **current** fds 1, 2 and 0, so redirections like `greet > f` apply. `read_line` returns `()` at end of file |
-| `read_file(path)`, `exists(path)`, `is_dir(path)`, `list_dir(path)` | Enough file access for common prompt work, such as finding `.git`, without forking |
 | `parse_json(text)` | Parse JSON into Rhai maps and arrays |
+
+The `fs` module gives enough file access for common prompt work, such as
+finding `.git` (`fs::find_up`) or checking whether a cache is stale
+(`fs::newer`), without forking: file tests (`exists`, `is_file`, `is_dir`,
+`is_link`, `kind`, access checks), `size`, `mtime`, `newer`/`older`,
+`read_file`, `list_dir` and `readlink`. Missing files give `false` or `()`,
+not errors.
 
 Rhai's own `print` and `debug` write a line to the current fd 1 and fd 2,
 unbuffered, the same way as `write`.
