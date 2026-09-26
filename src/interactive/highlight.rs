@@ -618,7 +618,8 @@ impl ShellHelper {
             }
         } else {
             crate::builtins::names().any(|b| b == name)
-                || self.names.commands.iter().any(|c| c == name)
+                || self.names.functions.iter().any(|c| c == name)
+                || self.names.aliases.iter().any(|c| c == name)
                 || self.names.path.split(|&c| c == b':').any(|d| {
                     let d: &[u8] = if d.is_empty() { b"." } else { d };
                     is_executable(&[d, b"/", name].concat())

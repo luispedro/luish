@@ -421,6 +421,18 @@ fn tab_completion() {
     sh.send("\x03");
     // The new prompt (not the line redrawn under the list).
     sh.expect("\x1b[K$ ");
+    // Job specs, from the jobs when the prompt was shown.
+    sh.send(": | sleep 100 & : | sleep 101 & echo started\n");
+    sh.expect("started\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("fg %\t\t");
+    sh.expect("%1  -- : | sleep 100");
+    sh.expect("%2  -- : | sleep 101");
+    sh.send("\x03");
+    // The next prompt: input sent before it may be discarded.
+    sh.expect("\x1b[?2004h");
+    sh.send("kill %1 %2; wait; echo killed\n");
+    sh.expect("killed\n");
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
 }

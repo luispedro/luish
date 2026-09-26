@@ -64,11 +64,19 @@ widths relative to the terminal's width, aren't supported.
 ## Tab completion
 
 In an interactive shell, Tab completes the word under the cursor: a command name (a built-in, function, alias or
-program in `PATH`) at the start of a command, a variable name after `$` or `${`, and a filename elsewhere, also
-after the `=` or `:` of an assignment and the `=` of a `--option=`. A few built-ins complete their arguments
-differently: `cd` completes directories, `export`, `local`, `readonly` and `unset` complete variable names, `type`
-and `hash` complete command names, and `help` completes built-ins. Plugins can provide completion for other commands
-(see [Plugins](plugins.md)).
+program in `PATH`) at the start of a command, a variable name after `$` or `${`, a user's home directory after `~`,
+and a filename elsewhere, also after the `=` or `:` of an assignment and the `=` of a `--option=`. A few built-ins
+complete their arguments differently:
+
+- `cd` completes directories;
+- `export`, `local`, `readonly` and `unset` complete variable names (`unset -f` completes function names);
+- `alias` and `unalias` complete aliases;
+- `type` and `hash` complete command names, and `help` completes built-ins;
+- `fg`, `bg`, `jobs`, `wait` and `kill` complete job specs such as `%1`, listed with their commands;
+- `kill -` and `kill -s` complete signal names, as do the arguments of `trap` after its action;
+- `plugin load` completes the plugins in the plugin directory, and `plugin unload` the loaded ones.
+
+Plugins can provide completion for other commands (see [Plugins](plugins.md)).
 
 The first Tab completes as much as is common to all the matches, and a second one lists them. What is added is quoted
 as needed: a file called `my file` is completed as `my\ file`, or as `'my file'` after a `'`.

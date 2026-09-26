@@ -17,6 +17,7 @@ use complete::{Names, ShellHelper};
 use history::ShellHistory;
 
 use crate::input::Line;
+use crate::jobs::JobTable;
 use crate::options::Opt;
 use crate::shell::{Flow, Shell};
 use crate::sys;
@@ -104,11 +105,17 @@ pub fn prompt(sh: &mut Shell, continuation: bool) -> crate::prompt::Prompt {
 /// The names the completer needs, taken from the shell before each prompt.
 fn names(sh: &Shell) -> Names {
     Names {
-        commands: sh.functions.keys().chain(sh.aliases.keys()).cloned().collect(),
+        functions: sh.functions.keys().cloned().collect(),
+        aliases: sh.aliases.keys().cloned().collect(),
         vars: sh.vars.names().cloned().collect(),
         path: sh.get_var(b"PATH").unwrap_or_default(),
         home: sh.get_var(b"HOME"),
         completers: crate::plugins::completer_names(sh),
+        jobs: (sh.jobs.order().iter())
+            .map(|&i| (JobTable::number(i), sh.jobs.get(i).text().into_bytes()))
+            .collect(),
+        plugins: crate::plugins::loaded_names(sh),
+        plugin_dir: crate::plugins::plugin_dir(sh),
     }
 }
 

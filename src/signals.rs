@@ -112,6 +112,11 @@ const NAMES: &[(i32, &str)] = &[
     (libc::SIGSYS, "SYS"),
 ];
 
+/// The names of the usual signals, for completion.
+pub fn names() -> impl Iterator<Item = &'static str> {
+    NAMES.iter().map(|&(_, n)| n)
+}
+
 /// The name of a signal as dash's `signal_names` has it (`EXIT` for 0, a
 /// number for a signal without a name).
 pub fn name(sig: i32) -> String {

@@ -30,13 +30,19 @@ use crate::sys;
 /// What the completer knows about the shell, refreshed before each prompt.
 #[derive(Default)]
 pub struct Names {
-    /// Functions and aliases (built-ins and reserved words are added here).
-    pub commands: Vec<Vec<u8>>,
+    pub functions: Vec<Vec<u8>>,
+    pub aliases: Vec<Vec<u8>>,
     pub vars: Vec<Vec<u8>>,
     pub path: Vec<u8>,
     pub home: Option<Vec<u8>>,
     /// The commands with a plugin's completer.
     pub completers: Vec<Vec<u8>>,
+    /// The jobs' numbers and commands, from the current job on.
+    pub jobs: Vec<(usize, Vec<u8>)>,
+    /// The loaded plugins.
+    pub plugins: Vec<Vec<u8>>,
+    /// Where `plugin load` finds plugins by name.
+    pub plugin_dir: Option<Vec<u8>>,
 }
 
 /// Runs the completer for a command (in `Names::completers`), given the
@@ -129,6 +135,17 @@ enum Args {
     Vars,
     Commands,
     Builtins,
+    /// Variable names, or function names after `-f`.
+    Unset,
+    Aliases,
+    /// Job specs (`%1`).
+    Jobs,
+    /// Job specs, and signal names after `-` or `-s`.
+    Kill,
+    /// Signal names after the action.
+    Trap,
+    /// The subcommands of `plugin`, then plugins.
+    Plugin,
 }
 
 const ARGS: &[(&[u8], Args)] = &[
@@ -138,11 +155,20 @@ const ARGS: &[(&[u8], Args)] = &[
     (b"export", Args::Vars),
     (b"local", Args::Vars),
     (b"readonly", Args::Vars),
-    (b"unset", Args::Vars),
+    (b"unset", Args::Unset),
     (b"hash", Args::Commands),
     (b"type", Args::Commands),
     (b"which", Args::Commands),
     (b"help", Args::Builtins),
+    (b"alias", Args::Aliases),
+    (b"unalias", Args::Aliases),
+    (b"fg", Args::Jobs),
+    (b"bg", Args::Jobs),
+    (b"jobs", Args::Jobs),
+    (b"wait", Args::Jobs),
+    (b"kill", Args::Kill),
+    (b"trap", Args::Trap),
+    (b"plugin", Args::Plugin),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -181,6 +207,17 @@ struct Word {
     /// The words of the command before this one, unquoted, starting with
     /// the command name. A word containing a substitution is empty.
     words: Vec<Vec<u8>>,
+}
+
+impl Word {
+    /// Whether `text[j]` is a character on its own in the line, unquoted
+    /// (and so a `~` there is a tilde prefix).
+    fn unquoted(&self, j: usize) -> bool {
+        match (self.offsets.get(j), self.offsets.get(j + 1)) {
+            (Some(a), Some(b)) => b.0 == a.0 + 1 && b.1 == Quote::None,
+            _ => false,
+        }
+    }
 }
 
 /// The tokenizer's state while scanning the line up to the cursor.
@@ -601,6 +638,38 @@ pub(super) fn is_executable(path: &[u8]) -> bool {
     sys::stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) && sys::access(path, libc::X_OK)
 }
 
+/// Whether `-f` (for functions) is in effect after the options in `args`
+/// of `unset`: the last of `-f` and `-v` wins.
+fn unset_functions(args: &[Vec<u8>]) -> bool {
+    let mut functions = false;
+    for a in args {
+        match &a[..] {
+            b"-f" => functions = true,
+            b"-v" => functions = false,
+            _ => break,
+        }
+    }
+    functions
+}
+
+/// Signal names, after `prefix`.
+fn signals(prefix: &[u8], out: &mut Vec<Candidate>) {
+    out.extend(crate::signals::names().map(|n| Candidate::word(&[prefix, n.as_bytes()].concat())));
+}
+
+/// `~user/` for every user.
+fn users(out: &mut Vec<Candidate>) {
+    for u in sys::user_names() {
+        let value = [&b"~"[..], &u, b"/"].concat();
+        out.push(Candidate {
+            display: Some(value[..value.len() - 1].to_vec()),
+            desc: None,
+            suffix: Suffix::None,
+            value,
+        });
+    }
+}
+
 fn read_dir(dir: &[u8]) -> Vec<Vec<u8>> {
     let dir = if dir.is_empty() { b"." } else { dir };
     let Ok(rd) = std::fs::read_dir(std::ffi::OsStr::from_bytes(dir)) else {
@@ -695,7 +764,12 @@ impl ShellHelper {
     fn generate(&self, w: &Word) -> (usize, Vec<Candidate>) {
         let mut out = Vec::new();
         let files = |which, out: &mut Vec<Candidate>| {
-            self.files(&w.text[w.split..], which, out);
+            let text = &w.text[w.split..];
+            if text.starts_with(b"~") && !text.contains(&b'/') && w.unquoted(w.split) {
+                users(out);
+            } else {
+                self.files(text, which, out);
+            }
             w.split
         };
         let from = match w.kind {
@@ -724,11 +798,16 @@ impl ShellHelper {
             }
             Kind::Arg => {
                 let cmd = w.words.first().map_or(&b""[..], |c| &c[..]);
+                let args = &w.words[1..];
+                let words = |names: &[Vec<u8>], out: &mut Vec<Candidate>| {
+                    out.extend(names.iter().map(|v| Candidate::word(v)));
+                    0
+                };
                 match ARGS.iter().find(|a| a.0 == cmd).map(|a| a.1) {
-                    Some(Args::Vars) if !w.text.contains(&b'=') => {
-                        out.extend(self.names.vars.iter().map(|v| Candidate::word(v)));
-                        0
-                    }
+                    Some(Args::Vars) if !w.text.contains(&b'=') => words(&self.names.vars, &mut out),
+                    Some(Args::Unset) if unset_functions(args) => words(&self.names.functions, &mut out),
+                    Some(Args::Unset) => words(&self.names.vars, &mut out),
+                    Some(Args::Aliases) => words(&self.names.aliases, &mut out),
                     Some(Args::Commands) => {
                         self.commands(&mut out);
                         0
@@ -737,8 +816,34 @@ impl ShellHelper {
                         out.extend(crate::builtins::names().map(Candidate::word));
                         0
                     }
+                    Some(Args::Jobs) => {
+                        self.jobs(&mut out);
+                        0
+                    }
+                    Some(Args::Kill) => {
+                        if w.text.starts_with(b"-") && args.is_empty() {
+                            signals(b"-", &mut out);
+                        } else if args.last().is_some_and(|a| a == b"-s") {
+                            signals(b"", &mut out);
+                        } else {
+                            self.jobs(&mut out);
+                        }
+                        0
+                    }
+                    Some(Args::Trap) if args.iter().filter(|a| *a != b"--").count() >= 1 => {
+                        signals(b"", &mut out);
+                        out.push(Candidate::word(b"EXIT"));
+                        0
+                    }
+                    Some(Args::Plugin) => match args.first().map(|a| &a[..]) {
+                        None => words(&[b"list".to_vec(), b"load".to_vec(), b"unload".to_vec()], &mut out),
+                        Some(b"load") if w.text.contains(&b'/') => files(Files::All, &mut out),
+                        Some(b"load") => words(&self.plugin_files(), &mut out),
+                        Some(b"unload") => words(&self.names.plugins, &mut out),
+                        Some(_) => 0,
+                    },
                     Some(Args::Dirs) => files(Files::Dirs, &mut out),
-                    Some(Args::Vars) | None => files(Files::All, &mut out),
+                    Some(Args::Vars | Args::Trap) | None => files(Files::All, &mut out),
                 }
             }
             Kind::File => files(Files::All, &mut out),
@@ -755,9 +860,41 @@ impl ShellHelper {
         let all = crate::builtins::names()
             .map(|b: &[u8]| b)
             .chain(RESERVED.iter().copied())
-            .chain(self.names.commands.iter().map(|c| &c[..]))
+            .chain(self.names.functions.iter().map(|c| &c[..]))
+            .chain(self.names.aliases.iter().map(|c| &c[..]))
             .chain(cache.names.iter().map(|c| &c[..]));
         out.extend(all.map(Candidate::word));
+    }
+
+    /// Job specs, described by their commands.
+    fn jobs(&self, out: &mut Vec<Candidate>) {
+        for (n, text) in &self.names.jobs {
+            out.push(Candidate {
+                desc: Some(text.clone()),
+                ..Candidate::word(format!("%{n}").as_bytes())
+            });
+        }
+    }
+
+    /// The names of the plugins in the plugin directory: `.rhai` files and
+    /// directories.
+    fn plugin_files(&self) -> Vec<Vec<u8>> {
+        let Some(dir) = &self.names.plugin_dir else {
+            return Vec::new();
+        };
+        let mut names: Vec<_> = read_dir(dir)
+            .into_iter()
+            .filter_map(|n| match n.strip_suffix(b".rhai") {
+                Some(base) => Some(base.to_vec()),
+                None => sys::stat(&[dir.as_slice(), b"/", &n].concat())
+                    .is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR)
+                    .then_some(n),
+            })
+            .filter(|n| !n.is_empty() && !n.starts_with(b"."))
+            .collect();
+        names.sort_unstable();
+        names.dedup();
+        names
     }
 
     /// The files that `text` (a path, unquoted) could complete to. Dot
@@ -766,10 +903,15 @@ impl ShellHelper {
         let slash = text.iter().rposition(|&c| c == b'/').map_or(0, |i| i + 1);
         let (typed_dir, prefix) = text.split_at(slash);
         let mut dir = typed_dir.to_vec();
-        if dir.starts_with(b"~/")
-            && let Some(home) = &self.names.home
-        {
-            dir.splice(..1, home.iter().copied());
+        if let Some(rest) = dir.strip_prefix(b"~") {
+            let user_end = rest.iter().position(|&c| c == b'/').unwrap_or(rest.len());
+            let home = match &rest[..user_end] {
+                b"" => self.names.home.clone(),
+                user => sys::home_dir(user),
+            };
+            if let Some(home) = home {
+                dir.splice(..1 + user_end, home);
+            }
         }
         let mut names = read_dir(&dir);
         if prefix == b".." {
@@ -921,11 +1063,15 @@ mod tests {
         let d = dir.to_str().unwrap();
         let h = ShellHelper {
             names: Names {
-                commands: vec![b"myfunc".to_vec()],
+                functions: vec![b"myfunc".to_vec()],
+                aliases: vec![b"ll".to_vec()],
                 vars: vec![b"HOME".to_vec(), b"HOSTNAME".to_vec()],
                 path: format!("{d}/sub dir").into_bytes(),
                 home: Some(dir.as_os_str().as_bytes().to_vec()),
                 completers: vec![b"git".to_vec()],
+                jobs: vec![(2, b"vi notes".to_vec()), (1, b"sleep 10 | cat".to_vec())],
+                plugins: vec![b"greet".to_vec()],
+                plugin_dir: Some(dir.join("plugins").as_os_str().as_bytes().to_vec()),
             },
             ask: Some(fake_git),
             ..Default::default()
@@ -955,6 +1101,46 @@ mod tests {
         assert_eq!(complete(&h, "export HOME=~/f"), ["HOME=~/file\\ one "]);
         assert_eq!(complete(&h, "type myf"), ["myfunc "]);
         assert_eq!(complete(&h, "help ech"), ["echo "]);
+        assert_eq!(complete(&h, "ll"), ["ll "]);
+        assert_eq!(complete(&h, "unalias "), ["ll "]);
+        assert_eq!(complete(&h, "unset my"), Vec::<String>::new());
+        assert_eq!(complete(&h, "unset -f my"), ["myfunc "]);
+        assert_eq!(complete(&h, "unset -f -v HOM"), ["HOME "]);
+        // Jobs and signals.
+        assert_eq!(complete(&h, "fg "), ["%1 ", "%2 "]);
+        assert_eq!(complete(&h, "kill %"), ["%1 ", "%2 "]);
+        assert_eq!(complete(&h, "kill -te"), ["-TERM "]);
+        assert_eq!(complete(&h, "kill -s KI"), ["KILL "]);
+        assert_eq!(complete(&h, "kill -s KILL %2"), ["%2 "]);
+        assert_eq!(complete(&h, "trap EX"), Vec::<String>::new());
+        assert_eq!(complete(&h, "trap 'echo x' EX"), ["EXIT "]);
+        assert_eq!(complete(&h, "trap -- '' in"), ["INT "]);
+        let shown: Vec<_> = h.complete_bytes(b"wait ").1.into_iter().map(|p| p.display).collect();
+        assert_eq!(shown, ["%1  -- sleep 10 | cat", "%2  -- vi notes"]);
+        // Plugins.
+        std::fs::create_dir(dir.join("plugins")).unwrap();
+        for f in ["prompt.rhai", "git.rhai", "README"] {
+            std::fs::write(dir.join("plugins").join(f), "").unwrap();
+        }
+        std::fs::create_dir(dir.join("plugins/work")).unwrap();
+        assert_eq!(complete(&h, "plugin l"), ["list ", "load "]);
+        assert_eq!(complete(&h, "plugin load "), ["git ", "prompt ", "work "]);
+        assert_eq!(complete(&h, "plugin load ~/plugins/p"), ["~/plugins/prompt.rhai "]);
+        assert_eq!(complete(&h, "plugin unload "), ["greet "]);
+        assert_eq!(complete(&h, "plugin list "), Vec::<String>::new());
+        // Users' home directories.
+        assert_eq!(complete(&h, "ls ~roo"), ["~root/"]);
+        assert_eq!(complete(&h, "X=a:~roo"), ["X=a:~root/"]);
+        assert_eq!(complete(&h, "ls '~roo"), Vec::<String>::new());
+        // SAFETY: getpwuid returns a pointer to static storage or null.
+        let me = unsafe { std::ffi::CStr::from_ptr((*libc::getpwuid(libc::getuid())).pw_name) };
+        let me = me.to_str().unwrap();
+        let home = String::from_utf8(sys::home_dir(me.as_bytes()).unwrap()).unwrap();
+        let by_path = complete(&h, &format!("ls {home}/"));
+        let by_user: Vec<_> = (complete(&h, &format!("ls ~{me}/")).into_iter())
+            .map(|c| c.replacen(&format!("~{me}"), &home, 1))
+            .collect();
+        assert_eq!(by_user, by_path);
         // A plugin's completer.
         assert_eq!(complete(&h, "git "), ["--color=", "add ", "commit "]);
         assert_eq!(complete(&h, "sudo git 'a"), ["'add' "]);

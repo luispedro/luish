@@ -446,13 +446,18 @@ pass**.
   in `PATH` (cached until `PATH` or one of its directories changes, judged
   as for the command cache); a word
   with a `/` completes executables and directories. Elsewhere it completes
-  filenames (with `~/`, and after `=` or `:` in an assignment, including an
-  argument of `export`, `readonly` or `local`, or `=` in a `--option=`),
-  and variable names after `$` or `${`. Some commands' arguments complete
-  to something else: directories for `cd`, `pushd` and `rmdir`, variable
-  names for `export`, `local`, `readonly` and `unset`, command names for
-  `hash`, `type` and `which`, and built-ins for `help`; a plugin's
-  completer (see Plugins) comes first. The completer
+  filenames (with `~/` and `~user/`, and after `=` or `:` in an
+  assignment, including an argument of `export`, `readonly` or `local`, or
+  `=` in a `--option=`), user names after an unquoted `~`, and variable
+  names after `$` or `${`. Some commands' arguments complete to something
+  else: directories for `cd`, `pushd` and `rmdir`, variable names for
+  `export`, `local`, `readonly` and `unset` (function names after
+  `unset -f`), aliases for `alias` and `unalias`, command names for
+  `hash`, `type` and `which`, built-ins for `help`, job specs (described by
+  their commands) for `fg`, `bg`, `jobs`, `wait` and `kill`, signal names
+  after `kill -`, `kill -s` and `trap`'s action, and for `plugin` its
+  subcommands, the plugins in the plugin directory and the loaded plugins;
+  a plugin's completer (see Plugins) comes first. The completer
   analyses the line (the word, its kind, the quoting and the words of its
   command), generates candidates (with optional descriptions, shown
   aligned after them in the list), matches them against the text typed
@@ -483,7 +488,8 @@ pass**.
   Command lookups are cached until the next prompt.
 - The completer and the highlighter never see `Shell`: before each prompt,
   the REPL gives them a snapshot of function, alias and variable names,
-  `PATH` and `HOME`, the colours, and the text of an incomplete command.
+  `PATH` and `HOME`, the jobs, the plugins, the colours, and the text of an
+  incomplete command.
 - Startup files: `/etc/profile` and `~/.profile` for login shells
   (interactive or not, as in dash), then, for interactive shells, `$ENV`,
   then `$XDG_CONFIG_HOME/luish/luishrc`.
@@ -643,8 +649,7 @@ notes how to rerun them):
 - The highlighter's tokenizer is approximate (like the completer's): it
   does not expand aliases, and a function or alias defined earlier on the
   same line is shown as unknown until the next prompt.
-- Completion has no `~user`, no job specs, and skips filenames that are
-  not valid UTF-8 (rustyline works on `String`s). Matching has no
+- Completion skips filenames that are not valid UTF-8 (rustyline works on `String`s). Matching has no
   subsequence (fuzzy) matching and no ranking within the best matches,
   and isn't configurable. Choosing among the matches
   is rustyline's list: no menu, and descriptions are laid out in its

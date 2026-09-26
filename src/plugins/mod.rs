@@ -127,11 +127,9 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
         }
         Some(b"list") if args.is_empty() => {
             let mut out = Vec::new();
-            if let Some(host) = &sh.plugins {
-                for name in host.names() {
-                    out.extend_from_slice(&name);
-                    out.push(b'\n');
-                }
+            for name in loaded_names(sh) {
+                out.extend_from_slice(&name);
+                out.push(b'\n');
             }
             Ok(sh.out_status(&out))
         }
@@ -150,6 +148,18 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
             Ok(2)
         }
     }
+}
+
+/// The names of the loaded plugins.
+pub fn loaded_names(sh: &Shell) -> Vec<Vec<u8>> {
+    sh.plugins.as_ref().map_or_else(Vec::new, |host| host.names())
+}
+
+/// The directory where `plugin load` finds plugins by name.
+pub fn plugin_dir(sh: &Shell) -> Option<Vec<u8>> {
+    let mut p = crate::startcache::xdg_dir(sh, b"XDG_CONFIG_HOME", b"/.config")?;
+    p.extend_from_slice(b"/luish/plugins");
+    Some(p)
 }
 
 #[cfg(feature = "plugins")]
@@ -174,8 +184,8 @@ fn find(sh: &Shell, arg: &[u8]) -> Option<Found> {
             dir: is_dir(arg),
         });
     }
-    let mut p = crate::startcache::xdg_dir(sh, b"XDG_CONFIG_HOME", b"/.config")?;
-    p.extend_from_slice(b"/luish/plugins/");
+    let mut p = plugin_dir(sh)?;
+    p.push(b'/');
     p.extend_from_slice(arg);
     if is_dir(&p) && crate::sys::stat(&[p.as_slice(), b".rhai"].concat()).is_none() {
         return Some(Found { path: p, dir: true });

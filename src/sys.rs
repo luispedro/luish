@@ -305,6 +305,25 @@ pub fn home_dir(user: &[u8]) -> Option<Vec<u8>> {
     }
 }
 
+/// The names of all users (for completion).
+pub fn user_names() -> Vec<Vec<u8>> {
+    let mut out = Vec::new();
+    // SAFETY: getpwent returns a pointer to static storage or null, and
+    // nothing else uses the password database meanwhile.
+    unsafe {
+        libc::setpwent();
+        loop {
+            let pw = libc::getpwent();
+            if pw.is_null() {
+                break;
+            }
+            out.push(CStr::from_ptr((*pw).pw_name).to_bytes().to_vec());
+        }
+        libc::endpwent();
+    }
+    out
+}
+
 pub fn own_home_dir() -> Option<Vec<u8>> {
     // SAFETY: getpwuid returns a pointer to static storage or null.
     unsafe {
