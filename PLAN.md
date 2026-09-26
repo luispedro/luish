@@ -9,6 +9,30 @@ a daily-driver shell.
 Stage 2. §9 covers the later stages and the constraints they put on Stage 1
 design.
 
+## Current status (2026-09-27)
+
+`STATUS.md` has the details and the known gaps. In short:
+
+- **Phases 0–10 are done.** Phases 2 and 3 lack their fuzz targets, and
+  Phase 10 has the gaps listed in `STATUS.md`. Beyond the plan, Phase 10
+  gained a zsh-style completion menu, syntax highlighting, zsh's `%` prompt
+  sequences (`setopt promptpercent`), a history file in zsh's format shared
+  with zsh (`share_history` and the other history options), `pushd`/`popd`,
+  `setopt autocd`, and `**/` and glob qualifiers behind their own options.
+- **Phase 12 is under way**: autoconf `configure` scripts give the same
+  results as under dash, 43 of 1620 Oils spec cases still differ (mostly
+  deliberate deviations), and scripts run as fast as under dash. Startup is
+  the remaining gap (`-c true` in 1.2 ms against 0.9 ms; deferred for now).
+- **Phase 11 (plugins) has started**, ahead of the plan, because the daily
+  driver needs it for the prompt and completion: the `plugin` built-in,
+  directory plugins, the `chpwd` and `prompt` hooks, completers, and the
+  `fs` and `vcs` modules.
+- **The first version of the startup cache (§9.2)** is done, also ahead of
+  the plan, since startup files that take a second (nvm) are otherwise a
+  daily cost.
+- **Phase 13 (replacing zsh)** is the current focus: what is still missing
+  to replace the author's actual zsh setup.
+
 ---
 
 ## 1. Goals and non-goals
@@ -77,18 +101,26 @@ contributions for them will be rejected.
 
 ## 3. Repository layout
 
+As built (planned files not yet written are marked):
+
 ```
 luish/
 ├── Cargo.toml              # [features] plugins = ["dep:rhai"]
-├── GOALS.md
-├── PLAN.md
+├── GOALS.md, PLAN.md, STATUS.md, DEVIATIONS.md
+├── docs/                   # user documentation (Sphinx + MyST), docs/builtins/ is compiled into `help`
 ├── src/
 │   ├── main.rs             # CLI parsing, mode selection (interactive / script / -c)
 │   ├── shell.rs            # `Shell` struct: all interpreter state
+│   ├── sys.rs              # syscall wrappers (retry on EINTR)
 │   ├── input.rs            # input sources: string, file, stdin, line editor
 │   ├── lexer.rs            # tokenizer, quoting, here-doc queue, alias expansion
 │   ├── parser.rs           # recursive-descent parser → AST
 │   ├── ast.rs              # AST types
+│   ├── cmdtext.rs          # job text from the AST (dash's cmdtxt)
+│   ├── unparse.rs          # AST back to source text that re-parses exactly
+│   ├── prompt.rs           # zsh's % sequences (setopt promptpercent)
+│   ├── state.rs            # the shell's state as commands (savestate)
+│   ├── startcache.rs       # cached rc.d / login.d (§9.2)
 │   ├── expand/
 │   │   ├── mod.rs          # expansion pipeline driver
 │   │   ├── param.rs        # ${...} parameter expansion
@@ -96,7 +128,8 @@ luish/
 │   │   ├── cmdsubst.rs     # $(...) and `...`
 │   │   ├── split.rs        # IFS field splitting
 │   │   ├── pattern.rs      # fnmatch-style matcher (glob, case, ${x#pat})
-│   │   └── glob.rs         # pathname expansion
+│   │   ├── glob.rs         # pathname expansion, and **/ (setopt globstar)
+│   │   └── qual.rs         # zsh's glob qualifiers (setopt bareglobqual)
 │   ├── exec/
 │   │   ├── mod.rs          # executor: nodes → exit status / control flow
 │   │   ├── simple.rs       # simple commands and command lookup
@@ -113,27 +146,34 @@ luish/
 │   │   ├── mod.rs          # registry, special vs regular classification
 │   │   └── *.rs            # one file per built-in (or small groups)
 │   ├── interactive/
-│   │   ├── mod.rs          # REPL loop, prompts
-│   │   ├── editor.rs       # `LineEditor` interface + rustyline implementation
-│   │   ├── history.rs
-│   │   └── complete.rs
+│   │   ├── mod.rs          # REPL loop, prompts, the rustyline helper
+│   │   ├── history.rs      # luish's own rustyline `History` (stable event numbers)
+│   │   ├── histfile.rs     # the history file, in zsh's format
+│   │   ├── complete.rs     # completion (never sees `Shell`: gets a `Names` snapshot)
+│   │   ├── menu.rs         # the completion menu (drawn as rustyline's hint)
+│   │   └── highlight.rs    # syntax highlighting
 │   └── plugins/
-│       ├── mod.rs          # plugin-agnostic traits (Builtin, Hook), registry
+│       ├── mod.rs          # plugin-agnostic registry
 │       ├── rhai.rs         # #[cfg(feature = "plugins")] Rhai engine and the `sh` module
 │       ├── fs.rs           # the `fs` module (file tests without forking)
 │       ├── vcs.rs          # the `vcs` module (git repository information, like zsh's vcs_info)
 │       ├── bytes.rs        # byte <-> string conversion at the plugin boundary (§6.5)
-│       ├── package.rs      # plugin layouts and collections (§6.6)
-│       ├── config.rs       # plugins.toml and plugins.lock (§6.6)
-│       └── fetch.rs        # git plugins and their cache (§6.6)
-├── plugins/                # example plugins (*.rhai) and the plugin API reference
+│       ├── package.rs      # (planned) plugin layouts and collections (§6.6)
+│       ├── config.rs       # (planned) plugins.toml and plugins.lock (§6.6)
+│       └── fetch.rs        # (planned) git plugins and their cache (§6.6)
 ├── tests/
 │   ├── cases/              # *.sh test scripts plus expected output
-│   ├── compare.rs          # differential harness (luish vs dash)
+│   ├── compare.rs          # differential harness (luish vs dash, or zsh)
+│   ├── interactive.rs      # pty tests
 │   └── plugins/            # Rhai plugin tests
-├── fuzz/                   # cargo-fuzz targets (lexer, parser, arith, pattern)
-└── bench/                  # hyperfine scripts
+├── fuzz/                   # (planned) cargo-fuzz targets (lexer, parser, arith, pattern)
+└── bench/                  # (planned) hyperfine scripts
 ```
+
+There is no separate `LineEditor` trait: the separation is kept by giving
+the completer and highlighter a plain-data snapshot of the names they need
+before each prompt, and by keeping rustyline inside `interactive/`. Example
+plugins live in `docs/examples/` (the Cobra completer).
 
 ---
 
@@ -262,7 +302,8 @@ parent's main loop.**
 ## 5. Implementation phases
 
 Each phase ends with a list of tests that must pass before moving on.
-Phases 0–10 and 12 make up Stage 1. Phase 11 (plugins) belongs to Stage 2.
+Phases 0–10, 12 and 13 make up Stage 1. Phase 11 (plugins) belongs to
+Stage 2, but has started because Phase 13 builds on it.
 
 ### Phase 0 — Scaffolding (½ day)
 
@@ -546,9 +587,29 @@ subshells and command substitutions, and `kill -TERM $$` running a trap.
 tests pass (`tests/interactive.rs`: a small pty harness on `libc` rather than
 `expectrl` or `rexpect`).
 
+**Status: done.** Also built, beyond the list above: a completion menu like
+zsh's menu selection (drawn as rustyline's hint, so rustyline is not
+patched), matching that falls back to ignoring case and then to the middle
+of names, per-command argument completion (directories for `cd`, including
+`CDPATH`; variables, job specs, signals, ...), syntax highlighting, zsh's `%`
+prompt sequences, and a history file in zsh's format that zsh and luish can
+share (`share_history`, `inc_append_history`, `hist_ignore_space`,
+`hist_reduce_blanks`, `hist_save_no_dups`). What remains to replace zsh day
+to day is Phase 13.
+
 ### Phase 11 — Plugin system (Stage 2, 5–7 days)
 
-See §6 for the design. This phase starts only once Stage 1 is usable (M4).
+See §6 for the design. This phase was meant to start only once Stage 1 is
+usable (M4), but started earlier: the prompt and completion of the daily
+driver are built on it.
+
+**Status:** step 2 is done (`load`, `list`, `unload`, plus `restore` for
+the startup cache); step 3 is done; step 4 is partly done (the `chpwd` and
+`prompt` hooks, completers, and part of the `sh` module, plus the `fs` and
+`vcs` modules); step 7 is at its first step (directory plugins). Not done:
+the `Builtin` trait (step 1), plugin built-ins, the other hooks (`precmd`,
+`preexec`, `exit`), time budgets for hooks other than completers,
+`parse_json`, and `plugins.toml`.
 
 1. Add a plugin-agnostic `plugins/mod.rs` with the `Builtin` and `Hook` traits.
    Move the Rust built-ins onto the `Builtin` trait so that plugins and native
@@ -586,6 +647,167 @@ See §6 for the design. This phase starts only once Stage 1 is usable (M4).
     commands that have no in-child work.
   - Intern variable names.
 - Keep fuzzing the lexer, parser, arithmetic, and pattern matcher.
+
+**Status:** GNU hello and sed `configure` give the same results as under
+dash; 43 of 1620 Oils spec cases differ, mostly deliberate deviations. The
+PATH cache and `posix_spawn` are done, and loops run as fast as under dash.
+Still to do: the startup gap (about 185 syscalls to dash's 85: signal
+dispositions queried eagerly, Rust runtime start-up that `#![no_main]`
+would avoid, `readlink /proc/self/exe`; deferred by decision), larger
+`configure` scripts (coreutils), the smoosh and modernish suites, the fuzz
+targets, and `bench/`.
+
+### Phase 13 — Replacing zsh (Stage 1, current focus)
+
+Stage 1 asks for a daily driver "at least as good as a basic zsh setup".
+This phase makes that concrete: what luish still lacks to replace the
+author's own zsh setup (`~/.zshrc` from home-manager plus zplug, and
+`~/.zshrc_local`, which overrides much of it: history in `~/.histfile`,
+emacs keys, `menu select` completion). The list comes from probing each
+item against luish, and from about 670 commands of typed history, which
+also shows what can be dropped.
+
+Already done: the prompt (`PS1="%n@%m:%/ %(?. .%B!%b)%(!.#.§)"` under
+`setopt promptpercent`), `^A`/`^E`/`^K`/`^R`, `CDPATH`, the directory
+stack, aliases, the conda, nvm and home-manager setup scripts (through the
+`rc.d` cache), `**/`, `autocd`, menu completion, `CDPATH` in `cd`
+completion, and the history, shared with zsh through `~/.histfile`.
+
+Items, in the order to build them (earlier items are small and noticed at
+once):
+
+1. **Line-editor keys.** These are rustyline-level changes in
+   `interactive/`, with pty tests.
+   - **Up and Down as prefix search** (zsh's
+     `history-beginning-search-backward`/`-forward`, bound to `^[[A` and
+     `^[OA`). rustyline has `Cmd::HistorySearchBackward`; luish binds it.
+     luish binds no history keys today and has no `bindkey`; a small
+     `bindkey` (for the widgets luish has) should come with this.
+   - **Ctrl-W stops at `WORDCHARS`.** The setup's
+     `WORDCHARS='*?_-.[]~=&;!#%^(){}<>'` leaves out `/`, so Ctrl-W deletes
+     one path component. rustyline's Ctrl-W kills back to whitespace; bind
+     a handler that uses `$WORDCHARS` (read in the `Names` snapshot) and
+     zsh's default when it is unset.
+   - **`^O`** (`accept-line-and-down-history`: run the line, then offer the
+     history entry after it) and **`Esc-.`/`Alt-.`** (`insert-last-word`,
+     cycling back through earlier lines when repeated). rustyline has
+     neither, so both are custom handlers over `history.rs`.
+2. **Autosuggestions**, as zsh-autosuggestions: the newest history entry
+   that starts with the line is shown greyed after the cursor, and Right
+   (or End) accepts it. rustyline's `Hinter` is the place, but the
+   completion menu already draws itself as the hint, so a suggestion is
+   shown only while no menu is open. The lookup runs on every keystroke,
+   so it must stay fast over the whole history (search from the newest
+   entry, stop at the first match).
+3. **`setopt auto_pushd`** (with `pushd_ignore_dups` and `pushd_silent`,
+   which zsh setups usually pair with it): `cd` pushes the old directory
+   onto the stack. The history shows `popd` used and `pushd` never, so
+   this setup depends on it. Compared with zsh as the reference.
+4. **Global aliases, `alias -g`**: expanded in any word position, not only
+   in command position (`....` → `../../..`). The lexer already splices
+   aliases in one place; a global alias is looked up for every unquoted
+   word, which costs a hash lookup per word only when a global alias
+   exists (`Shell` keeps a count). `alias` and `savestate` print them with
+   `-g`. The highlighter and completer should expand them as they expand
+   aliases now.
+5. **Completion content**, the biggest gap by volume. zsh's setup gets
+   completion for git, ssh, make, man, cargo and so on from `compinit` and
+   zsh-completions; luish knows only its built-ins and plugin completers.
+   - **git** first, as a Rhai completer shipped with luish (subcommands,
+     branches and refs through the `vcs` module, files for `add`/`restore`,
+     remotes). This also tests whether the completer API is enough.
+   - **ssh/scp/rsync hosts** from `~/.ssh/config` (`Host` lines without
+     wildcards, and `Include`). `~/.ssh/known_hosts` is hashed on this
+     system (`|1|...`), so it gives nothing, even in zsh.
+   - **A generic bridge** after that, so that most programs get completion
+     without a hand-written completer. The candidates, in order of how
+     much they give: programs that complete themselves (Cobra, as in the
+     example, clap's `COMPLETE=`, `argcomplete`), bash-completion scripts
+     run in a bash child (`complete -p`/`compgen`), and `--help` parsing
+     for options only (as fish does). This needs its own design note
+     before building.
+   - **Typing to narrow the menu** (zsh's `menu select interactive`,
+     which this setup uses): while the menu is open, printable keys filter
+     the matches instead of closing the menu. Today any other key keeps the
+     selected match and goes on editing.
+6. **Shell-function hooks**, as zsh calls them: functions named `chpwd`,
+   `precmd` and `preexec` (and the `chpwd_functions`-style lists, if
+   arrays ever exist) run at the same points as the Rhai hooks of the same
+   names. The setup sets the terminal title in `chpwd`. Only interactive
+   shells look them up, and only when a function with that name exists,
+   so scripts pay nothing. `precmd` and `preexec` also need the Rhai hooks
+   of Phase 11 step 4. Until then, the title escape can go in `PS1` inside
+   `%{...%}`. zsh's `print -P` (to write a `%`-expanded string) comes with
+   this, as a `__luish_internal` subcommand or a `print` built-in in
+   interactive shells.
+7. **Lazy function parsing for the startup cache**, below.
+
+Not planned, because the history shows they aren't used or they are easy
+to rewrite in POSIX sh: `[[`, the `:h`/`:t` modifiers (the `cd` wrapper and
+`field` rewrite to `[ -f ]` and `${1%/*}`), `builtin` (`command cd`
+works), zsh's two-argument `cd old new`, `vared` (used once, for `rename`;
+revisit with `read -e -i` if wanted), `zmv`, `mmv`, `zed`, `zcalc`,
+`noglob`, zsh-history-substring-search (loaded but never bound), zsh-nvm
+(redundant), zplug, `fpath`/`compinit`, and `typeset -U`.
+
+The user's config (`~/.config/luish/rc.d`) also needs porting: `setopt
+promptpercent` and `PS1`, `CDPATH`, `setopt autocd`, the history settings
+(`HISTFILE=~/.histfile HISTSIZE=1000 SAVEHIST=1000` and `setopt
+share_history hist_ignore_space hist_reduce_blanks hist_save_no_dups`;
+`append_history` and `hist_ignore_dups` are always on and `setopt` rejects
+them), the remaining aliases (`..`, `...`, `ls`, `open`), and the functions
+rewritten in POSIX sh. That is configuration, not luish work, but each item
+above is checked by using it there.
+
+#### Lazy function parsing
+
+zsh's `autoload` registers a function as a stub and parses its body on the
+first call. The startup cache doesn't avoid that cost: it saves the effects
+of `rc.d`, but functions are saved as source text and parsed again at every
+startup. On this setup the cache is 164 KB, and 114 of its 120 functions
+come from nvm. Over 100 runs of a release build:
+
+| Run | luish | dash | zsh `-f` |
+|---|---|---|---|
+| `-c true` | 3.1 ms | 2.2 ms | 6.2 ms |
+| `-n` on the cache (parse only) | 12.1 ms | 6.4 ms | 39 ms |
+| Running the cache | 14.2 ms | | 50 ms |
+
+So the warm cache adds about 11 ms to startup, 9 ms of it parsing nvm
+functions that are rarely called. (luish also parses this file about twice
+as slowly as dash, which is worth profiling on its own.)
+
+When replaying the cache, define each function as a stub holding its byte
+range in the cache text, and parse the body on its first call. The text is
+kept in memory, not re-read by path, since another shell may replace the
+cache with a rename. `type`, the highlighter and the completer only need
+the names. The deferred parse must reproduce the parser's state at
+definition time:
+
+- **Aliases.** The cached text has already been through alias expansion
+  (`savestate` unparses the AST and quotes command words that were
+  aliases), but an alias defined later (in `luishrc`, `_uncached.lsh` or
+  interactively) would be expanded by a lazy parse. Parse deferred bodies
+  with an empty alias map, as zsh's `autoload -U` does.
+- **`bareglobqual`**, the only option the lexer reads. Replay wraps
+  functions with qualifiers in `set -o`/`+o`, which works only at parse
+  time. Record the option's value in the stub.
+- **Line numbers.** `$LINENO` values are assigned while parsing, so the
+  stub keeps the body's first line.
+
+`set -v` is not affected (it echoes in the read loop, not the parser). A
+deferred parse can fail only if the unparser doesn't round-trip, which is
+unit-tested; such a bug would move a syntax error from startup to the
+first call.
+
+Until then, nvm can be loaded lazily, as zsh-nvm's lazy mode does: put the
+default node's `bin` on `PATH` directly and define
+`nvm() { unset -f nvm; . "$NVM_DIR/nvm.sh"; nvm "$@"; }`. That removes 114
+of the 120 cached functions.
+
+**Done when:** the author uses luish as the login shell with the ported
+config, and the history of a week shows no command that had to be run in
+zsh.
 
 ---
 
@@ -687,13 +909,13 @@ A built-in receives `argv` as an array of strings, with the command name
 first. It returns its exit status: an integer, where `()` counts as 0. An
 error thrown by a built-in gives status 1.
 
-| Hook | Arguments | Result |
-|---|---|---|
-| `prompt` | None, or (if the function takes one) the previous prompt: the earlier hooks', else `PS1` | The prompt string, used instead of `PS1` (with `%` expansion under `promptpercent`); `()` leaves it to earlier hooks, then `PS1` |
-| `precmd` | Last exit status | Ignored |
-| `preexec` | Command line | Ignored |
-| `chpwd` | Old and new directory | Ignored |
-| `exit` | Exit status | Ignored |
+| Hook | Arguments | Result | Built |
+|---|---|---|---|
+| `prompt` | None, or (if the function takes one) the previous prompt: the earlier hooks', else `PS1` | The prompt string, used instead of `PS1` (with `%` expansion under `promptpercent`); `()` leaves it to earlier hooks, then `PS1` | Yes |
+| `precmd` | Last exit status | Ignored | No |
+| `preexec` | Command line | Ignored | No |
+| `chpwd` | Old and new directory | Ignored | Yes |
+| `exit` | Exit status | Ignored | No |
 
 A completer receives the words of the command line (with aliases expanded)
 and the index of the word being completed (which ends at the cursor), and returns an array of candidates: strings, or maps with a
@@ -1089,13 +1311,13 @@ Every bug fix comes with a test case in `tests/cases/`.
 
 ## 8. Milestones
 
-| Milestone | Stage | Phases | Definition of done |
-|---|---|---|---|
-| **M1: Runs simple scripts** | 1 | 0–4 | Pipelines, redirections, `if`/`for`/`while`/`case`, and external commands work |
-| **M2: POSIX script engine** | 1 | 5–9 | All expansions, built-ins, functions, traps and `set -e`. Passes the differential suite |
-| **M3: Real-world scripts** | 1 | 12 (partly) | Runs autoconf `configure` scripts correctly. Performance is within ~1.5× of dash |
-| **M4: Daily-driver interactive shell** | 1 | 10 | Line editing, history, completion and job control, behind the `LineEditor` interface |
-| **M5: Rhai plugins** | 2 | 11 | Plugin built-ins and hooks work. Example plugins ship: a git-aware prompt, a `json` query built-in, and a command-timing preexec/precmd pair |
+| Milestone | Stage | Phases | Definition of done | Status |
+|---|---|---|---|---|
+| **M1: Runs simple scripts** | 1 | 0–4 | Pipelines, redirections, `if`/`for`/`while`/`case`, and external commands work | Done |
+| **M2: POSIX script engine** | 1 | 5–9 | All expansions, built-ins, functions, traps and `set -e`. Passes the differential suite | Done |
+| **M3: Real-world scripts** | 1 | 12 (partly) | Runs autoconf `configure` scripts correctly. Performance is within ~1.5× of dash | Done |
+| **M4: Daily-driver interactive shell** | 1 | 10, 13 | Line editing, history, completion and job control, with the editor kept separate from the executor; replaces the author's zsh setup (Phase 13) | Phase 10 done, Phase 13 in progress |
+| **M5: Rhai plugins** | 2 | 11 | Plugin built-ins and hooks work. Example plugins ship: a git-aware prompt, a `json` query built-in, and a command-timing preexec/precmd pair | Started |
 
 Stage 1 is complete at M4, plus performance that matches dash (Phase 12).
 Milestones for the rest of Stage 2 and for Stage 3 will be planned once
@@ -1293,7 +1515,9 @@ hold tokens).
 **Parse cache.** Parsed ASTs of sourced files, keyed by fingerprint and the
 alias table at the point the file was sourced (aliases are expanded while
 lexing). With the effect cache this is no longer the first step, but it still
-helps `_uncached.lsh`, `$ENV` and `luishrc`.
+helps `_uncached.lsh`, `$ENV` and `luishrc`. For the effect cache itself,
+the functions it holds are parsed lazily (Phase 13, "Lazy function
+parsing").
 
 The Stage 1 constraints are:
 

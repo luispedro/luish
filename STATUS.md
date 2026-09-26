@@ -35,7 +35,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **121 differential cases, 15 plugin cases, 51 unit tests and 12 pty tests
+Current state: **128 differential cases, 18 plugin cases, 72 unit tests and 17 pty tests
 pass**.
 
 ## Environment
