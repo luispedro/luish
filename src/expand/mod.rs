@@ -36,19 +36,53 @@ impl Shell {
     pub fn expand_words(&mut self, words: &[Word]) -> EResult<Vec<Vec<u8>>> {
         let mut out = Vec::with_capacity(words.len());
         for w in words {
-            if let Some(lit) = w.as_literal()
-                && (self.opt(Opt::Noglob) || !lit.iter().any(|c| matches!(c, b'*' | b'?' | b'[')) || lit == b"[")
+            self.expand_word_into(w, &mut out)?;
+        }
+        Ok(out)
+    }
+
+    /// Expands the words of a simple command. As in dash, the arguments of
+    /// `export`, `readonly` and `local` (also run through `command`) that
+    /// have the form of an assignment are expanded as assignments: tilde
+    /// expansion after `=` and `:`, and no field splitting or globbing.
+    /// The command name is found by expanding the words one at a time.
+    pub fn expand_command_words(&mut self, words: &[Word]) -> EResult<Vec<Vec<u8>>> {
+        let mut out = Vec::with_capacity(words.len());
+        let mut decl = None;
+        let mut i = 0;
+        while decl.is_none() && i < words.len() {
+            self.expand_word_into(&words[i], &mut out)?;
+            i += 1;
+            decl = declaration_command(&out);
+        }
+        for w in &words[i..] {
+            if decl == Some(true)
+                && let Some(a) = crate::parser::split_assignment(w)
             {
-                out.push(lit.to_vec());
-                continue;
-            }
-            let mut f = Fields::new(Some(self.ifs()));
-            self.expand_parts(&w.0, false, false, &mut f)?;
-            for field in f.into_fields() {
-                self.glob_field(field, &mut out);
+                let mut arg = a.name;
+                arg.push(b'=');
+                arg.extend(self.expand_word_str(&a.value)?);
+                out.push(arg);
+            } else {
+                self.expand_word_into(w, &mut out)?;
             }
         }
         Ok(out)
+    }
+
+    fn expand_word_into(&mut self, w: &Word, out: &mut Vec<Vec<u8>>) -> EResult<()> {
+        if let Some(lit) = w.as_literal()
+            && (self.opt(Opt::Noglob) || !lit.iter().any(|c| matches!(c, b'*' | b'?' | b'[')) || lit == b"[")
+        {
+            out.push(lit.to_vec());
+            return Ok(());
+        }
+        let mut f = Fields::new(Some(self.ifs()));
+        self.expand_parts(&w.0, false, false, &mut f)?;
+        for field in f.into_fields() {
+            self.glob_field(field, out);
+        }
+        Ok(())
     }
 
     fn glob_field(&self, field: XField, out: &mut Vec<Vec<u8>>) {
@@ -345,6 +379,35 @@ impl Shell {
             out.pop();
         }
         Ok(out)
+    }
+}
+
+/// Whether the command whose words have been expanded so far into `argv`
+/// is `export`, `readonly` or `local`, possibly through `command`
+/// (`None`: not known yet).
+fn declaration_command(argv: &[Vec<u8>]) -> Option<bool> {
+    let mut k = 0;
+    loop {
+        let name = argv.get(k)?;
+        if name != b"command" {
+            return Some(matches!(&name[..], b"export" | b"readonly" | b"local"));
+        }
+        k += 1;
+        // `command`'s options: only `-p` leaves a command to run.
+        loop {
+            let a = argv.get(k)?;
+            if a == b"--" {
+                k += 1;
+                break;
+            }
+            if a.len() < 2 || a[0] != b'-' {
+                break;
+            }
+            if !a[1..].iter().all(|&c| c == b'p') {
+                return Some(false);
+            }
+            k += 1;
+        }
     }
 }
 

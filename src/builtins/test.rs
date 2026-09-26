@@ -4,7 +4,6 @@ use crate::shell::{ExecResult, Shell};
 use crate::sys;
 
 struct Test<'a> {
-    sh: &'a Shell,
     args: &'a [Vec<u8>],
     pos: usize,
 }
@@ -112,14 +111,13 @@ fn binary(a: &[u8], op: &[u8], b: &[u8]) -> TResult {
         b"-ge" => parse_int(a)? >= parse_int(b)?,
         b"-lt" => parse_int(a)? < parse_int(b)?,
         b"-le" => parse_int(a)? <= parse_int(b)?,
+        // As in dash, both files must exist.
         b"-nt" => match (sys::stat(a), sys::stat(b)) {
             (Some(x), Some(y)) => mtime(&x) > mtime(&y),
-            (Some(_), None) => true,
             _ => false,
         },
         b"-ot" => match (sys::stat(a), sys::stat(b)) {
             (Some(x), Some(y)) => mtime(&x) < mtime(&y),
-            (None, Some(_)) => true,
             _ => false,
         },
         b"-ef" => sys::same_file(a, b),
@@ -127,141 +125,187 @@ fn binary(a: &[u8], op: &[u8], b: &[u8]) -> TResult {
     })
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tok {
+    Eoi,
+    Operand,
+    Not,
+    And,
+    Or,
+    LParen,
+    RParen,
+    Unary,
+    Binary,
+}
+
+/// dash's `syntax`: the message, after the operator if there is one.
+fn syntax(op: &[u8], msg: &str) -> String {
+    if op.is_empty() {
+        msg.to_string()
+    } else {
+        format!("{}: {msg}", String::from_utf8_lossy(op))
+    }
+}
+
+fn op_kind(s: &[u8]) -> Option<Tok> {
+    Some(match s {
+        b"!" => Tok::Not,
+        b"-a" => Tok::And,
+        b"-o" => Tok::Or,
+        b"(" => Tok::LParen,
+        b")" => Tok::RParen,
+        _ if is_unary(s) => Tok::Unary,
+        _ if is_binary(s) => Tok::Binary,
+        _ => return None,
+    })
+}
+
+/// A port of dash's `test` parser (`testcmd`, `t_lex`, `oexpr`...), so
+/// that ambiguous expressions are read the same way.
 impl Test<'_> {
-    fn peek(&self, off: usize) -> Option<&[u8]> {
-        self.args.get(self.pos + off).map(|a| a.as_slice())
+    fn arg(&self, i: usize) -> Option<&[u8]> {
+        self.args.get(i).map(|a| a.as_slice())
     }
 
-    fn remaining(&self) -> usize {
-        self.args.len() - self.pos
-    }
-
-    fn take(&mut self) -> Result<&[u8], String> {
-        let a = self.args.get(self.pos).ok_or_else(|| "argument expected".to_string())?;
-        self.pos += 1;
-        Ok(a)
-    }
-
-    fn or_expr(&mut self) -> TResult {
-        let mut v = self.and_expr()?;
-        while self.peek(0) == Some(b"-o") {
-            self.pos += 1;
-            let r = self.and_expr()?;
-            v = v || r;
-        }
-        Ok(v)
-    }
-
-    fn and_expr(&mut self) -> TResult {
-        let mut v = self.not_expr()?;
-        while self.peek(0) == Some(b"-a") {
-            self.pos += 1;
-            let r = self.not_expr()?;
-            v = v && r;
-        }
-        Ok(v)
-    }
-
-    fn not_expr(&mut self) -> TResult {
-        if self.peek(0) == Some(b"!") && self.remaining() > 1 {
-            self.pos += 1;
-            return Ok(!self.not_expr()?);
-        }
-        self.primary()
-    }
-
-    fn primary(&mut self) -> TResult {
-        let Some(a) = self.peek(0) else {
-            return Err("argument expected".into());
+    /// dash's `t_lex`: the token at `i`, taking an operator as an operand
+    /// where it can't be one.
+    fn lex(&self, i: usize) -> Tok {
+        let Some(s) = self.arg(i) else {
+            return Tok::Eoi;
         };
-        if a == b"(" && self.remaining() > 1 {
-            // `( arg )` might be a parenthesized expression or `(` compared
-            // with something; follow the usual parenthesized reading.
-            self.pos += 1;
-            let v = self.or_expr()?;
-            if self.peek(0) != Some(b")") {
-                return Err("closing paren expected".into());
-            }
-            self.pos += 1;
-            return Ok(v);
+        match op_kind(s) {
+            Some(Tok::Unary) if self.is_operand(i) => Tok::Operand,
+            Some(Tok::LParen) if i + 1 >= self.args.len() => Tok::Operand,
+            Some(t) => t,
+            None => Tok::Operand,
         }
-        if self.remaining() >= 3 && is_binary(self.peek(1).unwrap()) {
-            let a = self.take()?.to_vec();
-            let op = self.take()?.to_vec();
-            let b = self.take()?.to_vec();
-            return binary(&a, &op, &b);
-        }
-        if is_unary(a) && self.remaining() >= 2 {
-            let op = self.take()?.to_vec();
-            let b = self.take()?.to_vec();
-            return unary(&op, &b);
-        }
-        let a = self.take()?;
-        Ok(!a.is_empty())
     }
 
-    /// Evaluates using the POSIX rules for up to four arguments.
-    fn eval(&mut self, n: usize) -> TResult {
-        let a = |i: usize| self.args[self.pos + i].as_slice();
+    fn is_operand(&self, i: usize) -> bool {
+        if i + 1 >= self.args.len() {
+            return true;
+        }
+        if i + 2 >= self.args.len() {
+            return false;
+        }
+        op_kind(&self.args[i + 1]) == Some(Tok::Binary)
+    }
+
+    fn or_expr(&mut self, mut n: Tok) -> TResult {
+        let mut res = false;
+        loop {
+            res |= self.and_expr(n)?;
+            if self.lex(self.pos + 1) != Tok::Or {
+                return Ok(res);
+            }
+            self.pos += 2;
+            n = self.lex(self.pos);
+        }
+    }
+
+    fn and_expr(&mut self, mut n: Tok) -> TResult {
+        let mut res = true;
+        loop {
+            if !self.not_expr(n)? {
+                res = false;
+            }
+            if self.lex(self.pos + 1) != Tok::And {
+                return Ok(res);
+            }
+            self.pos += 2;
+            n = self.lex(self.pos);
+        }
+    }
+
+    fn not_expr(&mut self, n: Tok) -> TResult {
+        if n != Tok::Not {
+            return self.primary(n);
+        }
+        let n = self.lex(self.pos + 1);
+        if n != Tok::Eoi {
+            self.pos += 1;
+        }
+        Ok(!self.not_expr(n)?)
+    }
+
+    fn primary(&mut self, n: Tok) -> TResult {
         match n {
-            0 => Ok(false),
-            1 => Ok(!a(0).is_empty()),
-            2 => {
-                if a(0) == b"!" {
-                    return Ok(a(1).is_empty());
+            Tok::Eoi => return Ok(false),
+            Tok::LParen => {
+                self.pos += 1;
+                let nn = self.lex(self.pos);
+                if nn == Tok::RParen {
+                    return Ok(false);
                 }
-                if is_unary(a(0)) {
-                    return unary(a(0), a(1));
+                let res = self.or_expr(nn)?;
+                self.pos += 1;
+                if self.lex(self.pos) != Tok::RParen {
+                    return Err("closing paren expected".into());
                 }
-                Err(format!("{}: unexpected operator", String::from_utf8_lossy(a(0))))
+                return Ok(res);
             }
-            3 => {
-                if is_binary(a(1)) {
-                    return binary(a(0), a(1), a(2));
-                }
-                if a(0) == b"!" {
-                    self.pos += 1;
-                    return Ok(!self.eval(2)?);
-                }
-                if a(0) == b"(" && a(2) == b")" {
-                    return Ok(!a(1).is_empty());
-                }
-                self.full()
+            Tok::Unary => {
+                let op = self.args[self.pos].clone();
+                self.pos += 1;
+                let Some(a) = self.arg(self.pos) else {
+                    return Err(syntax(&op, "argument expected"));
+                };
+                return unary(&op, a);
             }
-            4 => {
-                if a(0) == b"!" {
-                    self.pos += 1;
-                    return Ok(!self.eval(3)?);
-                }
-                if a(0) == b"(" && a(3) == b")" {
-                    self.pos += 1;
-                    let args = &self.args[..self.pos + 2];
-                    let mut sub = Test {
-                        sh: self.sh,
-                        args,
-                        pos: self.pos,
-                    };
-                    return sub.eval(2);
-                }
-                self.full()
+            _ => {}
+        }
+        if self.lex(self.pos + 1) == Tok::Binary {
+            let a = &self.args[self.pos];
+            let op = &self.args[self.pos + 1];
+            self.pos += 2;
+            let Some(b) = self.arg(self.pos) else {
+                return Err(syntax(op, "argument expected"));
+            };
+            return binary(a, op, b);
+        }
+        Ok(!self.args[self.pos].is_empty())
+    }
+
+    /// dash's `testcmd`: the POSIX rules for three and four arguments,
+    /// then the parser. Returns the exit status.
+    fn run(&mut self) -> Result<i32, String> {
+        let mut res = 1;
+        loop {
+            let argc = self.args.len() - self.pos;
+            if argc < 1 {
+                return Ok(res);
             }
-            _ => self.full(),
+            if argc == 3 && op_kind(&self.args[self.pos + 1]) == Some(Tok::Binary) {
+                return self.finish(res, Tok::Operand);
+            }
+            if argc == 3 || argc == 4 {
+                if self.args[self.pos] == b"(" && self.args[self.args.len() - 1] == b")" {
+                    self.args = &self.args[..self.args.len() - 1];
+                    self.pos += 1;
+                } else if self.args[self.pos] == b"!" {
+                    res = 0;
+                    self.pos += 1;
+                    continue;
+                }
+            }
+            let n = self.lex(self.pos);
+            return self.finish(res, n);
         }
     }
 
-    fn full(&mut self) -> TResult {
-        let v = self.or_expr()?;
-        if let Some(extra) = self.peek(0) {
-            return Err(format!("{}: unexpected operator", String::from_utf8_lossy(extra)));
+    fn finish(&mut self, res: i32, n: Tok) -> Result<i32, String> {
+        let v = self.or_expr(n)?;
+        if self.pos + 1 < self.args.len() {
+            return Err(syntax(&self.args[self.pos], "unexpected operator"));
         }
-        Ok(v)
+        Ok(res ^ v as i32)
     }
 }
 
 fn run(sh: &Shell, name: &[u8], args: &[Vec<u8>]) -> i32 {
-    let mut t = Test { sh, args, pos: 0 };
-    match t.eval(args.len()) {
-        Ok(v) => (!v) as i32,
+    let mut t = Test { args, pos: 0 };
+    match t.run() {
+        Ok(status) => status,
         Err(msg) => {
             sh.berr(name, msg);
             2

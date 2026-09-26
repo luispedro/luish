@@ -206,6 +206,20 @@ impl Parser {
         self.src.get(self.pos + off).copied()
     }
 
+    /// Removes line continuations at `pos + off`, as dash's `pgetc_eatbnl`
+    /// does inside `$` expansions (`$\<newline>?` is `$?`).
+    fn eat_bnl(&mut self, off: usize) -> bool {
+        let i = self.pos + off;
+        let mut ate = false;
+        while self.src.get(i) == Some(&b'\\') && self.src.get(i + 1) == Some(&b'\n') {
+            self.src.drain(i..i + 2);
+            self.splice_delta -= 2;
+            self.lineno += 1;
+            ate = true;
+        }
+        ate
+    }
+
     // ------------------------------------------------------------------
     // Tokens
 
@@ -455,7 +469,11 @@ impl Parser {
 
     /// At a `$`. Returns `None` if the `$` is literal.
     fn read_dollar(&mut self, ctx: Ctx) -> PResult<Option<WordPart>> {
+        let ate = self.eat_bnl(1);
         let Some(c) = self.at(1) else {
+            if ate && !self.source_eof {
+                return self.incomplete();
+            }
             return Ok(None);
         };
         let plain = |name| {
@@ -470,7 +488,11 @@ impl Parser {
                 self.pos += 2;
                 self.read_braced_param(ctx).map(Some)
             }
-            b'(' if self.at(2) == Some(b'(') => {
+            b'(' if {
+                self.eat_bnl(2);
+                self.at(2) == Some(b'(')
+            } =>
+            {
                 let save = (self.pos, self.lineno);
                 self.pos += 3;
                 match self.try_read_arith()? {
@@ -491,6 +513,7 @@ impl Parser {
                 let mut end = start;
                 while end < self.src.len() && is_name_char(self.src[end]) {
                     end += 1;
+                    self.eat_bnl(end - self.pos);
                 }
                 let name = self.src[start..end].to_vec();
                 self.pos = end;
@@ -509,11 +532,13 @@ impl Parser {
     }
 
     fn read_param_name(&mut self) -> Option<ParamName> {
+        self.eat_bnl(0);
         let c = self.at(0)?;
         if is_name_start(c) {
             let start = self.pos;
             while self.at(0).is_some_and(is_name_char) {
                 self.pos += 1;
+                self.eat_bnl(0);
             }
             Some(ParamName::Var(self.src[start..self.pos].to_vec()))
         } else if c.is_ascii_digit() {
@@ -542,6 +567,7 @@ impl Parser {
     fn read_braced_param(&mut self, ctx: Ctx) -> PResult<WordPart> {
         let bad = |p: &Parser| p.err("Syntax error: Bad substitution");
         let mk = |name, op, colon| WordPart::Param(Box::new(ParamExp { name, op, colon }));
+        self.eat_bnl(0);
         if self.at(0) == Some(b'#') {
             // `${#}`, `${#name}` (length), or `${#op...}` ($# with an operator)
             if self.at(1) == Some(b'}') {
@@ -565,6 +591,7 @@ impl Parser {
                 bad(self)
             };
         };
+        self.eat_bnl(0);
         let Some(c) = self.at(0) else {
             return self.eof_err("Syntax error: Missing '}'");
         };
@@ -575,6 +602,7 @@ impl Parser {
         let colon = c == b':';
         if colon {
             self.pos += 1;
+            self.eat_bnl(0);
         }
         let Some(c) = self.at(0) else {
             return self.eof_err("Syntax error: Missing '}'");
@@ -928,7 +956,7 @@ pub(crate) fn mark_assignment_tildes(parts: Vec<WordPart>) -> Vec<WordPart> {
     for (i, part) in parts.into_iter().enumerate() {
         let WordPart::Literal(s) = part else {
             at_start = false;
-            out.push(part);
+            out.push(mark_param_word_tildes(part));
             continue;
         };
         let last = i + 1 == n;
@@ -957,6 +985,29 @@ pub(crate) fn mark_assignment_tildes(parts: Vec<WordPart>) -> Vec<WordPart> {
         at_start = false;
     }
     out
+}
+
+/// In an assignment, the word of an unquoted `${x-word}` (and `+`, `=`,
+/// `?`) also gets tilde expansion after `:` (as in dash).
+fn mark_param_word_tildes(part: WordPart) -> WordPart {
+    let WordPart::Param(mut pe) = part else {
+        return part;
+    };
+    if let ParamOp::Default(w) | ParamOp::Assign(w) | ParamOp::Error(w) | ParamOp::Alternative(w) = &mut pe.op {
+        let mut parts = std::mem::take(&mut w.0);
+        // Undo the leading tilde prefix, which ended only at `/`.
+        if let Some(WordPart::Tilde(user)) = parts.first() {
+            let mut lit = vec![b'~'];
+            lit.extend_from_slice(user);
+            if let Some(WordPart::Literal(rest)) = parts.get(1) {
+                lit.extend_from_slice(rest);
+                parts.remove(1);
+            }
+            parts[0] = WordPart::Literal(lit);
+        }
+        w.0 = mark_assignment_tildes(parts);
+    }
+    WordPart::Param(pe)
 }
 
 /// Quote removal on a here-doc delimiter; also reports whether any part of

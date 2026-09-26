@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **74 differential cases, 24 unit tests and 7 pty tests
+Current state: **79 differential cases, 24 unit tests and 7 pty tests
 pass**.
 
 ## Environment
@@ -73,7 +73,8 @@ pass**.
 ### Parsing (`src/lexer.rs`, `src/parser.rs`)
 - The lexer and parser share one `Parser` struct, so that `$(...)` can be
   parsed recursively (for example `case` patterns inside `$(...)`).
-- Quoting: single quotes, double quotes, backslash, and line continuation.
+- Quoting: single quotes, double quotes, backslash, and line continuation
+  (also inside `$` expansions, as in `$\<newline>?`, as in dash).
 - `${...}` in all its forms, `$((...))` (with a fallback to `$( (...) )`),
   and backquotes (unescaped, then parsed separately).
 - Here-docs: `<<`, `<<-`, and quoted delimiters (no expansion). Several
@@ -90,7 +91,8 @@ pass**.
 - Tests: `parse/*`, plus unit tests in `parser.rs`.
 
 ### Expansion (`src/expand/`)
-- Tilde expansion (`~`, `~user`, and after `:` in assignments).
+- Tilde expansion (`~`, `~user`, and after `:` in assignments, including
+  in the word of `${x-word}` within an assignment).
 - Every `ParamOp`, with and without `:`.
 - A double-quoted part is always a field, even when it expands to nothing
   (`"$u"`, `"${u+x}"`), except a lone `"$@"` with no parameters.
@@ -115,8 +117,9 @@ pass**.
 - Pathname expansion is sorted in byte order and needs an explicit leading
   `.`. A `.*` pattern matches `.` and `..` (as in dash). A lone `[` is not a
   pattern.
-- The pattern matcher handles `*`, `?`, bracket expressions, `!`/`^`
-  negation, ranges and `[:class:]`. Quoted characters are always literal.
+- The pattern matcher handles `*`, `?`, bracket expressions, `!`
+  negation (as in dash, `^` is an ordinary character), ranges and
+  `[:class:]`. Quoted characters are always literal.
 - Tests: `expand/*`, plus unit tests in `split.rs`, `pattern.rs` and
   `arith.rs`.
 
@@ -165,7 +168,10 @@ pass**.
   non-interactive, otherwise return to the prompt". It is used for syntax
   errors, expansion errors, and failures of special built-ins.
 - `set -e` uses a counter that suppresses errexit inside conditions, on the
-  left side of `&&`/`||`, and after `!`.
+  left side of `&&`/`||`, and after `!`. As in dash, only simple commands,
+  subshells and pipelines (and a compound command whose redirection
+  fails) exit on their own status, so `{ false && true; }` does not exit.
+  Test: `errexit/compound.sh`.
 - Tests: `exec/*`, `errexit/*`.
 
 ### Jobs and job control (`src/jobs.rs`, `src/builtins/jobs.rs`)
@@ -213,8 +219,16 @@ pass**.
 - `printf` supports every conversion (numeric ones use libc `snprintf`),
   `%b`, `*` for width and precision, and reuses the format while arguments
   remain.
-- `test` follows the POSIX rules for up to four arguments and uses
-  recursive descent beyond that.
+- `test` is a port of dash's parser (the POSIX rules for three and four
+  arguments, then recursive descent with dash's operand/operator
+  disambiguation), so ambiguous expressions such as `[ -a -a ]` and the
+  error messages match dash. Test: `builtins/test_parse.sh` (every
+  expression of up to four arguments from a set of tokens).
+- `export`, `readonly` and `local` (also through `command`, and when the
+  name comes from an expansion) expand arguments that look like
+  assignments as assignments, as dash 0.5.12 does: no field splitting or
+  globbing, and tilde expansion after `=` and `:`. Test:
+  `builtins/declaration_args.sh`.
 - `command` stops errors in special built-ins from exiting the shell.
 - `local` is scoped per function call. As in dash, `local x` keeps the
   current value.

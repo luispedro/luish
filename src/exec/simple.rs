@@ -86,7 +86,7 @@ impl Shell {
     pub fn run_simple(&mut self, cmd: &SimpleCommand, no_fork: bool) -> ExecResult {
         self.lineno = cmd.lineno;
         self.subst_status = None;
-        let argv = self.expand_words(&cmd.words)?;
+        let argv = self.expand_command_words(&cmd.words)?;
         let special = argv
             .first()
             .is_some_and(|a| matches!(builtins::lookup(a), Some((_, true))));

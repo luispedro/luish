@@ -492,7 +492,7 @@ impl Parser {
 }
 
 /// Splits `NAME=value` into an assignment, if the word has that form.
-fn split_assignment(w: &Word) -> Option<Assign> {
+pub(crate) fn split_assignment(w: &Word) -> Option<Assign> {
     let Some(WordPart::Literal(s)) = w.0.first() else {
         return None;
     };

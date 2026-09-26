@@ -42,7 +42,7 @@ fn class(name: &[u8]) -> Option<fn(u8) -> bool> {
 /// closing bracket (then `[` is literal).
 fn parse_set(p: &[XChar], mut i: usize) -> Option<(Pat, usize)> {
     let mut negated = false;
-    if i < p.len() && !p[i].quoted && (p[i].b == b'!' || p[i].b == b'^') {
+    if i < p.len() && !p[i].quoted && p[i].b == b'!' {
         negated = true;
         i += 1;
     }

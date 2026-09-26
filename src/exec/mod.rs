@@ -105,7 +105,18 @@ impl Shell {
             return Ok((status == 0) as i32);
         }
         self.last_status = status;
-        self.check_errexit(status)?;
+        // As in dash, only simple commands, subshells and pipelines exit on
+        // their own status; a compound command's status comes from commands
+        // inside it that have been checked already (or were exempt, as on
+        // the left of `&&`).
+        if p.cmds.len() > 1
+            || matches!(
+                p.cmds[0],
+                Command::Simple(_) | Command::Compound(CompoundCommand::Subshell(_), _)
+            )
+        {
+            self.check_errexit(status)?;
+        }
         Ok(status)
     }
 
@@ -196,7 +207,10 @@ impl Shell {
                 }
                 let saved = match self.redirect(redirs, true) {
                     Ok(s) => s,
-                    Err(RedirError::Open(n)) => return Ok(n),
+                    Err(RedirError::Open(n)) => {
+                        self.check_errexit(n)?;
+                        return Ok(n);
+                    }
                     Err(e) => return Err(e.into()),
                 };
                 // As in dash, redirections rule out exec'ing the last command.
