@@ -6,33 +6,40 @@
 //! `<<` (its tabs were already stripped); the layout is one command per
 //! line, indented by four spaces.
 
+use std::cell::Cell;
+
 use crate::ast::*;
 use crate::lexer::{AliasMap, is_name_char};
 
 /// The definition of a function, ending with a newline. A command name that
 /// is one of `aliases` is quoted, so that reading the text back doesn't
-/// expand it again.
-pub fn function(name: &[u8], body: &FunctionBody, aliases: &AliasMap) -> Vec<u8> {
-    let mut p = Printer::new(0, aliases);
+/// expand it again. Also returns whether the text has a glob qualifier
+/// (which reads back only under `setopt bareglobqual`).
+pub fn function(name: &[u8], body: &FunctionBody, aliases: &AliasMap) -> (Vec<u8>, bool) {
+    let globqual = Cell::new(false);
+    let mut p = Printer::new(0, aliases, &globqual);
     p.function(name, body);
-    p.finish()
+    (p.finish(), globqual.get())
 }
 
 struct Printer<'a> {
     out: Vec<u8>,
     indent: usize,
     aliases: &'a AliasMap,
+    /// Set when a glob qualifier is written.
+    globqual: &'a Cell<bool>,
     /// Here-document bodies (with their delimiters) to write after the
     /// next newline.
     heredocs: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
 impl<'a> Printer<'a> {
-    fn new(indent: usize, aliases: &'a AliasMap) -> Printer<'a> {
+    fn new(indent: usize, aliases: &'a AliasMap, globqual: &'a Cell<bool>) -> Printer<'a> {
         Printer {
             out: Vec::new(),
             indent,
             aliases,
+            globqual,
             heredocs: Vec::new(),
         }
     }
@@ -207,12 +214,12 @@ impl<'a> Printer<'a> {
                     (true, [WordPart::Literal(s)]) => s.clone(),
                     (true, []) => Vec::new(),
                     (_, [WordPart::DoubleQuoted(parts)]) => {
-                        let mut p = Printer::new(0, self.aliases);
+                        let mut p = Printer::new(0, self.aliases, self.globqual);
                         p.parts(parts);
                         p.finish_with(false)
                     }
                     _ => {
-                        let mut p = Printer::new(0, self.aliases);
+                        let mut p = Printer::new(0, self.aliases, self.globqual);
                         p.word(&hd.body);
                         p.finish_with(false)
                     }
@@ -357,6 +364,12 @@ impl<'a> Printer<'a> {
                     self.word(w);
                     self.w(b"))");
                 }
+                WordPart::GlobQual(q) => {
+                    self.globqual.set(true);
+                    self.w(b"(");
+                    self.w(q);
+                    self.w(b")");
+                }
             }
         }
     }
@@ -411,7 +424,7 @@ impl<'a> Printer<'a> {
     }
 
     fn cmdsubst(&mut self, list: &List) {
-        let mut p = Printer::new(self.indent + 1, self.aliases);
+        let mut p = Printer::new(self.indent + 1, self.aliases, self.globqual);
         p.seq(list, false);
         let text = p.finish_with(false);
         if !text.contains(&b'\n') {
@@ -465,7 +478,7 @@ mod tests {
         let Command::FunctionDef { name, body } = &list[0].list.first.cmds[0] else {
             panic!("not a function: {}", String::from_utf8_lossy(src));
         };
-        String::from_utf8(function(name, body, aliases)).unwrap()
+        String::from_utf8(function(name, body, aliases).0).unwrap()
     }
 
     /// Clears line numbers, which differ between the original and the

@@ -252,6 +252,7 @@ impl Shell {
         let mut status = 0;
         loop {
             let aliases = self.aliases.clone();
+            p.bareglobqual = self.opt(Opt::Bareglobqual);
             match p.parse_next(&aliases) {
                 Ok(Some(list)) => {
                     if !self.opt(Opt::Noexec) || self.interactive {
@@ -357,6 +358,7 @@ impl Shell {
         loop {
             let start = p.consumed();
             let aliases = self.aliases.clone();
+            p.bareglobqual = self.opt(Opt::Bareglobqual);
             match p.parse_next(&aliases) {
                 Ok(Some(list)) => {
                     if self.opt(Opt::Verbose) {
@@ -386,6 +388,7 @@ impl Shell {
         loop {
             let mut p = Parser::new(buf.clone(), lineno, eof);
             let aliases = self.aliases.clone();
+            p.bareglobqual = self.opt(Opt::Bareglobqual);
             match p.parse_next(&aliases) {
                 Ok(Some(list)) => {
                     let used = p.consumed().min(buf.len());

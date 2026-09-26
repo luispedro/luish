@@ -67,6 +67,12 @@ pub fn getegid() -> u32 {
     unsafe { libc::getegid() }
 }
 
+/// Seconds since the epoch.
+pub fn now() -> i64 {
+    // SAFETY: a null argument is allowed.
+    unsafe { libc::time(std::ptr::null_mut()) as i64 }
+}
+
 pub fn getcwd() -> Option<Vec<u8>> {
     use std::os::unix::ffi::OsStrExt;
     std::env::current_dir().ok().map(|p| p.as_os_str().as_bytes().to_vec())
@@ -324,6 +330,26 @@ pub fn user_names() -> Vec<Vec<u8>> {
     out
 }
 
+/// The user id of a user name.
+pub fn user_id(user: &[u8]) -> Option<u32> {
+    let c = cstr(user);
+    // SAFETY: getpwnam returns a pointer to static storage or null.
+    unsafe {
+        let pw = libc::getpwnam(c.as_ptr());
+        (!pw.is_null()).then(|| (*pw).pw_uid)
+    }
+}
+
+/// The group id of a group name.
+pub fn group_id(group: &[u8]) -> Option<u32> {
+    let c = cstr(group);
+    // SAFETY: getgrnam returns a pointer to static storage or null.
+    unsafe {
+        let gr = libc::getgrnam(c.as_ptr());
+        (!gr.is_null()).then(|| (*gr).gr_gid)
+    }
+}
+
 pub fn own_home_dir() -> Option<Vec<u8>> {
     // SAFETY: getpwuid returns a pointer to static storage or null.
     unsafe {
@@ -435,6 +461,30 @@ pub fn read_dir(path: &[u8]) -> Option<Vec<Vec<u8>>> {
             }
             let name = CStr::from_ptr((*e).d_name.as_ptr()).to_bytes();
             out.push(name.to_vec());
+        }
+        libc::closedir(d);
+        Some(out)
+    }
+}
+
+/// The entries of a directory with their `d_type` (`DT_UNKNOWN` if the
+/// file system doesn't give it), including `.` and `..`.
+pub fn read_dir_typed(path: &[u8]) -> Option<Vec<(Vec<u8>, u8)>> {
+    let c = cstr(if path.is_empty() { b"." } else { path });
+    // SAFETY: opendir/readdir/closedir on a valid path.
+    unsafe {
+        let d = libc::opendir(c.as_ptr());
+        if d.is_null() {
+            return None;
+        }
+        let mut out = Vec::new();
+        loop {
+            let e = libc::readdir(d);
+            if e.is_null() {
+                break;
+            }
+            let name = CStr::from_ptr((*e).d_name.as_ptr()).to_bytes();
+            out.push((name.to_vec(), (*e).d_type));
         }
         libc::closedir(d);
         Some(out)

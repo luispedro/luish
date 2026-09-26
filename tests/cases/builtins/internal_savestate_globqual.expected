@@ -1,0 +1,12 @@
+*(/)
+bareglobqual
+unsetopt bareglobqual
+setopt bareglobqual
+f() {
+unsetopt bareglobqual
+d
+file internal_savestate_globqual.sh state
+bareglobqual
+setopt bareglobqual
+f() {
+g() {

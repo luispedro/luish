@@ -139,6 +139,27 @@ pass**.
 - Pathname expansion is sorted in byte order and needs an explicit leading
   `.`. A `.*` pattern matches `.` and `..` (as in dash). A lone `[` is not a
   pattern.
+- `setopt globstar` (`glob.rs`): a `**` component followed by `/` matches
+  any number of directories, as in zsh, without entering hidden
+  directories or following links (`***/` follows them, and stops at a link
+  to a directory it is already in; zsh loops until the path is too long).
+  Directory types come from `d_type` where the file system has it. Tests:
+  `expand/globstar.sh` (zsh), `expand/globstar_off.sh`,
+  `expand/globstar_loop.sh`.
+- `setopt bareglobqual` (`qual.rs`): zsh's glob qualifiers. The lexer reads
+  a trailing `(...)` of a word as a `WordPart::GlobQual`, the only place
+  where it depends on an option; it is kept as text and recognized when
+  a field ends in an unquoted `(...)` at glob time, so that, as in zsh's
+  `sh` emulation, it can also come from an expansion. Supported: the file
+  type, permission, owner, device, link count, size and time tests, `^`,
+  `-`, `,`, `N`, `D`, `n`, `o`/`O` (`n L l a m c d N`), subscripts
+  (1-based, as in native zsh), `M`, `T`, and the modifiers `:h :t :r :e :u
+  :l`. Errors have status 1, as in zsh. `savestate` sets the option before
+  the functions, and wraps a function with a qualifier in `set -o`/`+o`
+  when it is off. Tests: `expand/glob_qualifiers.sh` and
+  `expand/glob_qualifier_errors.sh` (zsh, with `+o ksharrays` so that
+  subscripts count from 1), `builtins/internal_savestate_globqual.sh`,
+  and unit tests in `qual.rs` and `parser.rs`.
 - The pattern matcher handles `*`, `?`, bracket expressions, `!`
   negation (as in dash, `^` is an ordinary character), ranges and
   `[:class:]`. Quoted characters are always literal.
@@ -382,8 +403,8 @@ pass**.
 - `set -o` / `set +o` output matches dash, except that the last option is
   `hashall` rather than dash's `debug` (see DEVIATIONS.md).
 - luish's own options (`EXTENDED` in `options.rs`, all off by default:
-  `promptpercent`) have no letter and are not in
-  `set -o` or `$-`, so `set` stays as in dash. They are set with `setopt`
+  `promptpercent`, `globstar` and `bareglobqual`) have no letter and are
+  not in `set -o` or `$-`, so `set` stays as in dash. They are set with `setopt`
   and `unsetopt` (not POSIX; as in zsh), which also set dash's options.
   Names are as in zsh: case and `_` don't matter, and a `no` prefix is
   added or removed to invert an option (`unsetopt glob` is `set -f`).
@@ -689,6 +710,10 @@ notes how to rerun them):
   `SHLVL`, so `%L` shows the inherited value.
 - Glob results are sorted in byte order; locale collation is not
   implemented.
+- Glob qualifiers lack zsh's `e`, `+`, `f`, `F`, `Y` and `P`, `(#q...)`,
+  most modifiers, and `EXTENDED_GLOB` patterns. The highlighter shows a
+  qualifier's parentheses as operators, and completion doesn't know
+  about `**/` or qualifiers.
 - Fds saved at 10 or above could collide with a user redirection to fd 10+
   in the same command.
 - `command local x=1` keeps the variable in the function; in dash it is

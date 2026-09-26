@@ -220,6 +220,11 @@ fn push_part(out: &mut Vec<u8>, p: &WordPart) {
             push_word(out, w);
             out.extend_from_slice(b"))");
         }
+        WordPart::GlobQual(q) => {
+            out.push(b'(');
+            out.extend_from_slice(q);
+            out.push(b')');
+        }
     }
 }
 

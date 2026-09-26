@@ -1120,6 +1120,10 @@ from Stage 1, so that Stage 1 doesn't make them harder.
   and behave exactly as before and run just as fast. The lexer and parser
   should keep one clear place to check the option, rather than scattering
   checks through the code.
+- **zsh's extended globbing** is done: `**/` and glob qualifiers, each
+  behind its own option (`setopt globstar`, `setopt bareglobqual`), named
+  after bash's and zsh's options rather than one `luish-extensions`
+  switch. The lexer checks `Parser::bareglobqual` in one place.
 - **Terminal features**: semantic prompt markers (OSC 133) and working
   directory reporting (OSC 7) are emitted from the REPL around the prompt and
   command output. Unicode width handling and bracketed paste belong to the

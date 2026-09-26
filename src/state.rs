@@ -18,6 +18,9 @@ use crate::{signals, sys, unparse};
 /// settings to restore.
 const MODE_OPTIONS: &[Opt] = &[Opt::Interactive, Opt::Stdin, Opt::Monitor, Opt::Noexec];
 
+/// Options that change how functions are parsed: restored before them.
+const SYNTAX_OPTIONS: &[Opt] = &[Opt::Bareglobqual];
+
 /// Variables that belong to the process.
 const PROCESS_VARS: &[&[u8]] = &[b"PPID", b"LINENO"];
 
@@ -26,8 +29,9 @@ const PROCESS_VARS: &[&[u8]] = &[b"PPID", b"LINENO"];
 /// before aliases (which would otherwise be expanded in their bodies;
 /// command names that are aliases are also quoted, for a shell that has
 /// them already), and options come last (so that `set -e`, `-u`, `-x` or
-/// `-a` don't affect the rest). Plugins are loaded after everything that
-/// their top level might use.
+/// `-a` don't affect the rest), except those that change how function
+/// bodies are parsed, which come just before the functions. Plugins are
+/// loaded after everything that their top level might use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
     Dir,
@@ -36,6 +40,7 @@ pub enum Kind {
     Var,
     Readonly,
     Trap,
+    SyntaxOption,
     Function,
     Alias,
     Plugin,
@@ -121,6 +126,20 @@ impl Shell {
             }
         }
 
+        let option = |o: &Opt, name: &str| {
+            let sign = if self.options.get(*o) { '-' } else { '+' };
+            format!("set {sign}o {name}\n").into_bytes()
+        };
+        let extended = |o: &Opt, name: &str| {
+            let cmd = if self.options.get(*o) { "setopt" } else { "unsetopt" };
+            format!("{cmd} {name}\n").into_bytes()
+        };
+        for (o, name) in EXTENDED {
+            if SYNTAX_OPTIONS.contains(o) {
+                add(Kind::SyntaxOption, name.as_bytes(), extended(o, name));
+            }
+        }
+
         let mut funcs: Vec<_> = self.functions.iter().collect();
         funcs.sort_by(|a, b| a.0.cmp(b.0));
         for (name, body) in funcs {
@@ -132,7 +151,17 @@ impl Shell {
                 t.extend(single_quote(name));
                 t.extend_from_slice(b" 2>/dev/null\n");
             }
-            t.extend(unparse::function(name, body, &self.aliases));
+            let (text, globqual) = unparse::function(name, body, &self.aliases);
+            // A function with a glob qualifier, defined before the option
+            // was turned off, needs it to be read back.
+            let wrap = globqual && !self.opt(Opt::Bareglobqual);
+            if wrap {
+                t.extend_from_slice(b"setopt bareglobqual\n");
+            }
+            t.extend(text);
+            if wrap {
+                t.extend_from_slice(b"unsetopt bareglobqual\n");
+            }
             add(Kind::Function, name, t);
         }
 
@@ -162,17 +191,13 @@ impl Shell {
 
         for (o, _, name) in OPTIONS {
             if !MODE_OPTIONS.contains(o) {
-                let sign = if self.options.get(*o) { '-' } else { '+' };
-                add(
-                    Kind::Option,
-                    name.as_bytes(),
-                    format!("set {sign}o {name}\n").into_bytes(),
-                );
+                add(Kind::Option, name.as_bytes(), option(o, name));
             }
         }
         for (o, name) in EXTENDED {
-            let cmd = if self.options.get(*o) { "setopt" } else { "unsetopt" };
-            add(Kind::Option, name.as_bytes(), format!("{cmd} {name}\n").into_bytes());
+            if !SYNTAX_OPTIONS.contains(o) {
+                add(Kind::Option, name.as_bytes(), extended(o, name));
+            }
         }
         out
     }
@@ -204,7 +229,7 @@ pub fn difference(before: &[Entry], after: &[Entry]) -> Vec<u8> {
             Kind::Trap => out.extend([b"trap - ".to_vec(), e.name.clone()].concat()),
             Kind::Plugin => out.extend([b"__luish_internal plugin unload ".to_vec(), quoted()].concat()),
             Kind::DirStack => out.extend_from_slice(b"command dirs -c"),
-            Kind::Dir | Kind::Umask | Kind::Readonly | Kind::Option => continue,
+            Kind::Dir | Kind::Umask | Kind::Readonly | Kind::SyntaxOption | Kind::Option => continue,
         }
         out.push(b'\n');
     }

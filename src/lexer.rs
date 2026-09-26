@@ -129,6 +129,9 @@ pub struct Parser {
     pub(crate) splice_delta: isize,
     /// `parse_next` found the start of a command (not just blank lines).
     pub started: bool,
+    /// `setopt bareglobqual`: a trailing `(...)` in a word is a glob
+    /// qualifier. This is the only place the lexer depends on an option.
+    pub bareglobqual: bool,
 }
 
 pub fn is_name_start(c: u8) -> bool {
@@ -161,6 +164,7 @@ impl Parser {
             alias_blank_end: None,
             splice_delta: 0,
             started: false,
+            bareglobqual: false,
         }
     }
 
@@ -332,15 +336,38 @@ impl Parser {
     fn read_word(&mut self) -> PResult<Word> {
         let mut parts = Vec::new();
         let mut lit = Vec::new();
+        let mut qual = None;
         while let Some(c) = self.at(0) {
             match c {
+                b'(' if self.bareglobqual && !(parts.is_empty() && lit.is_empty()) => {
+                    qual = self.read_glob_qualifier();
+                    break;
+                }
                 b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'<' | b'>' | b'(' | b')' => break,
                 _ => self.read_word_char(c, &mut parts, &mut lit, Ctx::Unquoted)?,
             }
         }
         flush(&mut parts, &mut lit);
         mark_leading_tilde(&mut parts);
+        parts.extend(qual.map(WordPart::GlobQual));
         Ok(Word(parts))
+    }
+
+    /// At a `(` inside a word: reads a glob qualifier, `(...)` at the end of
+    /// the word with no blanks, quotes or operators inside. Anything else,
+    /// including the `()` of a function definition, is left alone.
+    fn read_glob_qualifier(&mut self) -> Option<Vec<u8>> {
+        let rest = &self.src[self.pos + 1..];
+        let len = rest.iter().position(|c| b"() \t\n;&|<>'\"\\$`".contains(c))?;
+        let ends_word = |c: Option<&u8>| {
+            c.is_none_or(|c| matches!(c, b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'<' | b'>' | b')'))
+        };
+        if len == 0 || rest[len] != b')' || !ends_word(rest.get(len + 1)) {
+            return None;
+        }
+        let q = rest[..len].to_vec();
+        self.pos += len + 2;
+        Some(q)
     }
 
     /// Handles one (possibly multi-byte) element of an unquoted word, or of
@@ -756,6 +783,7 @@ impl Parser {
         }
         let mut sub = Parser::new(text, lineno, true);
         sub.aliases = self.aliases.clone();
+        sub.bareglobqual = self.bareglobqual;
         let list = sub.parse_all()?;
         Ok(WordPart::CmdSubst(Rc::new(list)))
     }
@@ -814,6 +842,7 @@ impl Parser {
             } else {
                 let mut sub = Parser::new(body, lineno, true);
                 sub.aliases = self.aliases.clone();
+                sub.bareglobqual = self.bareglobqual;
                 sub.read_heredoc_word()?
             };
             *hd.body.borrow_mut() = HereDocBody {

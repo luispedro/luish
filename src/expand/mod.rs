@@ -4,6 +4,7 @@
 pub mod arith;
 pub mod glob;
 pub mod pattern;
+pub mod qual;
 pub mod split;
 
 use crate::ast::*;
@@ -11,7 +12,7 @@ use crate::options::Opt;
 use crate::shell::{Flow, Shell};
 use crate::sys;
 use pattern::{Trim, has_meta};
-use split::{Fields, XField, bytes};
+use split::{Fields, XChar, XField, bytes};
 
 type EResult<T> = Result<T, Flow>;
 
@@ -80,20 +81,61 @@ impl Shell {
         let mut f = Fields::new(Some(self.ifs()));
         self.expand_parts(&w.0, false, false, &mut f)?;
         for field in f.into_fields() {
-            self.glob_field(field, out);
+            self.glob_field(field, out)?;
         }
         Ok(())
     }
 
-    fn glob_field(&self, field: XField, out: &mut Vec<Vec<u8>>) {
-        if !self.opt(Opt::Noglob) && has_meta(&field) {
-            let matches = glob::glob(&field);
+    fn glob_field(&mut self, field: XField, out: &mut Vec<Vec<u8>>) -> EResult<()> {
+        if self.opt(Opt::Noglob) {
+            out.push(bytes(&field));
+            return Ok(());
+        }
+        if self.opt(Opt::Bareglobqual)
+            && let Some(open) = qualifier_start(&field)
+        {
+            return self.glob_qualified(field, open, out);
+        }
+        if has_meta(&field) {
+            let opts = glob::GlobOpts {
+                globstar: self.opt(Opt::Globstar),
+                dots: false,
+            };
+            let matches = glob::glob(&field, opts);
             if !matches.is_empty() {
                 out.extend(matches);
-                return;
+                return Ok(());
             }
         }
         out.push(bytes(&field));
+        Ok(())
+    }
+
+    /// A field ending in a glob qualifier, `pattern(q)` with the `(` at
+    /// `open`: the pattern (even without `*`, `?` or `[`) is expanded, and
+    /// the qualifier selects and changes the matches. Without matches the
+    /// field is left as it was, unless the qualifier has `N`. As in zsh,
+    /// the qualifier may come from an expansion.
+    fn glob_qualified(&mut self, field: XField, open: usize, out: &mut Vec<Vec<u8>>) -> EResult<()> {
+        let q = bytes(&field[open + 1..field.len() - 1]);
+        let qual = match qual::Qualifiers::parse(&q) {
+            Ok(qual) => qual,
+            Err(msg) => {
+                // Status 1, as in zsh.
+                self.error(msg);
+                return Err(Flow::Error(1));
+            }
+        };
+        let opts = glob::GlobOpts {
+            globstar: self.opt(Opt::Globstar),
+            dots: qual.dots,
+        };
+        match qual.apply(glob::glob(&field[..open], opts)) {
+            Some(matches) => out.extend(matches),
+            None if !qual.null => out.push(bytes(&field)),
+            None => {}
+        }
+        Ok(())
     }
 
     /// Expansion without field splitting or globbing (assignments,
@@ -138,6 +180,13 @@ impl Shell {
             }
             WordPart::SingleQuoted(s) => f.push_quoted(s),
             WordPart::Escaped(c) => f.push_quoted(&[*c]),
+            // Recognized when the field is globbed (`glob_qualified`);
+            // elsewhere it is just text.
+            WordPart::GlobQual(q) => {
+                f.push_literal(b"(");
+                f.push_literal(q);
+                f.push_literal(b")");
+            }
             WordPart::DoubleQuoted(inner) => {
                 // A quoted word is a field even when it expands to nothing,
                 // except a lone "$@" with no positional parameters.
@@ -422,6 +471,17 @@ impl Shell {
         }
         Ok(out)
     }
+}
+
+/// Where the glob qualifier of a field starts: the field ends in an
+/// unquoted `(...)` that has something before it and no parenthesis inside.
+fn qualifier_start(field: &[XChar]) -> Option<usize> {
+    let (last, rest) = field.split_last()?;
+    if last.quoted || last.b != b')' {
+        return None;
+    }
+    let open = rest.iter().rposition(|c| !c.quoted && matches!(c.b, b'(' | b')'))?;
+    (open > 0 && rest[open].b == b'(').then_some(open)
 }
 
 /// Whether the command whose words have been expanded so far into `argv`

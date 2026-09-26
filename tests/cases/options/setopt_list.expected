@@ -3,8 +3,10 @@ nounset
 promptpercent
 ---
 allexport
+bareglobqual
 emacs
 errexit
+globstar
 hashall
 ignoreeof
 interactive

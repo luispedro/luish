@@ -22,6 +22,8 @@ pub enum Opt {
     Privileged,
     // luish's own options, in `EXTENDED`
     PromptPercent,
+    Globstar,
+    Bareglobqual,
 }
 
 /// Option table: (option, letter, long name), in dash's order. `$-` lists
@@ -50,7 +52,11 @@ pub const OPTIONS: &[(Opt, Option<u8>, &str)] = &[
 /// luish's own options, beyond POSIX and dash: (option, name). They are set
 /// only with `setopt` and `unsetopt`, as in zsh, so that `set -o` and `$-`
 /// stay as in dash. All are off by default.
-pub const EXTENDED: &[(Opt, &str)] = &[(Opt::PromptPercent, "promptpercent")];
+pub const EXTENDED: &[(Opt, &str)] = &[
+    (Opt::PromptPercent, "promptpercent"),
+    (Opt::Globstar, "globstar"),
+    (Opt::Bareglobqual, "bareglobqual"),
+];
 
 #[derive(Debug, Default, Clone)]
 pub struct Options {

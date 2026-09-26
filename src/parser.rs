@@ -601,6 +601,36 @@ mod tests {
     }
 
     #[test]
+    fn glob_qualifiers() {
+        let qual = |s: &str| {
+            let mut p = Parser::new(s.as_bytes().to_vec(), 1, true);
+            p.bareglobqual = true;
+            p.parse_all()
+        };
+        let l = qual("echo *(/) ~/x(N) \"a\"(.) $(echo *(@))\n").unwrap();
+        let s = simple(&l);
+        let last = |i: usize| s.words[i].0.last().unwrap().clone();
+        assert_eq!(last(1), WordPart::GlobQual(b"/".to_vec()));
+        assert_eq!(last(2), WordPart::GlobQual(b"N".to_vec()));
+        assert!(matches!(s.words[2].0[0], WordPart::Tilde(_)));
+        assert_eq!(last(3), WordPart::GlobQual(b".".to_vec()));
+        // Function definitions and subshells are unchanged.
+        for src in [
+            "f() { :; }\n",
+            "f( ) { :; }\n",
+            "(echo *)\n",
+            "case x in (*) :;; esac\n",
+        ] {
+            assert_eq!(qual(src).unwrap(), parse(src), "{src}");
+        }
+        // Not at the end of the word, or with a blank inside: an error.
+        assert!(qual("echo *(/)x\n").is_err());
+        assert!(qual("echo *(/ )\n").is_err());
+        // Without the option, as in POSIX.
+        assert!(parse_err("echo *(/)\n").msg.contains("\"(\" unexpected"));
+    }
+
+    #[test]
     fn heredocs_on_one_line() {
         let l = parse("cat <<A; cat <<'B'\na $x\nA\nb $x\nB\necho done\n");
         assert_eq!(l.len(), 3);

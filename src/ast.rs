@@ -107,6 +107,9 @@ pub enum WordPart {
     CmdSubst(Rc<List>),
     /// `$((...))`: the text is expanded first, then evaluated.
     Arith(Word),
+    /// The text inside a trailing `(...)` glob qualifier (only lexed under
+    /// `setopt bareglobqual`). Always the last part of a word.
+    GlobQual(Vec<u8>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
