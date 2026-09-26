@@ -304,7 +304,7 @@ impl Shell {
                 let _ = sys::dup2(w, 1);
                 sys::close(w);
             }
-            let res = self.run_list(list);
+            let res = self.run_list_exit(list, true);
             self.child_exit(res);
         }
         sys::close(w);

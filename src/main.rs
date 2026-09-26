@@ -2,6 +2,7 @@
 
 mod ast;
 mod builtins;
+mod cmdtext;
 mod exec;
 mod expand;
 mod input;
@@ -42,6 +43,7 @@ fn main() {
     let mut command_mode = false;
     let mut stdin_mode = false;
     let mut force_interactive = false;
+    let mut monitor_given = false;
     let mut i = 1;
     while i < args.len() {
         let a = &args[i];
@@ -72,12 +74,18 @@ fn main() {
                         usage_error(&sh, "-o requires an argument");
                     };
                     match options::Options::by_name(name) {
-                        Some(o) => sh.options.set(o, on),
+                        Some(o) => {
+                            monitor_given |= o == Opt::Monitor;
+                            sh.options.set(o, on)
+                        }
                         None => usage_error(&sh, &format!("Illegal option -o {}", String::from_utf8_lossy(name))),
                     }
                 }
                 _ => match options::Options::by_letter(c) {
-                    Some(o) => sh.options.set(o, on),
+                    Some(o) => {
+                        monitor_given |= o == Opt::Monitor;
+                        sh.options.set(o, on)
+                    }
                     None => usage_error(&sh, &format!("Illegal option {}{}", a[0] as char, c as char)),
                 },
             }
@@ -95,7 +103,7 @@ fn main() {
             sh.arg0 = a0.clone();
         }
         sh.positional = operands.get(2..).unwrap_or_default().to_vec();
-        input = Input::Whole(Some(cmd.clone()));
+        input = Input::Whole(Some(cmd.clone()), true);
     } else if stdin_mode || operands.is_empty() {
         sh.positional = operands.to_vec();
         stdin_mode = true;
@@ -105,7 +113,7 @@ fn main() {
         sh.arg0 = script.clone();
         sh.positional = operands[1..].to_vec();
         match std::fs::read(OsStr::from_bytes(script)) {
-            Ok(text) => input = Input::Whole(Some(text)),
+            Ok(text) => input = Input::Whole(Some(text), false),
             Err(e) => {
                 sh.lineno = 0;
                 let msg = match e.raw_os_error() {
@@ -126,11 +134,15 @@ fn main() {
         if !sh.opt(Opt::Vi) {
             sh.options.set(Opt::Emacs, true);
         }
+        if !monitor_given {
+            sh.options.set(Opt::Monitor, true);
+        }
         for sig in [libc::SIGINT, libc::SIGQUIT, libc::SIGTERM] {
             if !sh.ignored_on_entry[sig as usize] {
                 signals::set_disposition(sig, sh.default_disposition(sig));
             }
         }
+        sh.set_jobctl(sh.opt(Opt::Monitor));
         if sys::isatty(0) && interactive::init_editor(&sh) {
             input = Input::Editor;
         } else {
@@ -141,6 +153,7 @@ fn main() {
     if stdin_mode {
         sh.options.set(Opt::Stdin, true);
     }
+    sh.set_jobctl(sh.opt(Opt::Monitor));
 
     sh.run_input(&mut input);
     let status = sh.last_status;

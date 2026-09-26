@@ -217,6 +217,7 @@ pub fn set(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         return Ok(print_vars(sh));
     }
     let (rest, force) = parse_set_options(sh, &argv[1..], &argv[0])?;
+    sh.set_jobctl(sh.opt(Opt::Monitor));
     if force || !rest.is_empty() {
         sh.positional = rest.to_vec();
     }

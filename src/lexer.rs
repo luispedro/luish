@@ -170,6 +170,14 @@ impl Parser {
         (self.pos as isize - self.splice_delta) as usize
     }
 
+    /// True if only blanks and newlines are left (comments count as
+    /// remaining input, which is conservative).
+    pub fn at_end(&self) -> bool {
+        self.src[self.pos.min(self.src.len())..]
+            .iter()
+            .all(|c| matches!(c, b' ' | b'\t' | b'\n'))
+    }
+
     pub(crate) fn err<T>(&self, msg: impl Into<String>) -> PResult<T> {
         Err(ParseError {
             msg: msg.into(),

@@ -2,6 +2,7 @@
 
 mod cd;
 mod echo;
+mod jobs;
 mod misc;
 mod printf;
 mod read;
@@ -35,14 +36,16 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     // regular built-ins
     (b"[", test::bracket, false),
     (b"alias", misc::alias, false),
+    (b"bg", jobs::fg, false),
     (b"cd", cd::cd, false),
     (b"command", misc::command, false),
     (b"echo", echo::echo, false),
     (b"false", false_, false),
+    (b"fg", jobs::fg, false),
     (b"getopts", read::getopts, false),
     (b"hash", misc::hash, false),
-    (b"jobs", misc::jobs, false),
-    (b"kill", trap::kill, false),
+    (b"jobs", jobs::jobs, false),
+    (b"kill", jobs::kill, false),
     (b"local", vars::local, false),
     (b"printf", printf::printf, false),
     (b"pwd", cd::pwd, false),
@@ -53,7 +56,7 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"ulimit", misc::ulimit, false),
     (b"umask", misc::umask, false),
     (b"unalias", misc::unalias, false),
-    (b"wait", trap::wait, false),
+    (b"wait", jobs::wait, false),
 ];
 
 pub fn lookup(name: &[u8]) -> Option<(BuiltinFn, bool)> {
@@ -156,6 +159,9 @@ fn exit_status_arg(sh: &Shell, argv: &[Vec<u8>]) -> Result<i32, Flow> {
 }
 
 fn exit(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    if sh.stopped_jobs_warning() {
+        return Ok(0);
+    }
     let n = exit_status_arg(sh, argv)?;
     Err(Flow::Exit(n))
 }

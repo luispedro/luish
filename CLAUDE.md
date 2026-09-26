@@ -43,6 +43,12 @@ Most coverage is differential (`tests/compare.rs`): each `tests/cases/**/*.sh` r
 - Each script runs in a fresh temporary directory that is also `$HOME`, with a cleared environment, `LC_ALL=C`, and
   `$SH` set to the shell under test.
 - When fixing a bug, add a case first. Every behaviour listed as done in `STATUS.md` must stay covered.
+- Jobs in cases must be deterministic: either finished (after `wait`) or long-running and killed. `kill $!` on a
+  background pipeline only kills its last process, so use `: | sleep 10`, not `sleep 10 | sleep 10`.
+- The system dash is Debian's, which has patches (e.g. it forks the last command of `sh -c`). Upstream dash
+  source is the reference for intent; `DEVIATIONS.md` records where the two matter.
+- Interactive behaviour (job control, Ctrl-C/Ctrl-Z, terminal modes) is tested on a pty in `tests/interactive.rs`.
+  Steps wait for output or for named processes to be in the terminal's foreground group, never for fixed times.
 
 ## Architecture
 
@@ -66,9 +72,12 @@ state on the `Shell` struct in `shell.rs`.
 - **Command lookup** (`exec/simple.rs`): special built-in, function, regular built-in, then `PATH` (cached). Built-ins
   are a `fn` table in `builtins/mod.rs`, flagged special or regular; the flag decides assignment scope and whether
   errors exit the shell.
-- **Forking**: `no_fork = true` is passed only for a pipeline stage's command (and a `( )` subshell already in a
-  forked child); only then does an external command exec without forking again. Children reset traps and signal
-  dispositions in `exec/fork.rs::child_reset`.
+- **Forking**: all forks go through `exec/fork.rs::fork_child` with a `ForkKind` (a foreground or background job's
+  process, with its process group, or `NoJob` for command substitution), which sets up process groups and the
+  terminal under job control. Children reset traps and signal dispositions in `child_reset`, with signals blocked
+  across the fork when anything is trapped or ignored. An `exit` flag (dash's `EV_EXIT`, `run_list_exit`) marks
+  code after which the process exits (a forked child, the end of `-c`); its last external command then execs
+  without forking (`no_fork` in `run_command`), unless a trap is set.
 - **Redirections** for in-process commands save the original fds at fd ≥ 10 (close-on-exec) and restore them
   afterwards; `exec` without a command makes them permanent.
 - **Expansion** (`expand/`): field splitting happens while the text is built (`split.rs`); `pattern.rs` is the
@@ -76,7 +85,11 @@ state on the `Shell` struct in `shell.rs`.
 - **Signals** are installed without `SA_RESTART` so `wait` gets EINTR. Rust ignores SIGPIPE before `main`, so `main`
   restores the default.
 - **Interactive mode** (`interactive/`) uses rustyline, kept behind its own module so the line editor stays separate
-  from the executor (a Stage 3 SSH mode depends on this). Job control is minimal (`jobs.rs`).
+  from the executor (a Stage 3 SSH mode depends on this).
+- **Jobs** (`jobs.rs`) follow dash's model: numbered slots plus a "current job" order, finished jobs kept until
+  reported. Without job control only background jobs are recorded; foreground commands are waited for directly.
+  With job control (`Shell::jobctl` holds the terminal) every job is recorded while it runs and waited for with
+  `wait_job`. Job text comes from the AST via `cmdtext.rs`.
 
 ## Conventions
 

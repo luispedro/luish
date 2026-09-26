@@ -515,21 +515,27 @@ subshells and command substitutions, and `kill -TERM $$` running a trap.
     and the child call `setpgid(child, pgid)` to avoid a race. The first
     process's pid is the pgid.
   - For a foreground job, call `tcsetpgrp(tty, job_pgid)`, wait with
-    `WUNTRACED`, then give the terminal back to the shell and restore the saved
-    terminal modes (`tcgetattr` / `tcsetattr`).
+    `WUNTRACED`, then give the terminal back to the shell. If the job stopped
+    or died from a signal, restore the shell's saved terminal modes
+    (`tcgetattr` / `tcsetattr`); otherwise keep the job's modes, so that
+    `stty` works (as bash does).
   - Stopped jobs are recorded and reported, e.g. `[1]+  Stopped  vim`.
     `fg` continues a job with `SIGCONT` and gives it the terminal. `bg`
     continues it in the background.
   - Job specs: `%n`, `%%`, `%+`, `%-`, `%string`, and `%?string`.
   - Before each prompt, reap finished background jobs with
-    `waitpid(-1, WNOHANG)` and report them. `set -b` reports them immediately.
+    `waitpid(-1, WNOHANG)` and report them. (`set -b`, reporting them
+    immediately, is deferred: it would have to interrupt the line editor.)
+  - The `jobs` format, the job text and the job table's lifetime rules follow
+    dash exactly (dash's `showjob`, `cmdtxt`, `makejob`/`freejob`).
   - On exit, warn once if there are stopped jobs.
 - `fc`: `-l` lists history, `-e editor` edits and re-runs, `-s` substitutes
   and re-runs.
 
 **Done when:** manual checks pass (`vim`, then Ctrl-Z, `fg`, `sleep 100 &`,
 `jobs`, `kill %1`, and Ctrl-C at the prompt and during a pipeline), and pty
-tests pass using `expectrl` or `rexpect`.
+tests pass (`tests/interactive.rs`: a small pty harness on `libc` rather than
+`expectrl` or `rexpect`).
 
 ### Phase 11 — Plugin system (Stage 2, 5–7 days)
 
@@ -689,7 +695,7 @@ exact control.
 | Differential tests | `tests/compare.rs` | Script output and status compared with `dash` (and `bash --posix` where useful) |
 | Expected-output tests | `*.sh` + `*.expected` | Cases where dash's behaviour is wrong or luish deliberately differs |
 | Conformance | Ported suites (Phase 12) | Coverage of the spec |
-| Interactive | `expectrl` / `rexpect` | Prompts, line editing, job control, Ctrl-C and Ctrl-Z |
+| Interactive | pty harness in `tests/interactive.rs` | Prompts, line editing, job control, Ctrl-C and Ctrl-Z |
 | Fuzzing | `cargo-fuzz` | No panics in the lexer, parser, arithmetic, or pattern matcher; a round-trip property that pretty-printing then re-parsing an AST gives the same AST |
 | Plugins | `cargo test --features python` | API behaviour, redirection of plugin output, fork safety, exception handling |
 | Performance | `hyperfine` in CI (non-blocking) | Catch startup and loop regressions |
@@ -802,7 +808,7 @@ run on the remote host.
 |---|---|
 | POSIX ambiguities and differences between shells | Treat dash as the reference. Record deliberate differences in `tests/cases/**/*.expected` and in `DEVIATIONS.md` |
 | Getting `set -e` wrong | Implement it with a single suppression counter (§5 Phase 9), backed by a dedicated test file |
-| Terminal and process-group races in job control | Call `setpgid` in both parent and child. Do all terminal handover through `jobs.rs` |
+| Terminal and process-group races in job control | Call `setpgid` in both parent and child. Block signals across `fork` until the child has reset its dispositions. Do all terminal handover through `jobs.rs` |
 | Python and `fork` interacting badly | The rules in §6.4, plus a warning when plugins have started threads |
 | Non-UTF-8 data | Use `Vec<u8>` everywhere in the core. Convert only at the Python boundary, using `surrogateescape` |
 | Scope creep into later stages | Build no Stage 2 or 3 features until Stage 1 is usable (M4). Keep extensions behind a `set -o luish-extensions` (or similar) option |

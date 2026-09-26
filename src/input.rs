@@ -6,8 +6,9 @@ use crate::shell::Shell;
 use crate::sys;
 
 pub enum Input {
-    /// The whole program text (`-c`, script files).
-    Whole(Option<Vec<u8>>),
+    /// The whole program text: of `-c` (when the flag is true, which lets
+    /// the last command replace the shell) or of a script file.
+    Whole(Option<Vec<u8>>, bool),
     /// Read lines from a file descriptor (stdin), never reading past the
     /// end of the current line so that commands can read the rest.
     Fd { fd: i32, seekable: bool, prompt: bool },
@@ -28,16 +29,16 @@ impl Input {
         Input::Fd { fd, seekable, prompt }
     }
 
-    pub fn whole_text(&mut self) -> Option<Vec<u8>> {
+    pub fn whole_text(&mut self) -> Option<(Vec<u8>, bool)> {
         match self {
-            Input::Whole(t) => Some(t.take().unwrap_or_default()),
+            Input::Whole(t, command) => Some((t.take().unwrap_or_default(), *command)),
             _ => None,
         }
     }
 
     pub fn read_line(&mut self, sh: &mut Shell, continuation: bool) -> Line {
         match self {
-            Input::Whole(_) => Line::Eof,
+            Input::Whole(..) => Line::Eof,
             Input::Fd { fd, seekable, prompt } => {
                 if *prompt {
                     let p = interactive::prompt(sh, continuation);

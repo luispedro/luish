@@ -168,6 +168,7 @@ pub fn fork() -> Result<i32, i32> {
     if pid < 0 { Err(errno()) } else { Ok(pid) }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WaitStatus {
     Exited(i32),
     Signaled(i32, bool),
@@ -296,5 +297,87 @@ pub fn read_dir(path: &[u8]) -> Option<Vec<Vec<u8>>> {
         }
         libc::closedir(d);
         Some(out)
+    }
+}
+
+pub fn getpid() -> i32 {
+    // SAFETY: always succeeds.
+    unsafe { libc::getpid() }
+}
+
+pub fn getpgrp() -> i32 {
+    // SAFETY: always succeeds.
+    unsafe { libc::getpgrp() }
+}
+
+pub fn setpgid(pid: i32, pgid: i32) -> Result<(), i32> {
+    // SAFETY: plain setpgid.
+    if unsafe { libc::setpgid(pid, pgid) } < 0 {
+        Err(errno())
+    } else {
+        Ok(())
+    }
+}
+
+pub fn tcgetpgrp(fd: i32) -> Result<i32, i32> {
+    // SAFETY: plain tcgetpgrp.
+    let r = unsafe { libc::tcgetpgrp(fd) };
+    if r < 0 { Err(errno()) } else { Ok(r) }
+}
+
+/// `tcsetpgrp(3)`, with all signals blocked so that it can't be interrupted
+/// (as dash does).
+pub fn tcsetpgrp(fd: i32, pgid: i32) -> Result<(), i32> {
+    // SAFETY: blocking and restoring the signal mask around a tcsetpgrp.
+    unsafe {
+        let mut all: libc::sigset_t = std::mem::zeroed();
+        let mut old: libc::sigset_t = std::mem::zeroed();
+        libc::sigfillset(&mut all);
+        libc::sigprocmask(libc::SIG_SETMASK, &all, &mut old);
+        let r = libc::tcsetpgrp(fd, pgid);
+        let e = errno();
+        libc::sigprocmask(libc::SIG_SETMASK, &old, std::ptr::null_mut());
+        if r < 0 { Err(e) } else { Ok(()) }
+    }
+}
+
+pub fn tcgetattr(fd: i32) -> Option<libc::termios> {
+    // SAFETY: valid output buffer.
+    unsafe {
+        let mut t: libc::termios = std::mem::zeroed();
+        (libc::tcgetattr(fd, &mut t) == 0).then_some(t)
+    }
+}
+
+pub fn tcsetattr(fd: i32, t: &libc::termios) {
+    // SAFETY: valid termios.
+    unsafe {
+        libc::tcsetattr(fd, libc::TCSADRAIN, t);
+    }
+}
+
+pub fn raise(sig: i32) {
+    // SAFETY: plain raise.
+    unsafe {
+        libc::raise(sig);
+    }
+}
+
+/// Blocks all signals and returns the previous mask.
+pub fn block_signals() -> libc::sigset_t {
+    // SAFETY: plain sigprocmask with valid sets.
+    unsafe {
+        let mut all: libc::sigset_t = std::mem::zeroed();
+        let mut old: libc::sigset_t = std::mem::zeroed();
+        libc::sigfillset(&mut all);
+        libc::sigprocmask(libc::SIG_SETMASK, &all, &mut old);
+        old
+    }
+}
+
+pub fn set_signal_mask(mask: &libc::sigset_t) {
+    // SAFETY: plain sigprocmask with a valid set.
+    unsafe {
+        libc::sigprocmask(libc::SIG_SETMASK, mask, std::ptr::null_mut());
     }
 }

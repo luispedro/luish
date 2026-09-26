@@ -4,59 +4,63 @@ mod fork;
 pub mod redirect;
 mod simple;
 
-pub use fork::report_signaled;
+pub use fork::{ForkKind, report_signaled, signal_description};
 pub use simple::CommandKind;
 
 use std::rc::Rc;
 
 use crate::ast::*;
+use crate::cmdtext;
+use crate::jobs::Job;
 use crate::options::Opt;
 use crate::shell::{ExecResult, Flow, Shell};
-use crate::signals::{self, Disposition};
 use crate::sys;
 
 impl Shell {
     pub fn run_list(&mut self, list: &List) -> ExecResult {
+        self.run_list_exit(list, false)
+    }
+
+    /// Runs a list. `exit` means that the shell exits right after it (dash's
+    /// `EV_EXIT`), so its last command may replace the shell process.
+    pub fn run_list_exit(&mut self, list: &List, exit: bool) -> ExecResult {
         let mut status = 0;
-        for cc in list {
-            status = self.run_complete(cc)?;
+        for (i, cc) in list.iter().enumerate() {
+            status = self.run_complete(cc, exit && i + 1 == list.len())?;
             self.last_status = status;
             self.run_pending_traps()?;
         }
         Ok(status)
     }
 
-    fn run_complete(&mut self, cc: &CompleteCommand) -> ExecResult {
+    fn run_complete(&mut self, cc: &CompleteCommand, exit: bool) -> ExecResult {
         if !cc.async_ {
-            return self.run_and_or(&cc.list);
+            return self.run_and_or(&cc.list, exit);
         }
-        let pid = self.fork_or_error()?;
+        let ao = &cc.list;
+        if ao.rest.is_empty() && !ao.first.negated && ao.first.cmds.len() > 1 {
+            // Fork the processes of a pipeline directly, as dash does, so
+            // that `$!` is the last one.
+            return self.run_multi_pipeline(&ao.first.cmds, true);
+        }
+        let pid = self.fork_child(ForkKind::Background(0))?;
         if pid == 0 {
-            if !self.opt(Opt::Monitor) {
-                for sig in [libc::SIGINT, libc::SIGQUIT] {
-                    if self.traps[sig as usize].is_none() {
-                        signals::set_disposition(sig, Disposition::Ignore);
-                    }
-                }
-                if let Ok(fd) = sys::open(b"/dev/null", libc::O_RDONLY, 0) {
-                    let _ = sys::dup2(fd, 0);
-                    sys::close(fd);
-                }
-            }
-            let r = self.run_and_or(&cc.list);
+            let r = self.run_and_or(ao, true);
             self.child_exit(r);
         }
         self.last_bg_pid = Some(pid);
-        self.jobs.add(vec![pid], String::new());
+        let jobctl = self.jobctl();
+        let cmd = if jobctl { cmdtext::and_or(ao) } else { String::new() };
+        self.jobs.add(Job::new(vec![(pid, cmd)], jobctl), true);
         Ok(0)
     }
 
-    fn run_and_or(&mut self, ao: &AndOrList) -> ExecResult {
+    fn run_and_or(&mut self, ao: &AndOrList, exit: bool) -> ExecResult {
         let has_rest = !ao.rest.is_empty();
         if has_rest {
             self.errexit_suppressed += 1;
         }
-        let r = self.run_pipeline(&ao.first);
+        let r = self.run_pipeline(&ao.first, exit && !has_rest);
         if has_rest {
             self.errexit_suppressed -= 1;
         }
@@ -74,7 +78,7 @@ impl Shell {
             if !last {
                 self.errexit_suppressed += 1;
             }
-            let r = self.run_pipeline(p);
+            let r = self.run_pipeline(p, exit && last);
             if !last {
                 self.errexit_suppressed -= 1;
             }
@@ -83,14 +87,14 @@ impl Shell {
         Ok(status)
     }
 
-    fn run_pipeline(&mut self, p: &Pipeline) -> ExecResult {
+    fn run_pipeline(&mut self, p: &Pipeline, exit: bool) -> ExecResult {
         if p.negated {
             self.errexit_suppressed += 1;
         }
         let r = if p.cmds.len() == 1 {
-            self.run_command(&p.cmds[0], false)
+            self.run_command(&p.cmds[0], exit && !p.negated)
         } else {
-            self.run_multi_pipeline(&p.cmds)
+            self.run_multi_pipeline(&p.cmds, false)
         };
         if p.negated {
             self.errexit_suppressed -= 1;
@@ -111,7 +115,8 @@ impl Shell {
         Ok(())
     }
 
-    fn run_multi_pipeline(&mut self, cmds: &[Command]) -> ExecResult {
+    /// Runs a pipeline of two or more commands, each in its own process.
+    fn run_multi_pipeline(&mut self, cmds: &[Command], background: bool) -> ExecResult {
         let mut pids = Vec::with_capacity(cmds.len());
         let mut prev_read: Option<i32> = None;
         for (i, cmd) in cmds.iter().enumerate() {
@@ -130,7 +135,13 @@ impl Shell {
                     }
                 }
             };
-            let pid = self.fork_or_error()?;
+            let pgid = pids.first().copied().unwrap_or(0);
+            let kind = if background {
+                ForkKind::Background(pgid)
+            } else {
+                ForkKind::Foreground(pgid)
+            };
+            let pid = self.fork_child(kind)?;
             if pid == 0 {
                 if let Some(r) = prev_read {
                     let _ = sys::dup2(r, 0);
@@ -153,11 +164,18 @@ impl Shell {
             }
             pids.push(pid);
         }
-        let mut status = 0;
-        for pid in pids {
-            status = self.wait_for(pid);
+        if background {
+            self.last_bg_pid = pids.last().copied();
+            let jobctl = self.jobctl();
+            let procs = pids
+                .into_iter()
+                .zip(cmds)
+                .map(|(pid, c)| (pid, if jobctl { cmdtext::command(c) } else { String::new() }))
+                .collect();
+            self.jobs.add(Job::new(procs, jobctl), true);
+            return Ok(0);
         }
-        Ok(status)
+        Ok(self.wait_foreground(&pids, || cmds.iter().map(cmdtext::command).collect()))
     }
 
     /// Runs one command. `no_fork` means we are already in a child process
@@ -171,7 +189,7 @@ impl Shell {
                     && no_fork
                 {
                     let saved = self.redirect(redirs, false)?;
-                    let r = self.run_list(list);
+                    let r = self.run_list_exit(list, true);
                     drop(saved);
                     return r;
                 }
@@ -180,7 +198,8 @@ impl Shell {
                     Err(Flow::Error(n)) => return Ok(n),
                     Err(e) => return Err(e),
                 };
-                let r = self.run_compound(cc);
+                // As in dash, redirections rule out exec'ing the last command.
+                let r = self.run_compound(cc, no_fork && redirs.is_empty());
                 self.restore_redirs(saved);
                 r
             }
@@ -199,25 +218,29 @@ impl Shell {
         r
     }
 
-    pub fn run_compound(&mut self, cc: &CompoundCommand) -> ExecResult {
+    /// Runs a compound command. `exit` is as for `run_list_exit`.
+    pub fn run_compound(&mut self, cc: &CompoundCommand, exit: bool) -> ExecResult {
         match cc {
-            CompoundCommand::BraceGroup(list) => self.run_list(list),
+            CompoundCommand::BraceGroup(list) => self.run_list_exit(list, exit),
             CompoundCommand::Subshell(list) => {
-                let pid = self.fork_or_error()?;
+                if exit && !self.has_traps() {
+                    return self.run_list_exit(list, true);
+                }
+                let pid = self.fork_child(ForkKind::Foreground(0))?;
                 if pid == 0 {
-                    let r = self.run_list(list);
+                    let r = self.run_list_exit(list, true);
                     self.child_exit(r);
                 }
-                Ok(self.wait_for(pid))
+                Ok(self.wait_foreground(&[pid], || vec![cmdtext::compound(cc)]))
             }
             CompoundCommand::If { conds, else_ } => {
                 for (cond, body) in conds {
                     if self.run_condition(cond)? == 0 {
-                        return self.run_list(body);
+                        return self.run_list_exit(body, exit);
                     }
                 }
                 match else_ {
-                    Some(body) => self.run_list(body),
+                    Some(body) => self.run_list_exit(body, exit),
                     None => Ok(0),
                 }
             }
@@ -313,7 +336,7 @@ impl Shell {
                     for pat in &arm.patterns {
                         let p = self.expand_pattern(pat)?;
                         if crate::expand::pattern::Pattern::new(&p).matches(&subject) {
-                            return self.run_list(&arm.body);
+                            return self.run_list_exit(&arm.body, exit);
                         }
                     }
                 }
@@ -331,7 +354,7 @@ impl Shell {
         self.locals.push(Vec::new());
         let r = match self.redirect(&body.redirs, true) {
             Ok(saved) => {
-                let r = self.run_compound(&body.cmd);
+                let r = self.run_compound(&body.cmd, false);
                 self.restore_redirs(saved);
                 r
             }

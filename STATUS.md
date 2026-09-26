@@ -24,8 +24,13 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   DEVIATIONS.md.
 - Each script runs in a fresh temporary directory (which is also `$HOME`),
   with `LC_ALL=C` and `$SH` set to the shell under test.
+- Interactive behaviour is tested in `tests/interactive.rs`, which runs
+  `luish -i` on a pseudo-terminal (a small harness on `libc`, no extra
+  crates). Each step waits for expected output, or for named processes to
+  be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **59 differential cases and 17 unit tests pass**.
+Current state: **64 differential cases, 18 unit tests and 5 pty tests
+pass**.
 
 ## Environment
 
@@ -45,11 +50,11 @@ Current state: **59 differential cases and 17 unit tests pass**.
 | 3 Parser | Done. There are unit tests, but no `insta` snapshots or fuzz target |
 | 4 Executor core | Done |
 | 5 Word expansion | Done |
-| 6 Variables and built-ins | Done, except `fc`, `fg` and `bg` |
+| 6 Variables and built-ins | Done, except `fc` |
 | 7 Functions, `eval`, `.`, control flow | Done |
 | 8 Signals and traps | Mostly done (see the gaps below) |
 | 9 Options and `set -e` | Done |
-| 10 Interactive / job control | Partial: a prompt loop only |
+| 10 Interactive / job control | Partial: prompt loop and job control. No completion or `fc` |
 | 11 Plugins | Not started |
 | 12 Conformance / performance | Started: benchmark baseline below |
 
@@ -121,6 +126,15 @@ Current state: **59 differential cases and 17 unit tests pass**.
   close-on-exec. `exec` without a command makes redirections permanent.
 - Exit statuses are 127 for not found, 126 for not executable, and 128+N for
   death by signal N. Signal deaths other than INT and PIPE print a message.
+- The last command of a forked child (subshell, background job, pipeline
+  stage, command substitution) and of a `-c` string replaces the shell
+  process instead of forking again, unless a trap is set (dash's `EV_EXIT`,
+  carried as the `exit` flag of `run_list_exit` and friends). So `$!` is the
+  command itself. A background pipeline forks its processes directly, and
+  `$!` is its last process.
+- While a signal is trapped, or the shell is interactive or doing job
+  control, signals are blocked across `fork` until the child has reset its
+  dispositions, so a signal sent to a new job is never lost.
 - Control flow uses the `Flow` enum. `Flow::Error` means "exit if
   non-interactive, otherwise return to the prompt". It is used for syntax
   errors, expansion errors, and failures of special built-ins.
@@ -128,12 +142,46 @@ Current state: **59 differential cases and 17 unit tests pass**.
   left side of `&&`/`||`, and after `!`.
 - Tests: `exec/*`, `errexit/*`.
 
+### Jobs and job control (`src/jobs.rs`, `src/builtins/jobs.rs`)
+- The job table follows dash: jobs are numbered by slot, and also kept in
+  "current job" order (`%+` first, then `%-`). A finished job stays until it
+  is reported by `jobs` or a notification. Without job control, a job whose
+  status `wait` returned is freed when the next job is created.
+- Without job control (non-interactive shells), only background jobs are
+  recorded, with no command text (as in dash). Foreground commands are
+  waited for directly.
+- Job control is on by default in interactive shells (`-m`), and `set -m` /
+  `set +m` switch it at run time. On startup the shell waits until it is in
+  the foreground, puts itself in its own process group and takes the
+  terminal; on exit it gives the terminal back.
+- Under job control every job gets its own process group (the parent and
+  the child both call `setpgid`), a foreground job gets the terminal, and
+  waits use `WUNTRACED`. A stopped job is reported as
+  `[1] + Stopped   cmd`. When a job is killed by SIGINT, the shell acts as
+  though it got the SIGINT itself (as dash does).
+- Terminal modes: after a foreground job exits normally the shell keeps the
+  terminal's modes (so `stty` works); after a job stops or dies from a
+  signal, the shell restores the modes it saved (as bash does; dash doesn't).
+- Job text is rendered from the AST as dash's `cmdtxt` does
+  (`src/cmdtext.rs`): `$x` becomes `${x}`, single quotes become double
+  quotes, `$(...)` is elided, assignments are dropped.
+- Changed jobs are reported on stderr before each prompt. `exit` or end of
+  input with a stopped current job warns `You have stopped jobs.` once; an
+  immediately repeated `exit` exits.
+- Built-ins: `jobs [-l|-p] [job...]`, `fg`, `bg`, `wait [pid|job...]`
+  (dash's statuses: 127 for an unknown pid, 2 for an unknown job; only the
+  last pid of a pipeline names it), and `kill` with job specs `%n`, `%%`,
+  `%+`, `%-`, `%str`, `%?str` (an ambiguous spec is an error).
+- Tests: `builtins/jobs.sh`, `builtins/kill_job.sh`, `exec/async_pid.sh`,
+  `exec/exec_last.sh`, `exec/c_exec_last.sh`, `tests/interactive.rs`, and
+  unit tests in `cmdtext.rs`.
+
 ### Built-ins (`src/builtins/`)
 - Special: `:` `.` `break` `continue` `eval` `exec` `exit` `export`
   `readonly` `return` `set` `shift` `times` `trap` `unset`.
-- Regular: `[` `alias` `cd` `command` `echo` `false` `getopts` `hash`
-  `jobs` `kill` `local` `printf` `pwd` `read` `test` `true` `type` `ulimit`
-  `umask` `unalias` `wait`.
+- Regular: `[` `alias` `bg` `cd` `command` `echo` `false` `fg` `getopts`
+  `hash` `jobs` `kill` `local` `printf` `pwd` `read` `test` `true` `type`
+  `ulimit` `umask` `unalias` `wait`.
 - `echo` follows dash: `-n` only, and XSI escapes are always processed.
 - `printf` supports every conversion (numeric ones use libc `snprintf`),
   `%b`, `*` for width and precision, and reuses the format while arguments
@@ -160,13 +208,17 @@ Current state: **59 differential cases and 17 unit tests pass**.
 - Ctrl-C cancels the current input.
 - Startup files: `/etc/profile` and `~/.profile` for login shells, then
   `$ENV`, then `$XDG_CONFIG_HOME/luish/luishrc`.
-- Not tested automatically yet: no pty tests.
+- Tests: `tests/interactive.rs` (job control, Ctrl-C and Ctrl-Z, terminal
+  input and modes). The line editor itself is not tested: the pty tests use
+  `TERM=dumb`, under which rustyline does no editing.
 
 ## Known gaps
 
-- No job control: no process groups, `fg`, `bg`, stopped jobs, or job
-  notifications. `jobs` is minimal.
 - No completion, and no `fc`.
+- `set -b` (immediate job notification) is accepted but does nothing: jobs
+  are reported only before a prompt. Job notifications are given only for
+  input read a line at a time (interactive or stdin), not in scripts run
+  with `set -m`.
 - No plugin system (Phase 11).
 - `trap` with no arguments, run inside a subshell or `$(...)`, doesn't show
   the parent's traps.
@@ -174,7 +226,6 @@ Current state: **59 differential cases and 17 unit tests pass**.
 - `${@#pat}` and `${*%pat}` operate on the joined string rather than on each
   parameter.
 - `set -v` output is approximate.
-- `-c 'cmd'` always forks for its last command (no exec shortcut).
 - Glob results are sorted in byte order; locale collation is not
   implemented.
 - Fds saved at 10 or above could collide with a user redirection to fd 10+
@@ -182,9 +233,16 @@ Current state: **59 differential cases and 17 unit tests pass**.
 
 ## Performance baseline
 
-Release build, 2026-09-26:
+Release build, 2026-09-26, after job control (best of 3):
 
 | Benchmark | luish | dash |
 |---|---|---|
-| `-c true` (average of 200 runs) | ~2.5 ms | ~1.8 ms |
-| `while` loop, 100k `$((i+1))` iterations | 0.11 s | 0.09 s |
+| `-c true` (average of 200 runs) | 1.85 ms | 1.67 ms |
+| `-c /bin/true` (average of 200 runs) | 3.00 ms | 3.08 ms |
+| `while` loop, 100k `$((i+1))` iterations | 0.077 s | 0.081 s |
+| Loop running `/bin/true` 3000 times | 4.8 s | 3.4 s |
+| Loop running `x=$(echo hi)` 3000 times | 1.26 s | 1.16 s |
+
+The system dash (Debian) forks for the last command of `-c`; luish execs
+it, like upstream dash. External commands are the largest gap: dash starts
+them with `vfork`, luish with `fork`.

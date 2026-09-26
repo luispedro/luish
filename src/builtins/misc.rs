@@ -1,5 +1,5 @@
-//! `.`, `times`, `alias`, `unalias`, `command`, `type`, `hash`, `jobs`,
-//! `ulimit`, `umask`.
+//! `.`, `times`, `alias`, `unalias`, `command`, `type`, `hash`, `ulimit`,
+//! `umask`.
 
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
@@ -304,29 +304,6 @@ pub fn hash(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         }
     }
     Ok(status)
-}
-
-pub fn jobs(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    sh.jobs.reap();
-    let mut out = String::new();
-    let n = sh.jobs.jobs.len();
-    for (i, j) in sh.jobs.jobs.iter().enumerate() {
-        let mark = if i + 1 == n {
-            '+'
-        } else if i + 2 == n {
-            '-'
-        } else {
-            ' '
-        };
-        let state = match j.status() {
-            Some(0) if j.done() => "Done".to_string(),
-            Some(s) if j.done() => format!("Done({s})"),
-            _ => "Running".to_string(),
-        };
-        out.push_str(&format!("[{}] {} {:<24}{}\n", j.id, mark, state, j.cmd));
-    }
-    sh.jobs.jobs.retain(|j| !j.done());
-    Ok(sh.out_or_err(&argv[0], out.as_bytes()))
 }
 
 const LIMITS: &[(u8, libc::__rlimit_resource_t, u64, &str)] = &[

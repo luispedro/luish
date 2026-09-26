@@ -67,7 +67,6 @@ pub fn prompt(sh: &mut Shell, continuation: bool) -> Vec<u8> {
     if continuation {
         sh.expand_prompt(b"PS2")
     } else {
-        sh.jobs.reap();
         sh.expand_prompt(b"PS1")
     }
 }

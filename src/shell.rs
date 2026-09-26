@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::ast::FunctionBody;
 use crate::input::{Input, Line};
-use crate::jobs::JobTable;
+use crate::jobs::{JobTable, Terminal};
 use crate::lexer::{AliasMap, ParseError, Parser};
 use crate::options::{Opt, Options};
 use crate::signals::{self, NSIG};
@@ -41,6 +41,11 @@ pub struct Shell {
     pub traps: Vec<Option<Vec<u8>>>,
     pub ignored_on_entry: [bool; NSIG],
     pub jobs: JobTable,
+    /// The terminal, while job control is on (only in the main shell).
+    pub jobctl: Option<Terminal>,
+    /// 2 just after warning about stopped jobs, 1 for the command after
+    /// that: a second `exit` in a row exits anyway.
+    pub job_warning: u8,
     pub hash: HashMap<Vec<u8>, Vec<u8>>,
     pub interactive: bool,
     pub in_subshell: bool,
@@ -111,6 +116,8 @@ impl Shell {
             traps: vec![None; NSIG],
             ignored_on_entry: signals::ignored_on_entry(),
             jobs: JobTable::default(),
+            jobctl: None,
+            job_warning: 0,
             hash: HashMap::new(),
             interactive: false,
             in_subshell: false,
@@ -256,14 +263,16 @@ impl Shell {
         }
         if !self.in_subshell {
             crate::interactive::save_history(self);
+            // Give the terminal back to whoever had it before us.
+            self.set_jobctl(false);
         }
         sys::exit(status)
     }
 
     /// Runs the main input loop until end of input.
     pub fn run_input(&mut self, input: &mut Input) -> i32 {
-        if let Some(text) = input.whole_text() {
-            self.run_whole(text)
+        if let Some((text, command)) = input.whole_text() {
+            self.run_whole(text, command)
         } else {
             self.run_incremental(input)
         }
@@ -291,7 +300,9 @@ impl Shell {
         }
     }
 
-    fn run_whole(&mut self, text: Vec<u8>) -> i32 {
+    /// Runs a script or a `-c` command string. For `-c`, the last command
+    /// may replace the shell process, as in dash.
+    fn run_whole(&mut self, text: Vec<u8>, command: bool) -> i32 {
         let mut p = Parser::new(text, 1, true);
         loop {
             let start = p.consumed();
@@ -303,7 +314,7 @@ impl Shell {
                         sys::write_all(2, &p.src[start.min(end)..end]);
                     }
                     if !self.opt(Opt::Noexec) {
-                        let r = self.run_list(&list);
+                        let r = self.run_list_exit(&list, command && p.at_end());
                         self.top_level_result(r);
                     }
                 }
@@ -331,6 +342,7 @@ impl Shell {
                     let text: Vec<u8> = buf.drain(..used).collect();
                     lineno = p.lineno;
                     continuation = false;
+                    self.job_warning = if self.job_warning == 2 { 1 } else { 0 };
                     if self.opt(Opt::Verbose) && !self.interactive {
                         sys::write_all(2, &text);
                     }
@@ -348,6 +360,9 @@ impl Shell {
                         buf.clear();
                         continuation = false;
                     }
+                    if !continuation {
+                        self.notify_jobs();
+                    }
                     match input.read_line(self, continuation) {
                         Line::Text(line) => {
                             if self.opt(Opt::Verbose) && self.interactive {
@@ -364,7 +379,9 @@ impl Shell {
                         }
                         Line::Eof => {
                             eof = true;
-                            if self.interactive && buf.is_empty() && self.opt(Opt::Ignoreeof) {
+                            if buf.is_empty() && self.stopped_jobs_warning() {
+                                eof = false;
+                            } else if self.interactive && buf.is_empty() && self.opt(Opt::Ignoreeof) {
                                 sys::write_all(2, b"Use \"exit\" to leave shell.\n");
                                 eof = false;
                             }

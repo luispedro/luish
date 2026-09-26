@@ -4,6 +4,8 @@ use std::rc::Rc;
 
 use crate::ast::*;
 use crate::builtins::{self, BuiltinFn};
+use crate::cmdtext;
+use crate::exec::ForkKind;
 use crate::options::Opt;
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::sys;
@@ -138,7 +140,13 @@ impl Shell {
                 r
             }),
             CommandKind::External => {
-                let pid = if no_fork { 0 } else { self.fork_or_error()? };
+                // Replace the shell process only if no trap needs it.
+                let exec_now = no_fork && !self.has_traps();
+                let pid = if exec_now {
+                    0
+                } else {
+                    self.fork_child(ForkKind::Foreground(0))?
+                };
                 if pid == 0 {
                     if self.redirect(&cmd.redirs, false).is_err() {
                         sys::exit(2);
@@ -151,7 +159,7 @@ impl Shell {
                     }
                     self.exec_argv(&argv);
                 }
-                Ok(self.wait_for(pid))
+                Ok(self.wait_foreground(&[pid], || vec![cmdtext::simple(cmd)]))
             }
         }
     }
@@ -187,11 +195,12 @@ impl Shell {
             CommandKind::Special(f) | CommandKind::Builtin(f) => f(self, argv),
             CommandKind::Function(body) => self.call_function(&body, argv),
             CommandKind::External => {
-                let pid = self.fork_or_error()?;
+                let pid = self.fork_child(ForkKind::Foreground(0))?;
                 if pid == 0 {
                     self.exec_argv(argv);
                 }
-                Ok(self.wait_for(pid))
+                let text = || vec![String::from_utf8_lossy(&argv.join(&b' ')).into_owned()];
+                Ok(self.wait_foreground(&[pid], text))
             }
         }
     }
