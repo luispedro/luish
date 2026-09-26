@@ -122,7 +122,10 @@ luish/
 │       ├── rhai.rs         # #[cfg(feature = "plugins")] Rhai engine and the `sh` module
 │       ├── fs.rs           # the `fs` module (file tests without forking)
 │       ├── vcs.rs          # the `vcs` module (git repository information, like zsh's vcs_info)
-│       └── bytes.rs        # byte <-> string conversion at the plugin boundary (§6.5)
+│       ├── bytes.rs        # byte <-> string conversion at the plugin boundary (§6.5)
+│       ├── package.rs      # plugin layouts and collections (§6.6)
+│       ├── config.rs       # plugins.toml and plugins.lock (§6.6)
+│       └── fetch.rs        # git plugins and their cache (§6.6)
 ├── plugins/                # example plugins (*.rhai) and the plugin API reference
 ├── tests/
 │   ├── cases/              # *.sh test scripts plus expected output
@@ -560,6 +563,9 @@ See §6 for the design. This phase starts only once Stage 1 is usable (M4).
 6. Add plugin tests: `tests/plugins/*.rhai` run through the harness. CI also
    builds with `--no-default-features`, and compares `luish -c true` with and
    without the `plugins` feature.
+7. Add plugin packages (§6.6): directory plugins, `plugins.toml`, git
+   plugins pinned by `plugins.lock`, and `plugin sync`, `update`, `add`,
+   `remove` and `gc`, in the steps listed there.
 
 ### Phase 12 — Conformance and performance hardening (ongoing)
 
@@ -606,8 +612,9 @@ C code into the build and fits less naturally with Rust.
 ### 6.1 Principles
 
 - **Opt-in and lazy.** Plugins are loaded only by explicit `plugin load`
-  commands, usually from `luishrc`. The Rhai engine is created on the first
-  `plugin load`. Until then plugin support costs only binary size. `luish`
+  commands, usually from `luishrc`, or by being listed in `plugins.toml`
+  (§6.6). The Rhai engine is created when the first Rhai plugin is loaded.
+  Until then plugin support costs only binary size. `luish`
   built without the `plugins` feature prints a clear error for `plugin load`.
 - **No semantic changes to POSIX.** Plugins can add built-ins and hooks but
   cannot change the parser or expansion. `luish --no-plugins` and scripts run
@@ -765,7 +772,7 @@ Rhai or back into the shell.
 7. **Plugin search.** `plugin load foo` loads
    `$XDG_CONFIG_HOME/luish/plugins/foo.rhai` (by default
    `~/.config/luish/plugins`). An argument that contains a `/` is a file
-   path.
+   path. §6.6 adds directory plugins, and plugins listed in `plugins.toml`.
 
 ### 6.5 Strings and bytes (`plugins/bytes.rs`)
 
@@ -795,6 +802,267 @@ escapes are the last private-use code points of Unicode instead:
 
 There are no byte-exact variants of the API. If one is ever needed, Rhai's
 `Blob` type can carry raw bytes.
+
+### 6.6 Plugin packages, `plugins.toml` and `plugins.lock`
+
+The first version loads one `.rhai` file per `plugin load`. This section adds
+plugins made of several files, in Rhai and in shell; a list of plugins that
+the user edits (`plugins.toml`); and plugins fetched from git repositories,
+pinned by a file that luish manages (`plugins.lock`), as Cargo and pixi do.
+The principles of §6.1 still hold: scripts and `-c` never load plugins, and
+a warm startup must not get slower.
+
+#### Layout of a plugin
+
+A plugin is either a **file**, `NAME.rhai` (as now), or a **directory**,
+`NAME/`, with one or more of these entry points:
+
+| File | Language | When it runs |
+|---|---|---|
+| `plugin.rhai` | Rhai | When the plugin is loaded: registers built-ins, hooks and completers |
+| `rc.lsh` | shell | When the plugin is loaded, after `plugin.rhai`, as with `.` |
+| `login.lsh` | shell | In login shells, with `login.d` (below) |
+
+`plugin.rhai` runs first so that `rc.lsh` can call the built-ins it defines.
+(Rhai code calls shell functions only when it runs, later, so the other
+order isn't needed.) A directory without any entry point is an error.
+
+Other files are read only through the entry points: `import` in Rhai
+resolves relative to the plugin's directory (§6.4), and `rc.lsh` sources its
+own files with `. "$LUISH_PLUGIN_DIR/lib.lsh"`. While a plugin's entry
+points run, `LUISH_PLUGIN_DIR` (absolute) and `LUISH_PLUGIN_NAME` are set,
+and afterwards they get back their previous values, so they don't end up in
+the cached state. Rhai has `sh::plugin_dir()`. A shell function that needs
+the directory later saves it in a variable of its own when `rc.lsh` runs.
+
+A plugin written only in shell (`rc.lsh`, `login.lsh`) never creates the
+Rhai engine: with a warm startup cache it costs what the same lines in
+`rc.d` cost, which is nothing beyond reading the cache. Rhai is then only
+needed for what shell can't do (hooks, completers, prompt code that must not
+fork).
+
+`plugin load NAME` looks for `NAME.rhai`, then `NAME/`, in the plugin
+directory; a path can name either kind. A directory plugin's name is its
+base name. `plugin unload` removes what the Rhai part registered, but can't
+undo what `rc.lsh` did (aliases, functions, variables), and says so if the
+plugin has an `rc.lsh`.
+
+#### Collections
+
+A **collection** is a directory laid out like `~/.config/luish/plugins/`:
+each `NAME.rhai` and `NAME/` in it is a plugin. The local plugin directory is
+therefore itself a collection. A git repository (or its `path`, below) is:
+
+- **one plugin** if its top directory holds an entry point (`plugin.rhai`,
+  `rc.lsh` or `login.lsh`);
+- otherwise **a collection**: of its `plugins/` directory if it has one,
+  else of its top directory.
+
+An entry in `plugins.toml` takes one plugin from a collection: by default the
+one named like the entry, or the only one if the collection has a single
+plugin (so a repository holding just `z.rhai` works under any name).
+
+#### `plugins.toml`
+
+`$XDG_CONFIG_HOME/luish/plugins.toml` is the list the user edits. Each key
+in `[plugins]` is the name of a plugin (the name `plugin list` shows), and
+plugins load in the order of the file. TOML leaves the order of keys
+unspecified, but luish's parser keeps it; the order matters for hooks and
+for which `rc.lsh` has the last word.
+
+```toml
+[plugins]
+# ~/.config/luish/plugins/greet.rhai or greet/
+greet = {}
+
+# A repository on GitHub that is one plugin, at its default branch
+git-prompt = "alice/luish-git-prompt"
+
+# The plugin `z` from a collection, at a tag
+z = { github = "bob/luish-plugins", tag = "v2.1" }
+
+# Another plugin of the same collection, under another name
+bfzf = { github = "bob/luish-plugins", plugin = "fzf" }
+
+# Any git URL, a branch, and a plugin in a subdirectory of the repository
+work = { git = "https://git.example.com/me/dotfiles.git", branch = "main", path = "luish/work" }
+
+# A plugin being written, used where it is
+dev = { path = "~/src/luish-dev" }
+
+# Kept (with its pin in the lock) but not loaded
+old = { github = "carol/old", enabled = false }
+```
+
+| Field | Meaning |
+|---|---|
+| `github = "OWNER/REPO"` | Short for `git = "https://github.com/OWNER/REPO.git"`. A string value `"OWNER/REPO"` is short for `{ github = "OWNER/REPO" }` |
+| `git = URL` | Any URL that `git fetch` accepts |
+| `branch`, `tag`, `rev` | At most one; the default is the remote's `HEAD`. `rev` is a full commit hash |
+| `path` | With `git` or `github`: where in the repository the plugin or collection is. On its own: a local file or directory (with `~` expanded), used in place and never copied |
+| `plugin` | Which plugin of a collection. The default is the key (see Collections) |
+| `enabled = false` | Don't load the plugin |
+
+`{}` is the plugin with the key's name in the local plugin directory. A
+plugin's name can't contain `/` or start with `.`.
+
+`plugins.toml` and `plugins.lock` are both meant to be kept in version
+control with the rest of `~/.config`, so that another machine gets the same
+plugins at the same commits after a `plugin sync`.
+
+#### `plugins.lock`
+
+`$XDG_CONFIG_HOME/luish/plugins.lock`, next to `plugins.toml`, is written
+only by luish (through a rename, like the startup cache). It records, for
+each plugin that comes from git, the commit it is pinned to. It is TOML too,
+in a fixed layout sorted by name, so that its diffs are small:
+
+```toml
+# Written by luish (plugin sync, plugin update). Don't edit.
+version = 1
+
+[[plugin]]
+name = "git-prompt"
+source = { github = "alice/luish-git-prompt" }
+url = "https://github.com/alice/luish-git-prompt.git"
+commit = "4b8e0c3d1f2a9e7b6c5d4e3f2a1b0c9d8e7f6a5b"
+path = ""
+
+[[plugin]]
+name = "z"
+source = { github = "bob/luish-plugins", tag = "v2.1" }
+url = "https://github.com/bob/luish-plugins.git"
+commit = "9f1c2b3a4d5e6f708192a3b4c5d6e7f8091a2b3c"
+path = "plugins/z.rhai"
+```
+
+- `source` is the entry of `plugins.toml`, normalised. An entry whose
+  `source` differs from `plugins.toml` has changed since it was locked, and
+  `plugin sync` locks it again; the others keep their commits.
+- `path` is where the plugin is in the commit, after the collection lookup,
+  so that loading it doesn't have to look again.
+- Local plugins aren't in the lock: they have nothing to pin.
+- `version` is the format of the file. A luish that finds a newer version
+  refuses to write the file rather than lose what it doesn't understand.
+
+#### Commands
+
+The `plugin` built-in gets these subcommands. Only `sync`, `update` and
+`add` run git or use the network.
+
+| Command | What it does |
+|---|---|
+| `plugin sync` | Makes the lock and the cache match `plugins.toml`: locks new and changed entries (fetching them), drops removed ones, and fetches locked commits missing from the cache. It never moves an unchanged entry to a newer commit (as `pixi install`) |
+| `plugin update [NAME...]` | Fetches the newest commit of the branch, tag or `HEAD` of each entry (or of the named ones), rewrites the lock, and prints each change as `NAME OLD..NEW` followed by the commits' subject lines, so that the user sees what will run |
+| `plugin add SPEC [NAME]` | Adds an entry to `plugins.toml`, syncs it, and loads it in the current shell. `SPEC` is `OWNER/REPO`, a git URL, or a local name or path; `--branch`, `--tag`, `--rev`, `--path` and `--plugin` set those fields |
+| `plugin remove NAME...` | Removes entries from `plugins.toml` and the lock, and unloads them |
+| `plugin list [-l]` | As now; `-l` adds each plugin's source and commit, and lists the entries of `plugins.toml` that aren't installed |
+| `plugin gc` | Removes checkouts and repositories from the cache that the lock doesn't use |
+| `plugin load`, `plugin unload` | As now, and they accept directory plugins |
+
+`sync` and `update` don't change the plugins loaded in the running shell:
+new shells get the new versions, and `plugin load NAME` reloads one now.
+They don't remove old checkouts either, because a running shell may still
+read files from one (a Rhai `import`, a function that sources a file), hence
+`plugin gc`.
+
+`add` and `remove` edit `plugins.toml` as text (appending the entry to the
+`[plugins]` table, or deleting its lines), so the user's comments and layout
+are kept, as `cargo add` keeps them.
+
+#### Fetching with git
+
+luish runs the `git` command (by `fork` and `execve`, found in `PATH`) rather
+than linking libgit2 or gitoxide. It adds no dependency and costs nothing for
+users without remote plugins, and git's own configuration applies
+(credentials, SSH keys, proxies, `url.*.insteadOf`). If git is missing,
+`plugin sync` says so. The user never sees the repositories: to them a
+plugin is a line in `plugins.toml`.
+
+The cache, in `$XDG_CACHE_HOME/luish/plugins/`:
+
+```
+plugins/
+├── git/REPO-HASH/            a bare repository per URL (HASH of the URL), shared by its entries
+├── src/REPO-HASH/COMMIT/     the files of one commit, read-only
+└── lock                      flock()ed by sync, update, add, remove and gc
+```
+
+- Fetches are shallow: `git fetch --depth 1 URL REF`, for a branch, a tag or
+  `HEAD`, and for `rev` the commit itself (which GitHub, GitLab and recent
+  git servers allow; otherwise luish falls back to a full fetch).
+- A commit is extracted (with `git archive` into a temporary directory,
+  then made read-only and renamed into place) once, and never changed
+  afterwards. The name of its directory holds the commit, so its files need
+  no fingerprints in the startup cache, and an update makes a new directory
+  instead of changing files that running shells use.
+- Fetching runs nothing from the repository: hooks are not fetched, and
+  submodules and Git LFS are not supported. The code runs only when a shell
+  loads the plugin, and only at the locked commit: an upstream change,
+  including a force push, has no effect until `plugin update`, which shows
+  it.
+- The cache can be removed at any time (as for the startup cache): the lock
+  pins the commits, and `plugin sync` fetches them again. Until then shells
+  start without those plugins and say so.
+
+#### Startup
+
+- Only interactive shells read `plugins.toml`, and `--no-plugins` skips it.
+- Plugins load right after `rc.d`, as part of its cached state: the rc
+  cache (`rc-HOST`) covers the `rc.d` files and then each enabled plugin in
+  order (`plugin.rhai`, then `rc.lsh`). So files in `rc.d` can set variables
+  that a plugin reads when it loads, and `rc.d/_uncached.lsh`, `$ENV` and
+  `luishrc` come later and can override what plugins define. This applies
+  whether or not `rc.d` exists. The `login.lsh` files run after `login.d`,
+  in its cache; a login shell without `login.d` runs them, uncached, after
+  `~/.profile`.
+- The cached state replays `plugin.rhai` (as it replays `plugin load` now)
+  but not `rc.lsh`, whose effects are in the state: `savestate` records the
+  Rhai file and the plugin's name.
+- The cache key adds the fingerprints of `plugins.toml`, `plugins.lock` and
+  the entry points of local plugins. Files of git plugins need none (their
+  directory names the commit). On the warm path, plugins therefore cost two
+  more `stat` calls, no TOML parsing, and then what Rhai plugins cost now.
+- On a cold start luish reads both files. An entry that isn't locked, whose
+  lock `source` differs from `plugins.toml`, or whose commit isn't in the
+  cache is skipped, with one line for all such entries:
+  `luish: plugins not installed: z, work (run plugin sync)`. The cache isn't
+  written then, so the message comes back until the user syncs.
+- Startup never runs git and never uses the network, so a shell starts as
+  fast offline, or with a slow remote, as otherwise.
+
+#### Implementation
+
+- New modules, all behind the `plugins` feature: `plugins/package.rs`
+  (layouts, collections, entry points), `plugins/config.rs` (`plugins.toml`
+  and `plugins.lock`), `plugins/fetch.rs` (git and the cache).
+- **TOML.** Parsing happens only on a cold start and in the `plugin`
+  commands, but the parser still adds to the executable and to its load-time
+  relocations (§6.4). The choice is between a small parser of our own
+  (strings, integers, booleans, arrays, tables, inline tables and arrays of
+  tables, but no dates or times) and the `toml_parser` crate (no serde); pick
+  by the size of a release build. Either way, input the parser doesn't
+  handle is an error with its line number, never misread. The lock is
+  written by luish in its fixed layout.
+- **Steps**: (1) directory plugins and `LUISH_PLUGIN_DIR` for
+  `plugin load`; (2) `plugins.toml` with local and `path` plugins, loaded at
+  startup in the rc cache; (3) git plugins, `plugins.lock`, `plugin sync`,
+  `update` and `gc`; (4) `plugin add` and `remove`; (5) `login.lsh`.
+- **Tests** don't use the network: cases create git repositories in their
+  temporary directory and list them with `git = "file://..."`. They cover
+  the layouts and collection lookup, the order of entry points, sync keeping
+  pins while upstream moves, update, changed and removed entries, a missing
+  checkout at startup, and the rc cache with plugins (warm, and invalidated
+  by editing `plugins.toml`).
+
+#### Later
+
+- A plugin's `bin/` added to `PATH`, and `completions/`.
+- A manifest in the plugin (`plugin.toml`): description, the oldest luish
+  it works with, other plugins it needs.
+- Settings per plugin in `plugins.toml` (`[plugins.NAME.config]`), given to
+  Rhai as `sh::config()`.
+- Downloading archives (GitHub tarballs) for systems without git.
 
 ---
 
