@@ -46,7 +46,8 @@ pub struct Shell {
     /// 2 just after warning about stopped jobs, 1 for the command after
     /// that: a second `exit` in a row exits anyway.
     pub job_warning: u8,
-    pub hash: HashMap<Vec<u8>, Vec<u8>>,
+    /// Commands found in `PATH`: the file and the index of its directory.
+    pub hash: HashMap<Vec<u8>, (Vec<u8>, usize)>,
     pub interactive: bool,
     pub in_subshell: bool,
     pub loop_depth: usize,
@@ -63,6 +64,9 @@ pub struct Shell {
     /// Path of this executable, used to run scripts without `#!`.
     pub self_exe: Vec<u8>,
     /// Position inside a group of options for `getopts`.
+    /// The logical current directory (dash's `curdir`), kept by `cd` and
+    /// printed by `pwd`; `None` if it couldn't be found.
+    pub curdir: Option<Vec<u8>>,
     /// `getopts`'s position (dash's `shellparam.optind` and `optoff`).
     pub optind: usize,
     pub optoff: Option<usize>,
@@ -89,14 +93,15 @@ impl Shell {
                 b"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".to_vec(),
             );
         }
-        // PWD is inherited only if it names the current directory.
-        let cwd = sys::getcwd();
-        let pwd_ok = match (vars.get(b"PWD"), &cwd) {
-            (Some(p), Some(c)) => p.first() == Some(&b'/') && sys::same_file(p, c),
-            _ => false,
-        };
-        if !pwd_ok && let Some(c) = cwd {
-            let _ = vars.set(b"PWD", c);
+        // PWD is inherited only if it names the current directory (then,
+        // as in dash, there is no need for getcwd).
+        let curdir = vars
+            .get(b"PWD")
+            .filter(|p| p.first() == Some(&b'/') && sys::same_file(p, b"."))
+            .map(|p| p.to_vec())
+            .or_else(sys::getcwd);
+        if let Some(c) = &curdir {
+            let _ = vars.set(b"PWD", c.clone());
         }
         vars.entry(b"PWD").exported = true;
         let self_exe = std::env::current_exe()
@@ -133,6 +138,7 @@ impl Shell {
             self_exe,
             optind: 1,
             optoff: None,
+            curdir,
             in_exit_trap: false,
         }
     }

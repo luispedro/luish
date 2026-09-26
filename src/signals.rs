@@ -95,7 +95,6 @@ const NAMES: &[(i32, &str)] = &[
     (libc::SIGPIPE, "PIPE"),
     (libc::SIGALRM, "ALRM"),
     (libc::SIGTERM, "TERM"),
-    (libc::SIGSTKFLT, "STKFLT"),
     (libc::SIGCHLD, "CHLD"),
     (libc::SIGCONT, "CONT"),
     (libc::SIGSTOP, "STOP"),
@@ -113,6 +112,8 @@ const NAMES: &[(i32, &str)] = &[
     (libc::SIGSYS, "SYS"),
 ];
 
+/// The name of a signal as dash's `signal_names` has it (`EXIT` for 0, a
+/// number for a signal without a name).
 pub fn name(sig: i32) -> String {
     if sig == 0 {
         return "EXIT".into();
@@ -126,40 +127,21 @@ pub fn name(sig: i32) -> String {
         "RTMIN".into()
     } else if sig == rtmax {
         "RTMAX".into()
-    } else if sig > rtmin && sig < rtmax {
+    } else if sig > rtmin && sig - rtmin <= (rtmax - rtmin) / 2 {
         format!("RTMIN+{}", sig - rtmin)
+    } else if sig > rtmin && sig < rtmax {
+        format!("RTMAX-{}", rtmax - sig)
     } else {
         sig.to_string()
     }
 }
 
-/// Parses a signal name (with or without `SIG`, any case) or number.
-pub fn parse(s: &[u8]) -> Option<i32> {
-    let s = std::str::from_utf8(s).ok()?;
-    if let Ok(n) = s.parse::<i32>() {
-        return (0..NSIG as i32).contains(&n).then_some(n);
+/// dash's `decode_signal`: a number (digits only) below `NSIG`, or a
+/// signal name in any case, without `SIG`, from signal `minsig` on.
+pub fn parse(s: &[u8], minsig: i32) -> Option<i32> {
+    if !s.is_empty() && s.iter().all(|c| c.is_ascii_digit()) {
+        let n: i64 = std::str::from_utf8(s).ok()?.parse().unwrap_or(i64::MAX);
+        return (n < NSIG as i64).then_some(n as i32);
     }
-    let up = s.to_ascii_uppercase();
-    let up = up.strip_prefix("SIG").unwrap_or(&up);
-    if up == "EXIT" {
-        return Some(0);
-    }
-    if let Some((sig, _)) = NAMES.iter().find(|(_, n)| *n == up) {
-        return Some(*sig);
-    }
-    let rtmin = libc::SIGRTMIN();
-    let rtmax = libc::SIGRTMAX();
-    match up {
-        "RTMIN" => Some(rtmin),
-        "RTMAX" => Some(rtmax),
-        _ => {
-            let n: i32 = up.strip_prefix("RTMIN+")?.parse().ok()?;
-            (rtmin + n <= rtmax).then_some(rtmin + n)
-        }
-    }
-}
-
-/// Numbers of all real signals, for `kill -l` and `trap`.
-pub fn all() -> impl Iterator<Item = i32> {
-    1..=libc::SIGRTMAX()
+    (minsig..NSIG as i32).find(|&sig| name(sig).as_bytes().eq_ignore_ascii_case(s))
 }

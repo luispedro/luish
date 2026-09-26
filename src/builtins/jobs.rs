@@ -167,84 +167,108 @@ pub fn wait(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     Ok(status)
 }
 
+/// A port of dash's `killcmd` (except for jobs started without job
+/// control: see DEVIATIONS.md).
 pub fn kill(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let usage = |sh: &Shell| {
         sh.berr(
             &argv[0],
-            "usage: kill [-s sigspec | -signum | -sigspec] [pid | job]... or\nkill -l [exitstatus]",
+            "Usage: kill [-s sigspec | -signum | -sigspec] [pid | job]... or\nkill -l [exitstatus]",
         );
         Ok(2)
     };
-    let mut sig = libc::SIGTERM;
+    let mut sig = None;
+    let mut list = false;
     let mut i = 1;
     let Some(first) = argv.get(1) else {
         return usage(sh);
     };
-    if first == b"-l" || first == b"-L" {
-        let mut out = String::new();
-        match argv.get(2) {
-            Some(a) => {
-                let n = super::parse_uint(a).unwrap_or(-1) as i32;
-                let n = if n > 128 { n - 128 } else { n };
-                match (n > 0).then(|| signals::name(n)) {
-                    Some(name) if !name.chars().all(|c| c.is_ascii_digit()) => out.push_str(&format!("{name}\n")),
-                    _ => {
-                        sh.berr(
-                            &argv[0],
-                            format!("invalid signal number or exit status: {}", String::from_utf8_lossy(a)),
-                        );
-                        return Ok(1);
+    if first.first() == Some(&b'-') {
+        sig = signals::parse(&first[1..], 1);
+        if sig.is_some() {
+            i = 2;
+        } else {
+            // dash's `nextopt("ls:")`.
+            'opts: while let Some(a) = argv.get(i) {
+                if a.len() < 2 || a[0] != b'-' {
+                    break;
+                }
+                i += 1;
+                if a == b"--" {
+                    break;
+                }
+                let mut j = 1;
+                while j < a.len() {
+                    match a[j] {
+                        b'l' => list = true,
+                        b's' => {
+                            let name = if j + 1 < a.len() {
+                                a[j + 1..].to_vec()
+                            } else if let Some(n) = argv.get(i) {
+                                i += 1;
+                                n.clone()
+                            } else {
+                                sh.berr(&argv[0], "No arg for -s option");
+                                return Ok(2);
+                            };
+                            sig = signals::parse(&name, 1);
+                            if sig.is_none() {
+                                sh.berr(
+                                    &argv[0],
+                                    format!("invalid signal number or name: {}", String::from_utf8_lossy(&name)),
+                                );
+                                return Ok(2);
+                            }
+                            continue 'opts;
+                        }
+                        c => {
+                            sh.berr(&argv[0], format!("Illegal option -{}", c as char));
+                            return Ok(2);
+                        }
                     }
+                    j += 1;
                 }
             }
+        }
+    }
+    let args = &argv[i..];
+    if !list && sig.is_none() {
+        sig = Some(libc::SIGTERM);
+    }
+    if (sig.is_none() || args.is_empty()) ^ list {
+        return usage(sh);
+    }
+    if list {
+        let mut out = String::new();
+        match args.first() {
             None => {
-                for s in signals::all() {
+                out.push_str("0\n");
+                for s in 1..signals::NSIG as i32 {
                     out.push_str(&signals::name(s));
                     out.push('\n');
                 }
             }
+            Some(a) => {
+                let Some(n) = super::parse_uint(a) else {
+                    sh.berr(&argv[0], format!("Illegal number: {}", String::from_utf8_lossy(a)));
+                    return Ok(2);
+                };
+                let n = if n > 128 { n - 128 } else { n };
+                if n <= 0 || n >= signals::NSIG as i64 {
+                    sh.berr(
+                        &argv[0],
+                        format!("invalid signal number or exit status: {}", String::from_utf8_lossy(a)),
+                    );
+                    return Ok(2);
+                }
+                out.push_str(&format!("{}\n", signals::name(n as i32)));
+            }
         }
         return Ok(sh.out_or_err(&argv[0], out.as_bytes()));
     }
-    if first == b"-s" || first == b"-n" {
-        let Some(name) = argv.get(2) else {
-            return usage(sh);
-        };
-        match signals::parse(name) {
-            Some(s) => sig = s,
-            None => {
-                sh.berr(
-                    &argv[0],
-                    format!("invalid signal number or name: {}", String::from_utf8_lossy(name)),
-                );
-                return Ok(1);
-            }
-        }
-        i = 3;
-    } else if first.len() > 1 && first[0] == b'-' && first != b"--" {
-        match signals::parse(&first[1..]) {
-            Some(s) => sig = s,
-            None => {
-                sh.berr(
-                    &argv[0],
-                    format!(
-                        "invalid signal number or name: {}",
-                        String::from_utf8_lossy(&first[1..])
-                    ),
-                );
-                return Ok(1);
-            }
-        }
-        i = 2;
-    }
-    if argv.get(i).is_some_and(|a| a == b"--") {
-        i += 1;
-    }
-    if i >= argv.len() {
-        return usage(sh);
-    }
+    let sig = sig.unwrap();
     let mut status = 0;
-    for a in &argv[i..] {
+    for a in args {
         let pids = if a.first() == Some(&b'%') {
             match sh.get_job(Some(a), false) {
                 // A job under job control is its process group. Unlike dash,
@@ -258,18 +282,21 @@ pub fn kill(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
                 }
             }
         } else {
-            match std::str::from_utf8(a).ok().and_then(|s| s.parse::<i32>().ok()) {
-                Some(p) => vec![p],
-                None => {
+            let (neg, digits) = match a.strip_prefix(b"-") {
+                Some(d) => (true, d),
+                None => (false, &a[..]),
+            };
+            match super::parse_uint(digits) {
+                Some(p) if p <= i32::MAX as i64 => vec![if neg { -(p as i32) } else { p as i32 }],
+                _ => {
                     sh.berr(&argv[0], format!("Illegal number: {}", String::from_utf8_lossy(a)));
-                    status = 1;
-                    continue;
+                    return Ok(2);
                 }
             }
         };
         for pid in pids {
             if let Err(e) = sys::kill(pid, sig) {
-                sh.berr(&argv[0], format!("{pid}: {}", sys::strerror(e)));
+                sh.berr(&argv[0], sys::strerror(e));
                 status = 1;
             }
         }

@@ -3,41 +3,87 @@
 use crate::shell::Shell;
 use crate::sys;
 
+/// The default search path (for `command -p`), as in dash.
+pub const DEFAULT_PATH: &[u8] = b"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+
 fn is_executable_file(path: &[u8]) -> bool {
     sys::stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) && sys::access(path, libc::X_OK)
 }
 
+/// `dir/name`, with an empty `dir` meaning the current directory.
+fn join(dir: &[u8], name: &[u8]) -> Vec<u8> {
+    let mut cand = if dir.is_empty() { b".".to_vec() } else { dir.to_vec() };
+    cand.push(b'/');
+    cand.extend_from_slice(name);
+    cand
+}
+
+/// Searches `path` for `name`. Returns the file and the index of its
+/// directory in `path`, and whether it is executable. Falls back to a
+/// non-executable regular file (so that exec reports "Permission denied").
+pub fn search(path: &[u8], name: &[u8]) -> Option<(Vec<u8>, usize, bool)> {
+    let mut fallback = None;
+    for (i, dir) in path.split(|&c| c == b':').enumerate() {
+        let cand = join(dir, name);
+        if is_executable_file(&cand) {
+            return Some((cand, i, true));
+        }
+        if fallback.is_none() && sys::stat(&cand).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) {
+            fallback = Some((cand, i, false));
+        }
+    }
+    fallback
+}
+
 impl Shell {
-    /// Finds a command in `PATH`. Falls back to a non-executable regular
-    /// file (so that exec reports "Permission denied").
-    pub fn find_in_path(&mut self, name: &[u8]) -> Option<Vec<u8>> {
+    /// Finds a command in `PATH`, and the index of its directory there. As
+    /// in dash, a command in the cache is trusted without checking the file
+    /// (see [`Shell::with_command_path`] for when it is gone).
+    pub fn find_in_path(&mut self, name: &[u8]) -> Option<(Vec<u8>, usize)> {
         if let Some(p) = self.hash.get(name) {
-            if is_executable_file(p) {
-                return Some(p.clone());
-            }
-            self.hash.remove(name);
+            return Some(p.clone());
         }
-        let found = self.search_path(name)?;
-        if is_executable_file(&found) {
-            self.hash.insert(name.to_vec(), found.clone());
+        let (found, i, exec) = search(&self.get_var(b"PATH").unwrap_or_default(), name)?;
+        if exec {
+            self.hash.insert(name.to_vec(), (found.clone(), i));
         }
-        Some(found)
+        Some((found, i))
     }
 
-    pub fn search_path(&self, name: &[u8]) -> Option<Vec<u8>> {
-        let path = self.get_var(b"PATH").unwrap_or_default();
-        let mut fallback = None;
-        for dir in path.split(|&c| c == b':') {
-            let mut cand = if dir.is_empty() { b".".to_vec() } else { dir.to_vec() };
-            cand.push(b'/');
-            cand.extend_from_slice(name);
-            if is_executable_file(&cand) {
-                return Some(cand);
-            }
-            if fallback.is_none() && sys::stat(&cand).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) {
-                fallback = Some(cand);
+    /// Runs `f` (which execs or spawns) on the file for command `name`. As
+    /// dash's `shellexec` does, if the file is gone (a cached command that
+    /// was removed), `f` is tried on `name` in the `PATH` directories after
+    /// it. Returns what `f` returns, or an errno (`ENOENT` if not found).
+    /// With `alt_path` (`command -p`), that path is searched instead of
+    /// `PATH`, without the cache.
+    pub fn with_command_path<T>(
+        &mut self,
+        name: &[u8],
+        alt_path: Option<&[u8]>,
+        mut f: impl FnMut(&mut Shell, &[u8]) -> Result<T, i32>,
+    ) -> Result<T, i32> {
+        if name.contains(&b'/') {
+            return f(self, name);
+        }
+        let (path, idx) = match alt_path {
+            Some(p) => search(p, name).map(|(f, i, _)| (f, i)),
+            None => self.find_in_path(name),
+        }
+        .ok_or(libc::ENOENT)?;
+        let mut e = match f(self, &path) {
+            Ok(v) => return Ok(v),
+            Err(e) => e,
+        };
+        if e == libc::ENOENT || e == libc::ENOTDIR {
+            let path_var = alt_path.map_or_else(|| self.get_var(b"PATH").unwrap_or_default(), |p| p.to_vec());
+            for dir in path_var.split(|&c| c == b':').skip(idx + 1) {
+                match f(self, &join(dir, name)) {
+                    Ok(v) => return Ok(v),
+                    Err(x) if x != libc::ENOENT && x != libc::ENOTDIR => e = x,
+                    Err(_) => {}
+                }
             }
         }
-        fallback
+        Err(e)
     }
 }

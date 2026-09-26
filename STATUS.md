@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **85 differential cases, 24 unit tests and 7 pty tests
+Current state: **93 differential cases, 24 unit tests and 7 pty tests
 pass**.
 
 ## Environment
@@ -129,7 +129,12 @@ pass**.
 
 ### Execution (`src/exec/`)
 - Command lookup order: special built-in, function, regular built-in, then
-  `PATH` (with a cache).
+  `PATH`. As in dash, found commands are cached with the index of their
+  `PATH` directory and used without checking the file; if it is gone, the
+  directories after it are tried (dash's `shellexec`). `cd` drops entries
+  from relative directories. Test: `exec/path_cache.sh`.
+- As in dash, a function can't be named after a special built-in ("Bad
+  function name").
 - Order (XCU 2.9.1, as in dash): the words are expanded, then the
   redirections are made in the shell (for every kind of command; a forked
   external command inherits them), then the assignments are expanded, so
@@ -211,7 +216,11 @@ pass**.
 - Built-ins: `jobs [-l|-p] [job...]`, `fg`, `bg`, `wait [pid|job...]`
   (dash's statuses: 127 for an unknown pid, 2 for an unknown job; only the
   last pid of a pipeline names it), and `kill` with job specs `%n`, `%%`,
-  `%+`, `%-`, `%str`, `%?str` (an ambiguous spec is an error).
+  `%+`, `%-`, `%str`, `%?str` (an ambiguous spec is an error). `kill` is a
+  port of dash's (options, `-l`), and signal names follow dash's table
+  (any case, no `SIG` prefix, `RTMIN+n`/`RTMAX-n`, no name for 16), also
+  for `trap`, which, as in dash, takes no options. Test:
+  `builtins/kill_trap_signals.sh`.
 - Tests: `builtins/jobs.sh`, `builtins/kill_job.sh`, `exec/async_pid.sh`,
   `exec/exec_last.sh`, `exec/c_exec_last.sh`, `tests/interactive.rs`, and
   unit tests in `cmdtext.rs`.
@@ -246,6 +255,19 @@ pass**.
   globbing, and tilde expansion after `=` and `:`. Test:
   `builtins/declaration_args.sh`.
 - `command` stops errors in special built-ins from exiting the shell.
+  `command -v`/`-V` and `type` follow dash's `describe_command` (only the
+  first name for `command`, "not found" on stdout, "tracked alias" for
+  cached commands, a path is found if the file exists), and `command -p`
+  searches dash's default path. Test: `builtins/command_describe.sh`.
+- `cd` and `pwd` use the logical directory kept by the shell (dash's
+  `curdir`): `pwd` works after the directory is removed, `cd -` without
+  `OLDPWD` is `cd .`, and `OLDPWD` is exported. At startup a valid `$PWD`
+  is used without `getcwd`. Test: `builtins/cd_logical.sh`.
+- `umask` and `ulimit` are ports of dash's (symbolic modes; `-H`/`-S`, `-a`
+  format). Tests: `builtins/umask_modes.sh`, `builtins/ulimit_dash.sh`.
+- `unset` of a bad name is an error; `set -` turns off `-x` and `-v` without
+  resetting the parameters; `.` of a directory reads nothing. Test:
+  `builtins/special_misc.sh`.
 - `local` is scoped per function call. As in dash, `local x` keeps the
   current value.
 - Tests: `builtins/*`.

@@ -105,6 +105,9 @@ pub fn unset(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             sh.functions.remove(name);
             continue;
         }
+        if !is_valid_name(name) {
+            return Err(bad_name(sh, &argv[0], name));
+        }
         if sh.vars.unset(name).is_err() {
             sh.berr(&argv[0], format!("{}: is read only", String::from_utf8_lossy(name)));
             return Err(Flow::Error(2));
@@ -174,9 +177,11 @@ pub fn parse_set_options<'a>(sh: &mut Shell, args: &'a [Vec<u8>], cmd: &[u8]) ->
             return Ok((&args[i + 1..], true));
         }
         if a == b"-" {
+            // As in dash: turns off -x and -v, and ends the options; the
+            // parameters are set only if some follow.
             sh.options.set(Opt::Xtrace, false);
             sh.options.set(Opt::Verbose, false);
-            return Ok((&args[i + 1..], true));
+            return Ok((&args[i + 1..], false));
         }
         if a == b"+" {
             i += 1;

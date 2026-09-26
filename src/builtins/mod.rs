@@ -153,7 +153,7 @@ fn exec(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     if args.is_empty() {
         return Ok(0);
     }
-    sh.exec_argv(args)
+    sh.exec_argv(args, None)
 }
 
 fn exit_status_arg(sh: &Shell, argv: &[Vec<u8>]) -> Result<i32, Flow> {

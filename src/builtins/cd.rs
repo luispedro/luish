@@ -27,14 +27,6 @@ fn canonicalize(path: &[u8]) -> Vec<u8> {
     out
 }
 
-impl Shell {
-    /// The logical current directory: `$PWD` if it is valid.
-    pub fn logical_pwd(&self) -> Option<Vec<u8>> {
-        let pwd = self.get_var(b"PWD")?;
-        (pwd.first() == Some(&b'/') && sys::same_file(&pwd, b".")).then_some(pwd)
-    }
-}
-
 pub fn cd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let mut physical = false;
     let mut i = 1;
@@ -58,16 +50,12 @@ pub fn cd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         },
         Some(d) if d == b"-" => {
             print = true;
-            match sh.get_var(b"OLDPWD") {
-                Some(d) => d,
-                None => {
-                    sh.berr(&argv[0], "OLDPWD not set");
-                    return Ok(2);
-                }
-            }
+            sh.get_var(b"OLDPWD").unwrap_or_default()
         }
         Some(d) => d.clone(),
     };
+    // As in dash, an empty directory (such as an unset OLDPWD) is `.`.
+    let dir = if dir.is_empty() { b".".to_vec() } else { dir };
     // CDPATH search for relative paths not starting with . or ..
     let mut candidates = Vec::new();
     let relative = dir.first() != Some(&b'/');
@@ -90,7 +78,7 @@ pub fn cd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         }
     }
     candidates.push((dir.clone(), false));
-    let old = sh.logical_pwd().or_else(sys::getcwd);
+    let old = sh.curdir.clone();
     for (cand, from_cdpath) in candidates {
         let target = if physical {
             cand.clone()
@@ -110,10 +98,15 @@ pub fn cd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         } else {
             target
         };
-        if let Some(o) = old {
-            sh.set_var(b"OLDPWD", o)?;
-        }
+        // As in dash's `setpwd`: both are exported.
+        sh.set_var(b"OLDPWD", old.unwrap_or_default())?;
+        sh.vars.entry(b"OLDPWD").exported = true;
         sh.set_var(b"PWD", new.clone())?;
+        sh.vars.entry(b"PWD").exported = true;
+        sh.curdir = Some(new.clone());
+        // Commands found in relative `PATH` directories must be looked up
+        // again (dash's `rehash`).
+        sh.hash.retain(|_, (p, _)| p.first() == Some(&b'/'));
         if print || from_cdpath {
             let mut line = new;
             line.push(b'\n');
@@ -130,7 +123,7 @@ pub fn pwd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let dir = if physical {
         sys::getcwd()
     } else {
-        sh.logical_pwd().or_else(sys::getcwd)
+        sh.curdir.clone().or_else(sys::getcwd)
     };
     match dir {
         Some(mut d) => {

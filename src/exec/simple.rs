@@ -164,7 +164,7 @@ impl Shell {
         let exec_now = no_fork && !self.has_traps();
         if !exec_now && self.can_spawn() {
             // Like dash's `vforkexec`.
-            return Ok(match self.spawn_argv(argv) {
+            return Ok(match self.spawn_argv(argv, None) {
                 Ok(pid) => self.wait_foreground(&[pid], || vec![cmdtext::simple(cmd)]),
                 Err(status) => status,
             });
@@ -175,7 +175,7 @@ impl Shell {
             self.fork_child(ForkKind::Foreground(0))?
         };
         if pid == 0 {
-            self.exec_argv(argv);
+            self.exec_argv(argv, None);
         }
         Ok(self.wait_foreground(&[pid], || vec![cmdtext::simple(cmd)]))
     }
@@ -191,28 +191,19 @@ impl Shell {
 
     /// Starts an external command without forking the shell (see
     /// `can_spawn`). Returns its pid, or the status if it couldn't be run.
-    fn spawn_argv(&mut self, argv: &[Vec<u8>]) -> Result<i32, i32> {
-        let name = &argv[0];
-        let path = if name.contains(&b'/') {
-            name.clone()
-        } else {
-            match self.find_in_path(name) {
-                Some(p) => p,
-                None => {
-                    self.error(format!("{}: not found", String::from_utf8_lossy(name)));
-                    return Err(127);
-                }
-            }
-        };
+    fn spawn_argv(&mut self, argv: &[Vec<u8>], alt_path: Option<&[u8]>) -> Result<i32, i32> {
         // A new job: dash frees a finished job's slot at this point.
         self.jobs.reclaim(false);
         let env = self.vars.environ();
-        let mut r = sys::spawn(&path, argv, &env);
-        if r == Err(libc::ENOEXEC) {
-            // A script without `#!`: run it with this shell.
-            r = sys::spawn(&self.self_exe, &self.script_args(&path, argv), &env);
-        }
-        r.map_err(|e| self.exec_error(name, e))
+        let r = self.with_command_path(&argv[0], alt_path, |sh, path| {
+            let r = sys::spawn(path, argv, &env);
+            if r == Err(libc::ENOEXEC) {
+                // A script without `#!`: run it with this shell.
+                return sys::spawn(&sh.self_exe, &sh.script_args(path, argv), &env);
+            }
+            r
+        });
+        r.map_err(|e| self.exec_error(&argv[0], e))
     }
 
     /// Runs `f` with variable assignments that only last for its duration.
@@ -240,21 +231,21 @@ impl Shell {
     }
 
     /// Runs a command given as expanded words, without assignments or
-    /// redirections (for `command`).
-    pub fn run_argv(&mut self, argv: &[Vec<u8>], functions: bool) -> ExecResult {
+    /// redirections (for `command`; `alt_path` for `command -p`).
+    pub fn run_argv(&mut self, argv: &[Vec<u8>], functions: bool, alt_path: Option<&[u8]>) -> ExecResult {
         match self.lookup_command(&argv[0], functions) {
             CommandKind::Special(f) | CommandKind::Builtin(f) => f(self, argv),
             CommandKind::Function(body) => self.call_function(&body, argv),
             CommandKind::External => {
                 let pid = if self.can_spawn() {
-                    match self.spawn_argv(argv) {
+                    match self.spawn_argv(argv, alt_path) {
                         Ok(pid) => pid,
                         Err(status) => return Ok(status),
                     }
                 } else {
                     let pid = self.fork_child(ForkKind::Foreground(0))?;
                     if pid == 0 {
-                        self.exec_argv(argv);
+                        self.exec_argv(argv, alt_path);
                     }
                     pid
                 };
@@ -265,24 +256,17 @@ impl Shell {
     }
 
     /// Replaces the process with an external command. Never returns.
-    pub fn exec_argv(&mut self, argv: &[Vec<u8>]) -> ! {
-        let name = &argv[0];
-        let path = if name.contains(&b'/') {
-            Some(name.clone())
-        } else {
-            self.find_in_path(name)
-        };
-        let Some(path) = path else {
-            self.error(format!("{}: not found", String::from_utf8_lossy(name)));
-            sys::exit(127);
-        };
+    pub fn exec_argv(&mut self, argv: &[Vec<u8>], alt_path: Option<&[u8]>) -> ! {
         let env = self.vars.environ();
-        let mut e = sys::execve(&path, argv, &env);
-        if e == libc::ENOEXEC {
-            // A script without `#!`: run it with this shell.
-            e = sys::execve(&self.self_exe, &self.script_args(&path, argv), &env);
-        }
-        let code = self.exec_error(name, e);
+        let r: Result<(), i32> = self.with_command_path(&argv[0], alt_path, |sh, path| {
+            let mut e = sys::execve(path, argv, &env);
+            if e == libc::ENOEXEC {
+                // A script without `#!`: run it with this shell.
+                e = sys::execve(&sh.self_exe, &sh.script_args(path, argv), &env);
+            }
+            Err(e)
+        });
+        let code = self.exec_error(&argv[0], r.unwrap_err());
         sys::exit(code)
     }
 

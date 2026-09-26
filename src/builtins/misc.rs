@@ -29,13 +29,25 @@ pub fn dot(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
                 .then_some(p)
         })
     };
-    let text = path.and_then(|p| std::fs::read(OsStr::from_bytes(&p)).ok());
-    let Some(text) = text else {
-        sh.berr(
-            &argv[0],
-            format!("cannot open {}: No such file", String::from_utf8_lossy(name)),
-        );
-        return Err(Flow::Error(2));
+    let text = match path.map(|p| std::fs::read(OsStr::from_bytes(&p))) {
+        Some(Ok(t)) => t,
+        // As in dash, a directory reads as empty.
+        Some(Err(e)) if e.raw_os_error() == Some(libc::EISDIR) => Vec::new(),
+        r => {
+            let e = r
+                .and_then(|r| r.err())
+                .and_then(|e| e.raw_os_error())
+                .unwrap_or(libc::ENOENT);
+            sh.berr(
+                &argv[0],
+                format!(
+                    "cannot open {}: {}",
+                    String::from_utf8_lossy(name),
+                    crate::exec::redirect::open_error(e)
+                ),
+            );
+            return Err(Flow::Error(2));
+        }
     };
     let saved_lineno = sh.lineno;
     sh.lineno = 1;
@@ -122,20 +134,22 @@ pub fn unalias(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 }
 
 /// Describes a command for `command -v` (`verbose` false) or `-V`/`type`.
-fn describe(sh: &mut Shell, name: &[u8], verbose: bool, default_path: bool) -> Option<Vec<u8>> {
+/// dash's `describe_command` for `type`, `command -v` (brief) and
+/// `command -V` (verbose). With `alt_path` (`command -p`), that path is
+/// searched instead of `PATH`. Prints to stdout; returns the status.
+fn describe(sh: &mut Shell, name: &[u8], verbose: bool, alt_path: Option<&[u8]>) -> i32 {
     let n = String::from_utf8_lossy(name);
-    if is_reserved(name) {
-        return Some(
-            if verbose {
-                format!("{n} is a shell keyword")
-            } else {
-                n.to_string()
-            }
-            .into_bytes(),
-        );
-    }
-    if let Some(v) = sh.aliases.get(name) {
-        return Some(if verbose {
+    let line = |what: &str| {
+        if verbose {
+            format!("{n} {what}").into_bytes()
+        } else {
+            name.to_vec()
+        }
+    };
+    let text = if is_reserved(name) {
+        line("is a shell keyword")
+    } else if let Some(v) = sh.aliases.get(name) {
+        if verbose {
             format!("{n} is an alias for {}", String::from_utf8_lossy(v)).into_bytes()
         } else {
             let mut s = b"alias ".to_vec();
@@ -143,72 +157,48 @@ fn describe(sh: &mut Shell, name: &[u8], verbose: bool, default_path: bool) -> O
             l.pop();
             s.extend(l);
             s
-        });
-    }
-    match sh.lookup_command(name, true) {
-        CommandKind::Special(_) => {
-            return Some(
-                if verbose {
-                    format!("{n} is a special shell builtin")
-                } else {
-                    n.to_string()
-                }
-                .into_bytes(),
-            );
         }
-        CommandKind::Function(_) => {
-            return Some(
-                if verbose {
-                    format!("{n} is a shell function")
+    } else {
+        match sh.lookup_command(name, true) {
+            CommandKind::Special(_) => line("is a special shell builtin"),
+            CommandKind::Function(_) => line("is a shell function"),
+            CommandKind::Builtin(_) => line("is a shell builtin"),
+            CommandKind::External => {
+                let tracked = alt_path.is_none() && sh.hash.contains_key(name);
+                let found = if name.contains(&b'/') {
+                    // As in dash, any file will do.
+                    sys::stat(name).map(|_| name.to_vec())
+                } else if let Some(p) = alt_path {
+                    crate::path::search(p, name).map(|(f, _, _)| f)
                 } else {
-                    n.to_string()
-                }
-                .into_bytes(),
-            );
-        }
-        CommandKind::Builtin(_) => {
-            return Some(
+                    sh.find_in_path(name).map(|(f, _)| f)
+                };
+                let Some(path) = found else {
+                    if verbose {
+                        sh.out(format!("{n}: not found\n").as_bytes());
+                    }
+                    return 127;
+                };
                 if verbose {
-                    format!("{n} is a shell builtin")
+                    let mut s = format!("{n} is {}", if tracked { "a tracked alias for " } else { "" }).into_bytes();
+                    s.extend(path);
+                    s
                 } else {
-                    n.to_string()
+                    path
                 }
-                .into_bytes(),
-            );
-        }
-        CommandKind::External => {}
-    }
-    let path = if name.contains(&b'/') {
-        sys::access(name, libc::X_OK).then(|| name.to_vec())
-    } else if default_path {
-        let saved = sh.get_var(b"PATH");
-        let _ = sh.vars.set(b"PATH", b"/usr/bin:/bin".to_vec());
-        let p = sh.search_path(name);
-        match saved {
-            Some(s) => {
-                let _ = sh.vars.set(b"PATH", s);
-            }
-            None => {
-                let _ = sh.vars.unset(b"PATH");
             }
         }
-        p
-    } else {
-        sh.find_in_path(name)
-    }?;
-    Some(if verbose {
-        let mut s = format!("{n} is ").into_bytes();
-        s.extend(path);
-        s
-    } else {
-        path
-    })
+    };
+    let mut text = text;
+    text.push(b'\n');
+    sh.out(&text);
+    0
 }
 
 pub fn command(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let mut i = 1;
     let mut verbose = None;
-    let mut default_path = false;
+    let mut alt_path = None;
     while let Some(a) = argv.get(i) {
         if a == b"--" {
             i += 1;
@@ -219,9 +209,9 @@ pub fn command(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         }
         for &c in &a[1..] {
             match c {
-                b'v' => verbose = Some(false),
+                b'v' => verbose = Some(verbose.unwrap_or(false)),
                 b'V' => verbose = Some(true),
-                b'p' => default_path = true,
+                b'p' => alt_path = Some(crate::path::DEFAULT_PATH),
                 _ => {
                     sh.berr(&argv[0], format!("Illegal option -{}", c as char));
                     return Ok(2);
@@ -235,26 +225,12 @@ pub fn command(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         return Ok(0);
     }
     if let Some(verbose) = verbose {
-        let mut status = 0;
-        for name in args {
-            match describe(sh, name, verbose, default_path) {
-                Some(mut d) => {
-                    d.push(b'\n');
-                    sh.out(&d);
-                }
-                None => {
-                    if verbose {
-                        sh.error(format!("{}: not found", String::from_utf8_lossy(name)));
-                    }
-                    status = 127;
-                }
-            }
-        }
-        return Ok(status);
+        // As in dash, only the first name is described.
+        return Ok(describe(sh, &args[0], verbose, alt_path));
     }
     // `command` suppresses function lookup, and errors from special
     // built-ins no longer exit the shell.
-    match sh.run_argv(args, false) {
+    match sh.run_argv(args, false, alt_path) {
         Err(Flow::Error(n)) => Ok(n),
         r => r,
     }
@@ -263,23 +239,14 @@ pub fn command(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 pub fn type_(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let mut status = 0;
     for name in &argv[1..] {
-        match describe(sh, name, true, false) {
-            Some(mut d) => {
-                d.push(b'\n');
-                sh.out(&d);
-            }
-            None => {
-                sh.out(format!("{}: not found\n", String::from_utf8_lossy(name)).as_bytes());
-                status = 127;
-            }
-        }
+        status |= describe(sh, name, true, None);
     }
     Ok(status)
 }
 
 pub fn hash(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     if argv.len() == 1 {
-        let mut entries: Vec<_> = sh.hash.values().cloned().collect();
+        let mut entries: Vec<_> = sh.hash.values().map(|(p, _)| p.clone()).collect();
         entries.sort();
         let mut out = Vec::new();
         for p in entries {
@@ -321,33 +288,56 @@ const LIMITS: &[(u8, libc::__rlimit_resource_t, u64, &str)] = &[
     (b'r', libc::RLIMIT_RTPRIO, 1, "rtprio"),
 ];
 
+/// A port of dash's `ulimitcmd`.
 pub fn ulimit(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    let mut hard = false;
-    let mut soft = false;
+    // As in dash: -H and -S select one limit (the last wins); by default a
+    // value sets both, and the soft limit is shown.
+    let (mut hard, mut soft) = (true, true);
     let mut all = false;
     let mut which = b'f';
-    let mut value = None;
-    for a in &argv[1..] {
-        if a.len() > 1 && a[0] == b'-' {
-            for &c in &a[1..] {
-                match c {
-                    b'H' => hard = true,
-                    b'S' => soft = true,
-                    b'a' => all = true,
-                    c if LIMITS.iter().any(|l| l.0 == c) => which = c,
-                    c => {
-                        sh.berr(&argv[0], format!("Illegal option -{}", c as char));
-                        return Ok(2);
-                    }
+    let mut i = 1;
+    while let Some(a) = argv.get(i) {
+        if a == b"--" {
+            i += 1;
+            break;
+        }
+        if a.len() < 2 || a[0] != b'-' {
+            break;
+        }
+        for &c in &a[1..] {
+            match c {
+                b'H' => (hard, soft) = (true, false),
+                b'S' => (hard, soft) = (false, true),
+                b'a' => all = true,
+                c if LIMITS.iter().any(|l| l.0 == c) => which = c,
+                c => {
+                    sh.berr(&argv[0], format!("Illegal option -{}", c as char));
+                    return Ok(2);
                 }
             }
-        } else {
-            value = Some(a.clone());
         }
+        i += 1;
     }
-    if !hard && !soft {
-        soft = true;
-    }
+    let &(_, res, unit, _) = LIMITS.iter().find(|l| l.0 == which).unwrap();
+    let value = match argv.get(i) {
+        None => None,
+        Some(_) if all || argv.len() > i + 1 => {
+            sh.berr(&argv[0], "too many arguments");
+            return Ok(2);
+        }
+        Some(v) if v == b"unlimited" => Some(libc::RLIM_INFINITY),
+        Some(v) => {
+            let mut n: u64 = 0;
+            for &c in v.iter() {
+                if !c.is_ascii_digit() {
+                    sh.berr(&argv[0], "bad number");
+                    return Ok(2);
+                }
+                n = n.wrapping_mul(10).wrapping_add((c - b'0') as u64);
+            }
+            Some(n.wrapping_mul(unit))
+        }
+    };
     let get = |res| {
         // SAFETY: valid output buffer.
         unsafe {
@@ -357,109 +347,60 @@ pub fn ulimit(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         }
     };
     let show = |rl: libc::rlimit, unit: u64| {
-        let v = if hard && !soft { rl.rlim_max } else { rl.rlim_cur };
+        let v = if soft { rl.rlim_cur } else { rl.rlim_max };
         if v == libc::RLIM_INFINITY {
-            "unlimited".to_string()
+            "unlimited\n".to_string()
         } else {
-            (v / unit).to_string()
+            format!("{}\n", v / unit)
         }
     };
     if all {
         let mut out = String::new();
-        for &(c, res, unit, desc) in LIMITS {
-            out.push_str(&format!("-{} {:<24}{}\n", c as char, desc, show(get(res), unit)));
+        for &(_, res, unit, desc) in LIMITS {
+            out.push_str(&format!("{desc:<20} {}", show(get(res), unit)));
         }
         return Ok(sh.out_or_err(&argv[0], out.as_bytes()));
     }
-    let &(_, res, unit, _) = LIMITS.iter().find(|l| l.0 == which).unwrap();
-    match value {
-        None => {
-            let out = format!("{}\n", show(get(res), unit));
-            Ok(sh.out_or_err(&argv[0], out.as_bytes()))
-        }
-        Some(v) => {
-            let n = if v == b"unlimited" {
-                libc::RLIM_INFINITY
-            } else {
-                match super::parse_uint(&v) {
-                    Some(n) => (n as u64).saturating_mul(unit),
-                    None => {
-                        sh.berr(&argv[0], format!("bad number: {}", String::from_utf8_lossy(&v)));
-                        return Ok(2);
-                    }
-                }
-            };
-            let mut rl = get(res);
-            if hard {
-                rl.rlim_max = n;
-            }
-            if soft {
-                rl.rlim_cur = n;
-            }
-            // SAFETY: valid rlimit.
-            if unsafe { libc::setrlimit(res, &rl) } < 0 {
-                sh.berr(
-                    &argv[0],
-                    format!("error setting limit ({})", sys::strerror(sys::errno())),
-                );
-                return Ok(2);
-            }
-            Ok(0)
-        }
+    let Some(n) = value else {
+        return Ok(sh.out_or_err(&argv[0], show(get(res), unit).as_bytes()));
+    };
+    let mut rl = get(res);
+    if hard {
+        rl.rlim_max = n;
     }
+    if soft {
+        rl.rlim_cur = n;
+    }
+    // SAFETY: valid rlimit.
+    if unsafe { libc::setrlimit(res, &rl) } < 0 {
+        sh.berr(
+            &argv[0],
+            format!("error setting limit ({})", sys::strerror(sys::errno())),
+        );
+        return Ok(2);
+    }
+    Ok(0)
 }
 
-/// Applies a symbolic mode like `u=rwx,g+w,o-r` to permission bits.
-fn symbolic_mode(spec: &[u8], mut perm: u32) -> Option<u32> {
-    for clause in spec.split(|&c| c == b',') {
-        let mut i = 0;
-        let mut who = 0u32;
-        while i < clause.len() && b"ugoa".contains(&clause[i]) {
-            who |= match clause[i] {
-                b'u' => 0o700,
-                b'g' => 0o070,
-                b'o' => 0o007,
-                _ => 0o777,
-            };
-            i += 1;
-        }
-        if who == 0 {
-            who = 0o777;
-        }
-        if i >= clause.len() {
-            return None;
-        }
-        while i < clause.len() {
-            let op = clause[i];
-            if !b"+-=".contains(&op) {
-                return None;
-            }
-            i += 1;
-            let mut bits = 0u32;
-            while i < clause.len() && b"rwx".contains(&clause[i]) {
-                bits |= match clause[i] {
-                    b'r' => 0o444,
-                    b'w' => 0o222,
-                    _ => 0o111,
-                };
-                i += 1;
-            }
-            let bits = bits & who;
-            match op {
-                b'+' => perm |= bits,
-                b'-' => perm &= !bits,
-                _ => perm = (perm & !who) | bits,
-            }
-        }
-    }
-    Some(perm)
-}
-
+/// A port of dash's `umaskcmd`.
 pub fn umask(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let mut symbolic = false;
     let mut args = &argv[1..];
-    if args.first().is_some_and(|a| a == b"-S") {
-        symbolic = true;
+    while let Some(a) = args.first() {
+        if a == b"--" {
+            args = &args[1..];
+            break;
+        }
+        if a.len() < 2 || a[0] != b'-' {
+            break;
+        }
+        for &c in &a[1..] {
+            if c != b'S' {
+                sh.berr(&argv[0], format!("Illegal option -{}", c as char));
+                return Ok(2);
+            }
+            symbolic = true;
+        }
         args = &args[1..];
     }
     let cur = sys::umask(0);
@@ -487,19 +428,73 @@ pub fn umask(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         };
         return Ok(sh.out_or_err(&argv[0], out.as_bytes()));
     };
-    let new = if spec.iter().all(|c| (b'0'..=b'7').contains(c)) {
-        u32::from_str_radix(std::str::from_utf8(spec).unwrap(), 8).ok()
+    let new_mask = if spec.first().is_some_and(|c| c.is_ascii_digit()) {
+        let mut m: u32 = 0;
+        for &c in spec.iter() {
+            if !(b'0'..b'8').contains(&c) {
+                sh.berr(&argv[0], format!("Illegal number: {}", String::from_utf8_lossy(spec)));
+                return Ok(2);
+            }
+            m = (m << 3).wrapping_add((c - b'0') as u32);
+        }
+        m
     } else {
-        symbolic_mode(spec, !cur & 0o777).map(|p| !p & 0o777)
-    };
-    match new {
-        Some(m) => {
-            sys::umask(m);
-            Ok(0)
+        let mask = !cur;
+        let mut new = mask;
+        let mut positions = 0;
+        let mut i = 0;
+        let at = |i: usize| spec.get(i).copied().unwrap_or(0);
+        while at(i) != 0 {
+            while at(i) != 0 && b"augo".contains(&at(i)) {
+                positions |= match at(i) {
+                    b'a' => 0o111,
+                    b'u' => 0o100,
+                    b'g' => 0o010,
+                    _ => 0o001,
+                };
+                i += 1;
+            }
+            if positions == 0 {
+                positions = 0o111;
+            }
+            let op = at(i);
+            if op == 0 || !b"=+-".contains(&op) {
+                break;
+            }
+            i += 1;
+            let mut val = 0;
+            while at(i) != 0 && b"rwxugoXs".contains(&at(i)) {
+                val |= match at(i) {
+                    b'r' => 4,
+                    b'w' => 2,
+                    b'x' => 1,
+                    b'u' => mask >> 6,
+                    b'g' => mask >> 3,
+                    b'o' => mask,
+                    b'X' if mask & 0o111 != 0 => 1,
+                    _ => 0,
+                };
+                i += 1;
+            }
+            let val = (val & 7) * positions;
+            match op {
+                b'-' => new &= !val,
+                b'=' => new = val | (new & !(positions * 7)),
+                _ => new |= val,
+            }
+            if at(i) == b',' {
+                positions = 0;
+                i += 1;
+            } else if at(i) == 0 || !b"=+-".contains(&at(i)) {
+                break;
+            }
         }
-        None => {
+        if at(i) != 0 {
             sh.berr(&argv[0], format!("Illegal mode: {}", String::from_utf8_lossy(spec)));
-            Ok(2)
+            return Ok(2);
         }
-    }
+        !new
+    };
+    sys::umask(new_mask & 0o7777);
+    Ok(0)
 }

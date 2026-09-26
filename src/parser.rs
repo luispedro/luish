@@ -463,7 +463,11 @@ impl Parser {
     }
 
     fn parse_function(&mut self, name: Word) -> PResult<Command> {
-        let Some(name) = name.as_literal().filter(|n| is_valid_name(n)) else {
+        // As in dash, special built-ins can't be redefined.
+        let Some(name) = name
+            .as_literal()
+            .filter(|n| is_valid_name(n) && !matches!(crate::builtins::lookup(n), Some((_, true))))
+        else {
             return self.err("Syntax error: Bad function name");
         };
         let name = name.to_vec();
