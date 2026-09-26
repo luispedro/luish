@@ -1,0 +1,73 @@
+--- an interactive login shell builds both caches, rc.d first
+running rc
+uncached rc
+running 10-a
+running 20-b
+uncached
+A=1 B=1-b E=extra U=u T=t Z=unset P=p
+f: 1 x
+ll
+login
+0027
+noclobber
+--- and uses them
+uncached rc
+uncached
+A=1 B=1-b E=extra U=u T=t2 Z=unset P=p
+f: 1 x
+ll
+login
+0027
+noclobber
+A=1
+status 2
+1
+1
+--- a non-interactive login shell runs only login.d
+uncached
+A=1 B=1-b E=extra U=u T= Z=unset P=
+f: 1 x
+ll
+login
+0027
+noclobber
+--- an interactive shell runs only rc.d
+uncached rc
+A= B= E= U= T= Z=unset P=p
+rc
+0022
+--- a non-interactive shell runs neither
+A= B= E= U= T= Z=unset P=
+0022
+--- a sourced file changed
+running 10-a
+running 20-b
+uncached
+extra2
+uncached
+extra2
+--- a file added, then removed
+running 10-a
+running 15-d
+running 20-b
+uncached
+B=1-b D=d
+uncached
+B=1-b D=d
+running 10-a
+running 20-b
+uncached
+B=1-b D=unset
+uncached
+B=1-b D=unset
+--- a file changed, in an interactive shell
+running rc
+uncached rc
+rc2
+uncached rc
+rc2
+--- without login.d, ~/.profile is read (after rc.d)
+uncached rc
+profile
+A=
+rc2

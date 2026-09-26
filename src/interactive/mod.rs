@@ -26,7 +26,7 @@ fn history_file(sh: &Shell) -> Option<Vec<u8>> {
     sh.get_var(b"HISTFILE").filter(|h| !h.is_empty())
 }
 
-fn to_path(b: &[u8]) -> std::path::PathBuf {
+pub fn to_path(b: &[u8]) -> std::path::PathBuf {
     use std::os::unix::ffi::OsStrExt;
     std::ffi::OsStr::from_bytes(b).into()
 }
@@ -138,26 +138,43 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
 
 /// Sources a file in the current shell if it exists.
 pub fn source_file(sh: &mut Shell, path: &[u8]) {
-    let Ok(text) = std::fs::read(to_path(path)) else {
-        return;
-    };
+    if let Ok(text) = std::fs::read(to_path(path)) {
+        run_file(sh, &text);
+    }
+}
+
+/// Runs the text of a startup file in the current shell.
+pub fn run_file(sh: &mut Shell, text: &[u8]) {
     let saved = sh.lineno;
     sh.lineno = 1;
-    let r = sh.run_string(&text);
+    let r = sh.run_string(text);
     sh.lineno = saved;
     if let Err(crate::shell::Flow::Exit(n)) = r {
         sh.exit(n);
     }
 }
 
-/// Runs the startup files of an interactive (and possibly login) shell.
-/// Reads `/etc/profile` and `~/.profile`, for a login shell (interactive or
-/// not, as in dash).
+/// Runs the startup files of a login shell (interactive or not, as in
+/// dash; after `rc.d`): the cached files of `luish/login.d` if it exists in the
+/// configuration directory (see `startcache.rs`), otherwise `/etc/profile`
+/// and `~/.profile`.
 pub fn login_profiles(sh: &mut Shell) {
+    if let Some(dir) = crate::startcache::config_dir(sh, b"login.d") {
+        crate::startcache::run(sh, &dir, b"login");
+        return;
+    }
     source_file(sh, b"/etc/profile");
     if let Some(mut home) = sh.get_var(b"HOME") {
         home.extend_from_slice(b"/.profile");
         source_file(sh, &home);
+    }
+}
+
+/// Runs the cached files of `luish/rc.d`, if it exists, for an interactive
+/// shell, before the login files (see `startcache.rs`).
+pub fn rc_d(sh: &mut Shell) {
+    if let Some(dir) = crate::startcache::config_dir(sh, b"rc.d") {
+        crate::startcache::run(sh, &dir, b"rc");
     }
 }
 
@@ -170,12 +187,7 @@ pub fn startup(sh: &mut Shell) {
     {
         source_file(sh, &path);
     }
-    let config = sh.get_var(b"XDG_CONFIG_HOME").filter(|c| !c.is_empty()).or_else(|| {
-        sh.get_var(b"HOME").map(|mut h| {
-            h.extend_from_slice(b"/.config");
-            h
-        })
-    });
+    let config = crate::startcache::xdg_dir(sh, b"XDG_CONFIG_HOME", b"/.config");
     if let Some(mut c) = config {
         c.extend_from_slice(b"/luish/luishrc");
         if sys::stat(&c).is_some() {

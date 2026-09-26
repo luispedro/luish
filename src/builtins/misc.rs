@@ -29,6 +29,12 @@ pub fn dot(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
                 .then_some(p)
         })
     };
+    if let (Some(rec), Some(p)) = (&mut sh.sourced_files, &path) {
+        rec.push(match &sh.curdir {
+            Some(dir) if p.first() != Some(&b'/') => [dir.as_slice(), b"/", p].concat(),
+            _ => p.clone(),
+        });
+    }
     let text = match path.map(|p| std::fs::read(OsStr::from_bytes(&p))) {
         Some(Ok(t)) => t,
         // As in dash, a directory reads as empty.

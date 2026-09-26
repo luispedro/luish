@@ -905,6 +905,10 @@ login shells run `/etc/profile` and `~/.profile` as now, uncached. With it:
   the cached state is in place, for things that must not be cached: starting
   `ssh-agent`, printing the motd, `GPG_TTY=$(tty)`. Its effects are never
   cached or compared.
+- `$XDG_CONFIG_HOME/luish/rc.d/` works the same way (its own `*.lsh`
+  files, `_uncached.lsh` and cache) for every interactive shell, and runs
+  before `login.d`, as zsh's `.zshrc` runs before `.zlogin`. It holds what
+  isn't inherited through the environment: aliases, functions and options.
 - `$ENV` and `luishrc` run afterwards, as now, uncached.
 
 Cached files should have no side effects and print nothing. Output from a
@@ -1005,6 +1009,15 @@ The Stage 1 constraints are:
   `unparse.rs`; cache entries can use the same format.)
 - Variable, function and alias lookups can record reads. As with provenance,
   this must cost nothing when no cache is being built.
+
+**First version (done).** `src/startcache.rs` implements a pared-down
+form, with `rc.d/` as above. Each directory has one cache file, keyed only
+on fingerprints (the files and what they sourced with `.`), holding the
+difference between the state before and after its files ran. When the key
+doesn't match, the shell reruns the files in the foreground and rewrites
+the cache; there is no background run. The per-file entries, keying on
+what was read, parallel builds, locking, background revalidation and
+merging into running shells above are still to do.
 
 ### 9.3 Stage 3: SSH client/server mode
 

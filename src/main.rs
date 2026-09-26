@@ -14,6 +14,7 @@ mod parser;
 mod path;
 mod shell;
 mod signals;
+mod startcache;
 mod state;
 mod sys;
 mod unparse;
@@ -156,6 +157,9 @@ fn main() {
                 input = Input::fd(0, true);
             }
         }
+    }
+    if interactive {
+        interactive::rc_d(&mut sh);
     }
     if login {
         interactive::login_profiles(&mut sh);

@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **104 differential cases, 31 unit tests and 9 pty tests
+Current state: **106 differential cases, 35 unit tests and 9 pty tests
 pass**.
 
 ## Environment
@@ -392,6 +392,32 @@ pass**.
 - Startup files: `/etc/profile` and `~/.profile` for login shells
   (interactive or not, as in dash), then, for interactive shells, `$ENV`,
   then `$XDG_CONFIG_HOME/luish/luishrc`.
+- Cached startup files (`src/startcache.rs`, a first version of PLAN.md
+  §9.2), each set enabled by its directory existing, as zsh's `.zshrc` and
+  `.zlogin`: `$XDG_CONFIG_HOME/luish/rc.d/` for every interactive shell,
+  then `$XDG_CONFIG_HOME/luish/login.d/` for login shells (instead of
+  `/etc/profile` and `~/.profile`). So the order is `rc.d`, the login files
+  (`login.d`, or else `/etc/profile` and `~/.profile`), `$ENV`, `luishrc`.
+  The `*.lsh` files of a directory run in byte order (not dot files), and
+  what they changed is saved to `$XDG_CACHE_HOME/luish/rc-HOST` or
+  `login-HOST` (mode 0600, written through a rename): the difference
+  between the state (`state.rs`) before and after, as commands
+  (assignments, `unset`, function definitions, ...), so inherited
+  variables that the files don't touch aren't saved. The key is the
+  directory, the list of files, and the fingerprint (device, inode, size,
+  modification time) of each file and of every file they read with `.`. A
+  later shell stats those files, reads the cache and runs the saved
+  commands; if a fingerprint differs, it reruns the files and rewrites the
+  cache, without asking. A directory's `_uncached.lsh` runs every time,
+  after its cached state. On the warm path this costs a stat per file, a
+  directory read and one file read per directory. Test:
+  `misc/startup_cache.sh`. Not yet done: keying on the inherited values the
+  files read (so values such as `PATH=$HOME/bin:$PATH` keep the rest of
+  `PATH` from when the cache was built, and an `rc.d` cache built in a
+  login shell, before `login.d` ran, is used in shells started from it,
+  which have the `login.d` variables), changes a fingerprint can't show
+  (command output, files tested with `[`, a sourced file that didn't
+  exist), background revalidation, and merging into running shells.
 - Tests: `tests/interactive.rs` (job control, Ctrl-C and Ctrl-Z, terminal
   input and modes, completion, highlighting, `fc`, and the command cache),
   `builtins/fc_noninteractive.sh`, and unit tests in `complete.rs`,

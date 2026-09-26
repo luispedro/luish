@@ -78,6 +78,9 @@ pub struct Shell {
     pub optoff: Option<usize>,
     /// Currently running the EXIT trap.
     pub in_exit_trap: bool,
+    /// While the login cache is built: the absolute paths of the files
+    /// read by `.`.
+    pub sourced_files: Option<Vec<Vec<u8>>>,
 }
 
 impl Shell {
@@ -149,6 +152,7 @@ impl Shell {
             in_ps4: false,
             out_failed: std::cell::Cell::new(false),
             in_exit_trap: false,
+            sourced_files: None,
         }
     }
 
