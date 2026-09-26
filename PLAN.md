@@ -1,33 +1,55 @@
 # luish — Implementation Plan
 
-`luish` is a POSIX-compliant shell written in Rust, with optional support for
-plugins written in Python.
+`luish` is a POSIX-compliant shell for Linux, written in Rust, with optional
+support for plugins written in Python. The long-term aim is to replace zsh as
+a daily-driver shell.
+
+`GOALS.md` groups the goals into three stages. This plan covers Stage 1
+(reproducing existing functionality) in detail, plus the plugin system from
+Stage 2. §9 covers the later stages and the constraints they put on Stage 1
+design.
 
 ---
 
 ## 1. Goals and non-goals
 
-### Goals
+### Stage 1 goals (current focus)
 
 - **POSIX conformance**: implement the Shell Command Language (POSIX.1-2017,
   XCU chapter 2) and the required built-ins. When the spec is ambiguous, match
-  `dash`.
-- **Fast**: `luish -c true` should start in under ~2 ms, and script execution
-  should be within ~1.5× of `dash`. Python must add **no cost** unless a
+  `dash`. Also implement `local` as dash does: it isn't POSIX, but dash
+  supports it and many real-world `sh` scripts depend on it.
+- **As fast as dash**: `luish -c true` should start in under ~2 ms, and script
+  execution should match `dash`. M3 requires being within ~1.5× of dash, and
+  Phase 12 closes the remaining gap. Every later feature is
+  pay-for-what-you-use. For example, Python must add **no cost** unless a
   plugin is actually loaded.
-- **Usable interactively**: line editing, history, completion, and job control.
-- **Extensible from Python**: plugins can add built-ins and hook into
-  interactive events (prompt, preexec, precmd, completion).
+- **Usable interactively as a daily driver**: line editing, history,
+  completion, and job control.
 - **Correct with arbitrary bytes**: arguments, variables, and filenames are
   byte strings, not UTF-8 strings.
 
-### Non-goals (at least initially)
+### Deferred to later stages
 
-- Bash/zsh extensions such as arrays, `[[ ]]`, process substitution, `{a,b}`
-  brace expansion, and `local`. `local` may be added later, because nearly all
-  real-world `sh` scripts use it.
-- Windows support.
-- Plugins that change parsing or expansion semantics. A POSIX script must
+These are planned, but none of them is built during Stage 1 (see §9).
+Stage 1 design must not rule them out.
+
+- **Stage 2:** Python plugins (Phase 11 and §6). Opt-in bash/zsh extensions
+  such as arrays, associative arrays, process substitution, `[[ ]]`, and
+  `{a,b}` brace expansion. Modern terminal features. Better scripting
+  and debugging support. Richer completion and history.
+- **Stage 3:** caching of login scripts, and a built-in SSH client/server mode.
+
+### Non-goals
+
+These are not a focus of the project. That does not mean outside
+contributions for them will be rejected.
+
+- Platforms other than Linux.
+
+### Design constraints
+
+- Plugins must not change parsing or expansion semantics. A POSIX script must
   behave the same whichever plugins are loaded.
 
 ---
@@ -37,11 +59,12 @@ plugins written in Python.
 | Decision | Choice | Rationale |
 |---|---|---|
 | Core language | Rust | Fast startup, precise control over syscalls, memory safety |
+| Target platform | Linux only | Linux-specific APIs (such as `pidfd`, `signalfd`, `clone(CLONE_VFORK)`, and `/proc`) may be used wherever they help. No portability layer |
 | Syscalls | `nix` (or `rustix`) | Safe wrappers for fork, exec, pipes, process groups, and signals |
 | Process creation | Raw `fork()` + `execve()` | Subshells need a fork *without* an exec, which `std::process::Command` can't do |
 | String type | `Vec<u8>` / `OsString` throughout | POSIX data is bytes |
 | Execution model | Tree-walking interpreter over an AST | Simple, and fast enough for a shell |
-| Line editing | `rustyline` (or `reedline`) | Mature and supports vi and emacs modes |
+| Line editing | `rustyline` (or `reedline`), behind a `LineEditor` interface | Mature and supports vi and emacs modes. The interface keeps the editor separate from the executor so it can later run on an SSH client (§9.3) |
 | Python | `pyo3`, embedded behind the `python` cargo feature, initialized lazily | No libpython dependency or startup cost when unused |
 | Reference behaviour | `dash`, then `bash --posix` | Used to settle spec ambiguities in tests |
 
@@ -52,6 +75,7 @@ plugins written in Python.
 ```
 luish/
 ├── Cargo.toml              # [features] python = ["dep:pyo3"]
+├── GOALS.md
 ├── PLAN.md
 ├── src/
 │   ├── main.rs             # CLI parsing, mode selection (interactive / script / -c)
@@ -85,7 +109,7 @@ luish/
 │   │   └── *.rs            # one file per built-in (or small groups)
 │   ├── interactive/
 │   │   ├── mod.rs          # REPL loop, prompts
-│   │   ├── editor.rs       # rustyline integration
+│   │   ├── editor.rs       # `LineEditor` interface + rustyline implementation
 │   │   ├── history.rs
 │   │   └── complete.rs
 │   └── plugins/
@@ -228,6 +252,7 @@ parent's main loop.**
 ## 5. Implementation phases
 
 Each phase ends with a list of tests that must pass before moving on.
+Phases 0–10 and 12 make up Stage 1. Phase 11 (plugins) belongs to Stage 2.
 
 ### Phase 0 — Scaffolding (½ day)
 
@@ -392,7 +417,7 @@ Built-ins, in the order to implement them:
 | Group | Built-ins |
 |---|---|
 | Special | `:` `.` `break` `continue` `eval` `exec` `exit` `export` `readonly` `return` `set` `shift` `times` `trap` `unset` |
-| Must run in-process | `cd` (`-L`/`-P`, `CDPATH`, `OLDPWD`, `cd -`), `pwd`, `read` (`-r`, IFS splitting, backslash continuation), `umask`, `wait`, `alias`, `unalias`, `getopts`, `command` (`-v`, `-V`, `-p`), `type`, `hash`, `ulimit`, `kill` (`-l`, `-s`, job specs) |
+| Must run in-process | `cd` (`-L`/`-P`, `CDPATH`, `OLDPWD`, `cd -`), `pwd`, `read` (`-r`, IFS splitting, backslash continuation), `umask`, `wait`, `alias`, `unalias`, `getopts`, `command` (`-v`, `-V`, `-p`), `type`, `hash`, `ulimit`, `kill` (`-l`, `-s`, job specs), `local` (Phase 7) |
 | Built-in for speed | `true`, `false`, `echo` (dash-compatible: no options except `-n`, and XSI escapes), `printf` (full format support, and `%b`), `test` / `[` (following POSIX's argument-count rules) |
 | Job control | `jobs`, `fg`, `bg` (Phase 10) |
 | Other | `fc` (Phase 10) |
@@ -407,6 +432,15 @@ that matches dash.
 
 - Function calls push a new positional-parameter frame and restore it on
   return. `return` outside a function or `.` script is an error.
+- `local` (as in dash): scoping is dynamic. Each function frame records the
+  previous state of every variable made local and restores it on return. A
+  local variable starts with the value and the exported and readonly flags of
+  the variable with the same name in the enclosing scope, or unset if there
+  is none. `local -` saves the shell options and restores them on return.
+  `local` outside a function is an error.
+- Each frame also records the function name (or the `.` file name) and the
+  line it was called from. This costs little, and it makes stack traces in
+  error messages easy to add in Stage 2.
 - `break N` and `continue N`: N ≥ 1 and is clamped to the current loop depth.
 - `eval` concatenates its arguments with spaces, then parses and executes the
   result in the current context.
@@ -462,6 +496,13 @@ subshells and command substitutions, and `kill -TERM $$` running a trap.
 - **Line editor** (`rustyline`): emacs mode by default and vi mode with
   `set -o vi`. A history file at `$HISTFILE`, with a size limit.
   Multi-line input: when the parser reports incomplete input, show `PS2`.
+- **Editor/executor separation**: the REPL talks to the editor only through
+  the `LineEditor` interface in `editor.rs`. The shell gives it a prompt and
+  gets back a complete command line. The editor calls back to the shell only
+  through narrow requests: "is this input complete?", "complete this word",
+  and history access. Nothing in the editor touches `Shell` directly. This
+  keeps it possible to run the editor in a different process on an SSH client
+  later (§9.3).
 - **Prompts**: expand `PS1` with parameter expansion (and, optionally,
   command substitution). Plugins can override the prompt (§6).
 - **Completion**: command names from built-ins, functions, aliases and `PATH`,
@@ -490,9 +531,9 @@ subshells and command substitutions, and `kill -TERM $$` running a trap.
 `jobs`, `kill %1`, and Ctrl-C at the prompt and during a pipeline), and pty
 tests pass using `expectrl` or `rexpect`.
 
-### Phase 11 — Plugin system (5–7 days)
+### Phase 11 — Plugin system (Stage 2, 5–7 days)
 
-See §6 for the design.
+See §6 for the design. This phase starts only once Stage 1 is usable (M4).
 
 1. Add a plugin-agnostic `plugins/mod.rs` with the `Builtin` and `Hook` traits.
    Move the Rust built-ins onto the `Builtin` trait so that plugins and native
@@ -519,8 +560,8 @@ See §6 for the design.
 - **Optimisations**, applied only where profiling shows a need:
   - Cache `PATH` lookups (`hash`).
   - Avoid allocations in the expansion of plain literal words.
-  - Use `vfork` / `posix_spawn` for simple external commands that have no
-    in-child work.
+  - Use `vfork` / `clone(CLONE_VFORK)` / `posix_spawn` for simple external
+    commands that have no in-child work.
   - Intern variable names.
 - Keep fuzzing the lexer, parser, arithmetic, and pattern matcher.
 
@@ -659,13 +700,17 @@ Every bug fix comes with a test case in `tests/cases/`.
 
 ## 8. Milestones
 
-| Milestone | Phases | Definition of done |
-|---|---|---|
-| **M1: Runs simple scripts** | 0–4 | Pipelines, redirections, `if`/`for`/`while`/`case`, and external commands work |
-| **M2: POSIX script engine** | 5–9 | All expansions, built-ins, functions, traps and `set -e`. Passes the differential suite |
-| **M3: Real-world scripts** | 12 (partly) | Runs autoconf `configure` scripts correctly. Performance is within target |
-| **M4: Daily-driver interactive shell** | 10 | Line editing, history, completion and job control |
-| **M5: Python plugins** | 11 | Plugin built-ins and hooks work. Example plugins ship: a git-aware prompt, a `json` query built-in, and a command-timing preexec/precmd pair |
+| Milestone | Stage | Phases | Definition of done |
+|---|---|---|---|
+| **M1: Runs simple scripts** | 1 | 0–4 | Pipelines, redirections, `if`/`for`/`while`/`case`, and external commands work |
+| **M2: POSIX script engine** | 1 | 5–9 | All expansions, built-ins, functions, traps and `set -e`. Passes the differential suite |
+| **M3: Real-world scripts** | 1 | 12 (partly) | Runs autoconf `configure` scripts correctly. Performance is within ~1.5× of dash |
+| **M4: Daily-driver interactive shell** | 1 | 10 | Line editing, history, completion and job control, behind the `LineEditor` interface |
+| **M5: Python plugins** | 2 | 11 | Plugin built-ins and hooks work. Example plugins ship: a git-aware prompt, a `json` query built-in, and a command-timing preexec/precmd pair |
+
+Stage 1 is complete at M4, plus performance that matches dash (Phase 12).
+Milestones for the rest of Stage 2 and for Stage 3 will be planned once
+Stage 1 is done.
 
 A rough total for M1–M5 is 8–12 weeks of focused work. The largest and least
 predictable parts are expansion (Phase 5), interactive mode and job control
@@ -673,7 +718,85 @@ predictable parts are expansion (Phase 5), interactive mode and job control
 
 ---
 
-## 9. Risks and mitigations
+## 9. Later stages
+
+This section is a sketch, not a plan. It records what the later stages need
+from Stage 1, so that Stage 1 doesn't make them harder.
+
+### 9.1 Stage 2: beyond POSIX
+
+- **Extensions** (arrays, associative arrays, process substitution, `[[ ]]`,
+  and brace expansion) are enabled with an option such as
+  `set -o luish-extensions`. When the option is off, POSIX scripts must parse
+  and behave exactly as before and run just as fast. The lexer and parser
+  should keep one clear place to check the option, rather than scattering
+  checks through the code.
+- **Terminal features**: semantic prompt markers (OSC 133) and working
+  directory reporting (OSC 7) are emitted from the REPL around the prompt and
+  command output. Unicode width handling and bracketed paste belong to the
+  line editor.
+- **Scripting**: error messages with file, line and function stack (using the
+  call frames from Phase 7), `pipefail`, a predictable strict mode, and a
+  debugger or step-trace mode.
+- **Interactive**: richer completion, and history shared across sessions with
+  metadata (working directory, exit status, duration). `history.rs` should own
+  the storage format so that it can move from a plain `$HISTFILE` to a
+  structured store without changing the editor.
+
+### 9.2 Stage 3: caching of login scripts
+
+The goal is to cache the *effects* of login scripts, not just their parse.
+With a warm cache, a new shell should start almost instantly.
+
+1. **Parse cache (first step).** Store the parsed AST of sourced files, keyed
+   by path, size, mtime (or a content hash), and the alias table at the
+   point the file was sourced. Aliases are expanded while lexing, so the same
+   file can parse differently depending on which aliases exist. This needs the
+   AST to be serializable, including the `Rc` nodes.
+2. **Effect cache (final goal).** Snapshot the shell state that login scripts
+   produce: variables and exports, functions, aliases, options, and possibly
+   traps. On a cache hit, restore that snapshot instead of running the
+   scripts. This changes semantics, so it must be explicit. Open questions:
+   - What invalidates the snapshot? Which files were sourced is easy to track.
+     The environment the scripts read, and the output of commands they ran
+     (for example `$(brew --prefix)`), are not.
+   - How is caching opted into: all at once, or per block with declared
+     dependencies (for example a `cache` built-in wrapping part of a script)?
+   - What about side effects that can't be cached, such as starting an agent
+     or writing files?
+
+The Stage 1 constraint is that shell state lives in `Shell` rather than in
+globals, so that it can be snapshotted and restored.
+
+### 9.3 Stage 3: SSH client/server mode
+
+The line editor runs on the local client, so typing is instant, while commands
+run on the remote host.
+
+- **Transport**: standard SSH. `luish` on the client runs something like
+  `ssh host luish --serve` and speaks a protocol over its stdin and stdout.
+  The only requirement is that `luish` can be started on the remote host. No
+  daemon and no extra network ports are needed, unlike mosh, which needs UDP
+  ports opened.
+- **Line editing mode**: the client shows the prompt the server sends, edits
+  locally, and sends complete command lines. Completion and "is this input
+  complete?" are round trips to the server, which is why §5 Phase 10 keeps
+  them as narrow requests. History can live on the client and be shared
+  across hosts.
+- **Pass-through mode**: while a command runs, the server runs it on a pty
+  that it allocates itself. The client forwards terminal input and output
+  as-is, plus window-size changes. Full-screen programs such as (neo)vim
+  therefore work as they do over SSH today, with the remote program driving
+  the terminal. When the command finishes, the server switches back to line
+  editing mode.
+- **Open questions**: installing or uploading the server binary when the
+  remote host doesn't have one; protocol versioning between client and server
+  builds; and what happens when the connection drops. mosh survives dropped
+  connections, but plain SSH does not.
+
+---
+
+## 10. Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
@@ -682,12 +805,13 @@ predictable parts are expansion (Phase 5), interactive mode and job control
 | Terminal and process-group races in job control | Call `setpgid` in both parent and child. Do all terminal handover through `jobs.rs` |
 | Python and `fork` interacting badly | The rules in §6.4, plus a warning when plugins have started threads |
 | Non-UTF-8 data | Use `Vec<u8>` everywhere in the core. Convert only at the Python boundary, using `surrogateescape` |
-| Scope creep into bash features | Keep them behind a later `set -o luish-extensions` (or similar) option. Build none of them before M3 |
+| Scope creep into later stages | Build no Stage 2 or 3 features until Stage 1 is usable (M4). Keep extensions behind a `set -o luish-extensions` (or similar) option |
+| Stage 1 design ruling out later stages | Follow the constraints in §9: keep the `LineEditor` interface narrow, keep all state in `Shell`, and record call frames |
 | Python adding startup cost | Load Python lazily, keep it behind a feature flag, and benchmark `-c true` in CI |
 
 ---
 
-## 10. References
+## 11. References
 
 - POSIX.1-2017, XCU chapter 2 "Shell Command Language": §2.2 (quoting),
   §2.3 (token recognition), §2.6 (expansions), §2.7 (redirection),
