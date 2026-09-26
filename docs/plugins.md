@@ -69,7 +69,7 @@ functions, variables).
 
 ## Example: running code when the directory changes
 
-```rust
+```rhai
 // ~/.config/luish/plugins/dirs.rhai
 
 // Named functions can't see the plugin's variables, but closures can.
@@ -91,7 +91,7 @@ itself runs `cd` does not trigger `chpwd` again.
 
 ## Example: the prompt
 
-```rust
+```rhai
 // ~/.config/luish/plugins/prompt.rhai
 
 sh::hook("prompt", || {
@@ -119,7 +119,7 @@ A hook that takes a parameter is given the previous prompt: the one the hooks re
 `PS1` (after parameter expansion, but before `%` expansion, which is done on the prompt the hook returns). So a plugin
 can add to the prompt of another plugin, or to `PS1`, instead of replacing it:
 
-```rust
+```rhai
 // ~/.config/luish/plugins/status.rhai
 sh::hook("prompt", |prev| {
     let status = sh::last_status();
@@ -133,7 +133,7 @@ hooks before it at all, so it costs nothing to have them loaded. The hook must b
 
 ## Example: completing a command's arguments
 
-```rust
+```rhai
 // ~/.config/luish/plugins/git.rhai
 
 sh::completer("git", |words, i| {
@@ -181,7 +181,7 @@ Many programs can list the completions of their own arguments. Those built with 
 do something else), but a plugin can, for the programs it names:
 
 ```{literalinclude} examples/cobra.rhai
-:language: rust
+:language: rhai
 ```
 
 Save it as `~/.config/luish/plugins/cobra.rhai`, change the list of programs at the end, and load it with
@@ -228,7 +228,7 @@ that doesn't exist gives `false` or `()` (use `??` for a default), not an error.
 | `fs::readlink(path)` | Where a symbolic link points, or `()` |
 | `fs::find_up(name)`, `fs::find_up(name, dir)` | The path of the nearest `name` in the current directory (or `dir`) or one of its parents, or `()`. For example, `fs::find_up(".git")` |
 
-```rust
+```rhai
 // Rebuild a cache only when its source changed.
 if fs::newer("aliases.txt", `${sh::getvar("HOME")}/.cache/aliases`) {
     sh::run("make-alias-cache");
@@ -279,7 +279,7 @@ time.
 
 ### Example: the branch in the prompt
 
-```rust
+```rhai
 // ~/.config/luish/plugins/vcs.rhai
 sh::hook("prompt", || {
     let i = vcs::info();
