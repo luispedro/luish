@@ -1,0 +1,23 @@
+[workspace]
+authors = ["Luis Pedro Coelho <luis@luispedro.org>"]
+channels = ["conda-forge"]
+name = "luish"
+platforms = ["linux-64"]
+version = "0.1.0"
+description = "A POSIX shell written in Rust, with optional Python plugins"
+
+# dash and bash (the reference shells for the differential tests) come from
+# the system: conda-forge has no dash-shell package.
+[dependencies]
+rust = ">=1.98.1,<1.99"
+python = ">=3.14"
+
+[tasks]
+build = "cargo build"
+release = "cargo build --release"
+test = "cargo test"
+fmt = "cargo fmt"
+fmt-check = "cargo fmt --check"
+lint = "cargo clippy --all-targets -- -D warnings"
+check = { depends-on = ["fmt-check", "lint", "test"] }
+luish = "cargo run --quiet --"

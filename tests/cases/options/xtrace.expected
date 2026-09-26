@@ -1,0 +1,8 @@
++ echo hi 'a b' ''
+hi a b 
++ x=1 y='two words'
++ f
++ echo in-f
+in-f
++ set +x
+off

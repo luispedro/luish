@@ -1,0 +1,140 @@
+//! Interactive mode: prompts, the line editor, history, and startup files.
+
+use std::cell::RefCell;
+
+use rustyline::DefaultEditor;
+use rustyline::config::Configurer;
+use rustyline::error::ReadlineError;
+
+use crate::input::Line;
+use crate::options::Opt;
+use crate::shell::Shell;
+use crate::sys;
+
+thread_local! {
+    static EDITOR: RefCell<Option<DefaultEditor>> = const { RefCell::new(None) };
+}
+
+fn history_file(sh: &Shell) -> Option<Vec<u8>> {
+    sh.get_var(b"HISTFILE").filter(|h| !h.is_empty())
+}
+
+fn to_path(b: &[u8]) -> std::path::PathBuf {
+    use std::os::unix::ffi::OsStrExt;
+    std::ffi::OsStr::from_bytes(b).into()
+}
+
+/// Sets up the line editor. Returns false if it can't be used.
+pub fn init_editor(sh: &Shell) -> bool {
+    let Ok(mut ed) = DefaultEditor::new() else {
+        return false;
+    };
+    let size = sh
+        .get_var(b"HISTSIZE")
+        .and_then(|s| String::from_utf8(s).ok()?.parse().ok())
+        .unwrap_or(1000);
+    let _ = ed.set_max_history_size(size);
+    if let Some(h) = history_file(sh) {
+        let _ = ed.load_history(&to_path(&h));
+    }
+    EDITOR.with(|e| *e.borrow_mut() = Some(ed));
+    true
+}
+
+pub fn save_history(sh: &Shell) {
+    let Some(h) = history_file(sh) else { return };
+    EDITOR.with(|e| {
+        if let Some(ed) = e.borrow_mut().as_mut() {
+            let _ = ed.save_history(&to_path(&h));
+        }
+    });
+}
+
+pub fn add_history(text: &[u8]) {
+    let text = String::from_utf8_lossy(text);
+    let text = text.trim_end_matches('\n');
+    if text.trim().is_empty() {
+        return;
+    }
+    EDITOR.with(|e| {
+        if let Some(ed) = e.borrow_mut().as_mut() {
+            let _ = ed.add_history_entry(text);
+        }
+    });
+}
+
+pub fn prompt(sh: &mut Shell, continuation: bool) -> Vec<u8> {
+    if continuation {
+        sh.expand_prompt(b"PS2")
+    } else {
+        sh.jobs.reap();
+        sh.expand_prompt(b"PS1")
+    }
+}
+
+pub fn read_line(sh: &mut Shell, continuation: bool) -> Line {
+    let p = String::from_utf8_lossy(&prompt(sh, continuation)).into_owned();
+    let vi = sh.opt(Opt::Vi);
+    EDITOR.with(|e| {
+        let mut e = e.borrow_mut();
+        let Some(ed) = e.as_mut() else {
+            return Line::Eof;
+        };
+        ed.set_edit_mode(if vi {
+            rustyline::EditMode::Vi
+        } else {
+            rustyline::EditMode::Emacs
+        });
+        match ed.readline(&p) {
+            Ok(mut l) => {
+                l.push('\n');
+                Line::Text(l.into_bytes())
+            }
+            Err(ReadlineError::Interrupted) => Line::Interrupted,
+            Err(_) => Line::Eof,
+        }
+    })
+}
+
+/// Sources a file in the current shell if it exists.
+pub fn source_file(sh: &mut Shell, path: &[u8]) {
+    let Ok(text) = std::fs::read(to_path(path)) else {
+        return;
+    };
+    let saved = sh.lineno;
+    sh.lineno = 1;
+    let r = sh.run_string(&text);
+    sh.lineno = saved;
+    if let Err(crate::shell::Flow::Exit(n)) = r {
+        sh.exit(n);
+    }
+}
+
+/// Runs the startup files of an interactive (and possibly login) shell.
+pub fn startup(sh: &mut Shell, login: bool) {
+    if login {
+        source_file(sh, b"/etc/profile");
+        if let Some(mut home) = sh.get_var(b"HOME") {
+            home.extend_from_slice(b"/.profile");
+            source_file(sh, &home);
+        }
+    }
+    if let Some(env) = sh.get_var(b"ENV")
+        && let Ok(w) = crate::lexer::parse_string_word(&env)
+        && let Ok(path) = sh.expand_word_str(&w)
+    {
+        source_file(sh, &path);
+    }
+    let config = sh.get_var(b"XDG_CONFIG_HOME").filter(|c| !c.is_empty()).or_else(|| {
+        sh.get_var(b"HOME").map(|mut h| {
+            h.extend_from_slice(b"/.config");
+            h
+        })
+    });
+    if let Some(mut c) = config {
+        c.extend_from_slice(b"/luish/luishrc");
+        if sys::stat(&c).is_some() {
+            source_file(sh, &c);
+        }
+    }
+}

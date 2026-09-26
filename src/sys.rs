@@ -1,0 +1,300 @@
+//! Thin wrappers around the system calls the shell uses. Everything here
+//! works on byte strings and raw fds.
+
+use std::ffi::{CStr, CString};
+
+pub fn errno() -> i32 {
+    std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
+}
+
+pub fn strerror(e: i32) -> String {
+    // SAFETY: strerror returns a pointer to a static string.
+    unsafe { CStr::from_ptr(libc::strerror(e)).to_string_lossy().into_owned() }
+}
+
+pub fn cstr(s: &[u8]) -> CString {
+    CString::new(s.iter().copied().filter(|&c| c != 0).collect::<Vec<u8>>()).unwrap()
+}
+
+/// Writes all of `data`, retrying on EINTR. Returns false on error.
+pub fn write_all(fd: i32, mut data: &[u8]) -> bool {
+    while !data.is_empty() {
+        // SAFETY: writing from a valid buffer.
+        let n = unsafe { libc::write(fd, data.as_ptr() as *const _, data.len()) };
+        if n < 0 {
+            if errno() == libc::EINTR {
+                continue;
+            }
+            return false;
+        }
+        data = &data[n as usize..];
+    }
+    true
+}
+
+/// `read(2)`, retrying on EINTR unless `interruptible`.
+pub fn read(fd: i32, buf: &mut [u8], interruptible: bool) -> Result<usize, i32> {
+    loop {
+        // SAFETY: reading into a valid buffer.
+        let n = unsafe { libc::read(fd, buf.as_mut_ptr() as *mut _, buf.len()) };
+        if n >= 0 {
+            return Ok(n as usize);
+        }
+        let e = errno();
+        if e != libc::EINTR || interruptible {
+            return Err(e);
+        }
+    }
+}
+
+pub fn exit(status: i32) -> ! {
+    // SAFETY: terminating the process.
+    unsafe { libc::_exit(status & 0xff) }
+}
+
+pub fn getppid() -> i32 {
+    // SAFETY: always succeeds.
+    unsafe { libc::getppid() }
+}
+
+pub fn geteuid() -> u32 {
+    // SAFETY: always succeeds.
+    unsafe { libc::geteuid() }
+}
+
+pub fn getcwd() -> Option<Vec<u8>> {
+    use std::os::unix::ffi::OsStrExt;
+    std::env::current_dir().ok().map(|p| p.as_os_str().as_bytes().to_vec())
+}
+
+pub fn stat(path: &[u8]) -> Option<libc::stat> {
+    let c = cstr(path);
+    // SAFETY: valid path and output buffer.
+    unsafe {
+        let mut st: libc::stat = std::mem::zeroed();
+        (libc::stat(c.as_ptr(), &mut st) == 0).then_some(st)
+    }
+}
+
+pub fn lstat(path: &[u8]) -> Option<libc::stat> {
+    let c = cstr(path);
+    // SAFETY: valid path and output buffer.
+    unsafe {
+        let mut st: libc::stat = std::mem::zeroed();
+        (libc::lstat(c.as_ptr(), &mut st) == 0).then_some(st)
+    }
+}
+
+pub fn same_file(a: &[u8], b: &[u8]) -> bool {
+    match (stat(a), stat(b)) {
+        (Some(x), Some(y)) => x.st_dev == y.st_dev && x.st_ino == y.st_ino,
+        _ => false,
+    }
+}
+
+pub fn is_dir(path: &[u8]) -> bool {
+    stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR)
+}
+
+pub fn access(path: &[u8], mode: i32) -> bool {
+    let c = cstr(path);
+    // SAFETY: valid path.
+    unsafe { libc::access(c.as_ptr(), mode) == 0 }
+}
+
+/// `open(2)`; returns the fd or errno.
+pub fn open(path: &[u8], flags: i32, mode: u32) -> Result<i32, i32> {
+    let c = cstr(path);
+    loop {
+        // SAFETY: valid path.
+        let fd = unsafe { libc::open(c.as_ptr(), flags | libc::O_CLOEXEC, mode) };
+        if fd >= 0 {
+            return Ok(fd);
+        }
+        let e = errno();
+        if e != libc::EINTR {
+            return Err(e);
+        }
+    }
+}
+
+pub fn close(fd: i32) {
+    // SAFETY: closing an fd we own.
+    unsafe {
+        libc::close(fd);
+    }
+}
+
+pub fn dup2(from: i32, to: i32) -> Result<(), i32> {
+    // SAFETY: plain dup2.
+    if unsafe { libc::dup2(from, to) } < 0 {
+        Err(errno())
+    } else {
+        Ok(())
+    }
+}
+
+/// Duplicates `fd` to a close-on-exec fd numbered 10 or above.
+pub fn dup_high(fd: i32) -> Result<i32, i32> {
+    // SAFETY: plain fcntl.
+    let r = unsafe { libc::fcntl(fd, libc::F_DUPFD_CLOEXEC, 10) };
+    if r < 0 { Err(errno()) } else { Ok(r) }
+}
+
+pub fn fd_is_open(fd: i32) -> bool {
+    // SAFETY: plain fcntl.
+    unsafe { libc::fcntl(fd, libc::F_GETFD) >= 0 }
+}
+
+/// A close-on-exec pipe: (read end, write end).
+pub fn pipe() -> Result<(i32, i32), i32> {
+    let mut fds = [0; 2];
+    // SAFETY: valid output array.
+    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } < 0 {
+        Err(errno())
+    } else {
+        Ok((fds[0], fds[1]))
+    }
+}
+
+pub fn isatty(fd: i32) -> bool {
+    // SAFETY: plain isatty.
+    unsafe { libc::isatty(fd) == 1 }
+}
+
+pub fn fork() -> Result<i32, i32> {
+    // SAFETY: the shell is single-threaded.
+    let pid = unsafe { libc::fork() };
+    if pid < 0 { Err(errno()) } else { Ok(pid) }
+}
+
+pub enum WaitStatus {
+    Exited(i32),
+    Signaled(i32, bool),
+    Stopped(i32),
+    Continued,
+}
+
+impl WaitStatus {
+    /// The value of `$?` for this status.
+    pub fn code(&self) -> i32 {
+        match *self {
+            WaitStatus::Exited(c) => c,
+            WaitStatus::Signaled(s, _) | WaitStatus::Stopped(s) => 128 + s,
+            WaitStatus::Continued => 0,
+        }
+    }
+}
+
+/// `waitpid(2)`. `Ok(None)` means no child changed state (WNOHANG).
+pub fn waitpid(pid: i32, flags: i32) -> Result<Option<(i32, WaitStatus)>, i32> {
+    let mut status = 0;
+    // SAFETY: valid output pointer.
+    let r = unsafe { libc::waitpid(pid, &mut status, flags) };
+    if r < 0 {
+        return Err(errno());
+    }
+    if r == 0 {
+        return Ok(None);
+    }
+    let ws = if libc::WIFEXITED(status) {
+        WaitStatus::Exited(libc::WEXITSTATUS(status))
+    } else if libc::WIFSIGNALED(status) {
+        WaitStatus::Signaled(libc::WTERMSIG(status), libc::WCOREDUMP(status))
+    } else if libc::WIFSTOPPED(status) {
+        WaitStatus::Stopped(libc::WSTOPSIG(status))
+    } else {
+        WaitStatus::Continued
+    };
+    Ok(Some((r, ws)))
+}
+
+pub fn kill(pid: i32, sig: i32) -> Result<(), i32> {
+    // SAFETY: plain kill.
+    if unsafe { libc::kill(pid, sig) } < 0 {
+        Err(errno())
+    } else {
+        Ok(())
+    }
+}
+
+pub fn execve(path: &[u8], argv: &[Vec<u8>], env: &[CString]) -> i32 {
+    let path = cstr(path);
+    let argv: Vec<CString> = argv.iter().map(|a| cstr(a)).collect();
+    let mut argv_p: Vec<*const libc::c_char> = argv.iter().map(|a| a.as_ptr()).collect();
+    argv_p.push(std::ptr::null());
+    let mut env_p: Vec<*const libc::c_char> = env.iter().map(|a| a.as_ptr()).collect();
+    env_p.push(std::ptr::null());
+    // SAFETY: null-terminated arrays of valid C strings.
+    unsafe {
+        libc::execve(path.as_ptr(), argv_p.as_ptr(), env_p.as_ptr());
+    }
+    errno()
+}
+
+pub fn home_dir(user: &[u8]) -> Option<Vec<u8>> {
+    let c = cstr(user);
+    // SAFETY: getpwnam returns a pointer to static storage or null.
+    unsafe {
+        let pw = libc::getpwnam(c.as_ptr());
+        if pw.is_null() {
+            return None;
+        }
+        Some(CStr::from_ptr((*pw).pw_dir).to_bytes().to_vec())
+    }
+}
+
+pub fn own_home_dir() -> Option<Vec<u8>> {
+    // SAFETY: getpwuid returns a pointer to static storage or null.
+    unsafe {
+        let pw = libc::getpwuid(libc::getuid());
+        if pw.is_null() {
+            return None;
+        }
+        Some(CStr::from_ptr((*pw).pw_dir).to_bytes().to_vec())
+    }
+}
+
+pub fn chdir(path: &[u8]) -> Result<(), i32> {
+    let c = cstr(path);
+    // SAFETY: valid path.
+    if unsafe { libc::chdir(c.as_ptr()) } < 0 {
+        Err(errno())
+    } else {
+        Ok(())
+    }
+}
+
+pub fn umask(mask: u32) -> u32 {
+    // SAFETY: plain umask.
+    unsafe { libc::umask(mask as libc::mode_t) as u32 }
+}
+
+pub fn lseek(fd: i32, off: i64, whence: i32) -> Result<i64, i32> {
+    // SAFETY: plain lseek.
+    let r = unsafe { libc::lseek(fd, off, whence) };
+    if r < 0 { Err(errno()) } else { Ok(r) }
+}
+
+/// Lists a directory, including `.` and `..`. `None` if it can't be read.
+pub fn read_dir(path: &[u8]) -> Option<Vec<Vec<u8>>> {
+    let c = cstr(if path.is_empty() { b"." } else { path });
+    // SAFETY: opendir/readdir/closedir on a valid path.
+    unsafe {
+        let d = libc::opendir(c.as_ptr());
+        if d.is_null() {
+            return None;
+        }
+        let mut out = Vec::new();
+        loop {
+            let e = libc::readdir(d);
+            if e.is_null() {
+                break;
+            }
+            let name = CStr::from_ptr((*e).d_name.as_ptr()).to_bytes();
+            out.push(name.to_vec());
+        }
+        libc::closedir(d);
+        Some(out)
+    }
+}
