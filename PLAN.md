@@ -883,28 +883,126 @@ from Stage 1, so that Stage 1 doesn't make them harder.
 ### 9.2 Stage 3: caching of login scripts
 
 The goal is to cache the *effects* of login scripts, not just their parse.
-With a warm cache, a new shell should start almost instantly.
+With a warm cache, a new shell should start almost instantly. Many shells
+started at once (a desktop login can start 40) should not each run the login
+scripts.
 
-1. **Parse cache (first step).** Store the parsed AST of sourced files, keyed
-   by path, size, mtime (or a content hash), and the alias table at the
-   point the file was sourced. Aliases are expanded while lexing, so the same
-   file can parse differently depending on which aliases exist. This needs the
-   AST to be serializable, including the `Rc` nodes.
-2. **Effect cache (final goal).** Snapshot the shell state that login scripts
-   produce: variables and exports, functions, aliases, options, and possibly
-   traps. On a cache hit, restore that snapshot instead of running the
-   scripts. This changes semantics, so it must be explicit. Open questions:
-   - What invalidates the snapshot? Which files were sourced is easy to track,
-     and variable provenance (§9.1) records which file set each variable.
-     The environment the scripts read, and the output of commands they ran
-     (for example `$(brew --prefix)`), are not.
-   - How is caching opted into: all at once, or per block with declared
-     dependencies (for example a `cache` built-in wrapping part of a script)?
-   - What about side effects that can't be cached, such as starting an agent
-     or writing files?
+The design is stale-while-revalidate. A shell starts from the cached state at
+once, reruns the login scripts in the background, and applies any difference
+at a later prompt. This means invalidation doesn't have to be perfect: the
+output of commands (`$(brew --prefix)`), files tested with `[ -d ... ]`, and
+newly installed software can't be tracked, but the background run catches
+them within seconds.
 
-The Stage 1 constraint is that shell state lives in `Shell` rather than in
-globals, so that it can be snapshotted and restored.
+**Layout and opt-in.** Cached login scripts live in
+`$XDG_CONFIG_HOME/luish/login.d/`. Its existence is the opt-in. Without it,
+login shells run `/etc/profile` and `~/.profile` as now, uncached. With it:
+
+- The `*.lsh` files run in byte order, and their effects are cached. They
+  replace `/etc/profile` and `~/.profile`, which a file can source with `.`
+  if wanted.
+- `_uncached.lsh` is not part of that order. It runs on every login, after
+  the cached state is in place, for things that must not be cached: starting
+  `ssh-agent`, printing the motd, `GPG_TTY=$(tty)`. Its effects are never
+  cached or compared.
+- `$ENV` and `luishrc` run afterwards, as now, uncached.
+
+Cached files should have no side effects and print nothing. Output from a
+cached file is shown when it runs in the foreground and discarded when it runs
+in the background, and luish warns that it belongs in `_uncached.lsh`.
+
+**Cache entries.** Each cached file has its own entries, so editing one file
+reruns only that file (and the files that depend on it, see below). An entry
+records what the file read and what it changed:
+
+- *Changes*: variables and exports, functions, aliases, options, traps,
+  `umask`, and the working directory.
+- *Key*: the fingerprint (device, inode, size, mtime) of the file and of every
+  file it sourced, the mtimes of directories it globbed (e.g.
+  `/etc/profile.d/*`), the user and host, and the values of the inherited
+  variables, functions and aliases that the file read before setting them.
+  Keying on the input environment is what makes it correct to store final
+  values. Keying only on what was *read* keeps `TMUX_PANE`, `WINDOWID` or
+  `SSH_CONNECTION` from splitting the cache unless a file uses them. A few
+  entries are kept per file, e.g. for SSH and console logins.
+
+Reads are recorded by the shell: variable expansion, `PATH` lookup, function
+calls, and aliases (which are read while parsing). What external commands
+read from their environment can't be seen; the background run covers it.
+
+A fingerprint is compared with the recorded one, not with the cache's mtime,
+because sync tools, `git checkout` and `cp -p` can leave files with old
+mtimes.
+
+**Running files in parallel.** When entries are built, each file runs in its
+own forked child from the input state, and the results are merged in byte
+order. The result must equal a sequential run:
+
+- If a file read something that an earlier file wrote, its result is
+  discarded and it is rerun on top of the earlier file's changes. The
+  dependency is recorded, so later builds run the two in order directly.
+- Colon-separated lists (`PATH`, `MANPATH`, ...) are merged as edits
+  (components added at the front or back, or removed), using the same diff as
+  variable provenance (§9.1). A read of `PATH` only within an assignment to
+  `PATH` (`PATH=$HOME/bin:$PATH`) doesn't count as a dependency, so two files
+  that each add to `PATH` still run in parallel. Any other read (a command
+  lookup, `case $PATH in`) does.
+
+**Startup.**
+
+1. Fork a child for the background run (below) *before* applying anything,
+   so that it starts from the inherited state.
+2. For each file, find the entry whose key matches. Files without one (edited,
+   or run with new inputs) are run in the foreground, in parallel, and their
+   entries are written.
+3. Apply the merged changes, run `_uncached.lsh`, and show the prompt.
+
+The merged result of the current entries is also stored as one snapshot, so
+the warm path is a stat per file and one read.
+
+**Background run.** The child has stdin from `/dev/null`, its own session (so
+it can't touch the terminal), captured output, and a timeout (network mounts,
+passphrase prompts). It reruns every cached file (not `_uncached.lsh`) and
+writes new entries with write-and-rename. It is skipped if another shell
+validated the cache recently (a minute, configurable) or is validating it now.
+
+**Many shells at once.** Building is guarded by a lock file (`flock`). A shell
+that must build in the foreground waits for the lock, then checks the cache
+again. When 40 shells start with a stale cache, one runs the scripts and the
+others read the result. Interactive shells stat the snapshot before each
+prompt, and when any shell has rewritten it, they merge the new state, so one
+background run serves every shell.
+
+**Merging into a running shell.** This is a three-way merge of the state the
+shell loaded, the new result, and the current state. Anything the user (or
+`_uncached.lsh`) hasn't changed since startup takes the new value, with a
+one-line note of what changed. Conflicts are left alone and reported; a
+built-in (name to be decided) shows the difference and can apply it. This
+happens before a prompt, like job notifications, so no command sees the state
+change under it. Running processes keep their environment.
+
+**Volatile values.** A value that differs between two runs with the same key
+(set from `$(date)`, `$$` or `$RANDOM`) is volatile. luish reports it once,
+with the file and line from provenance, suggests moving it to
+`_uncached.lsh`, and leaves it out of change notes.
+
+**Storage.** `$XDG_CACHE_HOME/luish/`, with the host name in the file names
+(home directories may be shared or synced), mode 0600 (exported variables can
+hold tokens).
+
+**Parse cache.** Parsed ASTs of sourced files, keyed by fingerprint and the
+alias table at the point the file was sourced (aliases are expanded while
+lexing). With the effect cache this is no longer the first step, but it still
+helps `_uncached.lsh`, `$ENV` and `luishrc`.
+
+The Stage 1 constraints are:
+
+- Shell state lives in `Shell` rather than in globals, so that it can be
+  snapshotted, compared and restored.
+- The AST is serializable, including the `Rc` nodes, since functions are
+  part of the cached state.
+- Variable, function and alias lookups can record reads. As with provenance,
+  this must cost nothing when no cache is being built.
 
 ### 9.3 Stage 3: SSH client/server mode
 
