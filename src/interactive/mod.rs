@@ -75,8 +75,17 @@ pub fn with_history<R>(f: impl FnOnce(&mut ShellHistory) -> R) -> Option<R> {
     EDITOR.with(|e| e.borrow_mut().as_mut().map(|ed| f(ed.history_mut())))
 }
 
+/// The prompt: `PS2` for a continuation line, otherwise the one a plugin's
+/// `prompt` hook gives (which isn't parameter-expanded), or else `PS1`.
 pub fn prompt(sh: &mut Shell, continuation: bool) -> crate::prompt::Prompt {
-    sh.prompt(if continuation { b"PS2" } else { b"PS1" })
+    if continuation {
+        return sh.prompt(b"PS2");
+    }
+    match crate::plugins::prompt(sh) {
+        Ok(Some(text)) => sh.percent_expand_prompt(text),
+        Err(crate::shell::Flow::Exit(n)) => sh.exit(n),
+        _ => sh.prompt(b"PS1"),
+    }
 }
 
 /// The names the completer needs, taken from the shell before each prompt.

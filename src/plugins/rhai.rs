@@ -133,6 +133,7 @@ fn to_shell(s: &str) -> RhaiResult<Vec<u8>> {
 fn hook_kind(name: &str) -> Option<HookKind> {
     match name {
         "chpwd" => Some(HookKind::Chpwd),
+        "prompt" => Some(HookKind::Prompt),
         _ => None,
     }
 }
@@ -376,6 +377,51 @@ impl Host {
             let r = enter(sh, h.plugin, || h.f.call::<Dynamic>(&self.engine, &h.ast, args.clone()));
             match r {
                 Ok(Ok(_)) => {}
+                Ok(Err(e)) => {
+                    if Self::report(sh, &h.path, &e) != 1 {
+                        break;
+                    }
+                }
+                Err(flow) => {
+                    result = Err(flow);
+                    break;
+                }
+            }
+        }
+        sh.last_status = saved;
+        self.running.borrow_mut().retain(|&k| k != kind);
+        result
+    }
+
+    /// Runs the `prompt` hooks, from the most recently registered, until
+    /// one returns a string, which is the prompt. A hook that returns `()`
+    /// or fails (which is reported) leaves it to the ones before it. `$?`
+    /// is kept.
+    pub fn prompt(&self, sh: &mut Shell) -> Result<Option<Vec<u8>>, Flow> {
+        let kind = HookKind::Prompt;
+        if self.running.borrow().contains(&kind) {
+            return Ok(None);
+        }
+        let hooks: Vec<Hook> = self.hooks.borrow().iter().filter(|h| h.kind == kind).cloned().collect();
+        if hooks.is_empty() {
+            return Ok(None);
+        }
+        self.running.borrow_mut().push(kind);
+        let saved = sh.last_status;
+        let mut result = Ok(None);
+        for h in hooks.iter().rev() {
+            sh.last_status = saved;
+            let r = enter(sh, h.plugin, || h.f.call::<Dynamic>(&self.engine, &h.ast, ()));
+            match r {
+                Ok(Ok(v)) if v.is_string() => {
+                    result = Ok(Some(to_bytes(&v.into_immutable_string().unwrap_or_default())));
+                    break;
+                }
+                Ok(Ok(v)) if v.is_unit() => {}
+                Ok(Ok(v)) => {
+                    let msg = format!("prompt hook returned {}, not a string", v.type_name());
+                    sh.error(format!("{}: {msg}", String::from_utf8_lossy(&h.path)));
+                }
                 Ok(Err(e)) => {
                     if Self::report(sh, &h.path, &e) != 1 {
                         break;

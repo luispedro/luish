@@ -35,7 +35,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **121 differential cases, 10 plugin cases, 50 unit tests and 12 pty tests
+Current state: **121 differential cases, 11 plugin cases, 50 unit tests and 12 pty tests
 pass**.
 
 ## Environment
@@ -62,7 +62,7 @@ pass**.
 | 8 Signals and traps | Mostly done (see the gaps below) |
 | 9 Options and `set -e` | Done |
 | 10 Interactive / job control | Done (prompt loop, history and `fc`, job control, completion), with the gaps listed below |
-| 11 Plugins | Started: the `plugin` built-in, the Rhai host with a small `sh` module, and the `chpwd` hook (see Plugins below) |
+| 11 Plugins | Started: the `plugin` built-in, the Rhai host with a small `sh` module, and the `chpwd` and `prompt` hooks (see Plugins below) |
 | 12 Conformance / performance | Started: autoconf `configure` scripts and the Oils spec tests (see Conformance below), benchmark baseline |
 
 ## Implemented behaviour
@@ -536,10 +536,18 @@ pass**.
   `pushd` the stack), also in subshells.
   `$?` is kept; a failing hook is reported with the plugin's file and the
   others still run; a `chpwd` hook running `cd` doesn't re-trigger `chpwd`.
+  `prompt`, called with no arguments before each `PS1` prompt (not `PS2`):
+  the hooks are called from the most recently registered one until one
+  returns a string, which is used instead of `PS1`, without parameter
+  expansion but with `%` expansion under `promptpercent`. A hook that
+  returns `()` leaves it to the earlier hooks, then `PS1`; one that fails
+  or returns something else is reported and skipped. Each hook sees the
+  `$?` of the last command, which is kept afterwards; `exit` in `sh::run`
+  exits the shell.
 - `plugins/bytes.rs`: non-UTF-8 bytes map to U+10FF80–U+10FFFF and back
   (PLAN.md §6.5); strings with NUL can't be set as variables.
 - Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `floats`, `reload`,
-  `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`), unit
+  `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`, `prompt`), unit
   tests for the byte conversion, `builtins/plugin.sh`,
   `builtins/internal_plugin.sh`, and `plugin_builtin` in
   `tests/interactive.rs`. CI also runs clippy and the tests
@@ -578,8 +586,9 @@ notes how to rerun them):
   are reported only before a prompt. Job notifications are given only for
   input read a line at a time (interactive or stdin), not in scripts run
   with `set -m`.
-- Plugins (Phase 11) support only the `chpwd` hook and part of the `sh`
-  module: no plugin built-ins, completers, other hooks, time budgets,
+- Plugins (Phase 11) support only the `chpwd` and `prompt` hooks and part
+  of the `sh` module: no plugin built-ins, completers, other hooks, time
+  budgets (so a slow `prompt` hook delays the prompt),
   `capture`, file functions or `parse_json`. The native built-ins have not
   been moved onto a `Builtin` trait (PLAN.md Phase 11, step 1). `import`
   in a plugin is not resolved relative to the plugin's directory.

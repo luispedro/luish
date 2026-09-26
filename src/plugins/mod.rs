@@ -33,6 +33,10 @@ impl Host {
     fn run_hooks(&self, _: &mut Shell, _: HookKind, _: &[&[u8]]) -> Result<(), Flow> {
         match *self {}
     }
+
+    fn prompt(&self, _: &mut Shell) -> Result<Option<Vec<u8>>, Flow> {
+        match *self {}
+    }
 }
 
 /// The events that plugins can hook.
@@ -41,6 +45,9 @@ pub enum HookKind {
     /// The current directory changed (`cd`); called with the old and the
     /// new directory.
     Chpwd,
+    /// Before each prompt: returns the prompt, used instead of `PS1`.
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    Prompt,
 }
 
 /// Runs the `chpwd` hooks after `cd` changed the directory.
@@ -48,6 +55,14 @@ pub fn chpwd(sh: &mut Shell, old: &[u8], new: &[u8]) -> Result<(), Flow> {
     match sh.plugins.clone() {
         None => Ok(()),
         Some(host) => host.run_hooks(sh, HookKind::Chpwd, &[old, new]),
+    }
+}
+
+/// The prompt from the `prompt` hooks, if a plugin gives one.
+pub fn prompt(sh: &mut Shell) -> Result<Option<Vec<u8>>, Flow> {
+    match sh.plugins.clone() {
+        None => Ok(None),
+        Some(host) => host.prompt(sh),
     }
 }
 

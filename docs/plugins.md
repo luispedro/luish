@@ -4,7 +4,8 @@ luish can be extended with plugins written in [Rhai](https://rhai.rs), a small s
 embedding. Plugins are opt-in: nothing is loaded unless you ask for it, and a shell that loads no plugins pays nothing
 for them.
 
-Plugin support is new. For now, a plugin can run code whenever the current directory changes (the `chpwd` hook).
+Plugin support is new. For now, a plugin can run code whenever the current directory changes (the `chpwd` hook),
+and give the prompt (the `prompt` hook).
 
 ## Loading plugins
 
@@ -51,11 +52,37 @@ sh::hook("chpwd", |from, to| {
 the hooks as before them. If a hook fails, the error is printed and the other hooks still run. A `chpwd` hook that
 itself runs `cd` does not trigger `chpwd` again.
 
+## Example: the prompt
+
+```rust
+// ~/.config/luish/plugins/prompt.rhai
+
+sh::hook("prompt", || {
+    // Read $? first: sh::run changes it (the shell's own $? is kept).
+    let status = sh::last_status();
+    let mark = if status == 0 { "" } else { "%F{red}[" + status + "]%f " };
+    sh::run("__prompt_branch=$(git branch --show-current 2>/dev/null)");
+    let branch = sh::getvar("__prompt_branch");
+    let branch = if branch == () || branch == "" { "" } else { " %F{yellow}(" + branch + ")%f" };
+    "%F{blue}%~%f" + branch + " " + mark + "%# "
+});
+```
+
+A `prompt` hook is called before each prompt, with no arguments, and returns the prompt, which is used instead of
+`PS1` (`PS2`, for the continuation lines of a command, is unchanged). The prompt doesn't go through parameter
+expansion, but it does go through `%` expansion if the `promptpercent` option is on (`setopt prompt_percent`, see
+[](usage.md)), as in the example.
+
+If several hooks are registered, the one registered last is called first, and the first string returned is the
+prompt. A hook that returns `()` leaves the prompt to the hooks before it, and then to `PS1`, so a plugin can give
+the prompt only in some directories, for example. A hook that fails is reported, and the next one is tried. `$?` is
+the same after the hooks as before them.
+
 ## The `sh` module
 
 | Function | Description |
 |---|---|
-| `sh::hook(kind, fn)` | Register a hook. The only kind for now is `"chpwd"` |
+| `sh::hook(kind, fn)` | Register a hook: `"chpwd"` or `"prompt"` |
 | `sh::getvar(name)` | The variable's value, or `()` if it is unset |
 | `sh::setvar(name, value)` | Set a shell variable. Throws an error if it is readonly |
 | `sh::export(name)`, `sh::unsetvar(name)` | Export or unset a variable |

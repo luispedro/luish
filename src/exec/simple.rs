@@ -337,6 +337,11 @@ impl Shell {
     /// `promptpercent` option, `%` sequences (as zsh does).
     pub fn prompt(&mut self, var: &[u8]) -> crate::prompt::Prompt {
         let text = self.param_expand_prompt(var);
+        self.percent_expand_prompt(text)
+    }
+
+    /// Expands the `%` sequences of a prompt if `promptpercent` is on.
+    pub fn percent_expand_prompt(&self, text: Vec<u8>) -> crate::prompt::Prompt {
         if self.opt(Opt::PromptPercent) && text.contains(&b'%') {
             crate::prompt::expand(self, &text)
         } else {
