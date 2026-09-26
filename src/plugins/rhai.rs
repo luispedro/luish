@@ -695,9 +695,10 @@ impl Host {
     }
 
     /// Runs the completer for `words[0]`, if there is one, with the words
-    /// up to the cursor (the last one is being completed). An error is
-    /// reported on a line of its own, below the command line. `$?` is kept.
-    pub fn complete(&self, sh: &mut Shell, words: &[Vec<u8>]) -> Result<Completion, Flow> {
+    /// of the command and the index of the one being completed. An error
+    /// is reported on a line of its own, below the command line. `$?` is
+    /// kept.
+    pub fn complete(&self, sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Completion, Flow> {
         let cb = {
             let completers = self.completers.borrow();
             match completers.iter().find(|c| Some(&c.0) == words.first()) {
@@ -706,7 +707,7 @@ impl Host {
             }
         };
         let array: rhai::Array = words.iter().map(|w| to_str(w).into()).collect();
-        let args = (array, words.len() as i64 - 1);
+        let args = (array, index as i64);
         let saved = sh.last_status;
         let deadline = DEADLINE.replace(Some(Instant::now() + COMPLETE_BUDGET));
         let r = enter(sh, cb.plugin, || cb.f.call::<Dynamic>(self.engine(), &cb.ast, args));

@@ -106,7 +106,7 @@ pub fn prompt(sh: &mut Shell, continuation: bool) -> crate::prompt::Prompt {
 fn names(sh: &Shell) -> Names {
     Names {
         functions: sh.functions.keys().cloned().collect(),
-        aliases: sh.aliases.keys().cloned().collect(),
+        aliases: sh.aliases.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
         vars: sh.vars.names().cloned().collect(),
         path: sh.get_var(b"PATH").unwrap_or_default(),
         home: sh.get_var(b"HOME"),
@@ -122,7 +122,7 @@ fn names(sh: &Shell) -> Names {
 /// Runs a plugin's completer for the editor. The terminal is in raw mode
 /// and belongs to the editor, so the commands the completer runs are not
 /// jobs: like those of `$(...)`, they don't save or restore its modes.
-fn ask(words: &[Vec<u8>]) -> Completion {
+fn ask(words: &[Vec<u8>], index: usize) -> Completion {
     let p = SHELL.get();
     if p.is_null() || EXIT.get().is_some() {
         return Completion::Default;
@@ -131,7 +131,7 @@ fn ask(words: &[Vec<u8>]) -> Completion {
     // doesn't use while the editor runs, and resets it after.
     let sh = unsafe { &mut *p };
     let jobctl = sh.jobctl.take();
-    let r = crate::plugins::complete(sh, words);
+    let r = crate::plugins::complete(sh, words, index);
     sh.jobctl = jobctl;
     match r {
         Ok(c) => c,

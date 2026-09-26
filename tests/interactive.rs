@@ -454,6 +454,9 @@ fn plugin_completer() {
         throw "bad completer";
     } else if w == "loop" {
         loop {}
+    } else if w == "nx" {
+        // The words after the cursor are passed too.
+        ["nx-" + words[i + 1] + "-" + words.len()]
     } else {
         ()
     }
@@ -473,6 +476,17 @@ fn plugin_completer() {
     sh.expect("$ ");
     sh.send("frob cap\t\n");
     sh.expect("frob:captured\n");
+    sh.expect("$ ");
+    // Through an alias.
+    sh.send("alias fr=frob; echo aliased\n");
+    sh.expect("aliased\n");
+    sh.expect("$ ");
+    sh.send("fr al\t\n");
+    sh.expect("frob:alpha\n");
+    sh.expect("$ ");
+    // In the middle of the line (Ctrl-B moves back).
+    sh.send("frob x nx tail\x02\x02\x02\x02\x02\t\n");
+    sh.expect("frob:x nx-tail-4 tail\n");
     sh.expect("$ ");
     // `()` gives the default completion (filenames).
     sh.send("frob x comp.r\t\n");

@@ -695,8 +695,8 @@ error thrown by a built-in gives status 1.
 | `chpwd` | Old and new directory | Ignored |
 | `exit` | Exit status | Ignored |
 
-A completer receives the words of the command line and the index of the word
-being completed, and returns an array of candidates: strings, or maps with a
+A completer receives the words of the command line (with aliases expanded)
+and the index of the word being completed (which ends at the cursor), and returns an array of candidates: strings, or maps with a
 `value` and an optional `desc` and `suffix`. `()` asks for the default
 completion. The shell does the matching and quoting (see
 `interactive/complete.rs`).

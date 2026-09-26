@@ -47,7 +47,7 @@ impl Host {
         match *self {}
     }
 
-    fn complete(&self, _: &mut Shell, _: &[Vec<u8>]) -> Result<Completion, Flow> {
+    fn complete(&self, _: &mut Shell, _: &[Vec<u8>], _: usize) -> Result<Completion, Flow> {
         match *self {}
     }
 }
@@ -84,12 +84,12 @@ pub fn completer_names(sh: &Shell) -> Vec<Vec<u8>> {
     sh.plugins.as_ref().map_or_else(Vec::new, |host| host.completer_names())
 }
 
-/// Runs the completer for `words[0]`, given the words of the command up
-/// to the cursor.
-pub fn complete(sh: &mut Shell, words: &[Vec<u8>]) -> Result<Completion, Flow> {
+/// Runs the completer for `words[0]`, given the words of the command and
+/// the index of the one being completed.
+pub fn complete(sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Completion, Flow> {
     match sh.plugins.clone() {
         None => Ok(Completion::Default),
-        Some(host) => host.complete(sh, words),
+        Some(host) => host.complete(sh, words, index),
     }
 }
 

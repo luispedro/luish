@@ -451,15 +451,18 @@ pass**.
   `=` in a `--option=`), user names after an unquoted `~`, and variable
   names after `$` or `${`. Some commands' arguments complete to something
   else: directories for `cd`, `pushd` and `rmdir`, variable names for
-  `export`, `local`, `readonly` and `unset` (function names after
-  `unset -f`), aliases for `alias` and `unalias`, command names for
+  `export`, `local`, `readonly`, `unset` (function names after
+  `unset -f`), `read` (not after `-p`), `getopts` (after the option
+  string) and `for` (then `in`), aliases for `alias` and `unalias`, command names for
   `hash`, `type` and `which`, built-ins for `help`, job specs (described by
-  their commands) for `fg`, `bg`, `jobs`, `wait` and `kill`, signal names
+  their commands; after `%` and a letter, the command names that give one
+  job, as `%vim`) for `fg`, `bg`, `jobs`, `wait` and `kill`, signal names
   after `kill -`, `kill -s` and `trap`'s action, and for `plugin` its
   subcommands, the plugins in the plugin directory and the loaded plugins;
   a plugin's completer (see Plugins) comes first. The completer
   analyses the line (the word, its kind, the quoting and the words of its
-  command), generates candidates (with optional descriptions, shown
+  command, with aliases expanded in command position, and after an alias
+  whose value ends with a blank, unless the word is quoted), generates candidates (with optional descriptions, shown
   aligned after them in the list), matches them against the text typed
   and builds the replacements. Only the best matches are kept: those that
   start with the text typed, else those that do ignoring case (a lowercase
@@ -585,8 +588,10 @@ pass**.
   Not supported: bare repositories, `GIT_DIR`, `GIT_CEILING_DIRECTORIES`.
 - Completers (`sh::completer(cmd, fn)`, one per command, the last
   registered wins) are called by the line editor through
-  `ShellHelper::ask`, with the command's words up to the cursor and the
-  index of the last one. They return `()` (default completion) or an array
+  `ShellHelper::ask`, with the command's words (aliases expanded; the
+  word being completed ends at the cursor, and the words after the cursor,
+  up to the end of the command, follow it) and the index of the one being
+  completed. They return `()` (default completion) or an array
   of strings and `#{value, desc, suffix}` maps; the shell matches and
   quotes them. While one runs, `Shell::jobctl` is taken out, so its
   commands are not jobs and don't save the editor's raw terminal modes;
@@ -653,8 +658,7 @@ notes how to rerun them):
   subsequence (fuzzy) matching and no ranking within the best matches,
   and isn't configurable. Choosing among the matches
   is rustyline's list: no menu, and descriptions are laid out in its
-  columns. Completers see only the words up to the cursor, aren't found
-  through aliases, and can't be interrupted with Ctrl-C (the terminal is
+  columns. Completers can't be interrupted with Ctrl-C (the terminal is
   in raw mode) except by their time limit.
 - `set -b` (immediate job notification) is accepted but does nothing: jobs
   are reported only before a prompt. Job notifications are given only for

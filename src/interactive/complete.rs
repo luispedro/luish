@@ -31,7 +31,8 @@ use crate::sys;
 #[derive(Default)]
 pub struct Names {
     pub functions: Vec<Vec<u8>>,
-    pub aliases: Vec<Vec<u8>>,
+    /// The aliases' names and values.
+    pub aliases: Vec<(Vec<u8>, Vec<u8>)>,
     pub vars: Vec<Vec<u8>>,
     pub path: Vec<u8>,
     pub home: Option<Vec<u8>>,
@@ -46,8 +47,9 @@ pub struct Names {
 }
 
 /// Runs the completer for a command (in `Names::completers`), given the
-/// words of the command up to the cursor.
-pub type Ask = fn(&[Vec<u8>]) -> Completion;
+/// words of the command and the index of the one under the cursor (which
+/// ends at the cursor).
+pub type Ask = fn(&[Vec<u8>], usize) -> Completion;
 
 #[derive(Default)]
 pub struct ShellHelper {
@@ -146,6 +148,12 @@ enum Args {
     Trap,
     /// The subcommands of `plugin`, then plugins.
     Plugin,
+    /// Variable names, except for the prompt after `-p`.
+    Read,
+    /// A variable name after the option string.
+    Getopts,
+    /// A variable name, then `in`.
+    For,
 }
 
 const ARGS: &[(&[u8], Args)] = &[
@@ -169,6 +177,9 @@ const ARGS: &[(&[u8], Args)] = &[
     (b"kill", Args::Kill),
     (b"trap", Args::Trap),
     (b"plugin", Args::Plugin),
+    (b"read", Args::Read),
+    (b"getopts", Args::Getopts),
+    (b"for", Args::For),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -221,7 +232,7 @@ impl Word {
 }
 
 /// The tokenizer's state while scanning the line up to the cursor.
-struct Scan {
+struct Scan<'a> {
     /// Whether the next word is a command name.
     cmd_pos: bool,
     /// Whether the next word is the target of a redirection.
@@ -244,9 +255,52 @@ struct Scan {
     quote: Quote,
     /// The words of the current command so far.
     words: Vec<Vec<u8>>,
+    /// Whether the current word has quotes or backslashes (and so is not
+    /// an alias).
+    quoted: bool,
+    /// The aliases (name and value), and those being expanded.
+    aliases: &'a [(Vec<u8>, Vec<u8>)],
+    expanding: Vec<Vec<u8>>,
+    /// Whether the next word is an alias even if it is not a command name
+    /// (after an alias whose value ends with a blank).
+    alias_next: bool,
+    /// Whether this scans the words after the cursor (`words_after`): it
+    /// stops at the end of the command.
+    after: bool,
+    /// Whether the next word is left out of `words` (the rest of the word
+    /// under the cursor).
+    skip: bool,
+    /// Whether a comment started.
+    comment: bool,
+    /// Whether to stop scanning.
+    done: bool,
 }
 
-impl Scan {
+impl<'a> Scan<'a> {
+    fn new(aliases: &'a [(Vec<u8>, Vec<u8>)]) -> Scan<'a> {
+        Scan {
+            cmd_pos: true,
+            redirect: false,
+            precommand: false,
+            stack: Vec::new(),
+            start: None,
+            text: Vec::new(),
+            split: 0,
+            offsets: Vec::new(),
+            subst: false,
+            quote: Quote::None,
+            words: Vec::new(),
+            quoted: false,
+            aliases,
+            expanding: Vec::new(),
+            alias_next: false,
+            after: false,
+            skip: false,
+            comment: false,
+            done: false,
+        }
+    }
+
     /// Starts a word at `at` in the line, unless in one.
     fn begin(&mut self, at: usize) {
         if self.start.is_none() {
@@ -272,8 +326,16 @@ impl Scan {
         if std::mem::take(&mut self.subst) {
             w.clear();
         }
+        let quoted = std::mem::take(&mut self.quoted);
+        let alias_next = std::mem::take(&mut self.alias_next);
+        if std::mem::take(&mut self.skip) {
+            return;
+        }
+        let alias = (alias_next || self.cmd_pos) && !quoted && !BEFORE_COMMAND.contains(&&w[..]);
         if self.redirect {
             self.redirect = false;
+        } else if let Some(value) = self.alias(&w).filter(|_| alias) {
+            self.expand_alias(w, value);
         } else if !self.cmd_pos {
             self.words.push(w);
         } else if is_assignment(&w) || (self.precommand && w.starts_with(b"-")) {
@@ -288,9 +350,34 @@ impl Scan {
         }
     }
 
+    /// The value of the alias `name`, unless it is being expanded.
+    fn alias(&self, name: &[u8]) -> Option<&'a [u8]> {
+        let aliases: &'a [(Vec<u8>, Vec<u8>)] = self.aliases;
+        let (_, value) = aliases.iter().find(|a| a.0 == name)?;
+        (!self.expanding.iter().any(|e| e == name)).then_some(&value[..])
+    }
+
+    /// Scans the value of an alias in place of its name, a word that has
+    /// just ended.
+    fn expand_alias(&mut self, name: Vec<u8>, value: &'a [u8]) {
+        let quote = self.quote;
+        self.expanding.push(name);
+        self.feed(value);
+        self.end_word();
+        self.expanding.pop();
+        self.quote = quote;
+        self.done = false;
+        self.comment = false;
+        self.alias_next = value.last().is_some_and(|&c| c == b' ' || c == b'\t');
+    }
+
     /// Ends the current command, at an operator.
     fn end_command(&mut self) {
         self.end_word();
+        if self.after && self.stack.is_empty() {
+            self.done = true;
+            return;
+        }
         self.cmd_pos = true;
         self.precommand = false;
         self.redirect = false;
@@ -342,98 +429,101 @@ impl Scan {
             && is_assignment(&self.text)
             && (self.cmd_pos || self.words.first().is_some_and(|c| DECLARATIONS.contains(&&c[..])))
     }
-}
 
-/// Finds the word ending at the end of `line` and what it should complete to.
-/// This is a rough tokenizer: it follows quoting, operators, redirections,
-/// assignments, and substitutions, but not the full grammar.
-fn analyze(line: &[u8]) -> Word {
-    let mut s = Scan {
-        cmd_pos: true,
-        redirect: false,
-        precommand: false,
-        stack: Vec::new(),
-        start: None,
-        text: Vec::new(),
-        split: 0,
-        offsets: Vec::new(),
-        subst: false,
-        quote: Quote::None,
-        words: Vec::new(),
-    };
-    let mut i = 0;
-    while i < line.len() {
-        let c = line[i];
-        let next = line.get(i + 1).copied();
-        i += 1;
-        match (s.quote, c) {
-            (Quote::Single, b'\'') | (Quote::Double, b'"') => s.quote = Quote::None,
-            (Quote::Single, _) => s.push(c, i),
-            (Quote::Double | Quote::None, b'$') if next == Some(b'(') => {
-                s.open(false);
-                i += 1;
-            }
-            (Quote::Double | Quote::None, b'`') => {
-                if s.in_backquote() {
-                    s.close(i);
-                } else {
-                    s.open(true);
-                }
-            }
-            (Quote::Double, b'\\') if next.is_some_and(|n| b"$`\"\\\n".contains(&n)) => {
-                i += 1;
-                s.push(line[i - 1], i);
-            }
-            (Quote::Double, _) => s.push(c, i),
-            (Quote::None, b' ' | b'\t') => s.end_word(),
-            (Quote::None, b'\n' | b';' | b'&' | b'|') => s.end_command(),
-            (Quote::None, b'(') => s.open(false),
-            (Quote::None, b')') => s.close(i),
-            (Quote::None, b'<' | b'>') => {
-                // A word of digits before the operator is an fd number.
-                if !s.text.iter().all(u8::is_ascii_digit) {
-                    s.end_word();
-                }
-                s.start = None;
-                s.text.clear();
-                s.offsets.clear();
-                while i < line.len() && b"<>&|-".contains(&line[i]) {
+    /// Scans `line`, until the end or until `done` is set.
+    fn feed(&mut self, line: &[u8]) {
+        let mut i = 0;
+        while i < line.len() && !self.done {
+            let c = line[i];
+            let next = line.get(i + 1).copied();
+            i += 1;
+            match (self.quote, c) {
+                (Quote::Single, b'\'') | (Quote::Double, b'"') => self.quote = Quote::None,
+                (Quote::Single, _) => self.push(c, i),
+                (Quote::Double | Quote::None, b'$') if next == Some(b'(') => {
+                    self.open(false);
                     i += 1;
                 }
-                s.redirect = true;
-            }
-            (Quote::None, b'#') if s.start.is_none() => {
-                return Word {
-                    start: line.len(),
-                    kind: Kind::Nothing,
-                    quote: Quote::None,
-                    text: Vec::new(),
-                    split: 0,
-                    offsets: vec![(line.len(), Quote::None)],
-                    words: Vec::new(),
-                };
-            }
-            (Quote::None, _) => {
-                s.begin(i - 1);
-                match c {
-                    b'\\' => {
-                        if let Some(n) = next {
-                            i += 1;
-                            s.push(n, i);
-                        }
+                (Quote::Double | Quote::None, b'`') => {
+                    if self.in_backquote() {
+                        self.close(i);
+                    } else {
+                        self.open(true);
                     }
-                    b'\'' => s.quote = Quote::Single,
-                    b'"' => s.quote = Quote::Double,
-                    _ => {
-                        s.push(c, i);
-                        let assignment = s.in_assignment();
-                        if (c == b'=' && (assignment || s.text.starts_with(b"--"))) || (c == b':' && assignment) {
-                            s.split = s.text.len();
+                }
+                (Quote::Double, b'\\') if next.is_some_and(|n| b"$`\"\\\n".contains(&n)) => {
+                    i += 1;
+                    self.push(line[i - 1], i);
+                }
+                (Quote::Double, _) => self.push(c, i),
+                (Quote::None, b' ' | b'\t') => self.end_word(),
+                (Quote::None, b'\n' | b';' | b'&' | b'|') => self.end_command(),
+                (Quote::None, b'(') => self.open(false),
+                (Quote::None, b')') if self.after && self.stack.is_empty() => {
+                    self.end_word();
+                    self.done = true;
+                }
+                (Quote::None, b')') => self.close(i),
+                (Quote::None, b'<' | b'>') => {
+                    // A word of digits before the operator is an fd number.
+                    if !self.text.iter().all(u8::is_ascii_digit) {
+                        self.end_word();
+                    }
+                    self.skip = false;
+                    self.start = None;
+                    self.text.clear();
+                    self.offsets.clear();
+                    while i < line.len() && b"<>&|-".contains(&line[i]) {
+                        i += 1;
+                    }
+                    self.redirect = true;
+                }
+                (Quote::None, b'#') if self.start.is_none() => {
+                    self.comment = true;
+                    self.done = true;
+                }
+                (Quote::None, _) => {
+                    self.begin(i - 1);
+                    self.quoted |= b"\\'\"".contains(&c);
+                    match c {
+                        b'\\' => {
+                            if let Some(n) = next {
+                                i += 1;
+                                self.push(n, i);
+                            }
+                        }
+                        b'\'' => self.quote = Quote::Single,
+                        b'"' => self.quote = Quote::Double,
+                        _ => {
+                            self.push(c, i);
+                            let assignment = self.in_assignment();
+                            if (c == b'=' && (assignment || self.text.starts_with(b"--"))) || (c == b':' && assignment) {
+                                self.split = self.text.len();
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/// Finds the word ending at the end of `line` and what it should complete to.
+/// This is a rough tokenizer: it follows quoting, operators, redirections,
+/// assignments, and substitutions, but not the full grammar.
+fn analyze(line: &[u8], aliases: &[(Vec<u8>, Vec<u8>)]) -> Word {
+    let mut s = Scan::new(aliases);
+    s.feed(line);
+    if s.comment {
+        return Word {
+            start: line.len(),
+            kind: Kind::Nothing,
+            quote: Quote::None,
+            text: Vec::new(),
+            split: 0,
+            offsets: vec![(line.len(), Quote::None)],
+            words: Vec::new(),
+        };
     }
 
     // A variable name after `$` or `${` (not inside single quotes).
@@ -482,6 +572,23 @@ fn analyze(line: &[u8]) -> Word {
         offsets: s.offsets,
         words: s.words,
     }
+}
+
+/// The words of the command after the cursor, unquoted, given the text
+/// after it (`rest`) and the quoting at the cursor. The rest of the word
+/// under the cursor is left out.
+fn words_after(rest: &[u8], quote: Quote) -> Vec<Vec<u8>> {
+    let mut s = Scan::new(&[]);
+    s.cmd_pos = false;
+    s.after = true;
+    s.quote = quote;
+    if quote != Quote::None || rest.first().is_some_and(|c| !b" \t\n;&|<>()".contains(c)) {
+        s.begin(0);
+        s.skip = true;
+    }
+    s.feed(rest);
+    s.end_word();
+    s.words
 }
 
 /// Whether `w` starts with `NAME=`.
@@ -652,6 +759,12 @@ fn unset_functions(args: &[Vec<u8>]) -> bool {
     functions
 }
 
+/// How many of `args` are operands, after the options (`getopts` has no
+/// options, but takes `--`).
+fn operands(args: &[Vec<u8>]) -> usize {
+    args.len() - usize::from(args.first().is_some_and(|a| a == b"--"))
+}
+
 /// Signal names, after `prefix`.
 fn signals(prefix: &[u8], out: &mut Vec<Candidate>) {
     out.extend(crate::signals::names().map(|n| Candidate::word(&[prefix, n.as_bytes()].concat())));
@@ -712,9 +825,11 @@ enum Files {
 }
 
 impl ShellHelper {
-    fn complete_bytes(&self, line: &[u8]) -> (usize, Vec<Pair>) {
-        let w = analyze(line);
-        let (from, cands) = match self.ask_completer(&w) {
+    /// Completes the word that ends at the end of `line`. `after` is the
+    /// text after the cursor.
+    fn complete_bytes(&self, line: &[u8], after: &[u8]) -> (usize, Vec<Pair>) {
+        let w = analyze(line, &self.names.aliases);
+        let (from, cands) = match self.ask_completer(&w, after) {
             Completion::Default => self.generate(&w),
             Completion::Candidates(c) => (0, c),
             Completion::Failed => {
@@ -748,12 +863,13 @@ impl ShellHelper {
     }
 
     /// What the completer of the word's command, if it has one, gives.
-    fn ask_completer(&self, w: &Word) -> Completion {
+    fn ask_completer(&self, w: &Word, after: &[u8]) -> Completion {
         match (w.kind, self.ask) {
             (Kind::Arg, Some(ask)) if self.names.completers.contains(&w.words[0]) => {
                 let mut words = w.words.clone();
                 words.push(w.text.clone());
-                ask(&words)
+                words.extend(words_after(after, w.quote));
+                ask(&words, w.words.len())
             }
             _ => Completion::Default,
         }
@@ -807,7 +923,10 @@ impl ShellHelper {
                     Some(Args::Vars) if !w.text.contains(&b'=') => words(&self.names.vars, &mut out),
                     Some(Args::Unset) if unset_functions(args) => words(&self.names.functions, &mut out),
                     Some(Args::Unset) => words(&self.names.vars, &mut out),
-                    Some(Args::Aliases) => words(&self.names.aliases, &mut out),
+                    Some(Args::Aliases) => {
+                        out.extend(self.names.aliases.iter().map(|a| Candidate::word(&a.0)));
+                        0
+                    }
                     Some(Args::Commands) => {
                         self.commands(&mut out);
                         0
@@ -817,7 +936,7 @@ impl ShellHelper {
                         0
                     }
                     Some(Args::Jobs) => {
-                        self.jobs(&mut out);
+                        self.jobs(&w.text, &mut out);
                         0
                     }
                     Some(Args::Kill) => {
@@ -826,7 +945,7 @@ impl ShellHelper {
                         } else if args.last().is_some_and(|a| a == b"-s") {
                             signals(b"", &mut out);
                         } else {
-                            self.jobs(&mut out);
+                            self.jobs(&w.text, &mut out);
                         }
                         0
                     }
@@ -835,6 +954,18 @@ impl ShellHelper {
                         out.push(Candidate::word(b"EXIT"));
                         0
                     }
+                    Some(Args::Read) if args.last().is_some_and(|a| a == b"-p") || w.text.starts_with(b"-") => 0,
+                    Some(Args::Read) => words(&self.names.vars, &mut out),
+                    Some(Args::Getopts) => match operands(args) {
+                        0 => 0,
+                        1 => words(&self.names.vars, &mut out),
+                        _ => files(Files::All, &mut out),
+                    },
+                    Some(Args::For) => match args.len() {
+                        0 => words(&self.names.vars, &mut out),
+                        1 => words(&[b"in".to_vec()], &mut out),
+                        _ => files(Files::All, &mut out),
+                    },
                     Some(Args::Plugin) => match args.first().map(|a| &a[..]) {
                         None => words(&[b"list".to_vec(), b"load".to_vec(), b"unload".to_vec()], &mut out),
                         Some(b"load") if w.text.contains(&b'/') => files(Files::All, &mut out),
@@ -861,17 +992,29 @@ impl ShellHelper {
             .map(|b: &[u8]| b)
             .chain(RESERVED.iter().copied())
             .chain(self.names.functions.iter().map(|c| &c[..]))
-            .chain(self.names.aliases.iter().map(|c| &c[..]))
+            .chain(self.names.aliases.iter().map(|a| &a.0[..]))
             .chain(cache.names.iter().map(|c| &c[..]));
         out.extend(all.map(Candidate::word));
     }
 
-    /// Job specs, described by their commands.
-    fn jobs(&self, out: &mut Vec<Candidate>) {
+    /// Job specs, described by their commands: `%1`, or, if a name is
+    /// typed after the `%`, the jobs' command names (those that give
+    /// only one job).
+    fn jobs(&self, typed: &[u8], out: &mut Vec<Candidate>) {
+        let by_name = typed.len() > 1 && typed[0] == b'%' && !b"0123456789%+-?".contains(&typed[1]);
         for (n, text) in &self.names.jobs {
+            let spec = if by_name {
+                let name = text.split(|&c| c == b' ').next().unwrap_or_default();
+                if self.names.jobs.iter().filter(|j| j.1.starts_with(name)).count() > 1 {
+                    continue;
+                }
+                [b"%", name].concat()
+            } else {
+                format!("%{n}").into_bytes()
+            };
             out.push(Candidate {
                 desc: Some(text.clone()),
-                ..Candidate::word(format!("%{n}").as_bytes())
+                ..Candidate::word(&spec)
             });
         }
     }
@@ -946,7 +1089,8 @@ impl Completer for ShellHelper {
     type Candidate = Pair;
 
     fn complete(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> rustyline::Result<(usize, Vec<Pair>)> {
-        Ok(self.complete_bytes(&line.as_bytes()[..pos]))
+        let (line, after) = line.as_bytes().split_at(pos);
+        Ok(self.complete_bytes(line, after))
     }
 }
 
@@ -961,12 +1105,12 @@ mod tests {
     use super::*;
 
     fn kind(line: &str) -> (Kind, String) {
-        let w = analyze(line.as_bytes());
+        let w = analyze(line.as_bytes(), &[]);
         (w.kind, String::from_utf8(w.text[w.split..].to_vec()).unwrap())
     }
 
     fn words(line: &str) -> Vec<String> {
-        let w = analyze(line.as_bytes());
+        let w = analyze(line.as_bytes(), &[]);
         w.words.into_iter().map(|w| String::from_utf8(w).unwrap()).collect()
     }
 
@@ -1006,7 +1150,7 @@ mod tests {
         assert_eq!(kind("echo \"${HO"), (Var(true), "HO".into()));
         assert_eq!(kind("echo '$HO"), (Arg, "$HO".into()));
         assert_eq!(kind("echo \\$HO"), (Arg, "$HO".into()));
-        let w = analyze(b"ls 'a b");
+        let w = analyze(b"ls 'a b", &[]);
         assert_eq!((w.start, w.quote), (3, Quote::Single));
     }
 
@@ -1025,11 +1169,69 @@ mod tests {
         assert_eq!(kind("echo \"$(x)y"), (Kind::Arg, "y".into()));
     }
 
+    #[test]
+    fn aliases() {
+        let aliases = [
+            (b"g".to_vec(), b"git".to_vec()),
+            (b"gc".to_vec(), b"git -C 'my dir' commit".to_vec()),
+            (b"ls".to_vec(), b"ls -F".to_vec()),
+            (b"s".to_vec(), b"sudo ".to_vec()),
+            (b"loop".to_vec(), b"loop2".to_vec()),
+            (b"loop2".to_vec(), b"loop x".to_vec()),
+            (b"cdg".to_vec(), b"cd /tmp; git".to_vec()),
+            (b"w".to_vec(), b"watch ".to_vec()),
+            (b"c".to_vec(), b"echo # g".to_vec()),
+        ];
+        let analyze = |line: &str| {
+            let w = analyze(line.as_bytes(), &aliases);
+            let words: Vec<_> = w.words.into_iter().map(|w| String::from_utf8(w).unwrap()).collect();
+            (w.kind, words)
+        };
+        use Kind::*;
+        assert_eq!(analyze("g ad"), (Arg, vec!["git".into()]));
+        assert_eq!(analyze("g"), (Command, vec![]));
+        assert_eq!(analyze("gc -m"), (Arg, vec!["git".into(), "-C".into(), "my dir".into(), "commit".into()]));
+        assert_eq!(analyze("ls x"), (Arg, vec!["ls".into(), "-F".into()]));
+        assert_eq!(analyze("s g ad"), (Arg, vec!["git".into()]));
+        assert_eq!(analyze("s gi"), (Command, vec!["sudo".into()]));
+        assert_eq!(analyze("loop a"), (Arg, vec!["loop".into(), "x".into()]));
+        assert_eq!(analyze("cdg ad"), (Arg, vec!["git".into()]));
+        assert_eq!(analyze("w g ad"), (Arg, vec!["watch".into(), "git".into()]));
+        assert_eq!(analyze("echo g ad"), (Arg, vec!["echo".into(), "g".into()]));
+        assert_eq!(analyze("\\g ad"), (Arg, vec!["g".into()]));
+        assert_eq!(analyze("'g' ad"), (Arg, vec!["g".into()]));
+        assert_eq!(analyze("c a"), (Arg, vec!["echo".into()]));
+        assert_eq!(analyze("if g ad"), (Arg, vec!["git".into()]));
+    }
+
+    #[test]
+    fn after_the_cursor() {
+        let after = |rest: &str, quote| -> Vec<String> {
+            (words_after(rest.as_bytes(), quote).into_iter())
+                .map(|w| String::from_utf8(w).unwrap())
+                .collect()
+        };
+        assert_eq!(after("", Quote::None), Vec::<String>::new());
+        assert_eq!(after(" a 'b c'", Quote::None), ["a", "b c"]);
+        assert_eq!(after("dd a", Quote::None), ["a"]);
+        assert_eq!(after("d e' f", Quote::Single), ["f"]);
+        assert_eq!(after(" a; b", Quote::None), ["a"]);
+        assert_eq!(after(" a >out b | c", Quote::None), ["a", "b"]);
+        assert_eq!(after("x>out b", Quote::None), ["b"]);
+        assert_eq!(after("2>out b", Quote::None), ["b"]);
+        assert_eq!(after(" a $(b; c) d) e", Quote::None), ["a", "", "d"]);
+        assert_eq!(after("$(x)y z", Quote::None), ["z"]);
+    }
+
     /// A completer for `git`, as a plugin could provide.
-    fn fake_git(words: &[Vec<u8>]) -> Completion {
+    fn fake_git(words: &[Vec<u8>], i: usize) -> Completion {
         assert_eq!(words[0], b"git");
-        match (words.len(), &words[words.len() - 1][..]) {
-            (2, _) => Completion::Candidates(vec![
+        match (i, &words[i][..]) {
+            (1, _) if words.len() > 2 => {
+                assert_eq!(words[2..], [b"x".to_vec(), b"after".to_vec()]);
+                Completion::Candidates(vec![])
+            }
+            (1, _) => Completion::Candidates(vec![
                 Candidate::word(b"add"),
                 Candidate::word(b"commit"),
                 Candidate {
@@ -1043,7 +1245,7 @@ mod tests {
     }
 
     fn complete(h: &ShellHelper, line: &str) -> Vec<String> {
-        h.complete_bytes(line.as_bytes())
+        h.complete_bytes(line.as_bytes(), b"")
             .1
             .into_iter()
             .map(|p| p.replacement)
@@ -1064,7 +1266,7 @@ mod tests {
         let h = ShellHelper {
             names: Names {
                 functions: vec![b"myfunc".to_vec()],
-                aliases: vec![b"ll".to_vec()],
+                aliases: vec![(b"ll".to_vec(), b"ls -l".to_vec())],
                 vars: vec![b"HOME".to_vec(), b"HOSTNAME".to_vec()],
                 path: format!("{d}/sub dir").into_bytes(),
                 home: Some(dir.as_os_str().as_bytes().to_vec()),
@@ -1106,6 +1308,14 @@ mod tests {
         assert_eq!(complete(&h, "unset my"), Vec::<String>::new());
         assert_eq!(complete(&h, "unset -f my"), ["myfunc "]);
         assert_eq!(complete(&h, "unset -f -v HOM"), ["HOME "]);
+        assert_eq!(complete(&h, "read -r HOM"), ["HOME "]);
+        assert_eq!(complete(&h, "read -p HOM"), Vec::<String>::new());
+        assert_eq!(complete(&h, "getopts HOM"), Vec::<String>::new());
+        assert_eq!(complete(&h, "getopts ab: HOM"), ["HOME "]);
+        assert_eq!(complete(&h, "getopts -- ab: HOM"), ["HOME "]);
+        assert_eq!(complete(&h, "for HOM"), ["HOME "]);
+        assert_eq!(complete(&h, "for x "), ["in "]);
+        assert_eq!(complete(&h, "for x in ~/f"), ["~/file\\ one "]);
         // Jobs and signals.
         assert_eq!(complete(&h, "fg "), ["%1 ", "%2 "]);
         assert_eq!(complete(&h, "kill %"), ["%1 ", "%2 "]);
@@ -1115,7 +1325,10 @@ mod tests {
         assert_eq!(complete(&h, "trap EX"), Vec::<String>::new());
         assert_eq!(complete(&h, "trap 'echo x' EX"), ["EXIT "]);
         assert_eq!(complete(&h, "trap -- '' in"), ["INT "]);
-        let shown: Vec<_> = h.complete_bytes(b"wait ").1.into_iter().map(|p| p.display).collect();
+        assert_eq!(complete(&h, "fg %v"), ["%vi "]);
+        assert_eq!(complete(&h, "kill %s"), ["%sleep "]);
+        assert_eq!(complete(&h, "kill %2"), ["%2 "]);
+        let shown: Vec<_> = h.complete_bytes(b"wait ", b"").1.into_iter().map(|p| p.display).collect();
         assert_eq!(shown, ["%1  -- sleep 10 | cat", "%2  -- vi notes"]);
         // Plugins.
         std::fs::create_dir(dir.join("plugins")).unwrap();
@@ -1168,6 +1381,11 @@ mod tests {
         assert_eq!(complete(&h, "echo \"${home"), ["HOME}"]);
         assert_eq!(complete(&h, "git 'Com"), Vec::<String>::new());
         assert_eq!(complete(&h, "git 'mit"), ["'commit' "]);
+        // Through an alias, and with words after the cursor.
+        let mut h = h;
+        h.names.aliases.push((b"g".to_vec(), b"git".to_vec()));
+        assert_eq!(complete(&h, "g c"), ["commit "]);
+        assert_eq!(h.complete_bytes(b"git ", b" x after").1.len(), 0);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1184,7 +1402,7 @@ mod tests {
                 c("x", None),
             ],
             &Target {
-                w: &analyze(b""),
+                w: &analyze(b"", &[]),
                 line: b"",
                 from: 0,
                 quote: Quote::None,
