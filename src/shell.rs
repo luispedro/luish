@@ -73,6 +73,9 @@ pub struct Shell {
     /// The logical current directory (dash's `curdir`), kept by `cd` and
     /// printed by `pwd`; `None` if it couldn't be found.
     pub curdir: Option<Vec<u8>>,
+    /// The directory stack (`pushd`, `popd`, `dirs`), most recent first,
+    /// without the current directory.
+    pub dirstack: Vec<Vec<u8>>,
     /// `getopts`'s position (dash's `shellparam.optind` and `optoff`).
     pub optind: usize,
     pub optoff: Option<usize>,
@@ -153,6 +156,7 @@ impl Shell {
             optind: 1,
             optoff: None,
             curdir,
+            dirstack: Vec::new(),
             in_ps4: false,
             out_failed: std::cell::Cell::new(false),
             in_exit_trap: false,

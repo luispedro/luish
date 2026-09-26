@@ -39,6 +39,10 @@ and `help NAME` shows the same text as here in the terminal.
 :heading-offset: 1
 ```
 
+```{include} builtins/dirs.md
+:heading-offset: 1
+```
+
 ```{include} builtins/echo.md
 :heading-offset: 1
 ```

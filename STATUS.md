@@ -257,9 +257,10 @@ pass**.
   `local` (special in dash) `readonly` `return` `set` `shift` `source`
   (not in POSIX or dash; as in zsh) `times` `trap` `unset`.
 - Regular: `[` `alias` `bg` `cd` `chdir` (another name for `cd`, as in
-  dash) `command` `echo` `false` `fc` `fg` `getopts`
-  `hash` `jobs` `kill` `printf` `pwd` `read` `test` `true` `type`
-  `ulimit` `umask` `unalias` `wait`, and luish's own `__luish_internal`,
+  dash) `command` `dirs` (not in POSIX or dash; as in zsh, like `popd` and
+  `pushd`) `echo` `false` `fc` `fg` `getopts` `hash` `jobs` `kill` `popd`
+  `printf` `pushd` `pwd` `read` `test` `true` `type` `ulimit` `umask`
+  `unalias` `wait`, and luish's own `__luish_internal`,
   and, only in interactive shells, `help` and `plugin` (see Plugins).
 - `__luish_internal` (`src/builtins/internal.rs`) holds luish's own
   commands as subcommands, so that they don't take names from the command
@@ -337,13 +338,28 @@ pass**.
   current directory, then in `PATH`, and further arguments are the
   positional parameters while the file runs (restored afterwards). Tests:
   `builtins/source.sh` (compared with zsh), `builtins/source_missing.sh`.
+- The directory stack (`src/builtins/dirstack.rs`, `Shell::dirstack`):
+  `pushd`, `popd` and `dirs` follow zsh with its default options (so not
+  its sh emulation, whose `POSIX_CD` makes `+n` and `-n` directory names).
+  `pushd` changes directory through `cd`'s code (`CDPATH`, `PWD`, `OLDPWD`,
+  the `chpwd` hook, but `-P` wins over `-L` as in zsh); without an operand
+  it swaps the top two entries, or goes to `HOME` with an empty stack; `+n`
+  and `-n` rotate. `popd` removes the top entry even if it can't change to
+  it; `popd +n`/`-n` removes an entry without changing directory. Only
+  `-q`, `-L` and `-P` are options (anything else, such as `-1`, is the
+  operand). Interactive shells print the stack after `pushd` and `popd`
+  unless `-q` is given. `dirs` prints with `~` for `HOME` (`-l`, `-p`, `-v`),
+  clears (`-c`) or replaces the stack. Not implemented: zsh's `AUTO_PUSHD`,
+  `PUSHD_*` and `DIRSTACKSIZE`, `cd +n`, and the `dirstack` array. Tests:
+  `builtins/dirstack.sh`, `builtins/dirstack_interactive.sh` (both
+  compared with zsh), `builtins/popd_dir.sh`.
 - `unset` of a bad name is an error; `set -` turns off `-x` and `-v` without
   resetting the parameters; `.` of a directory reads nothing. Test:
   `builtins/special_misc.sh`.
 - `local` is scoped per function call. As in dash, `local x` keeps the
   current value.
 - `__luish_internal savestate` (`src/state.rs`) prints commands that restore the shell's
-  state when run with `.`: the working directory, `umask`, variables and
+  state when run with `.`: the working directory and directory stack, `umask`, variables and
   their attributes (not `PPID` or `LINENO`), traps, functions, aliases,
   loaded plugins and options (not `-i`, `-s`, `-m` or `-n`). Functions are printed from the
   AST by `src/unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`),
@@ -487,7 +503,8 @@ pass**.
   `last_status`, `interactive`, `run` (shell code in the current shell;
   `exit` in it stops the plugin and exits the shell), `write` (fds 1 and 2).
 - Hooks: `chpwd`, called with the old and new directory after each
-  successful `cd` (after `cd -` prints the directory), also in subshells.
+  successful `cd`, `pushd` or `popd` (after `cd -` prints the directory, or
+  `pushd` the stack), also in subshells.
   `$?` is kept; a failing hook is reported with the plugin's file and the
   others still run; a `chpwd` hook running `cd` doesn't re-trigger `chpwd`.
 - `plugins/bytes.rs`: non-UTF-8 bytes map to U+10FF80–U+10FFFF and back

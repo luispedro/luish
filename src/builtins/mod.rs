@@ -1,6 +1,7 @@
 //! Built-in commands.
 
 pub mod cd;
+mod dirstack;
 mod echo;
 mod fc;
 mod help;
@@ -51,6 +52,8 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"cd", cd::cd, false),
     (b"chdir", cd::cd, false),
     (b"command", misc::command, false),
+    // Not POSIX: as in zsh.
+    (b"dirs", dirstack::dirs, false),
     (b"echo", echo::echo, false),
     (b"false", false_, false),
     (b"fc", fc::fc, false),
@@ -59,7 +62,9 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"hash", misc::hash, false),
     (b"jobs", jobs::jobs, false),
     (b"kill", jobs::kill, false),
+    (b"popd", dirstack::popd, false),
     (b"printf", printf::printf, false),
+    (b"pushd", dirstack::pushd, false),
     (b"pwd", cd::pwd, false),
     (b"read", read::read, false),
     (b"test", test::test, false),

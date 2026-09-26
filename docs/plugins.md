@@ -47,7 +47,7 @@ sh::hook("chpwd", |from, to| {
 });
 ```
 
-`chpwd` hooks are called after each successful `cd`, with the old and the new directory. `$?` is the same after
+`chpwd` hooks are called after each successful `cd`, `pushd` or `popd`, with the old and the new directory. `$?` is the same after
 the hooks as before them. If a hook fails, the error is printed and the other hooks still run. A `chpwd` hook that
 itself runs `cd` does not trigger `chpwd` again.
 

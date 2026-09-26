@@ -1,4 +1,5 @@
-# chpwd hooks run after each successful cd, with the old and new directory.
+# chpwd hooks run after each successful cd (also by pushd and popd), with
+# the old and new directory.
 mkdir -p "$HOME/.config/luish/plugins" d1 d2/sub
 cat > "$HOME/.config/luish/plugins/dirs.rhai" <<'P'
 let count = 0;
@@ -31,6 +32,10 @@ cd "$top"
 echo "subshell:"
 (cd d1)
 echo "back in $PWD, LAST_TO=$LAST_TO"
+echo "pushd and popd:"
+pushd -q d1
+pushd -q "$top/nonexistent" 2>/dev/null
+popd -q
 }
 # The temporary directory changes from run to run.
 main | sed "s|$HOME|HOME|g"

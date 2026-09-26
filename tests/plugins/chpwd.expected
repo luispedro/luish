@@ -20,3 +20,8 @@ subshell:
 chpwd 6: HOME -> HOME/d1 (PWD=HOME/d1)
 named hook, $? is 0
 back in HOME, LAST_TO=HOME
+pushd and popd:
+chpwd 6: HOME -> HOME/d1 (PWD=HOME/d1)
+named hook, $? is 0
+chpwd 7: HOME/d1 -> HOME (PWD=HOME)
+named hook, $? is 1

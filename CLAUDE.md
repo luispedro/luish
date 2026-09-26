@@ -48,7 +48,8 @@ Most coverage is differential (`tests/compare.rs`): each `tests/cases/**/*.sh` r
 - stdout and the exit status must match exactly. For stderr only emptiness is compared, unless the script contains
   the line `# stderr: exact`.
 - A script with the line `# reference: zsh` is compared with `zsh --emulate sh` instead of dash, for a deliberate
-  deviation where luish follows zsh. zsh comes from pixi (pinned in `pixi.toml`), so run such cases through pixi.
+  deviation where luish follows zsh. Words after `zsh` are further arguments (e.g. `# reference: zsh -o noposixcd`).
+  zsh comes from pixi (pinned in `pixi.toml`), so run such cases through pixi.
 - `NAME.expected` (with optional `NAME.status`) replaces the reference run, for deviations that no reference shell
   matches. Record every deviation in `DEVIATIONS.md`. `NAME.stdin` is fed to standard input.
 - Each script runs in a fresh temporary directory that is also `$HOME`, with a cleared environment, `LC_ALL=C`, and

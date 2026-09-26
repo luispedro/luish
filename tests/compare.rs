@@ -11,7 +11,8 @@
 //! - if `NAME.stdin` exists, it is fed to the script's standard input;
 //! - if the script contains the line `# reference: zsh`, it is compared
 //!   with `zsh --emulate sh` (from pixi) instead of dash, for behaviour
-//!   where luish follows zsh (see `DEVIATIONS.md`).
+//!   where luish follows zsh (see `DEVIATIONS.md`). Words after the shell's
+//!   name are further arguments for it, such as `-o noposixcd`.
 //!
 //! Plugin cases (`tests/plugins/*.sh`, only with the `plugins` feature)
 //! can't run under dash, so each has a `NAME.expected`, and stderr must be
@@ -133,10 +134,12 @@ fn show(b: &[u8]) -> String {
 fn check(luish: &Path, refs: &[Reference], script: &Path, id: &str, plugin_case: bool) -> Result<(), String> {
     let text = std::fs::read_to_string(script).unwrap_or_default();
     let exact_stderr = text.lines().any(|l| l.trim() == "# stderr: exact");
-    let reference = text
+    let mut reference = text
         .lines()
         .find_map(|l| l.trim().strip_prefix("# reference: "))
-        .unwrap_or("dash");
+        .unwrap_or("dash")
+        .split_whitespace();
+    let (reference, extra): (&str, Vec<&str>) = (reference.next().unwrap_or("dash"), reference.collect());
     let got = run(luish, &[], script, id);
     let expected_file = script.with_extension("expected");
     let stderr_file = script.with_extension("stderr");
@@ -163,7 +166,7 @@ fn check(luish: &Path, refs: &[Reference], script: &Path, id: &str, plugin_case:
                 "  {reference} is required for this case (run the tests through pixi)\n"
             ));
         };
-        run(path, r.args, script, id)
+        run(path, &[r.args, &extra].concat(), script, id)
     };
     let mut problems = String::new();
     if got.stdout != want.stdout {

@@ -7,13 +7,15 @@ follow bash instead.
 
 Each difference has a test in `tests/cases/`: either a case marked
 `# reference: zsh`, which is compared with `zsh --emulate sh` (pinned in
-`pixi.toml`) instead of dash, or one with a `.expected` file.
+`pixi.toml`) instead of dash (words after `zsh` are further options for
+it), or one with a `.expected` file.
 
 ## Following zsh
 
 | Behaviour | dash | luish | Test |
 |---|---|---|---|
 | `source` | Not a built-in (`not found`, status 127) | As in zsh: `.`, but a name without `/` is looked for in the current directory before `PATH`, and further arguments are the positional parameters while the file runs. Special, as in zsh's sh emulation. A file that can't be read is an error with status 2, as for `.` (zsh uses 1) | `builtins/source.sh` (zsh), `builtins/source_missing.sh` |
+| `pushd`, `popd`, `dirs` | Not built-ins (`not found`, status 127) | As in zsh with its default options: `+n` and `-n` name entries of the stack (zsh's sh emulation sets `POSIX_CD`, which makes them directory names). `popd` with an argument other than `+n` or `-n` is an error with status 1 (zsh usually does nothing, with status 0) | `builtins/dirstack.sh` (zsh `-o noposixcd`), `builtins/dirstack_interactive.sh` (zsh), `builtins/popd_dir.sh` |
 | Last command of `sh -c` | Debian's dash forks it (a Debian patch; upstream dash execs it) | Replaces the shell with it unless a trap is set, as zsh, bash and upstream dash do | `exec/c_exec_last.sh` (zsh) |
 
 ## Following POSIX where dash doesn't

@@ -2,9 +2,10 @@
 //! (`__luish_internal savestate`), and the difference between two states
 //! (for the startup cache, `startcache.rs`).
 //!
-//! The state is the working directory, the file mode mask, variables (with
-//! their export and readonly attributes), traps, functions, aliases, loaded
-//! plugins and options. It is written as shell commands, so it is restored
+//! The state is the working directory and the directory stack, the file
+//! mode mask, variables (with their export and readonly attributes), traps,
+//! functions, aliases, loaded plugins and options. It is written as shell
+//! commands, so it is restored
 //! by running them with `.`. Restoring sets everything that was saved, but
 //! doesn't remove what wasn't (such as variables set since).
 
@@ -30,6 +31,7 @@ const PROCESS_VARS: &[&[u8]] = &[b"PPID", b"LINENO"];
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
     Dir,
+    DirStack,
     Umask,
     Var,
     Readonly,
@@ -70,6 +72,15 @@ impl Shell {
             t.extend(single_quote(dir));
             t.push(b'\n');
             add(Kind::Dir, b"", t);
+        }
+        if !self.dirstack.is_empty() {
+            let mut t = b"command dirs --".to_vec();
+            for d in &self.dirstack {
+                t.push(b' ');
+                t.extend(single_quote(d));
+            }
+            t.push(b'\n');
+            add(Kind::DirStack, b"", t);
         }
         let mask = sys::umask(0);
         sys::umask(mask);
@@ -184,6 +195,7 @@ pub fn difference(before: &[Entry], after: &[Entry]) -> Vec<u8> {
             Kind::Alias => out.extend([b"command unalias ".to_vec(), quoted()].concat()),
             Kind::Trap => out.extend([b"trap - ".to_vec(), e.name.clone()].concat()),
             Kind::Plugin => out.extend([b"__luish_internal plugin unload ".to_vec(), quoted()].concat()),
+            Kind::DirStack => out.extend_from_slice(b"command dirs -c"),
             Kind::Dir | Kind::Umask | Kind::Readonly | Kind::Option => continue,
         }
         out.push(b'\n');

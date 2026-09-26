@@ -18,16 +18,18 @@ ll='ls -l'
 q='"'
 0027
 in d
+/x
+/it's here
 uC
 bye
 status 1
 k() {
     \greet
 }
-internal_savestate.sh: 31: __luish_internal: missing subcommand
+internal_savestate.sh: 32: __luish_internal: missing subcommand
 status 2
-internal_savestate.sh: 32: __luish_internal: nosuch: unknown subcommand
+internal_savestate.sh: 33: __luish_internal: nosuch: unknown subcommand
 status 2
-internal_savestate.sh: 33: __luish_internal savestate: too many arguments: extra
+internal_savestate.sh: 34: __luish_internal savestate: too many arguments: extra
 status 2
 bye
