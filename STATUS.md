@@ -354,6 +354,12 @@ pass**.
   be found (`getcwd` fails); without `-e` it returns 0, and either way
   `PWD` is then the logical path. Tests: `builtins/chdir.sh`,
   `builtins/cd_e.sh`.
+- `setopt autocd` (`autocd_target` in `exec/simple.rs`), as in zsh: a
+  simple command of one word, without redirections, read with `-s` or
+  interactively, that isn't a built-in, function, command in `PATH` or
+  executable file, runs `cd -- dir` if it is a directory (a relative one
+  first, then through `CDPATH`, which then isn't printed). The check costs
+  nothing unless the option is on. Test: `builtins/autocd.sh` (zsh).
 - `umask` and `ulimit` are ports of dash's (symbolic modes; `-H`/`-S`, `-a`
   format). Tests: `builtins/umask_modes.sh`, `builtins/ulimit_dash.sh`.
 - `source` is `.` as in zsh: a name without `/` is looked for in the
@@ -403,7 +409,7 @@ pass**.
 - `set -o` / `set +o` output matches dash, except that the last option is
   `hashall` rather than dash's `debug` (see DEVIATIONS.md).
 - luish's own options (`EXTENDED` in `options.rs`, all off by default:
-  `promptpercent`, `globstar` and `bareglobqual`) have no letter and are
+  `promptpercent`, `globstar`, `bareglobqual` and `autocd`) have no letter and are
   not in `set -o` or `$-`, so `set` stays as in dash. They are set with `setopt`
   and `unsetopt` (not POSIX; as in zsh), which also set dash's options.
   Names are as in zsh: case and `_` don't matter, and a `no` prefix is
@@ -472,7 +478,10 @@ pass**.
   assignment, including an argument of `export`, `readonly` or `local`, or
   `=` in a `--option=`), user names after an unquoted `~`, and variable
   names after `$` or `${`. Some commands' arguments complete to something
-  else: directories for `cd`, `pushd` and `rmdir`, variable names for
+  else: directories for `cd`, `pushd` and `rmdir` (for `cd` and `pushd`,
+  those in `CDPATH` when none in the current directory match, as with
+  zsh's `local-directories` first; also for command names under
+  `setopt autocd`, which the highlighter then accepts), variable names for
   `export`, `local`, `readonly`, `unset` (function names after
   `unset -f`), `read` (not after `-p`), `getopts` (after the option
   string) and `for` (then `in`), aliases for `alias` and `unalias`, command names for

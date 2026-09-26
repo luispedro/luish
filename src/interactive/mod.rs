@@ -118,6 +118,8 @@ fn names(sh: &Shell) -> Names {
             .collect(),
         plugins: crate::plugins::loaded_names(sh),
         plugin_dir: crate::plugins::plugin_dir(sh),
+        cdpath: sh.get_var(b"CDPATH").unwrap_or_default(),
+        autocd: sh.opt(crate::options::Opt::Autocd),
     }
 }
 

@@ -3,6 +3,7 @@ nounset
 promptpercent
 ---
 allexport
+autocd
 bareglobqual
 emacs
 errexit

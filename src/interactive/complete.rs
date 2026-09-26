@@ -48,6 +48,9 @@ pub struct Names {
     pub plugins: Vec<Vec<u8>>,
     /// Where `plugin load` finds plugins by name.
     pub plugin_dir: Option<Vec<u8>>,
+    pub cdpath: Vec<u8>,
+    /// `setopt autocd`: directories are commands too.
+    pub autocd: bool,
 }
 
 /// Runs the completer for a command (in `Names::completers`), given the
@@ -140,6 +143,8 @@ const DECLARATIONS: &[&[u8]] = &[b"export", b"readonly", b"local"];
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Args {
     Dirs,
+    /// Directories, or else those in `CDPATH`.
+    Cd,
     /// Variable names (and filenames after `NAME=`).
     Vars,
     Commands,
@@ -164,8 +169,8 @@ enum Args {
 }
 
 const ARGS: &[(&[u8], Args)] = &[
-    (b"cd", Args::Dirs),
-    (b"pushd", Args::Dirs),
+    (b"cd", Args::Cd),
+    (b"pushd", Args::Cd),
     (b"rmdir", Args::Dirs),
     (b"export", Args::Vars),
     (b"local", Args::Vars),
@@ -931,10 +936,16 @@ impl ShellHelper {
             }
             Kind::Command if !w.text.contains(&b'/') => {
                 self.commands(&mut out);
+                if self.names.autocd {
+                    self.cd_dirs(&w.text, &mut out);
+                }
                 0
             }
             Kind::Command => {
                 self.files(&w.text, Files::Executables, &mut out);
+                if self.names.autocd && out.iter().all(|c| c.suffix != Suffix::None) {
+                    self.cdpath_dirs(&w.text, &mut out);
+                }
                 0
             }
             Kind::Arg => {
@@ -999,6 +1010,11 @@ impl ShellHelper {
                         Some(_) => 0,
                     },
                     Some(Args::Dirs) => files(Files::Dirs, &mut out),
+                    Some(Args::Cd) if w.text[w.split..].starts_with(b"~") => files(Files::Dirs, &mut out),
+                    Some(Args::Cd) => {
+                        self.cd_dirs(&w.text[w.split..], &mut out);
+                        w.split
+                    }
                     Some(Args::Vars | Args::Trap) | None => files(Files::All, &mut out),
                 }
             }
@@ -1065,9 +1081,58 @@ impl ShellHelper {
         names
     }
 
+    /// The directories that `text` (a path, unquoted) could complete to as
+    /// `cd`'s argument: those in the current directory, or else, as in zsh,
+    /// those in `CDPATH`.
+    fn cd_dirs(&self, text: &[u8], out: &mut Vec<Candidate>) {
+        let start = out.len();
+        self.files(text, Files::Dirs, out);
+        if out.len() == start {
+            self.cdpath_dirs(text, out);
+        }
+    }
+
+    /// The directories in `CDPATH` that `text` could complete to, described
+    /// by the directory they are in. As in `cd`, a name starting with `/`,
+    /// `.` or `..` isn't looked for there.
+    fn cdpath_dirs(&self, text: &[u8], out: &mut Vec<Candidate>) {
+        let dotted = text == b"." || text == b".." || text.starts_with(b"./") || text.starts_with(b"../");
+        if dotted || text.starts_with(b"/") || text.starts_with(b"~") || self.names.cdpath.is_empty() {
+            return;
+        }
+        let start = out.len();
+        for p in self.names.cdpath.split(|&c| c == b':') {
+            // (The current directory's are already listed.)
+            if p.is_empty() || p == b"." {
+                continue;
+            }
+            let from = out.len();
+            self.files_in(p, text, Files::Dirs, out);
+            for c in &mut out[from..] {
+                c.desc = Some(p.to_vec());
+            }
+        }
+        // The first of the same name is the one `cd` goes to.
+        let mut seen = std::collections::HashSet::new();
+        let mut i = start;
+        while i < out.len() {
+            if seen.insert(out[i].value.clone()) {
+                i += 1;
+            } else {
+                out.remove(i);
+            }
+        }
+    }
+
     /// The files that `text` (a path, unquoted) could complete to. Dot
     /// files are listed only for a name starting with `.`.
     fn files(&self, text: &[u8], which: Files, out: &mut Vec<Candidate>) {
+        self.files_in(b"", text, which, out);
+    }
+
+    /// As [`Self::files`], for a relative `text` from `base` (the
+    /// current directory if empty).
+    fn files_in(&self, base: &[u8], text: &[u8], which: Files, out: &mut Vec<Candidate>) {
         let slash = text.iter().rposition(|&c| c == b'/').map_or(0, |i| i + 1);
         let (typed_dir, prefix) = text.split_at(slash);
         let mut dir = typed_dir.to_vec();
@@ -1080,6 +1145,9 @@ impl ShellHelper {
             if let Some(home) = home {
                 dir.splice(..1 + user_end, home);
             }
+        }
+        if !base.is_empty() {
+            dir = [base, b"/", &dir].concat();
         }
         let mut names = read_dir(&dir);
         if prefix == b".." {
@@ -1354,6 +1422,8 @@ mod tests {
                 jobs: vec![(2, b"vi notes".to_vec()), (1, b"sleep 10 | cat".to_vec())],
                 plugins: vec![b"greet".to_vec()],
                 plugin_dir: Some(dir.join("plugins").as_os_str().as_bytes().to_vec()),
+                cdpath: format!("/nonexistent::{d}").into_bytes(),
+                autocd: false,
             },
             ask: Some(fake_git),
             ..Default::default()
@@ -1379,6 +1449,18 @@ mod tests {
         assert_eq!(complete(&h, "X=~/f"), ["X=~/file\\ one "]);
         // Commands whose arguments aren't filenames.
         assert_eq!(complete(&h, "cd ~/"), ["~/sub\\ dir/"]);
+        // `CDPATH`, after the current directory (the crate's), as in zsh.
+        assert_eq!(complete(&h, "cd su"), ["sub\\ dir/"]);
+        assert_eq!(complete(&h, "cd sr"), ["src/"]);
+        assert_eq!(complete(&h, "pushd 'su"), ["'sub dir/"]);
+        assert_eq!(complete(&h, "cd ./su"), Vec::<String>::new());
+        assert_eq!(complete(&h, "rmdir su"), Vec::<String>::new());
+        assert_eq!(complete(&h, "su"), Vec::<String>::new());
+        let mut h = h;
+        h.names.autocd = true;
+        assert_eq!(complete(&h, "su"), ["sub\\ dir/"]);
+        assert_eq!(complete(&h, "sr"), ["src/"]);
+        h.names.autocd = false;
         assert_eq!(complete(&h, "unset HO"), ["HOME ", "HOSTNAME "]);
         assert_eq!(complete(&h, "export HOME=~/f"), ["HOME=~/file\\ one "]);
         assert_eq!(complete(&h, "type myf"), ["myfunc "]);
@@ -1467,7 +1549,6 @@ mod tests {
         assert_eq!(complete(&h, "git 'Com"), Vec::<String>::new());
         assert_eq!(complete(&h, "git 'mit"), ["'commit' "]);
         // Through an alias, and with words after the cursor.
-        let mut h = h;
         h.names.aliases.push((b"g".to_vec(), b"git".to_vec()));
         assert_eq!(complete(&h, "g c"), ["commit "]);
         assert_eq!(h.complete_bytes(b"git ", b" x after").1.len(), 0);

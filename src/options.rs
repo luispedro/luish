@@ -24,6 +24,7 @@ pub enum Opt {
     PromptPercent,
     Globstar,
     Bareglobqual,
+    Autocd,
 }
 
 /// Option table: (option, letter, long name), in dash's order. `$-` lists
@@ -56,6 +57,7 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::PromptPercent, "promptpercent"),
     (Opt::Globstar, "globstar"),
     (Opt::Bareglobqual, "bareglobqual"),
+    (Opt::Autocd, "autocd"),
 ];
 
 #[derive(Debug, Default, Clone)]

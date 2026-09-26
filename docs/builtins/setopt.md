@@ -32,5 +32,13 @@ luish's own options, all off by default:
   `*(/)` (directories) or `*(.om[1])` (the newest file). See the
   documentation on extended globbing.
 
+`autocd`
+: A command that is only a directory's name, with no arguments or
+  redirections, changes to that directory, as in zsh. It applies only to
+  commands read from standard input (as in an interactive shell), not to
+  scripts or `-c`, and only when there is no command, function or
+  executable file of that name. A relative name not starting with `.` or
+  `..` is looked for in the current directory, then in `CDPATH`.
+
 The exit status is 1 if an option doesn't exist or can't be changed
 (`interactive` and `stdin`); the other options given are still set.

@@ -20,6 +20,7 @@ it), or one with a `.expected` file.
 | `%` sequences in prompts | Not supported | With `setopt promptpercent`, as in zsh (after parameter expansion, as with zsh's `PROMPT_SUBST`), with a subset of its sequences. The escape sequences for attributes and colours are ANSI SGR codes rather than the terminal's own (so turning bold off is `\e[22m`, where zsh writes `\e[0m` and restores the rest) | `misc/prompt_percent.sh` |
 | `**/` | The same as `*/` | With `setopt globstar` (off by default), matches any number of directories, as in zsh (where it is always on) | `expand/globstar.sh` (zsh), `expand/globstar_off.sh` (dash), `expand/globstar_loop.sh` |
 | Glob qualifiers, `*(/)` | A syntax error | With `setopt bareglobqual` (off by default), zsh's glob qualifiers. Subscripts count from 1, as in native zsh (its `sh` emulation sets `KSH_ARRAYS`, which makes them count from 0) | `expand/glob_qualifiers.sh`, `expand/glob_qualifier_errors.sh` (zsh `+o shglob -o bareglobqual +o ksharrays`), `builtins/internal_savestate_globqual.sh` |
+| A directory as a command | `not found` (status 127) | With `setopt autocd` (off by default), changes to it when read from standard input, as in zsh | `builtins/autocd.sh` (zsh) |
 | Last command of `sh -c` | Debian's dash forks it (a Debian patch; upstream dash execs it) | Replaces the shell with it unless a trap is set, as zsh, bash and upstream dash do | `exec/c_exec_last.sh` (zsh) |
 
 ## Following POSIX where dash doesn't

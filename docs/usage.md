@@ -67,9 +67,11 @@ In an interactive shell, Tab completes the word under the cursor: a command name
 program in `PATH`) at the start of a command, a variable name after `$` or `${`, a user's home directory after `~`,
 and a filename elsewhere, also after the `=` or `:` of an assignment and the `=` of a `--option=`. After commands
 that run another command, such as `sudo`, `env`, `nohup`, `time` and `xargs`, the command they run (after their
-options) completes as a command name. Some commands complete their arguments differently:
+options) completes as a command name. With `setopt autocd`, a command name also completes to directories (see
+`help setopt`). Some commands complete their arguments differently:
 
-- `cd`, `pushd` and `rmdir` complete directories;
+- `cd`, `pushd` and `rmdir` complete directories; for `cd` and `pushd`, when none in the current directory match,
+  the directories in `CDPATH` complete instead (listed with the `CDPATH` directory they are in), as in zsh;
 - `export`, `local`, `readonly`, `unset`, `read` (except the prompt after `-p`), `getopts` (after the option
   string) and `for` (then `in`) complete variable names (`unset -f` completes function names);
 - `alias` and `unalias` complete aliases;

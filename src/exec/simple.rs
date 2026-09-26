@@ -134,7 +134,7 @@ impl Shell {
     fn run_simple_redirected(
         &mut self,
         cmd: &SimpleCommand,
-        argv: Vec<Vec<u8>>,
+        mut argv: Vec<Vec<u8>>,
         no_fork: bool,
         err_fd: i32,
     ) -> ExecResult {
@@ -143,7 +143,20 @@ impl Shell {
             self.trace(err_fd, &assigns, &argv);
             return Ok(self.subst_status.unwrap_or(0));
         }
-        let kind = self.lookup_command(&argv[0], true);
+        let mut kind = self.lookup_command(&argv[0], true);
+        // `setopt autocd`, as in zsh: a command that is a single word, with
+        // no redirections, read from standard input (so not in scripts or
+        // `-c`), that names a directory and not a command, runs `cd`.
+        if matches!(kind, CommandKind::External)
+            && argv.len() == 1
+            && cmd.redirs.is_empty()
+            && self.opt(Opt::Autocd)
+            && self.opt(Opt::Stdin)
+            && let Some(dir) = self.autocd_target(&argv[0])
+        {
+            argv = vec![b"cd".to_vec(), b"--".to_vec(), dir];
+            kind = CommandKind::Builtin(builtins::cd::cd);
+        }
         let special = matches!(kind, CommandKind::Special(_));
         let assigns = self.expand_assigns(cmd, special)?;
         self.trace(err_fd, &assigns, &argv);
@@ -161,6 +174,37 @@ impl Shell {
             // so that an error in one is the shell's.
             CommandKind::External => self.with_temp_assigns(assigns, |sh| sh.run_external(cmd, &argv, no_fork)),
         }
+    }
+
+    /// The directory that `name`, a command that wasn't found, changes to
+    /// under `setopt autocd` (zsh's `cancd`): a command in `PATH` or an
+    /// executable file comes first, and a relative name not starting with
+    /// `.` or `..` is also looked for in `CDPATH`.
+    fn autocd_target(&mut self, name: &[u8]) -> Option<Vec<u8>> {
+        let can = |p: &[u8]| sys::is_dir(p) && sys::access(p, libc::X_OK);
+        if name.is_empty() || (!name.contains(&b'/') && name != b".." && self.find_in_path(name).is_some()) {
+            return None;
+        }
+        let dotted = name == b"." || name == b".." || name.starts_with(b"./") || name.starts_with(b"../");
+        if name[0] == b'/' || dotted {
+            return can(name).then(|| name.to_vec());
+        }
+        // A directory here comes before `CDPATH`, unlike in `cd`.
+        if can(name) {
+            return Some([b"./", name].concat());
+        }
+        if sys::access(name, libc::X_OK) {
+            return None;
+        }
+        let cdpath = self.get_var(b"CDPATH")?;
+        cdpath.split(|&c| c == b':').find_map(|p| {
+            let cand = if p.is_empty() {
+                name.to_vec()
+            } else {
+                [p, if p.ends_with(b"/") { b"" } else { b"/" }, name].concat()
+            };
+            can(&cand).then_some(cand)
+        })
     }
 
     fn run_external(&mut self, cmd: &SimpleCommand, argv: &[Vec<u8>], no_fork: bool) -> ExecResult {

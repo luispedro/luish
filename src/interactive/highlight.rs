@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use rustyline::highlight::{CmdKind, Highlighter};
 
 use super::complete::{PRECOMMANDS, RESERVED, ShellHelper, is_executable};
+use crate::sys;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Class {
@@ -636,8 +637,28 @@ impl ShellHelper {
                     is_executable(&[d, b"/", name].concat())
                 })
         };
+        let k = k || (self.names.autocd && self.is_autocd_dir(name));
         self.highlight.known.borrow_mut().insert(name.to_vec(), k);
         k
+    }
+}
+
+impl ShellHelper {
+    /// Whether `name` is a directory that `setopt autocd` changes to (see
+    /// `Shell::autocd_target`).
+    fn is_autocd_dir(&self, name: &[u8]) -> bool {
+        let name = match (name.strip_prefix(b"~/"), &self.names.home) {
+            (Some(rest), Some(home)) => [&home[..], b"/", rest].concat(),
+            _ => name.to_vec(),
+        };
+        if sys::is_dir(&name) {
+            return true;
+        }
+        let dotted = name == b"." || name == b".." || name.starts_with(b"./") || name.starts_with(b"../");
+        !dotted
+            && !name.starts_with(b"/")
+            && (self.names.cdpath.split(|&c| c == b':'))
+                .any(|p| !p.is_empty() && sys::is_dir(&[p, b"/", &name].concat()))
     }
 }
 
