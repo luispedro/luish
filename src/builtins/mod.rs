@@ -63,6 +63,11 @@ pub fn lookup(name: &[u8]) -> Option<(BuiltinFn, bool)> {
     TABLE.iter().find(|b| b.0 == name).map(|b| (b.1, b.2))
 }
 
+/// The names of all built-ins.
+pub fn names() -> impl Iterator<Item = &'static [u8]> {
+    TABLE.iter().map(|b| b.0)
+}
+
 impl Shell {
     /// Writes built-in output to stdout.
     pub fn out(&self, s: &[u8]) -> bool {

@@ -87,7 +87,8 @@ state on the `Shell` struct in `shell.rs`.
 - **Signals** are installed without `SA_RESTART` so `wait` gets EINTR. Rust ignores SIGPIPE before `main`, so `main`
   restores the default.
 - **Interactive mode** (`interactive/`) uses rustyline, kept behind its own module so the line editor stays separate
-  from the executor (a Stage 3 SSH mode depends on this).
+  from the executor (a Stage 3 SSH mode depends on this). The completer (`interactive/complete.rs`) never sees
+  `Shell`: `read_line` hands it a `Names` snapshot before each prompt.
 - **Jobs** (`jobs.rs`) follow dash's model: numbered slots plus a "current job" order, finished jobs kept until
   reported. Without job control only background jobs are recorded; foreground commands are waited for directly.
   With job control (`Shell::jobctl` holds the terminal) every job is recorded while it runs and waited for with

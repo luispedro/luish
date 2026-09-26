@@ -95,6 +95,11 @@ impl Vars {
         self.map.get(name).cloned()
     }
 
+    /// The names of the variables that are set.
+    pub fn names(&self) -> impl Iterator<Item = &Vec<u8>> {
+        self.map.iter().filter(|(_, v)| v.value.is_some()).map(|(k, _)| k)
+    }
+
     /// All variables, sorted by name.
     pub fn sorted(&self) -> Vec<(&Vec<u8>, &Var)> {
         let mut v: Vec<_> = self.map.iter().collect();

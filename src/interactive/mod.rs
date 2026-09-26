@@ -1,10 +1,15 @@
 //! Interactive mode: prompts, the line editor, history, and startup files.
 
+mod complete;
+
 use std::cell::RefCell;
 
-use rustyline::DefaultEditor;
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
+use rustyline::history::DefaultHistory;
+use rustyline::{CompletionType, Editor};
+
+use complete::{Names, ShellHelper};
 
 use crate::input::Line;
 use crate::options::Opt;
@@ -12,7 +17,7 @@ use crate::shell::Shell;
 use crate::sys;
 
 thread_local! {
-    static EDITOR: RefCell<Option<DefaultEditor>> = const { RefCell::new(None) };
+    static EDITOR: RefCell<Option<Editor<ShellHelper, DefaultHistory>>> = const { RefCell::new(None) };
 }
 
 fn history_file(sh: &Shell) -> Option<Vec<u8>> {
@@ -26,9 +31,11 @@ fn to_path(b: &[u8]) -> std::path::PathBuf {
 
 /// Sets up the line editor. Returns false if it can't be used.
 pub fn init_editor(sh: &Shell) -> bool {
-    let Ok(mut ed) = DefaultEditor::new() else {
+    let Ok(mut ed) = Editor::new() else {
         return false;
     };
+    ed.set_helper(Some(ShellHelper::default()));
+    ed.set_completion_type(CompletionType::List);
     let size = sh
         .get_var(b"HISTSIZE")
         .and_then(|s| String::from_utf8(s).ok()?.parse().ok())
@@ -71,14 +78,28 @@ pub fn prompt(sh: &mut Shell, continuation: bool) -> Vec<u8> {
     }
 }
 
+/// The names the completer needs, taken from the shell before each prompt.
+fn names(sh: &Shell) -> Names {
+    Names {
+        commands: sh.functions.keys().chain(sh.aliases.keys()).cloned().collect(),
+        vars: sh.vars.names().cloned().collect(),
+        path: sh.get_var(b"PATH").unwrap_or_default(),
+        home: sh.get_var(b"HOME"),
+    }
+}
+
 pub fn read_line(sh: &mut Shell, continuation: bool) -> Line {
     let p = String::from_utf8_lossy(&prompt(sh, continuation)).into_owned();
     let vi = sh.opt(Opt::Vi);
+    let names = names(sh);
     EDITOR.with(|e| {
         let mut e = e.borrow_mut();
         let Some(ed) = e.as_mut() else {
             return Line::Eof;
         };
+        if let Some(h) = ed.helper_mut() {
+            h.names = names;
+        }
         ed.set_edit_mode(if vi {
             rustyline::EditMode::Vi
         } else {

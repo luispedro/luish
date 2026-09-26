@@ -507,7 +507,8 @@ subshells and command substitutions, and `kill -TERM $$` running a trap.
   through narrow requests: "is this input complete?", "complete this word",
   and history access. Nothing in the editor touches `Shell` directly. This
   keeps it possible to run the editor in a different process on an SSH client
-  later (§9.3).
+  later (§9.3). (As built, the completer gets a plain-data snapshot of the
+  names it needs before each prompt, which would serialize easily.)
 - **Prompts**: expand `PS1` with parameter expansion (and, optionally,
   command substitution). Plugins can override the prompt (§6).
 - **Completion**: command names from built-ins, functions, aliases and `PATH`,

@@ -5,7 +5,8 @@
 //! some expected output, or a job taking over the terminal (the pty's
 //! foreground process group changing), before Ctrl-Z or Ctrl-C is sent.
 //! Carriage returns are removed from the transcript. `TERM=dumb` keeps the
-//! line editor from emitting escape sequences.
+//! line editor from emitting escape sequences, except in the completion test,
+//! which needs the editor.
 
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
@@ -25,6 +26,10 @@ struct Pty {
 
 impl Pty {
     fn spawn(name: &str) -> Pty {
+        Pty::spawn_term(name, "dumb")
+    }
+
+    fn spawn_term(name: &str, term: &str) -> Pty {
         let dir = std::env::temp_dir().join(format!("luish-pty-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -34,7 +39,7 @@ impl Pty {
             format!("PATH={}", std::env::var("PATH").unwrap_or_default()),
             format!("HOME={}", dir.display()),
             "PS1=$ ".to_string(),
-            "TERM=dumb".to_string(),
+            format!("TERM={term}"),
             "LC_ALL=C".to_string(),
         ];
         let env: Vec<CString> = env.into_iter().map(|e| CString::new(e).unwrap()).collect();
@@ -335,4 +340,31 @@ fn job_control_off() {
         "without job control, jobs stay in the shell's group"
     );
     assert_ne!(on, sh.pid.to_string(), "under job control, a job has its own group");
+}
+
+#[test]
+fn tab_completion() {
+    let mut sh = Pty::spawn_term("complete", "vt100");
+    std::fs::write(sh.path("completeme file"), "found it\n").unwrap();
+    std::fs::write(sh.path("alpha1"), "").unwrap();
+    std::fs::write(sh.path("alpha2"), "").unwrap();
+    sh.expect("$ ");
+    // A filename, quoted as it is completed.
+    sh.send("cat compl\t\n");
+    sh.expect("found it\n");
+    sh.expect("$ ");
+    // A function name in command position.
+    sh.send("myuniquefunc() { echo ran-$1; }\n");
+    sh.expect("$ ");
+    sh.send("myuniquef\tx\n");
+    sh.expect("ran-x\n");
+    sh.expect("$ ");
+    // A second tab lists the candidates.
+    sh.send("echo alp\t\t");
+    sh.expect("alpha1  alpha2");
+    sh.send("\x03");
+    // The new prompt (not the line redrawn under the list).
+    sh.expect("\x1b[K$ ");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
 }

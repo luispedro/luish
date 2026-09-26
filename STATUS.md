@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **64 differential cases, 18 unit tests and 5 pty tests
+Current state: **64 differential cases, 21 unit tests and 6 pty tests
 pass**.
 
 ## Environment
@@ -54,7 +54,7 @@ pass**.
 | 7 Functions, `eval`, `.`, control flow | Done |
 | 8 Signals and traps | Mostly done (see the gaps below) |
 | 9 Options and `set -e` | Done |
-| 10 Interactive / job control | Partial: prompt loop and job control. No completion or `fc` |
+| 10 Interactive / job control | Mostly done: prompt loop, job control and completion. No `fc` |
 | 11 Plugins | Not started |
 | 12 Conformance / performance | Started: benchmark baseline below |
 
@@ -206,15 +206,33 @@ pass**.
 - History in `$HISTFILE`, limited to `$HISTSIZE` entries.
 - `PS1` and `PS2` go through parameter expansion.
 - Ctrl-C cancels the current input.
+- Tab completion (`src/interactive/complete.rs`), bash-style: the first Tab
+  completes the common prefix, a second one lists the candidates. In
+  command position (found by a rough tokenizer that follows quotes,
+  operators, redirections, assignments, `$(`, backquotes, reserved words
+  such as `then`, and commands such as `sudo` that take a command) it
+  completes built-ins, reserved words, functions, aliases and executables
+  in `PATH` (cached until `PATH` or a directory's mtime changes); a word
+  with a `/` completes executables and directories. Elsewhere it completes
+  filenames (with `~/`, and after `=` or `:` in an assignment or `=` in a
+  `--option=`), and variable names after `$` or `${`. The text already
+  typed is kept, and what is added is quoted for the quoting in effect at
+  the cursor. Directories get a `/`, other unique matches a space (and the
+  closing quote). Dot files are listed only for a prefix starting with `.`.
+- The completer never sees `Shell`: before each prompt, the REPL gives it a
+  snapshot of function, alias and variable names, `PATH` and `HOME`.
 - Startup files: `/etc/profile` and `~/.profile` for login shells, then
   `$ENV`, then `$XDG_CONFIG_HOME/luish/luishrc`.
 - Tests: `tests/interactive.rs` (job control, Ctrl-C and Ctrl-Z, terminal
-  input and modes). The line editor itself is not tested: the pty tests use
-  `TERM=dumb`, under which rustyline does no editing.
+  input and modes, and completion), and unit tests in `complete.rs`. The
+  pty tests use `TERM=dumb`, under which rustyline does no editing, except
+  `tab_completion`, which uses `TERM=vt100`.
 
 ## Known gaps
 
-- No completion, and no `fc`.
+- No `fc`.
+- Completion has no `~user`, no programmable (per-command) completion, and
+  skips filenames that are not valid UTF-8 (rustyline works on `String`s).
 - `set -b` (immediate job notification) is accepted but does nothing: jobs
   are reported only before a prompt. Job notifications are given only for
   input read a line at a time (interactive or stdin), not in scripts run
