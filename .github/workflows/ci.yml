@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    # The differential tests compare against the system dash, which must be
+    # Debian's (as on the developers' machines), so pin the Ubuntu release.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dash
+          dash -c 'echo "dash: $(command -v dash)"'
+
+      - uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          cache: true
+          locked: true
+          activate-environment: true
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: pixi run fmt-check
+
+      - name: Clippy
+        run: pixi run lint
+
+      - name: Test
+        run: pixi run test
+
+      - name: Release build
+        run: pixi run release

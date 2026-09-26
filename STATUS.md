@@ -44,7 +44,7 @@ pass**.
 
 | Phase | Status |
 |---|---|
-| 0 Scaffolding | Done, except for a CI workflow file. `pixi run check` runs the CI steps locally. |
+| 0 Scaffolding | Done. GitHub Actions (`.github/workflows/ci.yml`) runs `fmt-check`, `lint`, `test` and a release build on Ubuntu 24.04; `pixi run check` runs the same steps locally. |
 | 1 Minimal REPL / external commands | Done |
 | 2 Lexer | Done, apart from the fuzz target |
 | 3 Parser | Done. There are unit tests, but no `insta` snapshots or fuzz target |
