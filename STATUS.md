@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **101 differential cases, 24 unit tests and 7 pty tests
+Current state: **104 differential cases, 31 unit tests and 9 pty tests
 pass**.
 
 ## Environment
@@ -143,12 +143,14 @@ pass**.
   `PATH`. As in dash, found commands are cached with the index of their
   `PATH` directory and used without checking the file; if it is gone, the
   directories after it are tried (dash's `shellexec`). `cd` drops entries
-  from relative directories. The shell looks up an external command before
+  from relative directories. A search makes one `stat` per directory, and
+  an `access` only for a regular file. The shell looks up an external command before
   forking for it, so that the cache lasts (and a missing command costs no
   fork); for a pipeline, it looks up each simple command whose name is a
   literal word, as dash (which uses `vfork`) remembers them. Tests:
-  `exec/path_cache.sh`, `builtins/hash_pipeline.sh`, and `path_cache` in
-  `tests/interactive.rs`.
+  `exec/path_cache.sh`, `exec/hash_stale.sh` (also in forked processes),
+  `exec/hash_temp_path.sh`, `builtins/hash_pipeline.sh`, and `path_cache`
+  in `tests/interactive.rs`.
 - As in dash, a function can't be named after a special built-in ("Bad
   function name").
 - Order (XCU 2.9.1, as in dash): the words are expanded, then the

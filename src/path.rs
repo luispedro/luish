@@ -10,10 +10,6 @@ use crate::sys;
 /// The default search path (for `command -p`), as in dash.
 pub const DEFAULT_PATH: &[u8] = b"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 
-fn is_executable_file(path: &[u8]) -> bool {
-    sys::stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) && sys::access(path, libc::X_OK)
-}
-
 /// `dir/name`, with an empty `dir` meaning the current directory.
 fn join(dir: &[u8], name: &[u8]) -> Vec<u8> {
     let mut cand = if dir.is_empty() { b".".to_vec() } else { dir.to_vec() };
@@ -29,10 +25,14 @@ pub fn search(path: &[u8], name: &[u8]) -> Option<(Vec<u8>, usize, bool)> {
     let mut fallback = None;
     for (i, dir) in path.split(|&c| c == b':').enumerate() {
         let cand = join(dir, name);
-        if is_executable_file(&cand) {
+        // One `stat` per directory, and an `access` only for a regular file.
+        if !sys::stat(&cand).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) {
+            continue;
+        }
+        if sys::access(&cand, libc::X_OK) {
             return Some((cand, i, true));
         }
-        if fallback.is_none() && sys::stat(&cand).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) {
+        if fallback.is_none() {
             fallback = Some((cand, i, false));
         }
     }

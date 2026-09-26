@@ -30,8 +30,8 @@ $ tool
 from a
 ```
 
-A cached command is also checked before it is run, so a command that was deleted or moved is searched for again
-instead of failing.
+If a remembered command has been deleted, luish looks for it in the rest of `PATH` instead of failing, as dash does
+(bash doesn't).
 
 **Cost.** The check is one `stat` per `PATH` directory: about 20 system calls, which take a few microseconds in
 total. It runs only in interactive shells, so scripts are unaffected. luish doesn't use inotify (which Linux limits
