@@ -30,6 +30,8 @@ pub struct Fields {
     ws_delim: bool,
     /// `None` disables field splitting.
     ifs: Option<Vec<u8>>,
+    /// The result is a list of fields (command words), even if IFS is empty.
+    field_ctx: bool,
 }
 
 fn is_ifs_ws(c: u8) -> bool {
@@ -43,12 +45,15 @@ impl Fields {
             cur: Vec::new(),
             cur_exists: false,
             ws_delim: false,
+            field_ctx: ifs.is_some(),
             ifs: ifs.filter(|i| !i.is_empty()),
         }
     }
 
-    pub fn splitting(&self) -> bool {
-        self.ifs.is_some()
+    /// Whether the result is a list of fields: `$@` and unquoted `$*`
+    /// then give separate fields, even when IFS is empty.
+    pub fn field_context(&self) -> bool {
+        self.field_ctx
     }
 
     pub fn push_quoted(&mut self, s: &[u8]) {

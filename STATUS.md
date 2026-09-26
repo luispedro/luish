@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **70 differential cases, 24 unit tests and 7 pty tests
+Current state: **74 differential cases, 24 unit tests and 7 pty tests
 pass**.
 
 ## Environment
@@ -95,7 +95,14 @@ pass**.
 - A double-quoted part is always a field, even when it expands to nothing
   (`"$u"`, `"${u+x}"`), except a lone `"$@"` with no parameters.
 - `"$@"` produces zero or more fields, while `"$*"` joins the parameters
-  with the first character of IFS.
+  with the first character of IFS. In command words, `$@`, `$*` and `"$@"`
+  give separate fields even when IFS is empty; elsewhere (assignments,
+  `case` words) both are joined with the first character of IFS, as in
+  dash.
+- As in dash, `$@` and `$*` always count as set for `${@-x}` and `${@+x}`,
+  and are null for `${@:-x}` when their joined length is zero (counting
+  separators by dash's rules); `${#@}` is the joined length. Test:
+  `expand/positional_ifs.sh`.
 - `set -u` errors on unset variables, except for `$@` and `$*`.
 - Field splitting happens as the text is built (`split.rs`) and follows the
   IFS rules for whitespace and non-whitespace characters. Empty IFS turns
@@ -116,15 +123,23 @@ pass**.
 ### Execution (`src/exec/`)
 - Command lookup order: special built-in, function, regular built-in, then
   `PATH` (with a cache).
-- Assignment scope: assignments before special built-ins persist. Before
+- Order (XCU 2.9.1, as in dash): the words are expanded, then the
+  redirections are made in the shell (for every kind of command; a forked
+  external command inherits them), then the assignments are expanded, so
+  `x=$(cat) <<EOF` reads the here-doc. The `set -x` trace goes to the
+  stderr from before the redirections. A failed open makes the command
+  fail with status 2 (exiting the shell for a special built-in); an
+  expansion error in a redirection is fatal. Test:
+  `exec/assign_redirect_order.sh`.
+- Assignment scope: assignments before special built-ins persist (and,
+  for `exec`, are exported to the command). Before
   functions, regular built-ins and external commands they are temporary
   and exported, and they are made in the shell (as in dash), so assigning
   to a read-only variable is an error of the shell.
 - A simple external command in the foreground of a non-interactive shell
   without job control is started with `posix_spawn` (glibc uses
   `clone(CLONE_VM|CLONE_VFORK)`, so the page tables aren't copied), like
-  dash's `vforkexec`. Its redirections are made in the shell around the
-  spawn, and exec errors are reported by the shell. Interactive shells, and
+  dash's `vforkexec`. Exec errors are reported by the shell. Interactive shells, and
   shells doing job control, fork: the child has to take the terminal and
   reset the signals the shell ignores. Tests: `exec/spawn.sh`,
   `exec/readonly_assign.sh`.
@@ -189,9 +204,10 @@ pass**.
 
 ### Built-ins (`src/builtins/`)
 - Special: `:` `.` `break` `continue` `eval` `exec` `exit` `export`
-  `readonly` `return` `set` `shift` `times` `trap` `unset`.
+  `local` (special in dash) `readonly` `return` `set` `shift` `times`
+  `trap` `unset`.
 - Regular: `[` `alias` `bg` `cd` `command` `echo` `false` `fc` `fg` `getopts`
-  `hash` `jobs` `kill` `local` `printf` `pwd` `read` `test` `true` `type`
+  `hash` `jobs` `kill` `printf` `pwd` `read` `test` `true` `type`
   `ulimit` `umask` `unalias` `wait`.
 - `echo` follows dash: `-n` only, and XSI escapes are always processed.
 - `printf` supports every conversion (numeric ones use libc `snprintf`),

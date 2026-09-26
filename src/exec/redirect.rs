@@ -10,6 +10,41 @@ use crate::sys;
 #[derive(Default)]
 pub struct SavedFds(Vec<(i32, Option<i32>)>);
 
+impl SavedFds {
+    /// Where `fd` pointed before the redirections: its saved copy if it was
+    /// replaced (`None` if it was closed then), otherwise `fd` itself.
+    pub fn original(&self, fd: i32) -> Option<i32> {
+        match self.0.iter().find(|(f, _)| *f == fd) {
+            Some((_, copy)) => *copy,
+            None => Some(fd),
+        }
+    }
+}
+
+/// Why redirections failed.
+pub enum RedirError {
+    /// A file couldn't be opened, or an fd duplicated: the command fails
+    /// with this status (and, for a special built-in, the shell exits).
+    Open(i32),
+    /// An expansion error, which is fatal like any other.
+    Flow(Flow),
+}
+
+impl From<Flow> for RedirError {
+    fn from(f: Flow) -> Self {
+        RedirError::Flow(f)
+    }
+}
+
+impl From<RedirError> for Flow {
+    fn from(e: RedirError) -> Self {
+        match e {
+            RedirError::Open(n) => Flow::Error(n),
+            RedirError::Flow(f) => f,
+        }
+    }
+}
+
 enum Action {
     /// Move this newly opened fd into place.
     Owned(i32),
@@ -42,8 +77,8 @@ fn clear_cloexec(fd: i32) {
 impl Shell {
     /// Applies redirections left to right. With `save`, the replaced fds are
     /// saved so that [`Shell::restore_redirs`] can undo them. On failure,
-    /// everything done so far is undone and `Flow::Error(2)` is returned.
-    pub fn redirect(&mut self, redirs: &[Redirect], save: bool) -> Result<SavedFds, Flow> {
+    /// everything done so far is undone.
+    pub fn redirect(&mut self, redirs: &[Redirect], save: bool) -> Result<SavedFds, RedirError> {
         let mut saved = SavedFds::default();
         for r in redirs {
             if let Err(e) = self.apply_redirect(r, save, &mut saved) {
@@ -66,7 +101,7 @@ impl Shell {
         }
     }
 
-    fn apply_redirect(&mut self, r: &Redirect, save: bool, saved: &mut SavedFds) -> Result<(), Flow> {
+    fn apply_redirect(&mut self, r: &Redirect, save: bool, saved: &mut SavedFds) -> Result<(), RedirError> {
         let fd = r.fd.unwrap_or(r.kind.default_fd()) as i32;
         let action = match &r.target {
             RedirTarget::HereDoc(body) => {
@@ -106,7 +141,7 @@ impl Shell {
         Ok(())
     }
 
-    fn redirect_action(&mut self, kind: RedirKind, target: &[u8]) -> Result<Action, Flow> {
+    fn redirect_action(&mut self, kind: RedirKind, target: &[u8]) -> Result<Action, RedirError> {
         let name = String::from_utf8_lossy(target).into_owned();
         let open = |sh: &Shell, flags: i32, create: bool| {
             sys::open(target, flags, 0o666).map(Action::Owned).map_err(|e| {
@@ -115,7 +150,7 @@ impl Shell {
                 } else {
                     sh.error(format!("cannot open {name}: {}", open_error(e)));
                 }
-                Flow::Error(2)
+                RedirError::Open(2)
             })
         };
         use libc::{O_APPEND, O_CREAT, O_EXCL, O_RDONLY, O_RDWR, O_TRUNC, O_WRONLY};
@@ -127,13 +162,13 @@ impl Shell {
                     let regular = sys::stat(target).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG);
                     if regular {
                         self.error(format!("cannot create {name}: File exists"));
-                        return Err(Flow::Error(2));
+                        return Err(RedirError::Open(2));
                     }
                     open(self, O_WRONLY, true)
                 }
                 Err(e) => {
                     self.error(format!("cannot create {name}: {}", create_error(e)));
-                    Err(Flow::Error(2))
+                    Err(RedirError::Open(2))
                 }
             },
             RedirKind::Out | RedirKind::Clobber => open(self, O_WRONLY | O_CREAT | O_TRUNC, true),
@@ -148,13 +183,13 @@ impl Shell {
                     Some(n) if target.iter().all(|c| c.is_ascii_digit()) => {
                         if !sys::fd_is_open(n) {
                             self.error(format!("{n}: Bad file descriptor"));
-                            return Err(Flow::Error(2));
+                            return Err(RedirError::Open(2));
                         }
                         Ok(Action::Dup(n))
                     }
                     _ => {
                         self.error("Syntax error: Bad fd number");
-                        Err(Flow::Error(2))
+                        Err(RedirError::Open(2))
                     }
                 }
             }

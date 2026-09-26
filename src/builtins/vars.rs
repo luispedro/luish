@@ -227,7 +227,7 @@ pub fn set(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 pub fn local(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     if sh.locals.is_empty() {
         sh.berr(&argv[0], "not in a function");
-        return Ok(2);
+        return Err(Flow::Error(2));
     }
     for a in &argv[1..] {
         let (name, value) = match a.iter().position(|&c| c == b'=') {
@@ -242,7 +242,7 @@ pub fn local(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
                 &argv[0],
                 format!("{}: bad variable name", String::from_utf8_lossy(name)),
             );
-            return Ok(2);
+            return Err(Flow::Error(2));
         }
         let frame = sh.locals.last().unwrap();
         if !frame.iter().any(|(n, _)| n == name) {

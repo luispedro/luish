@@ -23,6 +23,15 @@ impl Shell {
             .unwrap_or_else(|| b" \t\n".to_vec())
     }
 
+    /// The separator for `"$*"`: the first character of IFS, a space if
+    /// IFS is unset, or none if it is empty.
+    fn ifs_first(&self) -> Option<u8> {
+        match self.vars.get(b"IFS") {
+            None => Some(b' '),
+            Some(ifs) => ifs.first().copied(),
+        }
+    }
+
     /// Full expansion of command words: produces zero or more fields each.
     pub fn expand_words(&mut self, words: &[Word]) -> EResult<Vec<Vec<u8>>> {
         let mut out = Vec::with_capacity(words.len());
@@ -169,9 +178,21 @@ impl Shell {
         let multi = matches!(pe.name, ParamName::Special(b'@' | b'*'));
         let val = self.param_value(&pe.name);
         let nounset = self.opt(Opt::Nounset) && !multi;
+        // dash: `$@` and `$*` always count as set; they are null when their
+        // joined length (with separators, where there are any) is zero.
+        let field_ctx = f.field_context();
+        let multi_len = |sh: &Shell| {
+            let ifs0 = sh.ifs_first();
+            let sep = match pe.op {
+                ParamOp::Alternative(_) | ParamOp::Length => ifs0.is_some(),
+                _ => ifs0.is_some() || (field_ctx && (!quoted || pe.name == ParamName::Special(b'@'))),
+            };
+            let n = sh.positional.len();
+            sh.positional.iter().map(|p| p.len()).sum::<usize>() + if sep { n.saturating_sub(1) } else { 0 }
+        };
         if let ParamOp::Length = pe.op {
             let n = if multi {
-                self.positional.len()
+                multi_len(self)
             } else {
                 match &val {
                     Some(v) => v.len(),
@@ -183,6 +204,7 @@ impl Shell {
             return Ok(());
         }
         let is_set = match &val {
+            _ if multi => !pe.colon || multi_len(self) > 0,
             Some(v) => !pe.colon || !v.is_empty(),
             None => false,
         };
@@ -265,9 +287,8 @@ impl Shell {
 
     /// `$@`, `$*`, `"$@"`, and `"$*"`.
     fn push_positional(&mut self, at: bool, quoted: bool, f: &mut Fields) {
-        let params = &self.positional;
-        if f.splitting() && (at || !quoted) {
-            for (i, p) in params.iter().enumerate() {
+        if f.field_context() && (at || !quoted) {
+            for (i, p) in self.positional.iter().enumerate() {
                 if quoted {
                     if i > 0 {
                         f.finish();
@@ -282,12 +303,9 @@ impl Shell {
             }
             return;
         }
-        let sep = match self.vars.get(b"IFS") {
-            _ if at => vec![b' '],
-            None => vec![b' '],
-            Some(ifs) => ifs.iter().take(1).copied().collect(),
-        };
-        let joined = params.join(&sep[..]);
+        // Outside a field context, dash joins `$@` like `$*`.
+        let sep: Vec<u8> = self.ifs_first().into_iter().collect();
+        let joined = self.positional.join(&sep[..]);
         push_result(&joined, quoted, f);
     }
 

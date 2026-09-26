@@ -6,8 +6,11 @@ use crate::ast::*;
 use crate::builtins::{self, BuiltinFn};
 use crate::cmdtext;
 use crate::exec::ForkKind;
+use crate::exec::redirect::RedirError;
 use crate::options::Opt;
 use crate::shell::{ExecResult, Flow, Shell};
+
+type EResult = Result<Vec<(Vec<u8>, Vec<u8>)>, Flow>;
 use crate::sys;
 
 pub enum CommandKind {
@@ -53,8 +56,8 @@ impl Shell {
         CommandKind::External
     }
 
-    /// Prints a `set -x` trace line.
-    pub fn xtrace(&mut self, assigns: &[(Vec<u8>, Vec<u8>)], argv: &[Vec<u8>]) {
+    /// Prints a `set -x` trace line to `fd`.
+    pub fn xtrace(&mut self, fd: i32, assigns: &[(Vec<u8>, Vec<u8>)], argv: &[Vec<u8>]) {
         let mut line = self.expand_prompt(b"PS4");
         let mut first = true;
         for (n, v) in assigns {
@@ -74,71 +77,82 @@ impl Shell {
             line.extend(shell_quote(a));
         }
         line.push(b'\n');
-        sys::write_all(2, &line);
+        sys::write_all(fd, &line);
     }
 
+    /// As in dash and POSIX (XCU 2.9.1): the words are expanded, then the
+    /// redirections are made (in the shell, for every kind of command), then
+    /// the assignments are expanded.
     pub fn run_simple(&mut self, cmd: &SimpleCommand, no_fork: bool) -> ExecResult {
         self.lineno = cmd.lineno;
         self.subst_status = None;
         let argv = self.expand_words(&cmd.words)?;
+        let special = argv
+            .first()
+            .is_some_and(|a| matches!(builtins::lookup(a), Some((_, true))));
+        if special && argv[0] == b"exec" && argv[1..].iter().all(|a| a == b"--") {
+            // `exec` without a command: the redirections persist.
+            let _ = self.redirect(&cmd.redirs, false)?;
+            let assigns = self.expand_assigns(cmd, true)?;
+            self.trace(2, &assigns, &argv);
+            return Ok(0);
+        }
+        let saved = match self.redirect(&cmd.redirs, true) {
+            Ok(s) => s,
+            Err(RedirError::Open(n)) if !special => return Ok(n),
+            Err(e) => return Err(e.into()),
+        };
+        let r = self.run_simple_redirected(cmd, argv, no_fork, saved.original(2).unwrap_or(-1));
+        self.restore_redirs(saved);
+        r
+    }
+
+    /// Expands the assignments of `cmd`. With `now` (no command, or a
+    /// special built-in), each takes effect before the next is expanded.
+    fn expand_assigns(&mut self, cmd: &SimpleCommand, now: bool) -> EResult {
         let mut assigns = Vec::with_capacity(cmd.assigns.len());
         for a in &cmd.assigns {
             let v = self.expand_word_str(&a.value)?;
-            if argv.is_empty() {
-                // Assignments without a command take effect one by one.
+            if now {
                 self.set_var(&a.name, v.clone())?;
             }
             assigns.push((a.name.clone(), v));
         }
-        if self.opt(Opt::Xtrace) && (!argv.is_empty() || !assigns.is_empty()) {
-            self.xtrace(&assigns, &argv);
+        Ok(assigns)
+    }
+
+    fn trace(&mut self, fd: i32, assigns: &[(Vec<u8>, Vec<u8>)], argv: &[Vec<u8>]) {
+        if self.opt(Opt::Xtrace) && (!argv.is_empty() || !assigns.is_empty()) && fd >= 0 {
+            self.xtrace(fd, assigns, argv);
         }
+    }
+
+    fn run_simple_redirected(
+        &mut self,
+        cmd: &SimpleCommand,
+        argv: Vec<Vec<u8>>,
+        no_fork: bool,
+        err_fd: i32,
+    ) -> ExecResult {
         if argv.is_empty() {
-            let status = self.subst_status.unwrap_or(0);
-            return match self.redirect(&cmd.redirs, true) {
-                Ok(saved) => {
-                    self.restore_redirs(saved);
-                    Ok(status)
-                }
-                Err(Flow::Error(n)) => Ok(n),
-                Err(e) => Err(e),
-            };
+            let assigns = self.expand_assigns(cmd, true)?;
+            self.trace(err_fd, &assigns, &argv);
+            return Ok(self.subst_status.unwrap_or(0));
         }
-        match self.lookup_command(&argv[0], true) {
-            CommandKind::Special(f) => {
-                for (n, v) in assigns {
-                    self.set_var(&n, v)?;
-                }
-                if argv[0] == b"exec" && argv[1..].iter().all(|a| a == b"--") {
-                    // `exec` without a command: the redirections persist.
-                    let _ = self.redirect(&cmd.redirs, false)?;
-                    return Ok(0);
-                }
-                let saved = self.redirect(&cmd.redirs, true)?;
-                let r = f(self, &argv);
-                self.restore_redirs(saved);
-                r
+        let kind = self.lookup_command(&argv[0], true);
+        let special = matches!(kind, CommandKind::Special(_));
+        let assigns = self.expand_assigns(cmd, special)?;
+        self.trace(err_fd, &assigns, &argv);
+        if special && argv[0] == b"exec" {
+            // As in dash, `exec` exports its assignments to the command.
+            for (n, _) in &assigns {
+                self.vars.entry(n).exported = true;
             }
-            CommandKind::Function(body) => self.with_temp_assigns(assigns, |sh| {
-                let saved = match sh.redirect(&cmd.redirs, true) {
-                    Ok(s) => s,
-                    Err(Flow::Error(n)) => return Ok(n),
-                    Err(e) => return Err(e),
-                };
-                let r = sh.call_function(&body, &argv);
-                sh.restore_redirs(saved);
-                r
-            }),
-            CommandKind::Builtin(f) => self.with_temp_assigns(assigns, |sh| {
-                let saved = match sh.redirect(&cmd.redirs, true) {
-                    Ok(s) => s,
-                    Err(Flow::Error(n)) => return Ok(n),
-                    Err(e) => return Err(e),
-                };
-                let r = f(sh, &argv);
-                sh.restore_redirs(saved);
-                r
-            }),
+        }
+        match kind {
+            CommandKind::Special(f) => f(self, &argv),
+            CommandKind::Function(body) => self.with_temp_assigns(assigns, |sh| sh.call_function(&body, &argv)),
+            CommandKind::Builtin(f) => self.with_temp_assigns(assigns, |sh| f(sh, &argv)),
             // As in dash, the assignments are made (temporarily) in the shell,
             // so that an error in one is the shell's.
             CommandKind::External => self.with_temp_assigns(assigns, |sh| sh.run_external(cmd, &argv, no_fork)),
@@ -149,16 +163,8 @@ impl Shell {
         // Replace the shell process only if no trap needs it.
         let exec_now = no_fork && !self.has_traps();
         if !exec_now && self.can_spawn() {
-            // Like dash's `vforkexec`: the redirections are made in the
-            // shell, around the spawn.
-            let saved = match self.redirect(&cmd.redirs, true) {
-                Ok(s) => s,
-                Err(Flow::Error(n)) => return Ok(n),
-                Err(e) => return Err(e),
-            };
-            let r = self.spawn_argv(argv);
-            self.restore_redirs(saved);
-            return Ok(match r {
+            // Like dash's `vforkexec`.
+            return Ok(match self.spawn_argv(argv) {
                 Ok(pid) => self.wait_foreground(&[pid], || vec![cmdtext::simple(cmd)]),
                 Err(status) => status,
             });
@@ -169,9 +175,6 @@ impl Shell {
             self.fork_child(ForkKind::Foreground(0))?
         };
         if pid == 0 {
-            if self.redirect(&cmd.redirs, false).is_err() {
-                sys::exit(2);
-            }
             self.exec_argv(argv);
         }
         Ok(self.wait_foreground(&[pid], || vec![cmdtext::simple(cmd)]))

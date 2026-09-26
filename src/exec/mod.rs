@@ -15,6 +15,7 @@ use crate::jobs::Job;
 use crate::options::Opt;
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::sys;
+use redirect::RedirError;
 
 impl Shell {
     pub fn run_list(&mut self, list: &List) -> ExecResult {
@@ -195,8 +196,8 @@ impl Shell {
                 }
                 let saved = match self.redirect(redirs, true) {
                     Ok(s) => s,
-                    Err(Flow::Error(n)) => return Ok(n),
-                    Err(e) => return Err(e),
+                    Err(RedirError::Open(n)) => return Ok(n),
+                    Err(e) => return Err(e.into()),
                 };
                 // As in dash, redirections rule out exec'ing the last command.
                 let r = self.run_compound(cc, no_fork && redirs.is_empty());
@@ -358,8 +359,8 @@ impl Shell {
                 self.restore_redirs(saved);
                 r
             }
-            Err(Flow::Error(n)) => Ok(n),
-            Err(e) => Err(e),
+            Err(RedirError::Open(n)) => Ok(n),
+            Err(e) => Err(e.into()),
         };
         for (name, var) in self.locals.pop().unwrap().into_iter().rev() {
             self.vars.restore(&name, var);

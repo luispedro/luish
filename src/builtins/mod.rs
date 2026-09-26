@@ -27,6 +27,8 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"exec", exec, true),
     (b"exit", exit, true),
     (b"export", vars::export, true),
+    // Special in dash (though not in POSIX).
+    (b"local", vars::local, true),
     (b"readonly", vars::readonly, true),
     (b"return", return_, true),
     (b"set", vars::set, true),
@@ -48,7 +50,6 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"hash", misc::hash, false),
     (b"jobs", jobs::jobs, false),
     (b"kill", jobs::kill, false),
-    (b"local", vars::local, false),
     (b"printf", printf::printf, false),
     (b"pwd", cd::pwd, false),
     (b"read", read::read, false),
