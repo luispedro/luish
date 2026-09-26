@@ -153,6 +153,7 @@ impl Shell {
             } else {
                 ForkKind::Foreground(pgid)
             };
+            self.remember_command(cmd);
             let pid = self.fork_child(kind)?;
             if pid == 0 {
                 if let Some(r) = prev_read {

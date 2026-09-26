@@ -439,3 +439,29 @@ fn fc_history() {
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
 }
+
+#[test]
+fn path_cache() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut sh = Pty::spawn("pathcache");
+    let install = |sh: &Pty, dir: &str| {
+        let file = sh.path(dir).join("tool");
+        std::fs::write(&file, format!("#!/bin/sh\necho from-{dir}\n")).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    std::fs::create_dir(sh.path("a")).unwrap();
+    std::fs::create_dir(sh.path("b")).unwrap();
+    install(&sh, "b");
+    sh.expect("$ ");
+    sh.run("PATH=$HOME/a:$HOME/b:$PATH");
+    assert_has(&sh.run("tool"), "from-b\n");
+    // The shell looked the command up itself (not in the forked process),
+    // so it remembers it.
+    assert_has(&sh.run("hash"), &format!("{}\n", sh.path("b/tool").display()));
+    // A command installed from outside, earlier in PATH, is found by the
+    // next command line, although the remembered one is still there.
+    install(&sh, "a");
+    assert_has(&sh.run("tool"), "from-a\n");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}

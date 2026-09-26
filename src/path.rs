@@ -1,4 +1,8 @@
 //! `PATH` search, with a cache of found commands (`hash`).
+//!
+//! An interactive shell also notices changes to the `PATH` directories
+//! (`check_path_dirs`), so that the cache never hides a newly installed
+//! command, as it does in other shells until `hash -r`.
 
 use crate::shell::Shell;
 use crate::sys;
@@ -35,7 +39,34 @@ pub fn search(path: &[u8], name: &[u8]) -> Option<(Vec<u8>, usize, bool)> {
     fallback
 }
 
+/// What a `PATH` directory looks like: device, inode and modification time.
+/// The inode catches a directory reached through a symlink that now points
+/// elsewhere, as when a Nix profile is switched (Nix store directories all
+/// have the modification time 1).
+pub type DirStamp = Option<(u64, u64, i64, i64)>;
+
+pub fn dir_stamps(path: &[u8]) -> Vec<DirStamp> {
+    path.split(|&c| c == b':')
+        .map(|d| {
+            sys::stat(if d.is_empty() { b"." } else { d })
+                .map(|st| (st.st_dev, st.st_ino, st.st_mtime, st.st_mtime_nsec))
+        })
+        .collect()
+}
+
 impl Shell {
+    /// Forgets the remembered commands if a `PATH` directory changed since
+    /// the last call. The interactive shell calls this for each line read, so
+    /// that a command installed meanwhile is found even if it shadows a
+    /// remembered one.
+    pub fn check_path_dirs(&mut self) {
+        let stamps = dir_stamps(&self.get_var(b"PATH").unwrap_or_default());
+        if stamps != self.path_stamps {
+            self.hash.clear();
+            self.path_stamps = stamps;
+        }
+    }
+
     /// Finds a command in `PATH`, and the index of its directory there. As
     /// in dash, a command in the cache is trusted without checking the file
     /// (see [`Shell::with_command_path`] for when it is gone).

@@ -143,7 +143,12 @@ pass**.
   `PATH`. As in dash, found commands are cached with the index of their
   `PATH` directory and used without checking the file; if it is gone, the
   directories after it are tried (dash's `shellexec`). `cd` drops entries
-  from relative directories. Test: `exec/path_cache.sh`.
+  from relative directories. The shell looks up an external command before
+  forking for it, so that the cache lasts (and a missing command costs no
+  fork); for a pipeline, it looks up each simple command whose name is a
+  literal word, as dash (which uses `vfork`) remembers them. Tests:
+  `exec/path_cache.sh`, `builtins/hash_pipeline.sh`, and `path_cache` in
+  `tests/interactive.rs`.
 - As in dash, a function can't be named after a special built-in ("Bad
   function name").
 - Order (XCU 2.9.1, as in dash): the words are expanded, then the
@@ -327,6 +332,10 @@ pass**.
   Re-running `fc` is limited to 4 levels (dash's `MAXHISTLOOPS`). In a
   non-interactive shell `fc` fails with `history not active`.
 - `PS1` and `PS2` go through parameter expansion.
+- After each line is read, the shell `stat`s the `PATH` directories and
+  clears the command cache if one changed (device, inode or modification
+  time), so a newly installed command is found even if it shadows a cached
+  one (see DEVIATIONS.md and `docs/improvements.md`).
 - Ctrl-C cancels the current input.
 - Tab completion (`src/interactive/complete.rs`), bash-style: the first Tab
   completes the common prefix, a second one lists the candidates. In
@@ -334,7 +343,8 @@ pass**.
   operators, redirections, assignments, `$(`, backquotes, reserved words
   such as `then`, and commands such as `sudo` that take a command) it
   completes built-ins, reserved words, functions, aliases and executables
-  in `PATH` (cached until `PATH` or a directory's mtime changes); a word
+  in `PATH` (cached until `PATH` or one of its directories changes, judged
+  as for the command cache); a word
   with a `/` completes executables and directories. Elsewhere it completes
   filenames (with `~/`, and after `=` or `:` in an assignment or `=` in a
   `--option=`), and variable names after `$` or `${`. The text already
@@ -363,7 +373,7 @@ pass**.
   (interactive or not, as in dash), then, for interactive shells, `$ENV`,
   then `$XDG_CONFIG_HOME/luish/luishrc`.
 - Tests: `tests/interactive.rs` (job control, Ctrl-C and Ctrl-Z, terminal
-  input and modes, completion, highlighting, and `fc`),
+  input and modes, completion, highlighting, `fc`, and the command cache),
   `builtins/fc_noninteractive.sh`, and unit tests in `complete.rs`,
   `highlight.rs` and `history.rs`. The pty tests use `TERM=dumb`, under
   which rustyline does no editing, except `tab_completion` and

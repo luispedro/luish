@@ -48,6 +48,8 @@ pub struct Shell {
     pub job_warning: u8,
     /// Commands found in `PATH`: the file and the index of its directory.
     pub hash: HashMap<Vec<u8>, (Vec<u8>, usize)>,
+    /// The `PATH` directories when last checked (interactive only).
+    pub path_stamps: Vec<crate::path::DirStamp>,
     pub interactive: bool,
     pub in_subshell: bool,
     pub loop_depth: usize,
@@ -129,6 +131,7 @@ impl Shell {
             jobctl: None,
             job_warning: 0,
             hash: HashMap::new(),
+            path_stamps: Vec::new(),
             interactive: false,
             in_subshell: false,
             loop_depth: 0,
@@ -392,6 +395,9 @@ impl Shell {
                     }
                     match input.read_line(self, continuation, &buf) {
                         Line::Text(line) => {
+                            if self.interactive {
+                                self.check_path_dirs();
+                            }
                             if self.opt(Opt::Verbose) && self.interactive {
                                 sys::write_all(2, &line);
                             }

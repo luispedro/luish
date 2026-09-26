@@ -16,3 +16,4 @@ these places. Each one has a test with a `.expected` file in `tests/cases/`.
 | `exec -- cmd` | No `--` handling: tries to run a command named `--` (status 127) | `--` ends the options, as POSIX requires (and bash does) | `exec/exec_dashdash.sh` |
 | `$((` that is not arithmetic | Syntax error (dash always reads `$((` as arithmetic) | Read as `$( (...) )`, a command substitution of a subshell, as bash does (POSIX leaves it unspecified) | `parse/arith_fallback.sh` |
 | `emacs` option in interactive shells | Off (Debian's dash has no line editor) | On unless `vi` is set, since it is the line editor's mode, so `$-` has `E` (as in bash) | `options/interactive_c.sh` |
+| Command cache (`hash`) in an interactive shell | Kept until `PATH` is assigned or `hash -r`, so a command installed earlier in `PATH` than a cached one is ignored | Also cleared when a `PATH` directory changes (checked after each line is read) | `path_cache` in `tests/interactive.rs` |

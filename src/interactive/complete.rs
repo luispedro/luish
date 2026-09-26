@@ -15,6 +15,7 @@ use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
 use rustyline::{Context, Helper};
 
+use crate::path::{DirStamp, dir_stamps};
 use crate::sys;
 
 /// What the completer knows about the shell, refreshed before each prompt.
@@ -34,12 +35,12 @@ pub struct ShellHelper {
     path_cache: RefCell<PathCache>,
 }
 
-/// The executables found in `PATH`, rescanned when `PATH` or the
-/// modification time of one of its directories changes.
+/// The executables found in `PATH`, rescanned when `PATH` or one of its
+/// directories changes (see `path::dir_stamps`).
 #[derive(Default)]
 struct PathCache {
     path: Vec<u8>,
-    mtimes: Vec<Option<(i64, i64)>>,
+    stamps: Vec<DirStamp>,
     names: Vec<Vec<u8>>,
 }
 
@@ -346,10 +347,6 @@ fn candidate(display: &[u8], typed: &[u8], rest: &[u8], quote: Quote, end: &[u8]
     })
 }
 
-fn mtime(dir: &[u8]) -> Option<(i64, i64)> {
-    sys::stat(dir).map(|st| (st.st_mtime, st.st_mtime_nsec))
-}
-
 pub(super) fn is_executable(path: &[u8]) -> bool {
     sys::stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) && sys::access(path, libc::X_OK)
 }
@@ -364,14 +361,11 @@ fn read_dir(dir: &[u8]) -> Vec<Vec<u8>> {
 
 impl PathCache {
     fn refresh(&mut self, path: &[u8]) {
-        let dirs: Vec<&[u8]> = path.split(|&c| c == b':').collect();
-        let mtimes: Vec<_> = dirs
-            .iter()
-            .map(|d| mtime(if d.is_empty() { b"." } else { d }))
-            .collect();
-        if self.path == path && self.mtimes == mtimes {
+        let stamps = dir_stamps(path);
+        if self.path == path && self.stamps == stamps {
             return;
         }
+        let dirs: Vec<&[u8]> = path.split(|&c| c == b':').collect();
         self.names.clear();
         for d in &dirs {
             for name in read_dir(d) {
@@ -386,7 +380,7 @@ impl PathCache {
         self.names.sort_unstable();
         self.names.dedup();
         self.path = path.to_vec();
-        self.mtimes = mtimes;
+        self.stamps = stamps;
     }
 }
 

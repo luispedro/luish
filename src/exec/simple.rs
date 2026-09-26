@@ -176,6 +176,9 @@ impl Shell {
         let pid = if exec_now {
             0
         } else {
+            if !self.look_up_before_fork(&argv[0]) {
+                return Ok(127);
+            }
             self.fork_child(ForkKind::Foreground(0))?
         };
         if pid == 0 {
@@ -191,6 +194,33 @@ impl Shell {
     /// to reset the signals the shell ignores).
     fn can_spawn(&self) -> bool {
         !self.interactive && self.jobctl.is_none()
+    }
+
+    /// Looks up an external command in the shell before forking for it, so
+    /// that the shell remembers it (`hash`; the child finds it in its copy of
+    /// the cache) and a missing command costs no fork. Returns false, after
+    /// reporting it, if there is no such command.
+    fn look_up_before_fork(&mut self, name: &[u8]) -> bool {
+        if name.contains(&b'/') || self.find_in_path(name).is_some() {
+            return true;
+        }
+        self.error(format!("{}: not found", String::from_utf8_lossy(name)));
+        false
+    }
+
+    /// Looks up the command of a pipeline's simple command before its process
+    /// is forked, so that the shell remembers it (`hash`), as dash does. Only
+    /// a literal name is looked up: expanding it could have side effects.
+    pub fn remember_command(&mut self, cmd: &Command) {
+        let Command::Simple(sc) = cmd else { return };
+        let Some(Word(parts)) = sc.words.first() else { return };
+        let [WordPart::Literal(name)] = &parts[..] else { return };
+        if sc.assigns.iter().any(|a| a.name == b"PATH") || name.iter().any(|c| b"/*?[".contains(c)) {
+            return;
+        }
+        if matches!(self.lookup_command(name, true), CommandKind::External) {
+            self.find_in_path(name);
+        }
     }
 
     /// Starts an external command without forking the shell (see
@@ -247,6 +277,9 @@ impl Shell {
                         Err(status) => return Ok(status),
                     }
                 } else {
+                    if alt_path.is_none() && !self.look_up_before_fork(&argv[0]) {
+                        return Ok(127);
+                    }
                     let pid = self.fork_child(ForkKind::Foreground(0))?;
                     if pid == 0 {
                         self.exec_argv(argv, alt_path);
