@@ -33,6 +33,9 @@ T=t2 Z=z $SH -il -c "$show; env | grep ^A=; R=2; echo not reached" 2>/dev/null
 echo "status $?"
 ls -l .cache/luish | grep -c '^-rw------- .* login-'
 ls -l .cache/luish | grep -c '^-rw------- .* rc-'
+# The directory is tagged for backup tools and explains itself.
+head -c 43 .cache/luish/CACHEDIR.TAG; echo
+grep -c 'removed' .cache/luish/README
 echo '--- a non-interactive login shell runs only login.d'
 $SH -l -c "$show" 2>/dev/null
 echo '--- an interactive shell runs only rc.d'

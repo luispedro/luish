@@ -421,7 +421,8 @@ pass**.
   (`login.d`, or else `/etc/profile` and `~/.profile`), `$ENV`, `luishrc`.
   The `*.lsh` files of a directory run in byte order (not dot files), and
   what they changed is saved to `$XDG_CACHE_HOME/luish/rc-HOST` or
-  `login-HOST` (mode 0600, written through a rename): the difference
+  `login-HOST` (mode 0600, written through a rename; the directory gets a
+  `CACHEDIR.TAG` and a `README` saying it can be removed): the difference
   between the state (`state.rs`) before and after, as commands
   (assignments, `unset`, function definitions, ...), so inherited
   variables that the files don't touch aren't saved. The key is the build

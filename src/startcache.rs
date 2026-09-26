@@ -254,6 +254,35 @@ fn build(sh: &mut Shell, dir: &[u8], files: Vec<Dep>, cache_path: Option<&[u8]>)
     }
 }
 
+/// The cache directory tag (https://bford.info/cachedir/), so that backup
+/// tools skip the directory.
+const CACHEDIR_TAG: &[u8] = b"Signature: 8a477f597d28d172789f06886806bc55
+# This file is a cache directory tag created by luish.
+# For information about cache directory tags, see https://bford.info/cachedir/
+";
+
+const README: &[u8] = b"This directory holds caches written by luish, the shell:
+
+- rc-HOST, login-HOST: the effects of the startup files in
+  ~/.config/luish/rc.d/ and ~/.config/luish/login.d/ (variables,
+  functions, aliases, options, ...), saved on the host HOST, so that new
+  shells restore them instead of running the files.
+
+Everything here can be recreated: the directory can be removed at any time
+without losing anything (the next shell rebuilds what it needs).
+";
+
+/// Adds `CACHEDIR.TAG` and `README` to the cache directory, if missing.
+/// Failures are ignored: the cache works without them.
+fn mark_cache_dir(dir: &std::path::Path) {
+    for (name, text) in [("CACHEDIR.TAG", CACHEDIR_TAG), ("README", README)] {
+        let path = dir.join(name);
+        if !path.exists() {
+            let _ = std::fs::write(path, text);
+        }
+    }
+}
+
 /// Writes the cache with mode 0600 (exported variables can hold tokens),
 /// through a temporary file renamed into place.
 fn write_cache(path: &[u8], text: &[u8]) -> Result<(), i32> {
@@ -265,6 +294,7 @@ fn write_cache(path: &[u8], text: &[u8]) -> Result<(), i32> {
         .mode(0o700)
         .create(&parent)
         .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?;
+    mark_cache_dir(&parent);
     let (fd, tmp) = sys::mkstemp(&[path, b"."].concat())?;
     let ok = sys::write_all(fd, text);
     let e = sys::errno();

@@ -66,6 +66,9 @@ used as long as the `.lsh` files and the files they read with `.` are unchanged,
 When one of them changes (luish compares their size and modification time), or after luish is upgraded, the next
 shell reruns the files and updates the cache.
 
+The cache directory holds nothing that can't be rebuilt: it can be removed at any time. luish marks it with a
+`CACHEDIR.TAG` file, so that backup tools that honour the [convention](https://bford.info/cachedir/) skip it.
+
 Some things belong in a directory's `_uncached.lsh`, which runs every time, after that directory's cached state is
 restored:
 
