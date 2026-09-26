@@ -35,7 +35,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **121 differential cases, 13 plugin cases, 51 unit tests and 12 pty tests
+Current state: **121 differential cases, 15 plugin cases, 51 unit tests and 12 pty tests
 pass**.
 
 ## Environment
@@ -514,21 +514,35 @@ pass**.
   fails with "luish was built without plugin support".
 - `plugin` is a built-in only in interactive shells (and their
   subshells), like `help`; `__luish_internal plugin` is the same anywhere.
-- `plugin load NAME|PATH...` loads `$XDG_CONFIG_HOME/luish/plugins/NAME.rhai`
-  (default `~/.config/luish/plugins`), or a path if the argument contains a
-  `/`; loading a plugin again replaces it (its hooks move to the end).
+- `plugin load NAME|PATH...` loads `$XDG_CONFIG_HOME/luish/plugins/NAME.rhai`,
+  or else the directory `NAME/` there (default `~/.config/luish/plugins`),
+  or a path if the argument contains a `/`; loading a plugin again replaces
+  it (its hooks move to the end).
+- Directory plugins (PLAN.md §6.6): `plugin.rhai`, then `rc.lsh` (with
+  `.`; not run if `plugin.rhai` fails; its status is ignored), and at least
+  one of those or `login.lsh` (not run yet). `LUISH_PLUGIN_DIR` (absolute)
+  and `LUISH_PLUGIN_NAME` are set while they run and restored after.
+  `import` in Rhai loads `NAME.rhai` from the plugin's directory (the file's
+  directory for a file plugin), for every module of the plugin; imported
+  modules are cached until a plugin is loaded again. A plugin without
+  `plugin.rhai` doesn't create the Rhai engine (the engine is created with
+  the first Rhai code). `plugin unload` can't undo `rc.lsh`. Tests:
+  `plugins/directory.sh`, `plugins/startup_cache.sh`.
   `plugin list` prints the names, `plugin unload NAME...` removes a
   plugin's hooks. Errors: status 1 (130 if interrupted); usage errors: 2.
-- `savestate` prints `__luish_internal plugin load PATH` (absolute) for
-  each loaded plugin, after aliases and before options, so the startup
-  cache loads the plugins from `rc.d` again; what a plugin's top level
-  changed is cached with the rest of the state.
+- `savestate` prints `__luish_internal plugin restore NAME PATH` (absolute)
+  for each loaded plugin, after aliases and before options, so the startup
+  cache loads the plugins from `rc.d` again: `restore` loads a plugin under
+  a name and runs its Rhai code, but not its `rc.lsh`. What a plugin's top
+  level and `rc.lsh` changed is cached with the rest of the state, and the
+  plugin's Rhai file and the files `rc.lsh` sources are fingerprinted.
 - `plugins/rhai.rs`: one `Engine` (created on first load, with call-depth,
   expression-depth and size limits), one AST per plugin. Rhai's `print`
   and `debug` write lines to fds 1 and 2. SIGINT stops plugin code (checked
   in `on_progress`), leaving the signal pending for the shell. Rhai is
   built with `only_i64` (see PLAN.md §6.4); floats are available.
 - `sh` module: `hook`, `getvar`, `setvar`, `export`, `unsetvar`, `cwd`,
+  `plugin_dir`,
   `last_status`, `interactive`, `run` (shell code in the current shell;
   `exit` in it stops the plugin and exits the shell), `write` (fds 1 and 2).
 - `fs` module (`plugins/fs.rs`), without forking: `exists`, `is_file`,

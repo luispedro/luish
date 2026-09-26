@@ -149,7 +149,11 @@ impl Shell {
 
         if let Some(host) = &self.plugins {
             for (name, path) in host.loaded() {
-                let mut t = b"__luish_internal plugin load ".to_vec();
+                // `restore`, not `load`: what a directory plugin's `rc.lsh`
+                // did is in the state already.
+                let mut t = b"__luish_internal plugin restore ".to_vec();
+                t.extend(single_quote(&name));
+                t.push(b' ');
                 t.extend(single_quote(&path));
                 t.push(b'\n');
                 add(Kind::Plugin, &name, t);

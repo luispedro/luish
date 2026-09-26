@@ -7,14 +7,15 @@
 //! can run shell code with `sh::run`, which can call into Rhai again. So no
 //! borrow of the host's `RefCell`s is held across a call into Rhai.
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
+use std::collections::HashMap;
 use std::os::unix::ffi::OsStrExt;
 use std::rc::Rc;
 
-use rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, Position};
+use rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, Position, Scope, Shared};
 
-use super::HookKind;
 use super::bytes::{to_bytes, to_str};
+use super::{HookKind, Loading};
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::{signals, sys};
 
@@ -23,11 +24,16 @@ pub(super) type RhaiResult<T> = Result<T, Box<EvalAltResult>>;
 struct Plugin {
     id: u32,
     name: Vec<u8>,
-    /// The path as given, for messages.
+    /// The Rhai file as given, for messages.
     path: Vec<u8>,
-    /// The absolute path, to load it again.
+    /// The absolute path of the plugin (its file or directory), to load it
+    /// again.
     abs: Vec<u8>,
-    ast: Rc<AST>,
+    /// The plugin's directory (absolute), for `import` and `plugin_dir`.
+    dir: Vec<u8>,
+    /// `None` for a plugin without Rhai code (a directory with only
+    /// `rc.lsh` or `login.lsh`).
+    ast: Option<Rc<AST>>,
 }
 
 #[derive(Clone)]
@@ -40,13 +46,17 @@ struct Hook {
 }
 
 pub struct Host {
-    engine: Engine,
+    /// Created when the first Rhai code is loaded.
+    engine: OnceCell<Engine>,
     plugins: RefCell<Vec<Plugin>>,
     hooks: RefCell<Vec<Hook>>,
     next_id: Cell<u32>,
     /// The hook kinds whose hooks are running, so that a hook doesn't
     /// trigger itself (a `chpwd` hook that runs `cd`).
     running: RefCell<Vec<HookKind>>,
+    /// The modules that plugins imported, by absolute path. Emptied when a
+    /// plugin is loaded, so that loading one again reads its modules again.
+    modules: RefCell<HashMap<Vec<u8>, Shared<Module>>>,
 }
 
 thread_local! {
@@ -112,6 +122,51 @@ fn host(sh: &Shell) -> RhaiResult<Rc<Host>> {
     }
 }
 
+/// The directory of the plugin whose code is running.
+fn current_dir() -> RhaiResult<Vec<u8>> {
+    with_shell(|sh| {
+        let host = host(sh)?;
+        let plugins = host.plugins.borrow();
+        match plugins.iter().find(|p| p.id == CURRENT.get()) {
+            Some(p) => Ok(p.dir.clone()),
+            None => error("no plugin is running"),
+        }
+    })
+}
+
+/// Resolves `import "NAME"` to `NAME.rhai` in the plugin's directory (or an
+/// absolute path), whichever file or module does the import.
+struct Resolver;
+
+impl ModuleResolver for Resolver {
+    fn resolve(&self, engine: &Engine, _: Option<&str>, name: &str, pos: Position) -> RhaiResult<Shared<Module>> {
+        let mut path = match name.starts_with('/') {
+            true => Vec::new(),
+            false => [current_dir()?, b"/".to_vec()].concat(),
+        };
+        path.extend(to_bytes(name));
+        path.extend_from_slice(b".rhai");
+        let cached = with_shell(|sh| Ok(host(sh)?.modules.borrow().get(&path).cloned()))?;
+        if let Some(m) = cached {
+            return Ok(m);
+        }
+        let in_module = |e| Box::new(EvalAltResult::ErrorInModule(name.into(), e, pos));
+        let text = match std::fs::read(std::ffi::OsStr::from_bytes(&path)) {
+            Ok(t) => String::from_utf8(t).map_err(|_| in_module("not valid UTF-8".into()))?,
+            Err(_) => return Err(EvalAltResult::ErrorModuleNotFound(name.into(), pos).into()),
+        };
+        let ast = engine.compile(&text).map_err(|e| in_module(e.into()))?;
+        let m: Shared<Module> = Module::eval_ast_as_new(Scope::new(), &ast, engine)
+            .map_err(in_module)?
+            .into();
+        with_shell(|sh| {
+            host(sh)?.modules.borrow_mut().insert(path, m.clone());
+            Ok(())
+        })?;
+        Ok(m)
+    }
+}
+
 fn check_name(name: &str) -> RhaiResult<()> {
     let b = name.as_bytes();
     if b.first().is_some_and(|&c| crate::lexer::is_name_start(c)) && b.iter().all(|&c| crate::lexer::is_name_char(c)) {
@@ -150,10 +205,10 @@ fn sh_module() -> Module {
             let plugin = CURRENT.get();
             let (ast, path) = {
                 let plugins = host.plugins.borrow();
-                let Some(p) = plugins.iter().find(|p| p.id == plugin) else {
+                let Some((p, Some(ast))) = plugins.iter().find(|p| p.id == plugin).map(|p| (p, &p.ast)) else {
                     return error("no plugin is running");
                 };
-                (p.ast.clone(), Rc::from(p.path.as_slice()))
+                (ast.clone(), Rc::from(p.path.as_slice()))
             };
             host.hooks.borrow_mut().push(Hook {
                 plugin,
@@ -199,6 +254,7 @@ fn sh_module() -> Module {
                 .map_or_else(String::new, |d| to_str(&d)))
         })
     });
+    m.set_native_fn("plugin_dir", || current_dir().map(|d| to_str(&d)));
     m.set_native_fn("last_status", || with_shell(|sh| Ok(sh.last_status as i64)));
     m.set_native_fn("interactive", || with_shell(|sh| Ok(sh.interactive)));
     m.set_native_fn("run", |script: &str| {
@@ -232,33 +288,43 @@ fn write_line(fd: i32, s: &str) {
     sys::write_all(fd, &b);
 }
 
+fn new_engine() -> Engine {
+    let mut engine = Engine::new();
+    engine.register_static_module("sh", sh_module().into());
+    engine.register_static_module("fs", super::fs::module().into());
+    engine.register_static_module("vcs", super::vcs::module().into());
+    engine.set_module_resolver(Resolver);
+    engine.on_print(|s| write_line(1, s));
+    engine.on_debug(|s, _, _| write_line(2, s));
+    // Ctrl-C (or a trapped SIGINT) stops plugin code, as it would a
+    // command. The pending signal is handled when the shell regains
+    // control.
+    engine.on_progress(|_| signals::is_pending(libc::SIGINT).then(|| INTERRUPTED.into()));
+    // A buggy plugin gets an error rather than exhausting the stack or
+    // memory.
+    engine
+        .set_max_call_levels(64)
+        .set_max_expr_depths(64, 32)
+        .set_max_string_size(64 << 20)
+        .set_max_array_size(1 << 20)
+        .set_max_map_size(1 << 20);
+    engine
+}
+
 impl Host {
     pub fn new() -> Host {
-        let mut engine = Engine::new();
-        engine.register_static_module("sh", sh_module().into());
-        engine.register_static_module("fs", super::fs::module().into());
-        engine.register_static_module("vcs", super::vcs::module().into());
-        engine.on_print(|s| write_line(1, s));
-        engine.on_debug(|s, _, _| write_line(2, s));
-        // Ctrl-C (or a trapped SIGINT) stops plugin code, as it would a
-        // command. The pending signal is handled when the shell regains
-        // control.
-        engine.on_progress(|_| signals::is_pending(libc::SIGINT).then(|| INTERRUPTED.into()));
-        // A buggy plugin gets an error rather than exhausting the stack or
-        // memory.
-        engine
-            .set_max_call_levels(64)
-            .set_max_expr_depths(64, 32)
-            .set_max_string_size(64 << 20)
-            .set_max_array_size(1 << 20)
-            .set_max_map_size(1 << 20);
         Host {
-            engine,
+            engine: OnceCell::new(),
             plugins: RefCell::new(Vec::new()),
             hooks: RefCell::new(Vec::new()),
             next_id: Cell::new(1),
             running: RefCell::new(Vec::new()),
+            modules: RefCell::new(HashMap::new()),
         }
+    }
+
+    fn engine(&self) -> &Engine {
+        self.engine.get_or_init(new_engine)
     }
 
     /// The names of the loaded plugins, in the order they were loaded.
@@ -291,13 +357,27 @@ impl Host {
         }
     }
 
-    /// Loads (or reloads) a plugin: compiles it and runs its top level,
-    /// which registers its hooks.
-    /// `cmd` is the command, for error messages; `path` is the file as
-    /// given and `abs` its absolute path.
-    pub fn load(self: &Rc<Self>, sh: &mut Shell, cmd: &[u8], name: Vec<u8>, path: Vec<u8>, abs: Vec<u8>) -> ExecResult {
+    /// Loads (or reloads) a plugin: compiles its Rhai code, if it has
+    /// any, and runs its top level, which registers its hooks.
+    /// `cmd` is the command, for error messages.
+    pub fn load(self: &Rc<Self>, sh: &mut Shell, cmd: &[u8], plugin: Loading) -> ExecResult {
+        let Loading { name, abs, dir, rhai } = plugin;
+        let Some((path, rhai_abs)) = rhai else {
+            self.unload(&name);
+            let id = self.next_id.get();
+            self.next_id.set(id + 1);
+            self.plugins.borrow_mut().push(Plugin {
+                id,
+                name,
+                path: abs.clone(),
+                abs,
+                dir,
+                ast: None,
+            });
+            return Ok(0);
+        };
         let shown = String::from_utf8_lossy(&path).into_owned();
-        let text = match std::fs::read(std::ffi::OsStr::from_bytes(&path)) {
+        let text = match std::fs::read(std::ffi::OsStr::from_bytes(&rhai_abs)) {
             Ok(t) => t,
             Err(e) => {
                 let msg = match e.raw_os_error() {
@@ -313,7 +393,7 @@ impl Host {
             sh.berr(cmd, format!("{shown}: not valid UTF-8"));
             return Ok(1);
         };
-        let ast = match self.engine.compile(&text) {
+        let ast = match self.engine().compile(&text) {
             Ok(a) => a,
             Err(e) => {
                 sh.error(format!("{shown}: {e}"));
@@ -322,6 +402,7 @@ impl Host {
         };
         let ast = Rc::new(ast);
         self.unload(&name);
+        self.modules.borrow_mut().clear();
         let id = self.next_id.get();
         self.next_id.set(id + 1);
         self.plugins.borrow_mut().push(Plugin {
@@ -329,9 +410,10 @@ impl Host {
             name,
             path: path.clone(),
             abs,
-            ast: ast.clone(),
+            dir,
+            ast: Some(ast.clone()),
         });
-        let r = enter(sh, id, || self.engine.run_ast(&ast));
+        let r = enter(sh, id, || self.engine().run_ast(&ast));
         match r {
             Ok(Ok(())) => Ok(0),
             Ok(Err(e)) => {
@@ -377,7 +459,9 @@ impl Host {
         let saved = sh.last_status;
         let mut result = Ok(());
         for h in hooks {
-            let r = enter(sh, h.plugin, || h.f.call::<Dynamic>(&self.engine, &h.ast, args.clone()));
+            let r = enter(sh, h.plugin, || {
+                h.f.call::<Dynamic>(self.engine(), &h.ast, args.clone())
+            });
             match r {
                 Ok(Ok(_)) => {}
                 Ok(Err(e)) => {
@@ -414,7 +498,7 @@ impl Host {
         let mut result = Ok(None);
         for h in hooks.iter().rev() {
             sh.last_status = saved;
-            let r = enter(sh, h.plugin, || h.f.call::<Dynamic>(&self.engine, &h.ast, ()));
+            let r = enter(sh, h.plugin, || h.f.call::<Dynamic>(self.engine(), &h.ast, ()));
             match r {
                 Ok(Ok(v)) if v.is_string() => {
                     result = Ok(Some(to_bytes(&v.into_immutable_string().unwrap_or_default())));

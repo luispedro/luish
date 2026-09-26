@@ -1,0 +1,29 @@
+rhai: hello from util greet
+rc: set by plugin.rhai, name greet
+both: the file wins
+load: 0
+after: DIR=unset NAME=before
+LUISH_PLUGIN_DIR is absolute
+greet from lib
+shell only
+greet
+shonly
+both
+hook: dir true
+hook: dir true
+--- a path to a directory, with a trailing slash
+greet
+both
+shonly
+--- a directory without an entry point
+status 1
+--- a failing plugin.rhai: rc.lsh doesn't run
+status 1
+--- a missing module
+status 1
+--- loading again reads the modules again
+rhai: hello again greet
+rc: set by plugin.rhai, name greet
+--- unloading a shell-only plugin
+both
+greet

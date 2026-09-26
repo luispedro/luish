@@ -7,7 +7,7 @@ mod fc;
 mod help;
 pub mod internal;
 mod jobs;
-mod misc;
+pub(crate) mod misc;
 mod printf;
 mod read;
 mod test;

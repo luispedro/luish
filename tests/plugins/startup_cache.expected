@@ -1,0 +1,31 @@
+--- builds the cache
+rhai runs (p)
+rc.lsh runs
+p
+f v1
+hook v1
+--- uses it
+rhai runs (p)
+p
+f v1
+hook v1
+--- rc.lsh changed
+rhai runs (p)
+rc.lsh runs
+p
+f v2
+hook v1
+rhai runs (p)
+p
+f v2
+hook v1
+--- plugin.rhai changed
+rhai runs (p)
+rc.lsh runs
+p
+f v2
+hook v2
+rhai runs (p)
+p
+f v2
+hook v2

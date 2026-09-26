@@ -844,8 +844,8 @@ fork).
 `plugin load NAME` looks for `NAME.rhai`, then `NAME/`, in the plugin
 directory; a path can name either kind. A directory plugin's name is its
 base name. `plugin unload` removes what the Rhai part registered, but can't
-undo what `rc.lsh` did (aliases, functions, variables), and says so if the
-plugin has an `rc.lsh`.
+undo what `rc.lsh` did (aliases, functions, variables). (It doesn't warn:
+the startup cache's replay unloads plugins too.)
 
 #### Collections
 
@@ -1016,9 +1016,9 @@ plugins/
   whether or not `rc.d` exists. The `login.lsh` files run after `login.d`,
   in its cache; a login shell without `login.d` runs them, uncached, after
   `~/.profile`.
-- The cached state replays `plugin.rhai` (as it replays `plugin load` now)
-  but not `rc.lsh`, whose effects are in the state: `savestate` records the
-  Rhai file and the plugin's name.
+- The cached state replays `plugin.rhai` but not `rc.lsh`, whose effects
+  are in the state: `savestate` prints `plugin restore NAME PATH` (done in
+  step 1).
 - The cache key adds the fingerprints of `plugins.toml`, `plugins.lock` and
   the entry points of local plugins. Files of git plugins need none (their
   directory names the commit). On the warm path, plugins therefore cost two

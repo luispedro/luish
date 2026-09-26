@@ -80,6 +80,10 @@ pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 /// `plugin load NAME|PATH...`, `plugin list`, and `plugin unload NAME...`,
 /// also available as `__luish_internal plugin`. `name` is the command, for
 /// error messages.
+///
+/// `plugin restore NAME PATH`, which `savestate` prints, loads a plugin
+/// under a name without running its `rc.lsh`, whose effects are in the
+/// saved state.
 pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
     let args = argv.get(1..).unwrap_or_default();
     match argv.first().map(|a| a.as_slice()) {
@@ -87,10 +91,16 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
             let mut status = 0;
             for a in args {
                 if !sh.no_plugins {
-                    status = load(sh, name, a)?.max(status);
+                    status = load(sh, name, a, None)?.max(status);
                 }
             }
             Ok(status)
+        }
+        Some(b"restore") if args.len() == 2 => {
+            if sh.no_plugins {
+                return Ok(0);
+            }
+            load(sh, name, &args[1], Some(args[0].clone()))
         }
         Some(b"list") if args.is_empty() => {
             let mut out = Vec::new();
@@ -119,43 +129,127 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
     }
 }
 
-/// The file for `plugin load ARG`: ARG itself if it contains a `/`,
-/// otherwise `ARG.rhai` in the plugin directory.
-fn plugin_path(sh: &Shell, arg: &[u8]) -> Option<Vec<u8>> {
+#[cfg(feature = "plugins")]
+/// A plugin found on disk: a `.rhai` file or a directory.
+struct Found {
+    path: Vec<u8>,
+    dir: bool,
+}
+
+#[cfg(feature = "plugins")]
+fn is_dir(path: &[u8]) -> bool {
+    crate::sys::stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR)
+}
+
+#[cfg(feature = "plugins")]
+/// The plugin for `plugin load ARG`: ARG itself if it contains a `/`,
+/// otherwise `ARG.rhai` or else `ARG/` in the plugin directory.
+fn find(sh: &Shell, arg: &[u8]) -> Option<Found> {
     if arg.contains(&b'/') {
-        return Some(arg.to_vec());
+        return Some(Found {
+            path: arg.to_vec(),
+            dir: is_dir(arg),
+        });
     }
     let mut p = crate::startcache::xdg_dir(sh, b"XDG_CONFIG_HOME", b"/.config")?;
     p.extend_from_slice(b"/luish/plugins/");
     p.extend_from_slice(arg);
+    if is_dir(&p) && crate::sys::stat(&[p.as_slice(), b".rhai"].concat()).is_none() {
+        return Some(Found { path: p, dir: true });
+    }
     p.extend_from_slice(b".rhai");
-    Some(p)
-}
-
-/// A plugin's name: its file name without `.rhai`.
-fn plugin_name(path: &[u8]) -> Vec<u8> {
-    let base = path.rsplit(|&c| c == b'/').next().unwrap_or(path);
-    base.strip_suffix(b".rhai").unwrap_or(base).to_vec()
+    Some(Found { path: p, dir: false })
 }
 
 #[cfg(feature = "plugins")]
-fn load(sh: &mut Shell, name: &[u8], arg: &[u8]) -> ExecResult {
-    let Some(path) = plugin_path(sh, arg) else {
-        sh.berr(name, "no plugin directory (HOME is not set)");
+/// A plugin's name: its file name without `.rhai`, or its directory's name.
+fn plugin_name(path: &[u8], dir: bool) -> Vec<u8> {
+    let path = path.strip_suffix(b"/").unwrap_or(path);
+    let base = path.rsplit(|&c| c == b'/').next().unwrap_or(path);
+    match dir {
+        true => base.to_vec(),
+        false => base.strip_suffix(b".rhai").unwrap_or(base).to_vec(),
+    }
+}
+
+/// A plugin being loaded, for `Host::load`.
+#[cfg(feature = "plugins")]
+pub struct Loading {
+    pub name: Vec<u8>,
+    /// The plugin's absolute path (its file or directory), for `savestate`.
+    pub abs: Vec<u8>,
+    /// The plugin's directory (absolute): the directory of a file plugin.
+    pub dir: Vec<u8>,
+    /// The Rhai file to run, as given (for messages) and absolute.
+    pub rhai: Option<(Vec<u8>, Vec<u8>)>,
+}
+
+#[cfg(feature = "plugins")]
+/// The variables set while a plugin's entry points run.
+const PLUGIN_VARS: [&[u8]; 2] = [b"LUISH_PLUGIN_DIR", b"LUISH_PLUGIN_NAME"];
+
+#[cfg(feature = "plugins")]
+fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], restore: Option<Vec<u8>>) -> ExecResult {
+    let Some(found) = find(sh, arg) else {
+        sh.berr(cmd, "no plugin directory (HOME is not set)");
         return Ok(1);
     };
-    // The absolute path, for `savestate`.
+    let path = found.path.strip_suffix(b"/").unwrap_or(&found.path).to_vec();
     let abs = match (path.first(), &sh.curdir) {
         (Some(b'/'), _) | (_, None) => path.clone(),
         (_, Some(dir)) => crate::builtins::cd::canonicalize(&[dir.as_slice(), b"/", path.as_slice()].concat()),
     };
+    let name = restore.clone().unwrap_or_else(|| plugin_name(&path, found.dir));
+    let (loading, rc) = if found.dir {
+        let entry = |f: &[u8]| {
+            let p = [path.as_slice(), b"/", f].concat();
+            crate::sys::stat(&p)
+                .is_some()
+                .then(|| (p, [abs.as_slice(), b"/", f].concat()))
+        };
+        let (rhai, rc) = (entry(b"plugin.rhai"), entry(b"rc.lsh"));
+        if rhai.is_none() && rc.is_none() && entry(b"login.lsh").is_none() {
+            sh.berr(
+                cmd,
+                format!(
+                    "{}: not a plugin (no plugin.rhai, rc.lsh or login.lsh)",
+                    String::from_utf8_lossy(&path)
+                ),
+            );
+            return Ok(1);
+        }
+        let dir = abs.clone();
+        (Loading { name, abs, dir, rhai }, rc.map(|(_, abs)| abs))
+    } else {
+        let dir = abs[..abs.iter().rposition(|&c| c == b'/').unwrap_or(0).max(1)].to_vec();
+        let rhai = Some((path, abs.clone()));
+        (Loading { name, abs, dir, rhai }, None)
+    };
+    // A changed plugin must invalidate the startup cache (`startcache.rs`).
+    if let (Some(rec), Some((_, abs))) = (&mut sh.sourced_files, &loading.rhai) {
+        rec.push(abs.clone());
+    }
+    let saved = PLUGIN_VARS.map(|v| sh.vars.take(v));
+    for (v, value) in PLUGIN_VARS.iter().zip([&loading.dir, &loading.name]) {
+        let var = crate::vars::Var {
+            value: Some(value.clone()),
+            ..Default::default()
+        };
+        sh.vars.restore(v, Some(var));
+    }
     let host = sh.plugins.get_or_insert_with(|| std::rc::Rc::new(Host::new())).clone();
-    host.load(sh, name, plugin_name(&path), path, abs)
+    let r = match (host.load(sh, cmd, loading), rc) {
+        (Ok(0), Some(rc)) if restore.is_none() => crate::builtins::misc::dot(sh, &[b".".to_vec(), rc]).map(|_| 0),
+        (r, _) => r,
+    };
+    for (v, var) in PLUGIN_VARS.iter().zip(saved) {
+        sh.vars.restore(v, var);
+    }
+    r
 }
 
 #[cfg(not(feature = "plugins"))]
-fn load(sh: &mut Shell, name: &[u8], arg: &[u8]) -> ExecResult {
-    let _ = (plugin_path, plugin_name);
+fn load(sh: &mut Shell, name: &[u8], arg: &[u8], _: Option<Vec<u8>>) -> ExecResult {
     sh.berr(
         name,
         format!(
@@ -170,14 +264,16 @@ fn unload(sh: &mut Shell, name: &[u8]) -> bool {
     sh.plugins.as_ref().is_some_and(|host| host.unload(name))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "plugins"))]
 mod tests {
     use super::plugin_name;
 
     #[test]
     fn names() {
-        assert_eq!(plugin_name(b"/a/b/greet.rhai"), b"greet");
-        assert_eq!(plugin_name(b"./x"), b"x");
-        assert_eq!(plugin_name(b"greet.rhai"), b"greet");
+        assert_eq!(plugin_name(b"/a/b/greet.rhai", false), b"greet");
+        assert_eq!(plugin_name(b"./x", false), b"x");
+        assert_eq!(plugin_name(b"greet.rhai", false), b"greet");
+        assert_eq!(plugin_name(b"/a/b/greet/", true), b"greet");
+        assert_eq!(plugin_name(b"dir.rhai", true), b"dir.rhai");
     }
 }
