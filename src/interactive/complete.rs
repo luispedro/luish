@@ -73,8 +73,10 @@ pub struct ShellHelper {
 pub enum Completion {
     /// Use the default completion (see `ARGS`).
     Default,
+    /// The candidates, and where in the word the part they complete starts
+    /// (the length of the prefix they leave alone, such as `--opt=`).
     #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
-    Candidates(Vec<Candidate>),
+    Candidates(usize, Vec<Candidate>),
     /// The completer failed, and printed why.
     Failed,
 }
@@ -137,6 +139,10 @@ pub(super) const PRECOMMANDS: &[&[u8]] = &[
 ];
 
 /// Commands whose arguments can be assignments.
+/// The name under which a plugin registers the completer for commands that
+/// have none (as in zsh's `compdef -default-`).
+pub const DEFAULT_COMPLETER: &[u8] = b"-default-";
+
 const DECLARATIONS: &[&[u8]] = &[b"export", b"readonly", b"local"];
 
 /// What the arguments of a command complete to, if not filenames.
@@ -860,7 +866,7 @@ impl ShellHelper {
         let w = analyze(line, &self.names.aliases);
         let (from, cands) = match self.ask_completer(&w, after) {
             Completion::Default => self.generate(&w),
-            Completion::Candidates(c) => (0, c),
+            Completion::Candidates(from, c) => (from.min(w.text.len()), c),
             Completion::Failed => {
                 // The line is left as it is, but with one candidate
                 // rustyline redraws it, below the error message.
@@ -892,10 +898,14 @@ impl ShellHelper {
         (w.start, items(&cands, &t))
     }
 
-    /// What the completer of the word's command, if it has one, gives.
+    /// What the completer of the word's command gives, if it has one, or
+    /// else the default completer (`-default-`), for commands whose
+    /// arguments luish doesn't know.
     fn ask_completer(&self, w: &Word, after: &[u8]) -> Completion {
+        let has = |name: &[u8]| self.names.completers.iter().any(|c| c == name);
+        let cmd = w.words.first().map_or(&b""[..], |c| c);
         match (w.kind, self.ask) {
-            (Kind::Arg, Some(ask)) if self.names.completers.contains(&w.words[0]) => {
+            (Kind::Arg, Some(ask)) if has(cmd) || (has(DEFAULT_COMPLETER) && !ARGS.iter().any(|a| a.0 == cmd)) => {
                 let mut words = w.words.clone();
                 words.push(w.text.clone());
                 words.extend(words_after(after, w.quote));
@@ -1371,22 +1381,35 @@ mod tests {
         assert_eq!(after("$(x)y z", Quote::None), ["z"]);
     }
 
-    /// A completer for `git`, as a plugin could provide.
+    /// A completer for `git`, as a plugin could provide, and a default
+    /// completer that knows `frob`.
     fn fake_git(words: &[Vec<u8>], i: usize) -> Completion {
-        assert_eq!(words[0], b"git");
+        if words[0] != b"git" {
+            return match &words[0][..] {
+                b"frob" => Completion::Candidates(0, vec![Candidate::word(b"xylophone")]),
+                _ => Completion::Default,
+            };
+        }
         match (i, &words[i][..]) {
+            (_, w) if w.starts_with(b"--pretty=") => Completion::Candidates(
+                b"--pretty=".len(),
+                vec![Candidate::word(b"oneline"), Candidate::word(b"short")],
+            ),
             (1, _) if words.len() > 2 => {
                 assert_eq!(words[2..], [b"x".to_vec(), b"after".to_vec()]);
-                Completion::Candidates(vec![])
+                Completion::Candidates(0, vec![])
             }
-            (1, _) => Completion::Candidates(vec![
-                Candidate::word(b"add"),
-                Candidate::word(b"commit"),
-                Candidate {
-                    suffix: Suffix::None,
-                    ..Candidate::word(b"--color=")
-                },
-            ]),
+            (1, _) => Completion::Candidates(
+                0,
+                vec![
+                    Candidate::word(b"add"),
+                    Candidate::word(b"commit"),
+                    Candidate {
+                        suffix: Suffix::None,
+                        ..Candidate::word(b"--color=")
+                    },
+                ],
+            ),
             (_, b"boom") => Completion::Failed,
             _ => Completion::Default,
         }
@@ -1503,11 +1526,11 @@ mod tests {
             std::fs::write(dir.join("plugins").join(f), "").unwrap();
         }
         std::fs::create_dir(dir.join("plugins/work")).unwrap();
-        assert_eq!(complete(&h, "plugin l"), ["list ", "load "]);
+        assert_eq!(complete(&h, "plugin l"), ["list-available ", "list-loaded ", "load "]);
         assert_eq!(complete(&h, "plugin load "), ["git ", "prompt ", "work "]);
         assert_eq!(complete(&h, "plugin load ~/plugins/p"), ["~/plugins/prompt.rhai "]);
         assert_eq!(complete(&h, "plugin unload "), ["greet "]);
-        assert_eq!(complete(&h, "plugin list "), Vec::<String>::new());
+        assert_eq!(complete(&h, "plugin list-loaded "), Vec::<String>::new());
         // Users' home directories.
         assert_eq!(complete(&h, "ls ~roo"), ["~root/"]);
         assert_eq!(complete(&h, "X=a:~roo"), ["X=a:~root/"]);
@@ -1552,6 +1575,21 @@ mod tests {
         h.names.aliases.push((b"g".to_vec(), b"git".to_vec()));
         assert_eq!(complete(&h, "g c"), ["commit "]);
         assert_eq!(h.complete_bytes(b"git ", b" x after").1.len(), 0);
+        // Candidates that complete the part after a prefix.
+        assert_eq!(complete(&h, "git log --pretty=o"), ["--pretty=oneline "]);
+        assert_eq!(complete(&h, "git log '--pretty=s"), ["'--pretty=short' "]);
+        assert_eq!(
+            complete(&h, "git log --pretty="),
+            ["--pretty=oneline ", "--pretty=short "]
+        );
+        // The default completer, for commands without one of their own
+        // whose arguments luish doesn't know.
+        assert_eq!(complete(&h, "frob xyl"), Vec::<String>::new());
+        h.names.completers.push(DEFAULT_COMPLETER.to_vec());
+        assert_eq!(complete(&h, "frob xyl"), ["xylophone "]);
+        assert_eq!(complete(&h, "git c"), ["commit "]);
+        assert_eq!(complete(&h, "cd ~/s"), ["~/sub\\ dir/"]);
+        assert_eq!(complete(&h, "ls ~/f"), ["~/file\\ one "]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

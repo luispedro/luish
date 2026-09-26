@@ -165,6 +165,19 @@ and a `suffix`, added after the value when it is the only match (a space by defa
 the candidates that start with the word typed, and quotes what it adds. So a completer can simply return everything
 that could come next.
 
+To complete only the end of the word, such as what follows `=` in `--format=`, a completer returns a map with the
+candidates and the start of the word they leave alone, which must be a prefix of the word:
+
+```rhai
+if words[i].starts_with("--format=") {
+    return #{prefix: "--format=", candidates: ["json", "yaml"]};
+}
+```
+
+The completer registered for `-default-` (as in zsh's `compdef`) is called for the commands that have no completer of
+their own and whose arguments luish doesn't complete itself (as it does for `cd`, `kill` or `unset`). It is given the
+words of the command as any other completer is.
+
 A completer registered for a command replaces any earlier one. If a completer fails, the error is shown below the
 command line. A completer that runs for more than 2 seconds is stopped (while it runs a command, the time is only
 checked when the command has finished).
@@ -187,12 +200,32 @@ do something else), but a plugin can, for the programs it names:
 Save it as `~/.config/luish/plugins/cobra.rhai`, change the list of programs at the end, and load it with
 `plugin load cobra`.
 
+## Example: using bash's completions
+
+[bash-completion](https://github.com/scop/bash-completion) completes the arguments of about a thousand commands,
+and many programs install completion files for it. This plugin is a default completer that runs, in bash, the
+function that bash-completion has for the command, and gives luish what it returns. It is a directory with two files:
+
+```{literalinclude} examples/bash-completion/plugin.rhai
+:language: rhai
+```
+
+```{literalinclude} examples/bash-completion/bridge.bash
+:language: bash
+```
+
+Copy the directory `docs/examples/bash-completion` to `~/.config/luish/plugins/` and load it with
+`plugin load bash-completion`. The commands that have completers of their own (such as those of the Cobra plugin)
+keep them. bash-completion is looked for in the usual places; set `BASH_COMPLETION_SCRIPT` to the path of its
+`bash_completion` script if it is elsewhere. Each Tab takes about 50 ms, as bash loads bash-completion again, and
+bash-completion gives no descriptions.
+
 ## The `sh` module
 
 | Function | Description |
 |---|---|
 | `sh::hook(kind, fn)` | Register a hook: `"chpwd"` or `"prompt"` |
-| `sh::completer(command, fn)` | Register a completer for a command's arguments |
+| `sh::completer(command, fn)` | Register a completer for a command's arguments (`-default-` for the others) |
 | `sh::getvar(name)` | The variable's value, or `()` if it is unset |
 | `sh::setvar(name, value)` | Set a shell variable. Throws an error if it is readonly |
 | `sh::export(name)`, `sh::unsetvar(name)` | Export or unset a variable |

@@ -17,7 +17,7 @@ use rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, P
 
 use super::bytes::{to_bytes, to_str};
 use super::{HookKind, Loading};
-use crate::interactive::{Candidate, Completion, Suffix};
+use crate::interactive::{Candidate, Completion, DEFAULT_COMPLETER, Suffix};
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::{signals, sys};
 
@@ -279,15 +279,33 @@ fn capture(sh: &mut Shell, script: &[u8]) -> RhaiResult<rhai::Map> {
     Ok(m)
 }
 
-/// Converts what a completer returned: `()` for the default completion,
-/// or an array of strings and of maps with a `value` and an optional
-/// `desc` and `suffix`.
-fn candidates(r: Dynamic) -> RhaiResult<Option<Vec<Candidate>>> {
+/// Converts what a completer returned for the word `word`: `()` for the
+/// default completion, or an array of strings and of maps with a `value`
+/// and an optional `desc` and `suffix`, or a map with such an array
+/// (`candidates`) and the start of the word they leave alone (`prefix`).
+/// Gives the candidates and the length of the prefix.
+fn candidates(r: Dynamic, word: &[u8]) -> RhaiResult<Option<(usize, Vec<Candidate>)>> {
     if r.is_unit() {
         return Ok(None);
     }
+    let (prefix, r) = match r.try_cast_result::<rhai::Map>() {
+        Ok(mut m) => {
+            let prefix = match m.remove("prefix") {
+                None => Vec::new(),
+                Some(p) => match p.into_immutable_string() {
+                    Ok(p) => to_bytes(&p),
+                    Err(_) => return error("a completer's prefix must be a string"),
+                },
+            };
+            if !word.starts_with(&prefix) {
+                return error("a completer's prefix must begin the word");
+            }
+            (prefix.len(), m.remove("candidates").unwrap_or_default())
+        }
+        Err(r) => (0, r),
+    };
     let Some(items) = r.try_cast::<rhai::Array>() else {
-        return error("a completer must return an array or ()");
+        return error("a completer must return an array, a map or ()");
     };
     let string = |d: &Dynamic, what: &str| match d.clone().into_immutable_string() {
         Ok(s) => Ok(to_bytes(&s)),
@@ -315,7 +333,7 @@ fn candidates(r: Dynamic) -> RhaiResult<Option<Vec<Candidate>>> {
         }
         out.push(c);
     }
-    Ok(Some(out))
+    Ok(Some((prefix, out)))
 }
 
 fn sh_module() -> Module {
@@ -710,14 +728,16 @@ impl Host {
         self.completers.borrow().iter().map(|c| c.0.clone()).collect()
     }
 
-    /// Runs the completer for `words[0]`, if there is one, with the words
-    /// of the command and the index of the one being completed. An error
+    /// Runs the completer for `words[0]`, or else the default completer, if
+    /// there is one, with the words of the command and the index of the one
+    /// being completed. An error
     /// is reported on a line of its own, below the command line. `$?` is
     /// kept.
     pub fn complete(&self, sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Completion, Flow> {
         let cb = {
             let completers = self.completers.borrow();
-            match completers.iter().find(|c| Some(&c.0) == words.first()) {
+            let find = |name: &[u8]| completers.iter().find(|c| c.0 == name);
+            match find(&words[0]).or_else(|| find(DEFAULT_COMPLETER)) {
                 Some(c) => c.1.clone(),
                 None => return Ok(Completion::Default),
             }
@@ -729,8 +749,8 @@ impl Host {
         let r = enter(sh, cb.plugin, || cb.f.call::<Dynamic>(self.engine(), &cb.ast, args));
         DEADLINE.set(deadline);
         sh.last_status = saved;
-        match r?.and_then(candidates) {
-            Ok(Some(c)) => Ok(Completion::Candidates(c)),
+        match r?.and_then(|r| candidates(r, &words[index])) {
+            Ok(Some((prefix, c))) => Ok(Completion::Candidates(prefix, c)),
             Ok(None) => Ok(Completion::Default),
             Err(e) => {
                 sys::write_all(2, b"\n");

@@ -509,7 +509,9 @@ pass**.
   job, as `%vim`) for `fg`, `bg`, `jobs`, `wait` and `kill`, signal names
   after `kill -`, `kill -s` and `trap`'s action, and for `plugin` its
   subcommands, the plugins in the plugin directory and the loaded plugins;
-  a plugin's completer (see Plugins) comes first. The completer
+  a plugin's completer (see Plugins) comes first, and the default
+  completer (`-default-`) comes before filenames for the commands not
+  listed here. The completer
   analyses the line (the word, its kind, the quoting and the words of its
   command, with aliases expanded in command position, and after an alias
   whose value ends with a blank, unless the word is quoted), generates candidates (with optional descriptions, shown
@@ -649,6 +651,13 @@ pass**.
   `quote` (a string, or an array's strings, quoted for the shell), `write`
   (fds 1 and 2). `docs/examples/cobra.rhai`, included in the documentation,
   is a completer for programs built with Cobra (`prog __complete`).
+  `docs/examples/bash-completion/` (a directory plugin) is a default
+  completer that runs bash-completion's function for the command in bash
+  (`bridge.bash`): it splits the words at `=` and `:` as bash does, stubs
+  `compopt`, handles `complete`'s `-F`, `-C`, compgen options and `-o
+  nospace`, `filenames`, `dirnames`, `default` and `bashdefault`, and
+  returns the part of the word before its last `=` or `:` as the prefix.
+  About 50 ms per Tab (bash sources `bash_completion` each time).
 - `fs` module (`plugins/fs.rs`), without forking: `exists`, `is_file`,
   `is_dir`, `is_link`, `kind` (lstat), `is_readable`, `is_writable`,
   `is_executable`, `size`, `mtime`, `newer` and `older` (nanoseconds; a
@@ -666,13 +675,16 @@ pass**.
   staged, unstaged, untracked and conflicted files, ahead and behind.
   Not supported: bare repositories, `GIT_DIR`, `GIT_CEILING_DIRECTORIES`.
 - Completers (`sh::completer(cmd, fn)`, one per command, the last
-  registered wins) are called by the line editor through
+  registered wins; `-default-` for the commands without one whose
+  arguments luish doesn't complete itself) are called by the line editor through
   `ShellHelper::ask`, with the command's words (aliases expanded; the
   word being completed ends at the cursor, and the words after the cursor,
   up to the end of the command, follow it) and the index of the one being
   completed. They return `()` (default completion) or an array
-  of strings and `#{value, desc, suffix}` maps; the shell matches and
-  quotes them. While one runs, `Shell::jobctl` is taken out, so its
+  of strings and `#{value, desc, suffix}` maps, or `#{prefix, candidates}`
+  with such an array, which completes the part of the word after
+  `prefix` (like zsh's `IPREFIX`; it must begin the word); the shell
+  matches and quotes them. While one runs, `Shell::jobctl` is taken out, so its
   commands are not jobs and don't save the editor's raw terminal modes;
   `$?` is kept. It is stopped after 2 s (`on_progress`, checked every
   1024 operations). An error is printed on a new line and the line is
@@ -703,8 +715,10 @@ pass**.
   `prompt_prev`, `capture`, `quote`), unit tests for the byte conversion, `git status`
   parsing and (with a stand-in completer) in `complete.rs`, `builtins/plugin.sh`,
   `builtins/internal_plugin.sh`, and `plugin_builtin` and
-  `plugin_completer` and `cobra_completer` (the example plugin, with a
-  stand-in program) in `tests/interactive.rs`. CI also runs clippy and the tests
+  `plugin_completer`, `cobra_completer` (the example plugin, with a
+  stand-in program) and `bash_completion_bridge` (the example plugin, with
+  completion files of its own; skipped without bash-completion) in
+  `tests/interactive.rs`. CI also runs clippy and the tests
   with `--no-default-features`.
 
 ## Conformance

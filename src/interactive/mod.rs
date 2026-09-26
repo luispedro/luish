@@ -15,7 +15,7 @@ use rustyline::{CompletionType, Config, Editor};
 
 pub use complete::Completion;
 #[cfg(feature = "plugins")]
-pub use complete::{Candidate, Suffix};
+pub use complete::{Candidate, DEFAULT_COMPLETER, Suffix};
 use complete::{Names, ShellHelper};
 use history::{Save, ShellHistory};
 

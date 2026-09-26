@@ -675,6 +675,68 @@ esac
     assert_eq!(sh.exit_status(), 0);
 }
 
+/// The bash-completion plugin of the documentation, with completion files
+/// of its own (in `$HOME/.local/share/bash-completion/completions`, where
+/// bash-completion looks too). Skipped without bash-completion.
+#[cfg(feature = "plugins")]
+#[test]
+fn bash_completion_bridge() {
+    if !std::path::Path::new("/usr/share/bash-completion/bash_completion").exists() {
+        eprintln!("skipped: no bash-completion");
+        return;
+    }
+    let mut sh = Pty::spawn_term("bashcomp", "vt100");
+    let examples = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/examples/bash-completion");
+    std::fs::create_dir(sh.path("bash-completion")).unwrap();
+    for f in ["plugin.rhai", "bridge.bash"] {
+        std::fs::copy(format!("{examples}/{f}"), sh.path("bash-completion").join(f)).unwrap();
+    }
+    let completions = sh.path(".local/share/bash-completion/completions");
+    std::fs::create_dir_all(&completions).unwrap();
+    std::fs::write(
+        completions.join("frob"),
+        r#"_frob() {
+    local cur prev words cword
+    _init_completion -n = || return
+    case $cur in
+    --mode=*) COMPREPLY=($(compgen -W 'fast slow' -- "${cur#*=}")) ;;
+    -*) COMPREPLY=($(compgen -W '--mode= --verbose' -- "$cur")); [[ $COMPREPLY == *= ]] && compopt -o nospace ;;
+    *) COMPREPLY=($(compgen -W 'serve status' -- "$cur")) ;;
+    esac
+}
+complete -F _frob frob
+"#,
+    )
+    .unwrap();
+    std::fs::write(
+        completions.join("quiet"),
+        "_quiet() { COMPREPLY=(); }\ncomplete -o default -F _quiet quiet\n",
+    )
+    .unwrap();
+    std::fs::write(sh.path("notes.txt"), "").unwrap();
+    sh.expect("$ ");
+    sh.send("plugin load ./bash-completion/; frob() { echo \"frob:$*\"; }; quiet() { echo \"quiet:$*\"; }; echo \"loaded $?\"\n");
+    sh.expect("loaded 0\n");
+    sh.expect("$ ");
+    sh.send("frob se\t\n");
+    sh.expect("frob:serve\n");
+    sh.expect("$ ");
+    // No space after `--mode=`, then what follows the `=`.
+    sh.send("frob --m\tf\t\n");
+    sh.expect("frob:--mode=fast\n");
+    sh.expect("$ ");
+    // Filenames with `-o default` when the function gives nothing, and for
+    // commands that bash-completion doesn't know.
+    sh.send("quiet not\t\n");
+    sh.expect("quiet:notes.txt\n");
+    sh.expect("$ ");
+    sh.send("echo not\t\n");
+    sh.expect("notes.txt\n");
+    sh.expect("$ ");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
 #[test]
 fn fc_history() {
     let mut sh = Pty::spawn("fc");
