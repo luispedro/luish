@@ -631,7 +631,9 @@ pass**.
   `plugin.rhai` doesn't create the Rhai engine (the engine is created with
   the first Rhai code). `plugin unload` can't undo `rc.lsh`. Tests:
   `plugins/directory.sh`, `plugins/startup_cache.sh`.
-  `plugin list` prints the names, `plugin unload NAME...` removes a
+  `plugin list-loaded` prints the names, `plugin list-available` those of
+  the plugins in the plugin directory (`.rhai` files and directories, not
+  hidden; test: `plugins/directory.sh`), `plugin unload NAME...` removes a
   plugin's hooks. Errors: status 1 (130 if interrupted); usage errors: 2.
 - `savestate` prints `__luish_internal plugin restore NAME PATH` (absolute)
   for each loaded plugin, after aliases and before options, so the startup

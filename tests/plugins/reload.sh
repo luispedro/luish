@@ -6,13 +6,13 @@ __luish_internal plugin load ./p.rhai ./other.rhai
 cd d; cd ..
 echo 'sh::hook("chpwd", |a, b| print("v2"));' > p.rhai
 __luish_internal plugin load ./p.rhai
-__luish_internal plugin list
+__luish_internal plugin list-loaded
 cd d; cd ..
 __luish_internal plugin unload p
 echo "unload: $?"
-__luish_internal plugin list
+__luish_internal plugin list-loaded
 cd d; cd ..
 __luish_internal plugin unload other
-__luish_internal plugin list
+__luish_internal plugin list-loaded
 cd d
 echo end

@@ -93,15 +93,15 @@ pub fn complete(sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Compl
     }
 }
 
-const USAGE: &str = "usage: plugin load NAME|PATH..., plugin list, plugin unload NAME...";
+const USAGE: &str = "usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available, plugin unload NAME...";
 
 /// The `plugin` built-in (interactive shells only, like `help`).
 pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     run(sh, &argv[0], &argv[1..])
 }
 
-/// `plugin load NAME|PATH...`, `plugin list`, and `plugin unload NAME...`,
-/// also available as `__luish_internal plugin`. `name` is the command, for
+/// `plugin load NAME|PATH...`, `plugin list-loaded`, `plugin list-available`
+/// and `plugin unload NAME...`, also available as `__luish_internal plugin`. `name` is the command, for
 /// error messages.
 ///
 /// `plugin restore NAME PATH`, which `savestate` prints, loads a plugin
@@ -125,9 +125,13 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
             }
             load(sh, name, &args[1], Some(args[0].clone()))
         }
-        Some(b"list") if args.is_empty() => {
+        Some(sub @ (b"list-loaded" | b"list-available")) if args.is_empty() => {
+            let names = match sub {
+                b"list-loaded" => loaded_names(sh),
+                _ => plugin_dir(sh).map_or_else(Vec::new, |dir| available_names(&dir)),
+            };
             let mut out = Vec::new();
-            for name in loaded_names(sh) {
+            for name in names {
                 out.extend_from_slice(&name);
                 out.push(b'\n');
             }
@@ -160,6 +164,25 @@ pub fn plugin_dir(sh: &Shell) -> Option<Vec<u8>> {
     let mut p = crate::startcache::xdg_dir(sh, b"XDG_CONFIG_HOME", b"/.config")?;
     p.extend_from_slice(b"/luish/plugins");
     Some(p)
+}
+
+/// The names of the plugins in `dir` (the plugin directory), sorted: its
+/// `.rhai` files without the suffix, and its directories.
+pub fn available_names(dir: &[u8]) -> Vec<Vec<u8>> {
+    let mut names: Vec<_> = crate::sys::read_dir(dir)
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|n| match n.strip_suffix(b".rhai") {
+            Some(base) => Some(base.to_vec()),
+            None => crate::sys::stat(&[dir, b"/", &n].concat())
+                .is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR)
+                .then_some(n),
+        })
+        .filter(|n| !n.is_empty() && !n.starts_with(b"."))
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    names
 }
 
 #[cfg(feature = "plugins")]

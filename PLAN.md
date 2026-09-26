@@ -1091,7 +1091,7 @@ plugin (so a repository holding just `z.rhai` works under any name).
 #### `plugins.toml`
 
 `$XDG_CONFIG_HOME/luish/plugins.toml` is the list the user edits. Each key
-in `[plugins]` is the name of a plugin (the name `plugin list` shows), and
+in `[plugins]` is the name of a plugin (the name `plugin list-loaded` shows), and
 plugins load in the order of the file. TOML leaves the order of keys
 unspecified, but luish's parser keeps it; the order matters for hooks and
 for which `rc.lsh` has the last word.
@@ -1182,7 +1182,7 @@ The `plugin` built-in gets these subcommands. Only `sync`, `update` and
 | `plugin update [NAME...]` | Fetches the newest commit of the branch, tag or `HEAD` of each entry (or of the named ones), rewrites the lock, and prints each change as `NAME OLD..NEW` followed by the commits' subject lines, so that the user sees what will run |
 | `plugin add SPEC [NAME]` | Adds an entry to `plugins.toml`, syncs it, and loads it in the current shell. `SPEC` is `OWNER/REPO`, a git URL, or a local name or path; `--branch`, `--tag`, `--rev`, `--path` and `--plugin` set those fields |
 | `plugin remove NAME...` | Removes entries from `plugins.toml` and the lock, and unloads them |
-| `plugin list [-l]` | As now; `-l` adds each plugin's source and commit, and lists the entries of `plugins.toml` that aren't installed |
+| `plugin list-loaded [-l]`, `plugin list-available` | As now; `-l` adds each plugin's source and commit, and lists the entries of `plugins.toml` that aren't installed |
 | `plugin gc` | Removes checkouts and repositories from the cache that the lock doesn't use |
 | `plugin load`, `plugin unload` | As now, and they accept directory plugins |
 

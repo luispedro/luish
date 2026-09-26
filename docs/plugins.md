@@ -12,7 +12,8 @@ module), and ask about git repositories (the `vcs` module).
 
 ```sh
 plugin load NAME|PATH...   # load plugins (loading one again reloads it)
-plugin list                # print the names of the loaded plugins
+plugin list-loaded         # print the names of the loaded plugins
+plugin list-available      # print the names of the plugins in the plugin directory
 plugin unload NAME...      # remove plugins and their hooks
 ```
 

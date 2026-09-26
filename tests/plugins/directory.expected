@@ -1,3 +1,7 @@
+--- the plugins in the plugin directory
+both
+greet
+shonly
 rhai: hello from util greet
 rc: set by plugin.rhai, name greet
 both: the file wins

@@ -13,7 +13,7 @@ echo "rc.lsh runs"
 f() { echo "f v1"; }
 X
 cd
-show='__luish_internal plugin list; f; cd d'
+show='__luish_internal plugin list-loaded; f; cd d'
 echo '--- builds the cache'
 $SH -i -c "$show" 2>/dev/null
 echo '--- uses it'

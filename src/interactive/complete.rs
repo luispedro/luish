@@ -1013,7 +1013,15 @@ impl ShellHelper {
                         _ => files(Files::All, &mut out),
                     },
                     Some(Args::Plugin) => match args.first().map(|a| &a[..]) {
-                        None => words(&[b"list".to_vec(), b"load".to_vec(), b"unload".to_vec()], &mut out),
+                        None => words(
+                            &[
+                                b"list-available".to_vec(),
+                                b"list-loaded".to_vec(),
+                                b"load".to_vec(),
+                                b"unload".to_vec(),
+                            ],
+                            &mut out,
+                        ),
                         Some(b"load") if w.text.contains(&b'/') => files(Files::All, &mut out),
                         Some(b"load") => words(&self.plugin_files(), &mut out),
                         Some(b"unload") => words(&self.names.plugins, &mut out),
@@ -1073,22 +1081,7 @@ impl ShellHelper {
     /// The names of the plugins in the plugin directory: `.rhai` files and
     /// directories.
     fn plugin_files(&self) -> Vec<Vec<u8>> {
-        let Some(dir) = &self.names.plugin_dir else {
-            return Vec::new();
-        };
-        let mut names: Vec<_> = read_dir(dir)
-            .into_iter()
-            .filter_map(|n| match n.strip_suffix(b".rhai") {
-                Some(base) => Some(base.to_vec()),
-                None => sys::stat(&[dir.as_slice(), b"/", &n].concat())
-                    .is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR)
-                    .then_some(n),
-            })
-            .filter(|n| !n.is_empty() && !n.starts_with(b"."))
-            .collect();
-        names.sort_unstable();
-        names.dedup();
-        names
+        (self.names.plugin_dir.as_deref()).map_or_else(Vec::new, crate::plugins::available_names)
     }
 
     /// The directories that `text` (a path, unquoted) could complete to as

@@ -27,7 +27,7 @@ P
 readonly RO=1
 __luish_internal plugin load ./hooks.rhai
 echo "hooks: $?"
-__luish_internal plugin list
+__luish_internal plugin list-loaded
 cd d
 echo "cd: $? $RO"
 __luish_internal plugin

@@ -16,7 +16,7 @@ P
 main() {
 __luish_internal plugin load dirs
 echo "load: $?"
-__luish_internal plugin list
+__luish_internal plugin list-loaded
 top=$PWD
 cd d1
 echo "cd: $? $LAST_TO"

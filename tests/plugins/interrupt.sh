@@ -8,4 +8,4 @@ loop { n += 1; }
 P
 __luish_internal plugin load ./loop.rhai
 echo "status $?"
-__luish_internal plugin list
+__luish_internal plugin list-loaded
