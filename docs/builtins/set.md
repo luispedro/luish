@@ -57,3 +57,6 @@ Arguments after the options replace the positional parameters (`$1`, `$2`,
 
 `-E` emacs, `-V` vi
 : Line editing mode of an interactive shell.
+
+luish's own options, beyond these, are set with `setopt` and `unsetopt`,
+which also take the names above.

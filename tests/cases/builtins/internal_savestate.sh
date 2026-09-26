@@ -21,12 +21,13 @@ alias greet='greet loudly'
 trap 'echo bye' EXIT
 dirs /x "/it's here"
 set -u -o noclobber
+setopt prompt_percent
 __luish_internal savestate > ../state
 $SH -c '. ../state; __luish_internal savestate > ../state2'
 cmp ../state ../state2 && echo same
 $SH -c 'alias greet="greet loudly"; . ../state
 f; f x; g a; g "q r"; k; greet; printf "[%s]\n" "$x" "$r" "$y" "${e-unset}"
-alias; umask; case $PWD in */d) echo in d;; esac; dirs -p | sed 1d; echo $-; env | grep "^e="'
+alias; umask; case $PWD in */d) echo in d;; esac; dirs -p | sed 1d; echo $-; setopt; env | grep "^e="'
 echo status $?
 sed -n '/^k()/,/^}/p' ../state
 __luish_internal 2>&1; echo "status $?"

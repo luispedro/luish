@@ -248,6 +248,38 @@ pub fn set(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     Ok(0)
 }
 
+/// `setopt` and `unsetopt` (not POSIX; as in zsh): set or unset options by
+/// name, luish's own ones as well as dash's. Without arguments, list the
+/// options that are on (`setopt`) or off (`unsetopt`).
+pub fn setopt(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    let on = argv[0] == b"setopt";
+    if argv.len() == 1 {
+        let mut names: Vec<&str> = Options::all_names()
+            .filter(|&(o, _)| sh.options.get(o) == on)
+            .map(|o| o.1)
+            .collect();
+        names.sort_unstable();
+        let out: String = names.iter().map(|n| format!("{n}\n")).collect();
+        return Ok(sh.out_status(out.as_bytes()));
+    }
+    let mut status = 0;
+    for a in &argv[1..] {
+        match Options::by_zsh_name(a) {
+            Some((Opt::Interactive | Opt::Stdin, _)) => {
+                sh.berr(&argv[0], format!("can't change option: {}", String::from_utf8_lossy(a)));
+                status = 1;
+            }
+            Some((o, sense)) => sh.options.set(o, on == sense),
+            None => {
+                sh.berr(&argv[0], format!("no such option: {}", String::from_utf8_lossy(a)));
+                status = 1;
+            }
+        }
+    }
+    sh.set_jobctl(sh.opt(Opt::Monitor));
+    Ok(status)
+}
+
 pub fn local(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     if sh.locals.is_empty() {
         sh.berr(&argv[0], "not in a function");

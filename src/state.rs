@@ -10,7 +10,7 @@
 //! doesn't remove what wasn't (such as variables set since).
 
 use crate::builtins::single_quote;
-use crate::options::{OPTIONS, Opt};
+use crate::options::{EXTENDED, OPTIONS, Opt};
 use crate::shell::Shell;
 use crate::{signals, sys, unparse};
 
@@ -165,6 +165,10 @@ impl Shell {
                     format!("set {sign}o {name}\n").into_bytes(),
                 );
             }
+        }
+        for (o, name) in EXTENDED {
+            let cmd = if self.options.get(*o) { "setopt" } else { "unsetopt" };
+            add(Kind::Option, name.as_bytes(), format!("{cmd} {name}\n").into_bytes());
         }
         out
     }

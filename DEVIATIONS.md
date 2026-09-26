@@ -16,6 +16,7 @@ it), or one with a `.expected` file.
 |---|---|---|---|
 | `source` | Not a built-in (`not found`, status 127) | As in zsh: `.`, but a name without `/` is looked for in the current directory before `PATH`, and further arguments are the positional parameters while the file runs. Special, as in zsh's sh emulation. A file that can't be read is an error with status 2, as for `.` (zsh uses 1) | `builtins/source.sh` (zsh), `builtins/source_missing.sh` |
 | `pushd`, `popd`, `dirs` | Not built-ins (`not found`, status 127) | As in zsh with its default options: `+n` and `-n` name entries of the stack (zsh's sh emulation sets `POSIX_CD`, which makes them directory names). `popd` with an argument other than `+n` or `-n` is an error with status 1 (zsh usually does nothing, with status 0) | `builtins/dirstack.sh` (zsh `-o noposixcd`), `builtins/dirstack_interactive.sh` (zsh), `builtins/popd_dir.sh` |
+| `setopt`, `unsetopt` | Not built-ins (`not found`, status 127) | As in zsh: set options by name (case and `_` don't matter, a `no` prefix inverts), dash's and luish's own (such as `promptpercent`). Without arguments they list the options that are on or off; zsh lists those that differ from their defaults | `options/setopt.sh` (zsh), `options/setopt_list.sh` |
 | Last command of `sh -c` | Debian's dash forks it (a Debian patch; upstream dash execs it) | Replaces the shell with it unless a trap is set, as zsh, bash and upstream dash do | `exec/c_exec_last.sh` (zsh) |
 
 ## Following POSIX where dash doesn't

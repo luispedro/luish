@@ -9,7 +9,9 @@ luish -s [args...]                # read commands from stdin
 luish                             # interactive when stdin is a terminal
 ```
 
-Options can be given as letters (`-e`, `-x`, ...) or with `-o name` / `+o name`.
+Options can be given as letters (`-e`, `-x`, ...) or with `-o name` / `+o name`. In the shell, `set` takes the
+same options, and `setopt` and `unsetopt` set them by name as in zsh, together with luish's own options (such as
+`promptpercent`), which `set` doesn't show so that it stays as in dash.
 
 ## Getting help
 

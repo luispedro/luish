@@ -51,6 +51,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"readonly", page!("readonly")),
     (b"return", page!("return")),
     (b"set", page!("set")),
+    (b"setopt", page!("setopt")),
     (b"shift", page!("shift")),
     (b"source", page!("dot")),
     (b"test", page!("test")),
@@ -62,6 +63,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"umask", page!("umask")),
     (b"unalias", page!("unalias")),
     (b"unset", page!("unset")),
+    (b"unsetopt", page!("setopt")),
     (b"wait", page!("wait")),
 ];
 

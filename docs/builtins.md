@@ -127,6 +127,10 @@ and `help NAME` shows the same text as here in the terminal.
 :heading-offset: 1
 ```
 
+```{include} builtins/setopt.md
+:heading-offset: 1
+```
+
 ```{include} builtins/shift.md
 :heading-offset: 1
 ```

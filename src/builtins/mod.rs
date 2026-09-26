@@ -67,12 +67,15 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"pushd", dirstack::pushd, false),
     (b"pwd", cd::pwd, false),
     (b"read", read::read, false),
+    // Not POSIX: as in zsh.
+    (b"setopt", vars::setopt, false),
     (b"test", test::test, false),
     (b"true", colon, false),
     (b"type", misc::type_, false),
     (b"ulimit", misc::ulimit, false),
     (b"umask", misc::umask, false),
     (b"unalias", misc::unalias, false),
+    (b"unsetopt", vars::setopt, false),
     (b"wait", jobs::wait, false),
 ];
 

@@ -1,0 +1,28 @@
+noglob
+nounset
+promptpercent
+---
+allexport
+emacs
+errexit
+hashall
+ignoreeof
+interactive
+monitor
+noclobber
+noexec
+nolog
+notify
+privileged
+stdin
+verbose
+vi
+xtrace
+---
+noglob
+nounset
+setopt_list.sh: 11: setopt: no such option: bogus
+status 1
+0
+setopt_list.sh: 14: set: Illegal option -o promptpercent
+status 2

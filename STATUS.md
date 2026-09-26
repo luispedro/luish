@@ -35,7 +35,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **108 differential cases, 10 plugin cases, 45 unit tests and 11 pty tests
+Current state: **120 differential cases, 10 plugin cases, 47 unit tests and 11 pty tests
 pass**.
 
 ## Environment
@@ -259,8 +259,9 @@ pass**.
 - Regular: `[` `alias` `bg` `cd` `chdir` (another name for `cd`, as in
   dash) `command` `dirs` (not in POSIX or dash; as in zsh, like `popd` and
   `pushd`) `echo` `false` `fc` `fg` `getopts` `hash` `jobs` `kill` `popd`
-  `printf` `pushd` `pwd` `read` `test` `true` `type` `ulimit` `umask`
-  `unalias` `wait`, and luish's own `__luish_internal`,
+  `printf` `pushd` `pwd` `read` `setopt` and `unsetopt` (as in zsh) `test`
+  `true` `type` `ulimit` `umask` `unalias` `wait`, and luish's own
+  `__luish_internal`,
   and, only in interactive shells, `help` and `plugin` (see Plugins).
 - `__luish_internal` (`src/builtins/internal.rs`) holds luish's own
   commands as subcommands, so that they don't take names from the command
@@ -380,6 +381,17 @@ pass**.
   does.
 - `set -o` / `set +o` output matches dash, except that the last option is
   `hashall` rather than dash's `debug` (see DEVIATIONS.md).
+- luish's own options (`EXTENDED` in `options.rs`, all off by default:
+  `promptpercent`, which has no effect yet) have no letter and are not in
+  `set -o` or `$-`, so `set` stays as in dash. They are set with `setopt`
+  and `unsetopt` (not POSIX; as in zsh), which also set dash's options.
+  Names are as in zsh: case and `_` don't matter, and a `no` prefix is
+  added or removed to invert an option (`unsetopt glob` is `set -f`).
+  Without arguments they list the options that are on or off, sorted. An
+  unknown option, or `interactive` and `stdin`, is an error (status 1);
+  the other names are still set. `savestate` restores luish's own options
+  with `setopt` and `unsetopt`. Tests: `options/setopt.sh` (compared with
+  zsh), `options/setopt_list.sh`, `builtins/internal_savestate.sh`.
 - Tests: `options/*`.
 
 ### Interactive mode (`src/interactive/`)
