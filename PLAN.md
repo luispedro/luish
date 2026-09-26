@@ -51,6 +51,11 @@ contributions for them will be rejected.
 
 - Plugins must not change parsing or expansion semantics. A POSIX script must
   behave the same whichever plugins are loaded.
+- "Costs nothing when unused" is strict for scripts and `-c`: startup time,
+  execution speed and memory. Interactive shells are judged on responsiveness
+  and functionality instead. They may spend a reasonable amount of memory
+  (a few bytes per variable, function or history entry) to support
+  interactive features, as long as the prompt and line editor stay fast.
 
 ---
 
@@ -744,6 +749,43 @@ from Stage 1, so that Stage 1 doesn't make them harder.
 - **Scripting**: error messages with file, line and function stack (using the
   call frames from Phase 7), `pipefail`, a predictable strict mode, and a
   debugger or step-trace mode.
+- **Variable provenance**: a built-in (name to be decided, e.g. `whereset`)
+  that shows where each variable was set, like a more informative `env`:
+
+  ```
+  PATH    ~/.profile:12            prepended /home/lp/bin
+          ~/.zshrc:88 → conda activate → conda.sh:412   prepended /opt/conda/bin
+          inherited (sshd-session, pid 1234)
+  EDITOR  ~/.profile:3
+  LANG    inherited (systemd --user)
+  ```
+
+  - Each `Var` records an origin: inherited from the environment, set by the
+    shell itself (`PWD`, `PPID`, `IFS` defaults), set by a built-in (`cd`,
+    `read`, `getopts`), or set at a file and line (file names interned, so
+    the origin is a few bytes). For assignments inside a function, the origin
+    also records the call stack (from the Phase 7 frames), since
+    `conda.sh:412` alone doesn't say who called `conda activate`. Text run by
+    `eval` is recorded as "eval at FILE:LINE".
+  - Interactive shells record the origin always, and keep the full history of
+    changes for each variable, not just the last one. For list-like variables
+    (`PATH`, `MANPATH`, ...), each step shows which components it added or
+    removed. Scripts and `-c` record nothing unless an option such as
+    `set -o trackvars` is set, and the check must not slow down assignment
+    in loops.
+  - Inherited variables can only be traced heuristically. Walk up the process
+    tree (`/proc/PID/stat`) and report the oldest ancestor whose
+    `/proc/PID/environ` has the same value. This has limits:
+    `/proc/PID/environ` is the environment at exec time, so it gives the
+    process that introduced a variable, not the line. Exited ancestors break
+    the chain. Other users' processes (e.g. root's `sshd`) can't be read, so
+    PAM, `/etc/environment` and `systemd --user` can't be told apart. A luish
+    started by another luish could receive exact origins from its parent
+    through an opt-in environment variable.
+  - The Stage 1 requirement is that all assignments go through one function
+    (`Vars::set` or `Shell::set_var`), and that the shell tracks the current
+    file name as well as `lineno`: for `.`, the main script, `$ENV` and the
+    rc files. File, line and stack error messages need the same thing.
 - **Interactive**: richer completion, and history shared across sessions with
   metadata (working directory, exit status, duration). `history.rs` should own
   the storage format so that it can move from a plain `$HISTFILE` to a
@@ -763,7 +805,8 @@ With a warm cache, a new shell should start almost instantly.
    produce: variables and exports, functions, aliases, options, and possibly
    traps. On a cache hit, restore that snapshot instead of running the
    scripts. This changes semantics, so it must be explicit. Open questions:
-   - What invalidates the snapshot? Which files were sourced is easy to track.
+   - What invalidates the snapshot? Which files were sourced is easy to track,
+     and variable provenance (§9.1) records which file set each variable.
      The environment the scripts read, and the output of commands they ran
      (for example `$(brew --prefix)`), are not.
    - How is caching opted into: all at once, or per block with declared
