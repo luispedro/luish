@@ -47,6 +47,7 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"alias", misc::alias, false),
     (b"bg", jobs::fg, false),
     (b"cd", cd::cd, false),
+    (b"chdir", cd::cd, false),
     (b"command", misc::command, false),
     (b"echo", echo::echo, false),
     (b"false", false_, false),
@@ -82,6 +83,31 @@ pub fn lookup(name: &[u8]) -> Option<(BuiltinFn, bool)> {
 /// the line editor).
 pub fn names() -> impl Iterator<Item = &'static [u8]> {
     TABLE.iter().map(|b| b.0).chain(INTERACTIVE.iter().map(|b| b.0))
+}
+
+/// Parses the options of a built-in (dash's `nextopt`): `allowed` are the
+/// option letters. Returns the option letters given and the operands, or
+/// the exit status after an invalid option.
+pub fn options<'a>(sh: &Shell, argv: &'a [Vec<u8>], allowed: &[u8]) -> Result<(Vec<u8>, &'a [Vec<u8>]), i32> {
+    let mut opts = Vec::new();
+    let mut i = 1;
+    while let Some(a) = argv.get(i) {
+        if a.len() < 2 || a[0] != b'-' {
+            break;
+        }
+        i += 1;
+        if a == b"--" {
+            break;
+        }
+        for &c in &a[1..] {
+            if !allowed.contains(&c) {
+                sh.berr(&argv[0], format!("Illegal option -{}", c as char));
+                return Err(2);
+            }
+            opts.push(c);
+        }
+    }
+    Ok((opts, &argv[i..]))
 }
 
 impl Shell {

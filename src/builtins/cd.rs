@@ -27,23 +27,18 @@ pub fn canonicalize(path: &[u8]) -> Vec<u8> {
     out
 }
 
+/// `cd` (also `chdir`, as in dash).
 pub fn cd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    let mut physical = false;
-    let mut i = 1;
-    while let Some(a) = argv.get(i) {
-        match a.as_slice() {
-            b"-L" => physical = false,
-            b"-P" => physical = true,
-            b"--" => {
-                i += 1;
-                break;
-            }
-            _ => break,
-        }
-        i += 1;
-    }
+    let (opts, args) = match super::options(sh, argv, b"LPe") {
+        Ok(r) => r,
+        Err(s) => return Ok(s),
+    };
+    // The last of `-L` and `-P` wins. `-e` (POSIX 2024) makes `cd -P` fail
+    // with status 1 if the new directory's name can't be found.
+    let physical = opts.iter().rfind(|&&c| c != b'e') == Some(&b'P');
+    let check = opts.contains(&b'e');
     let mut print = false;
-    let dir = match argv.get(i) {
+    let dir = match args.first() {
         None => match sh.get_var(b"HOME") {
             Some(h) if !h.is_empty() => h,
             _ => return Ok(0),
@@ -80,21 +75,31 @@ pub fn cd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     candidates.push((dir.clone(), false));
     let old = sh.curdir.clone();
     for (cand, from_cdpath) in candidates {
-        let target = if physical {
-            cand.clone()
-        } else if cand.first() == Some(&b'/') {
-            canonicalize(&cand)
-        } else {
-            let mut t = old.clone().unwrap_or_else(|| b"/".to_vec());
-            t.push(b'/');
-            t.extend_from_slice(&cand);
-            canonicalize(&t)
+        let logical = |cand: &[u8]| {
+            if cand.first() == Some(&b'/') {
+                canonicalize(cand)
+            } else {
+                let mut t = old.clone().unwrap_or_else(|| b"/".to_vec());
+                t.push(b'/');
+                t.extend_from_slice(cand);
+                canonicalize(&t)
+            }
         };
+        let target = if physical { cand.clone() } else { logical(&cand) };
         if sys::chdir(&target).is_err() {
             continue;
         }
+        let mut status = 0;
         let new = if physical {
-            sys::getcwd().unwrap_or(target)
+            // If the directory's name can't be found (it was removed),
+            // `PWD` is the logical path.
+            sys::getcwd().unwrap_or_else(|| {
+                if check {
+                    sh.berr(&argv[0], "getcwd() failed");
+                    status = 1;
+                }
+                logical(&cand)
+            })
         } else {
             target
         };
@@ -114,7 +119,7 @@ pub fn cd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             sh.out(&line);
         }
         crate::plugins::chpwd(sh, &old, &new)?;
-        return Ok(0);
+        return Ok(status);
     }
     sh.berr(&argv[0], format!("can't cd to {}", String::from_utf8_lossy(&dir)));
     Ok(2)

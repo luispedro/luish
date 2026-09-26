@@ -253,7 +253,8 @@ pass**.
 - Special: `:` `.` `break` `continue` `eval` `exec` `exit` `export`
   `local` (special in dash) `readonly` `return` `set` `shift` `times`
   `trap` `unset`.
-- Regular: `[` `alias` `bg` `cd` `command` `echo` `false` `fc` `fg` `getopts`
+- Regular: `[` `alias` `bg` `cd` `chdir` (another name for `cd`, as in
+  dash) `command` `echo` `false` `fc` `fg` `getopts`
   `hash` `jobs` `kill` `printf` `pwd` `read` `test` `true` `type`
   `ulimit` `umask` `unalias` `wait`, and luish's own `__luish_internal`,
   and, only in interactive shells, `help` and `plugin` (see Plugins).
@@ -321,6 +322,12 @@ pass**.
   `curdir`): `pwd` works after the directory is removed, `cd -` without
   `OLDPWD` is `cd .`, and `OLDPWD` is exported. At startup a valid `$PWD`
   is used without `getcwd`. Test: `builtins/cd_logical.sh`.
+- `cd` options are parsed like dash's (combined letters, the last of `-L`
+  and `-P` wins, `Illegal option` with status 2). `cd -e` (POSIX 2024,
+  not in dash) makes `cd -P` return 1 when the new directory's name can't
+  be found (`getcwd` fails); without `-e` it returns 0, and either way
+  `PWD` is then the logical path. Tests: `builtins/chdir.sh`,
+  `builtins/cd_e.sh`.
 - `umask` and `ulimit` are ports of dash's (symbolic modes; `-H`/`-S`, `-a`
   format). Tests: `builtins/umask_modes.sh`, `builtins/ulimit_dash.sh`.
 - `unset` of a bad name is an error; `set -` turns off `-x` and `-v` without

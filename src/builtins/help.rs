@@ -24,6 +24,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"bg", page!("bg")),
     (b"break", page!("break")),
     (b"cd", page!("cd")),
+    (b"chdir", page!("cd")),
     (b"command", page!("command")),
     (b"continue", page!("continue")),
     (b"echo", page!("echo")),

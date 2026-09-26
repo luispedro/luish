@@ -1,33 +1,10 @@
 //! `jobs`, `fg`, `bg`, `wait`, and `kill`.
 
+use super::options;
 use crate::jobs::{JobState, ShowMode, Waited};
 use crate::shell::{ExecResult, Shell};
 use crate::signals;
 use crate::sys;
-
-/// Parses the options of `jobs`, `fg`, `bg` and `wait` (dash's `nextopt`).
-/// Returns the option letters and the operands.
-fn options<'a>(sh: &Shell, argv: &'a [Vec<u8>], allowed: &[u8]) -> Result<(Vec<u8>, &'a [Vec<u8>]), i32> {
-    let mut opts = Vec::new();
-    let mut i = 1;
-    while let Some(a) = argv.get(i) {
-        if a.len() < 2 || a[0] != b'-' {
-            break;
-        }
-        i += 1;
-        if a == b"--" {
-            break;
-        }
-        for &c in &a[1..] {
-            if !allowed.contains(&c) {
-                sh.berr(&argv[0], format!("Illegal option -{}", c as char));
-                return Err(2);
-            }
-            opts.push(c);
-        }
-    }
-    Ok((opts, &argv[i..]))
-}
 
 pub fn jobs(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let (opts, args) = match options(sh, argv, b"lp") {
