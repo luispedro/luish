@@ -14,16 +14,20 @@
 //! 4. Each match becomes a replacement for the line: the text already typed
 //!    is kept, and what is added is quoted for the quoting at the cursor.
 //!
-//! How the matches are shown and chosen is left to rustyline.
+//! Tab then completes as much as the matches have in common, or else opens
+//! the menu (`menu.rs`) to choose among them. rustyline is only ever given
+//! one candidate, which it puts in the line.
 
 use std::cell::RefCell;
 use std::os::unix::ffi::OsStrExt;
+use std::sync::{Arc, Mutex};
 
 use rustyline::completion::{Completer, Pair};
 use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
 use rustyline::{Context, Helper};
 
+use super::menu::{self, Item, Menu};
 use crate::path::{DirStamp, dir_stamps};
 use crate::sys;
 
@@ -56,6 +60,9 @@ pub struct ShellHelper {
     pub names: Names,
     pub highlight: super::highlight::State,
     pub ask: Option<Ask>,
+    /// The prompt, as the line editor measures it (for the menu's height).
+    pub prompt: String,
+    pub menu: Arc<Mutex<Menu>>,
     path_cache: RefCell<PathCache>,
 }
 
@@ -75,10 +82,10 @@ pub struct Candidate {
     /// The completed text, unquoted. It replaces the part of the word being
     /// completed, so it starts with the text typed if it is a match.
     pub value: Vec<u8>,
-    /// What the list of matches shows, if not `value`: a file's name
-    /// without its directory.
+    /// What the menu shows, if not `value`: a file's name without its
+    /// directory.
     pub display: Option<Vec<u8>>,
-    /// Shown after the candidate in the list.
+    /// Shown after the candidate in the menu.
     pub desc: Option<Vec<u8>>,
     /// What follows the candidate when it is the only match.
     pub suffix: Suffix,
@@ -716,30 +723,46 @@ impl Target<'_> {
     }
 }
 
-/// The candidates as rustyline's pairs. A description follows its
-/// candidate, aligned with the others.
-fn pairs(cands: &[Candidate], t: &Target) -> Vec<Pair> {
-    let show = |c: &Candidate| String::from_utf8_lossy(c.display.as_ref().unwrap_or(&c.value)).into_owned();
-    let width = cands
-        .iter()
-        .filter(|c| c.desc.is_some())
-        .map(|c| show(c).chars().count())
-        .max()
-        .unwrap_or(0);
-    let mut out = Vec::new();
-    for c in cands {
-        let Ok(replacement) = String::from_utf8(t.replacement(c)) else {
-            continue;
-        };
-        let mut display = show(c);
-        if let Some(d) = &c.desc {
-            display = format!("{display:width$}  -- {}", String::from_utf8_lossy(d));
-        }
-        out.push(Pair { display, replacement });
-    }
+/// The candidates as the menu's items, sorted and without duplicates.
+fn items(cands: &[Candidate], t: &Target) -> Vec<Item> {
+    let mut out: Vec<Item> = (cands.iter())
+        .filter_map(|c| {
+            Some(Item {
+                display: printable(c.display.as_ref().unwrap_or(&c.value)),
+                desc: c.desc.as_deref().map(printable),
+                replacement: String::from_utf8(t.replacement(c)).ok()?,
+            })
+        })
+        .collect();
     out.sort_unstable_by(|a, b| a.replacement.cmp(&b.replacement));
     out.dedup_by(|a, b| a.replacement == b.replacement);
     out
+}
+
+/// `s` as text to show, with control characters as `?`.
+fn printable(s: &[u8]) -> String {
+    (String::from_utf8_lossy(s).chars())
+        .map(|c| if c.is_control() { '?' } else { c })
+        .collect()
+}
+
+/// The longest common prefix of the items' replacements.
+fn common_prefix(items: &[Item]) -> &str {
+    let first = &items[0].replacement;
+    let mut n = (items[1..].iter())
+        .map(|i| {
+            first
+                .bytes()
+                .zip(i.replacement.bytes())
+                .take_while(|(a, b)| a == b)
+                .count()
+        })
+        .min()
+        .unwrap_or(first.len());
+    while !first.is_char_boundary(n) {
+        n -= 1;
+    }
+    &first[..n]
 }
 
 pub(super) fn is_executable(path: &[u8]) -> bool {
@@ -828,7 +851,7 @@ enum Files {
 impl ShellHelper {
     /// Completes the word that ends at the end of `line`. `after` is the
     /// text after the cursor.
-    fn complete_bytes(&self, line: &[u8], after: &[u8]) -> (usize, Vec<Pair>) {
+    fn complete_bytes(&self, line: &[u8], after: &[u8]) -> (usize, Vec<Item>) {
         let w = analyze(line, &self.names.aliases);
         let (from, cands) = match self.ask_completer(&w, after) {
             Completion::Default => self.generate(&w),
@@ -839,8 +862,9 @@ impl ShellHelper {
                 let typed = String::from_utf8_lossy(&line[w.start..]).into_owned();
                 return (
                     w.start,
-                    vec![Pair {
+                    vec![Item {
                         display: typed.clone(),
+                        desc: None,
                         replacement: typed,
                     }],
                 );
@@ -860,7 +884,7 @@ impl ShellHelper {
             from,
             quote,
         };
-        (w.start, pairs(&cands, &t))
+        (w.start, items(&cands, &t))
     }
 
     /// What the completer of the word's command, if it has one, gives.
@@ -1089,15 +1113,67 @@ impl ShellHelper {
 impl Completer for ShellHelper {
     type Candidate = Pair;
 
+    /// Completes the word at the cursor, or moves in the menu if it is open.
+    /// rustyline puts the one candidate returned in the line and redraws it
+    /// (with the menu, through `hint`).
     fn complete(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> rustyline::Result<(usize, Vec<Pair>)> {
-        let (line, after) = line.as_bytes().split_at(pos);
-        Ok(self.complete_bytes(line, after))
+        let pair = |replacement: &str| Pair {
+            display: String::new(),
+            replacement: replacement.to_owned(),
+        };
+        let Ok(mut menu) = self.menu.lock() else {
+            return Ok((pos, Vec::new()));
+        };
+        if let Some((start, text)) = menu.step(line, pos) {
+            return Ok((start, vec![pair(&text)]));
+        }
+        // (Not held while a plugin's completer runs.)
+        drop(menu);
+        let (before, after) = line.as_bytes().split_at(pos);
+        let (start, items) = self.complete_bytes(before, after);
+        if items.len() < 2 {
+            return Ok((start, items.iter().map(|i| pair(&i.replacement)).collect()));
+        }
+        let typed = line.get(start..pos).unwrap_or_default();
+        let prefix = common_prefix(&items);
+        if prefix.len() > typed.len() {
+            return Ok((start, vec![pair(prefix)]));
+        }
+        let typed = pair(typed);
+        if let Ok(mut menu) = self.menu.lock() {
+            menu.open(line, start, pos, items);
+        }
+        Ok((start, vec![typed]))
     }
 }
 
 impl Hinter for ShellHelper {
-    type Hint = String;
+    type Hint = menu::Drawn;
+
+    /// Draws the menu, if it is open.
+    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<menu::Drawn> {
+        let mut m = self.menu.lock().ok()?;
+        if !m.is_open(line, pos) {
+            return None;
+        }
+        let (cols, rows) = sys::window_size(1).unwrap_or_default();
+        let cols = if cols == 0 { 80 } else { cols };
+        let rows = if rows == 0 { 24 } else { rows };
+        let used = menu::rows(&[&self.prompt[..], line].concat(), cols);
+        let colors = self.highlight.colors.as_ref();
+        let sgr = |class, default: &str| {
+            colors.map_or(default.to_owned(), |c| {
+                String::from_utf8_lossy(c.sgr(class)).into_owned()
+            })
+        };
+        let style = menu::Style {
+            select: sgr(super::highlight::Class::Select, "7"),
+            desc: sgr(super::highlight::Class::Desc, ""),
+        };
+        Some(menu::Drawn(m.draw(cols, rows.saturating_sub(used), &style)))
+    }
 }
+
 impl Validator for ShellHelper {}
 impl Helper for ShellHelper {}
 
@@ -1332,13 +1408,13 @@ mod tests {
         assert_eq!(complete(&h, "fg %v"), ["%vi "]);
         assert_eq!(complete(&h, "kill %s"), ["%sleep "]);
         assert_eq!(complete(&h, "kill %2"), ["%2 "]);
-        let shown: Vec<_> = h
-            .complete_bytes(b"wait ", b"")
-            .1
-            .into_iter()
-            .map(|p| p.display)
+        let shown: Vec<_> = (h.complete_bytes(b"wait ", b"").1.into_iter())
+            .map(|i| (i.display, i.desc.unwrap_or_default()))
             .collect();
-        assert_eq!(shown, ["%1  -- sleep 10 | cat", "%2  -- vi notes"]);
+        assert_eq!(
+            shown,
+            [("%1".into(), "sleep 10 | cat".into()), ("%2".into(), "vi notes".into())]
+        );
         // Plugins.
         std::fs::create_dir(dir.join("plugins")).unwrap();
         for f in ["prompt.rhai", "git.rhai", "README"] {
@@ -1399,25 +1475,92 @@ mod tests {
     }
 
     #[test]
-    fn descriptions() {
+    fn menu_items() {
         let c = |v: &str, d: Option<&str>| Candidate {
             desc: d.map(|d| d.as_bytes().to_vec()),
             ..Candidate::word(v.as_bytes())
         };
-        let p = pairs(
-            &[
-                c("add", Some("Add files")),
-                c("commit", Some("Record changes")),
-                c("x", None),
-            ],
-            &Target {
-                w: &analyze(b"", &[]),
-                line: b"",
-                from: 0,
-                quote: Quote::None,
-            },
+        let w = analyze(b"", &[]);
+        let t = Target {
+            w: &w,
+            line: b"",
+            from: 0,
+            quote: Quote::None,
+        };
+        let it = items(
+            &[c("commit", Some("Record\nchanges")), c("add", None), c("add", None)],
+            &t,
         );
-        let shown: Vec<_> = p.iter().map(|p| p.display.as_str()).collect();
-        assert_eq!(shown, ["add     -- Add files", "commit  -- Record changes", "x"]);
+        let item = |d: &str, desc: Option<&str>, r: &str| Item {
+            display: d.into(),
+            desc: desc.map(Into::into),
+            replacement: r.into(),
+        };
+        assert_eq!(
+            it,
+            [
+                item("add", None, "add "),
+                item("commit", Some("Record?changes"), "commit ")
+            ]
+        );
+        assert_eq!(common_prefix(&it), "");
+        let it = [item("", None, "h\u{e9}t "), item("", None, "h\u{e8}t ")];
+        assert_eq!(common_prefix(&it), "h");
+    }
+
+    /// Tab, as rustyline handles it: the one candidate replaces the text
+    /// from where it starts to the cursor.
+    fn tab(h: &ShellHelper, line: &mut String) {
+        let history = super::super::history::ShellHistory::default();
+        let (start, c) = h.complete(line, line.len(), &Context::new(&history)).unwrap();
+        if let Some(c) = c.first() {
+            line.replace_range(start.., &c.replacement);
+        }
+    }
+
+    fn menu_shown(h: &ShellHelper, line: &str) -> Option<String> {
+        let history = super::super::history::ShellHistory::default();
+        h.hint(line, line.len(), &Context::new(&history)).map(|d| d.0)
+    }
+
+    #[test]
+    fn tab_opens_the_menu() {
+        let h = ShellHelper {
+            names: Names {
+                functions: vec![b"myfunc_a".to_vec(), b"myfunc_b".to_vec(), b"other".to_vec()],
+                path: b"/nonexistent".to_vec(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut line = "myf".to_string();
+        tab(&h, &mut line);
+        assert_eq!((&line[..], menu_shown(&h, &line)), ("myfunc_", None));
+        // Nothing more in common: the menu is shown, nothing selected.
+        tab(&h, &mut line);
+        assert_eq!(line, "myfunc_");
+        assert_eq!(menu_shown(&h, &line).as_deref(), Some("\nmyfunc_a  myfunc_b"));
+        tab(&h, &mut line);
+        assert_eq!(line, "myfunc_a ");
+        assert_eq!(
+            menu_shown(&h, &line).as_deref(),
+            Some("\n\x1b[7mmyfunc_a\x1b[0m  myfunc_b")
+        );
+        tab(&h, &mut line);
+        assert_eq!(line, "myfunc_b ");
+        tab(&h, &mut line);
+        assert_eq!(line, "myfunc_a ");
+        // A key binding's move: Esc puts back the text typed.
+        h.menu.lock().unwrap().pending = Some(menu::Move::Cancel);
+        tab(&h, &mut line);
+        assert_eq!((&line[..], menu_shown(&h, &line)), ("myfunc_", None));
+        // Once the line changes, the menu is closed.
+        tab(&h, &mut line);
+        tab(&h, &mut line);
+        assert_eq!(line, "myfunc_a ");
+        line.push_str("/nonexistent/x");
+        assert_eq!(menu_shown(&h, &line), None);
+        tab(&h, &mut line);
+        assert_eq!(line, "myfunc_a /nonexistent/x");
     }
 }

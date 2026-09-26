@@ -167,6 +167,7 @@ dependencies = [
  "nix",
  "rhai",
  "rustyline",
+ "unicode-width",
 ]
 
 [[package]]

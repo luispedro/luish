@@ -116,6 +116,18 @@ impl Pty {
         true
     }
 
+    /// Sets the terminal's size.
+    fn resize(&self, cols: u16, rows: u16) {
+        let ws = libc::winsize {
+            ws_row: rows,
+            ws_col: cols,
+            ws_xpixel: 0,
+            ws_ypixel: 0,
+        };
+        // SAFETY: TIOCSWINSZ on our own fd with a valid winsize.
+        assert_eq!(unsafe { libc::ioctl(self.master, libc::TIOCSWINSZ, &ws) }, 0);
+    }
+
     fn send(&mut self, s: &str) {
         // SAFETY: writing a valid buffer to our own fd.
         let n = unsafe { libc::write(self.master, s.as_ptr() as *const _, s.len()) };
@@ -415,24 +427,100 @@ fn tab_completion() {
     sh.send("cat etem\t\n");
     sh.expect("found it\n");
     sh.expect("$ ");
-    // A second tab lists the candidates.
+    // A second tab opens the menu.
     sh.send("echo alp\t\t");
     sh.expect("alpha1  alpha2");
     sh.send("\x03");
-    // The new prompt (not the line redrawn under the list).
+    // The new prompt (not the line redrawn under the menu).
     sh.expect("\x1b[K$ ");
-    // Job specs, from the jobs when the prompt was shown.
+    // Job specs, from the jobs when the prompt was shown, with their
+    // commands.
     sh.send(": | sleep 100 & : | sleep 101 & echo started\n");
     sh.expect("started\n");
     sh.expect("\x1b[?2004h");
-    sh.send("fg %\t\t");
-    sh.expect("%1  -- : | sleep 100");
-    sh.expect("%2  -- : | sleep 101");
+    sh.send("fg %\t");
+    sh.expect("%1  \x1b[90m-- : | sleep 100\x1b[0m");
+    sh.expect("%2  \x1b[90m-- : | sleep 101\x1b[0m");
     sh.send("\x03");
     // The next prompt: input sent before it may be discarded.
     sh.expect("\x1b[?2004h");
     sh.send("kill %1 %2; wait; echo killed\n");
     sh.expect("killed\n");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
+fn completion_menu() {
+    let mut sh = Pty::spawn_term("menu", "vt100");
+    for f in ["alpha1", "alpha2", "beta1", "beta2"] {
+        std::fs::write(sh.path(f), "").unwrap();
+    }
+    sh.expect("$ ");
+    // The first Tab completes what the matches have in common, the second
+    // opens the menu, and the third selects the first match, putting it in
+    // the line.
+    sh.send("echo alp\t\t\t");
+    sh.expect("\x1b[7malpha1\x1b[0m  alpha2");
+    // Right moves to the next column, and Enter keeps the match.
+    sh.send("\x1b[C");
+    sh.expect("alpha1  \x1b[7malpha2\x1b[0m");
+    sh.send("\rx\n");
+    sh.expect("alpha2 x\n");
+    sh.expect("$ ");
+    // Typing goes on after the match.
+    sh.send("echo alp\t\t\t\tx\n");
+    sh.expect("alpha2 x\n");
+    sh.expect("$ ");
+    // Shift-Tab goes backwards, and Ctrl-G puts back the text typed.
+    sh.send("echo alp\t\t\x1b[Z");
+    sh.expect("alpha1  \x1b[7malpha2\x1b[0m");
+    sh.send("\x07\n");
+    sh.expect("alpha\n");
+    sh.expect("$ ");
+    // So does Esc on its own.
+    sh.send("echo bet\t\t\t");
+    sh.expect("\x1b[7mbeta1\x1b[0m");
+    sh.send("\x1b");
+    sh.expect("echo\x1b[0m beta\x1b[");
+    sh.send("\n");
+    sh.expect("beta\n");
+    sh.expect("$ ");
+    // In vi mode, Esc closes the menu, and a second one goes to command
+    // mode.
+    sh.send("set -o vi\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("echo bet\t\t\t");
+    sh.expect("\x1b[7mbeta1\x1b[0m");
+    sh.send("\x1b");
+    sh.expect("echo\x1b[0m beta\x1b[");
+    sh.send("\x1bAx\n");
+    sh.expect("betax\n");
+    sh.expect("$ ");
+    sh.send("set +o vi\n");
+    sh.expect("\x1b[?2004h");
+    // A menu taller than the screen scrolls, along the rows.
+    for i in 0..30 {
+        std::fs::write(sh.path(&format!("c{i:02}")), "").unwrap();
+    }
+    sh.resize(30, 5);
+    sh.send("echo c\t");
+    sh.expect("c00  c01  c02  c03  c04  c05\nc06");
+    sh.expect("rows 1-3 of 5");
+    sh.send("\t\x1b[6~");
+    sh.expect("\x1b[7mc18\x1b[0m");
+    sh.expect("rows 2-4 of 5");
+    sh.send("\x03");
+    sh.expect("\x1b[?2004h");
+    sh.resize(80, 24);
+    // Enter runs the line if nothing is selected, and the menu is erased.
+    sh.send("echo bet\t\t");
+    sh.expect("beta1  beta2");
+    sh.send("\r");
+    sh.expect("\x1b[?2026h");
+    let out = sh.expect("beta\n");
+    assert!(!out.contains("beta1"), "{out}");
+    sh.expect("$ ");
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
 }
@@ -492,9 +580,10 @@ fn plugin_completer() {
     sh.send("frob x comp.r\t\n");
     sh.expect("frob:x comp.rhai\n");
     sh.expect("$ ");
-    // Descriptions are listed after their candidates.
-    sh.send("frob \t\t");
-    sh.expect("beta  -- the second");
+    // Descriptions are shown after their candidates in the menu.
+    sh.send("frob \t");
+    sh.expect("beta");
+    sh.expect("\x1b[90m-- the second\x1b[0m");
     sh.send("\x03");
     // The next prompt: input sent before it may be discarded.
     sh.expect("\x1b[?2004h");
@@ -565,7 +654,7 @@ esac
     sh.expect("frob:status cobra.rhai\n");
     sh.expect("$ ");
     sh.send("frob \t\t");
-    sh.expect("serve   -- Start the server");
+    sh.expect("serve   \x1b[90m-- Start the server\x1b[0m");
     sh.send("\x03");
     sh.expect("\x1b[?2004h");
     sh.send("exit 0\n");

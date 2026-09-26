@@ -36,9 +36,13 @@ pub enum Class {
     Comment,
     /// The `NAME=` of an assignment.
     Assign,
+    /// Not in the line: the selected match in the completion menu.
+    Select,
+    /// Not in the line: the descriptions in the completion menu.
+    Desc,
 }
 
-const CLASSES: usize = Class::Assign as usize + 1;
+const CLASSES: usize = Class::Desc as usize + 1;
 
 /// Class names in `$LUISH_HIGHLIGHT`, with their default SGR parameters.
 const DEFAULTS: &[(&str, Class, &str)] = &[
@@ -52,6 +56,8 @@ const DEFAULTS: &[(&str, Class, &str)] = &[
     ("redir", Class::Redir, "1"),
     ("comment", Class::Comment, "90"),
     ("assign", Class::Assign, "34"),
+    ("select", Class::Select, "7"),
+    ("desc", Class::Desc, "90"),
 ];
 
 /// The SGR parameters (without `ESC [` and `m`) of each class.
@@ -82,6 +88,11 @@ impl Colors {
             }
         }
         Some(c)
+    }
+
+    /// The SGR parameters of `class`.
+    pub fn sgr(&self, class: Class) -> &[u8] {
+        &self.0[class as usize]
     }
 }
 
@@ -676,6 +687,7 @@ mod tests {
                 Class::Redir => 'r',
                 Class::Comment => '#',
                 Class::Assign => 'a',
+                Class::Select | Class::Desc => unreachable!(),
             })
             .collect()
     }

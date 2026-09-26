@@ -160,7 +160,7 @@ word being completed. That word ends at the cursor, and may be empty; the words 
 end of the command) come after it in the array. It returns an array of candidates, or `()` to complete the word as if
 there were no completer.
 
-A candidate is a string, or a map with a `value` and optionally a `desc`, shown next to it in the list of matches,
+A candidate is a string, or a map with a `value` and optionally a `desc`, shown next to it in the completion menu,
 and a `suffix`, added after the value when it is the only match (a space by default; `""` for none). luish keeps
 the candidates that start with the word typed, and quotes what it adds. So a completer can simply return everything
 that could come next.

@@ -458,8 +458,9 @@ pass**.
   time), so a newly installed command is found even if it shadows a cached
   one (see DEVIATIONS.md and `docs/improvements.md`).
 - Ctrl-C cancels the current input.
-- Tab completion (`src/interactive/complete.rs`), bash-style: the first Tab
-  completes the common prefix, a second one lists the candidates. In
+- Tab completion (`src/interactive/complete.rs`): the first Tab completes
+  the common prefix, and if there is nothing more to add opens the menu
+  (see below). In
   command position (found by a rough tokenizer that follows quotes,
   operators, redirections, assignments, `$(`, backquotes, reserved words
   such as `then`, and commands such as `sudo` that take a command) it
@@ -495,6 +496,30 @@ pass**.
   records where each unquoted byte ends in the line) and the rest is
   replaced. Directories get a `/`, other unique matches a space (and the
   closing quote). Dot files are listed only for a prefix starting with `.`.
+- The completion menu (`src/interactive/menu.rs`), like zsh's menu
+  selection: the matches are drawn below the line as rustyline's hint (so
+  rustyline lays them out and erases them), in a grid of columns each as
+  wide as its widest match (the widths capped at the 90th percentile or a
+  third of the screen, longer names cut with `…`), down the columns if
+  they fit on the screen and along the rows otherwise, or one per row with
+  their descriptions. It scrolls to the selection when it doesn't fit, with
+  a last row saying which rows are shown. The next Tab selects the first
+  match and puts it in the line; Tab and Shift-Tab, the arrow keys (and
+  Ctrl-N, P, F, B) and Page Up and Down move the selection, Enter keeps it
+  and closes the menu, Esc and Ctrl-G put back the text typed. Before
+  anything is selected, only Tab, Shift-Tab, Down and Ctrl-N act on the
+  menu (Enter runs the line). The menu is open only while the line and
+  cursor are what it left, so any other key keeps the match and closes it.
+  Key bindings record the move and return `Cmd::Complete`, and the
+  completer gives rustyline the new text as its only candidate, so every
+  change goes through rustyline's completion and undo. The line editor
+  waits 400 ms after Esc in emacs mode (as zsh's `KEYTIMEOUT`), and 100 ms
+  in vi mode, before taking it as Esc rather than a Meta prefix (rustyline
+  would otherwise wait for the next key). In vi mode Esc closes the menu,
+  and a second one goes to command mode.
+  The selection and the descriptions take the `select` and `desc` colours
+  of `$LUISH_HIGHLIGHT` (the selection is in reverse video even when
+  highlighting is off).
 - Syntax highlighting (`src/interactive/highlight.rs`), on by default:
   reserved words (in command position only), command names (in a
   different colour when they are not a built-in, function, alias or
@@ -506,7 +531,8 @@ pass**.
   lines, so an open quote or here-document carries over. `$LUISH_HIGHLIGHT`
   sets the colours as `class=SGR` entries separated by `:` (as in
   `GREP_COLORS`), over the defaults
-  `keyword=1;34:command=32:unknown=1;31:string=33:var=36:subst=35:op=1:redir=1:comment=90:assign=34`;
+  `keyword=1;34:command=32:unknown=1;31:string=33:var=36:subst=35:op=1:redir=1:comment=90:assign=34:select=7:desc=90`
+  (the last two are for the completion menu);
   an empty SGR leaves a class uncoloured. `LUISH_HIGHLIGHT=none`, or a
   non-empty `$NO_COLOR`, turns it off. Both are read before each prompt.
   Command lookups are cached until the next prompt.
@@ -546,11 +572,11 @@ pass**.
   (command output, files tested with `[`, a sourced file that didn't
   exist), background revalidation, and merging into running shells.
 - Tests: `tests/interactive.rs` (job control, Ctrl-C and Ctrl-Z, terminal
-  input and modes, completion, highlighting, `fc`, and the command cache),
-  `builtins/fc_noninteractive.sh`, and unit tests in `complete.rs`,
-  `highlight.rs` and `history.rs`. The pty tests use `TERM=dumb`, under
-  which rustyline does no editing, except `tab_completion` and
-  `syntax_highlighting`, which use `TERM=vt100`.
+  input and modes, completion and its menu, highlighting, `fc`, and the
+  command cache), `builtins/fc_noninteractive.sh`, and unit tests in
+  `complete.rs`, `menu.rs`, `highlight.rs` and `history.rs`. The pty tests
+  use `TERM=dumb`, under which rustyline does no editing, except those of
+  completion and highlighting, which use `TERM=vt100`.
 
 ### Plugins (`src/plugins/`)
 - Everything is behind the `plugins` cargo feature. Until the first
@@ -680,9 +706,10 @@ notes how to rerun them):
   same line is shown as unknown until the next prompt.
 - Completion skips filenames that are not valid UTF-8 (rustyline works on `String`s). Matching has no
   subsequence (fuzzy) matching and no ranking within the best matches,
-  and isn't configurable. Choosing among the matches
-  is rustyline's list: no menu, and descriptions are laid out in its
-  columns. Completers can't be interrupted with Ctrl-C (the terminal is
+  and isn't configurable. The menu has no groups (such as zsh's headings
+  for commands, files and so on), no colours by file type (`LS_COLORS`), no
+  narrowing by typing, and no mouse. After Ctrl-C it stays on the screen
+  above the next prompt. Completers can't be interrupted with Ctrl-C (the terminal is
   in raw mode) except by their time limit.
 - `set -b` (immediate job notification) is accepted but does nothing: jobs
   are reported only before a prompt. Job notifications are given only for

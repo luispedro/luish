@@ -540,6 +540,16 @@ pub fn tcgetattr(fd: i32) -> Option<libc::termios> {
     }
 }
 
+/// The size of the terminal on `fd`, as columns and rows (either may be 0
+/// if it isn't known).
+pub fn window_size(fd: i32) -> Option<(usize, usize)> {
+    // SAFETY: TIOCGWINSZ fills a winsize.
+    unsafe {
+        let mut ws: libc::winsize = std::mem::zeroed();
+        (libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) == 0).then_some((ws.ws_col.into(), ws.ws_row.into()))
+    }
+}
+
 pub fn tcsetattr(fd: i32, t: &libc::termios) {
     // SAFETY: valid termios.
     unsafe {

@@ -82,14 +82,38 @@ options) completes as a command name. Some commands complete their arguments dif
 Plugins can provide completion for other commands (see [Plugins](plugins.md)). Aliases are followed: if `g` is an
 alias for `git`, then `g ` completes as `git ` does.
 
-The first Tab completes as much as is common to all the matches, and a second one lists them. What is added is quoted
-as needed: a file called `my file` is completed as `my\ file`, or as `'my file'` after a `'`. A directory is completed
+The first Tab completes as much as is common to all the matches. When there is nothing more to add, it opens a menu
+of the matches below the line (see below). What is added is quoted as needed: a file called `my file` is completed as `my\ file`, or as `'my file'` after a `'`. A directory is completed
 with a `/`, so Tab can go on into it; any other single match gets a space (and the closing quote).
 
 The matches are the names that start with the text typed. If there are none, case is ignored (smart case: a
 lowercase letter matches either case, but an uppercase one only itself), so `mak` completes to `Makefile`. If there
 are still none, the names that contain the text are used, so `conf` completes to `my.config`. Either way, the text
 typed is replaced.
+
+### The completion menu
+
+The menu shows the matches in columns, or one per line with their descriptions (such as the commands of jobs for
+`fg`). If it doesn't fit on the screen, it scrolls, and its last line says which rows are shown. The next Tab selects
+the first match and puts it in the line, and then:
+
+| Key | Action |
+|---|---|
+| Tab, Shift-Tab | Select the next or the previous match |
+| Arrow keys, Ctrl-N, Ctrl-P, Ctrl-F, Ctrl-B | Move down, up, right or left in the menu |
+| Page Down, Page Up | Move a screenful down or up |
+| Enter | Keep the match and close the menu |
+| Esc, Ctrl-G | Put back the text typed and close the menu |
+
+Any other key keeps the match, closes the menu and does what it usually does, so you can type on after it. Before a
+match is selected, Down, Ctrl-N and Shift-Tab also start selecting (Shift-Tab from the last match), but the other keys
+do what they usually do: Enter runs the command, and Up goes back in the history.
+
+Esc on its own takes effect after 0.4 seconds in emacs mode (0.1 seconds in vi mode), since until then it could be
+the start of a Meta key (`Esc` then `b` is Meta-B). In vi mode, a second Esc goes to command mode. The selected match is shown in reverse video, and descriptions in grey. They can be
+changed with the `select` and `desc` entries of `$LUISH_HIGHLIGHT`, a list of `class=SGR` entries separated by `:`,
+where SGR is the parameters of a terminal escape sequence (`select=1;33:desc=` shows the selection in bold yellow
+and the descriptions uncoloured).
 
 ## Saving and restoring the shell's state
 

@@ -3,6 +3,7 @@
 mod complete;
 mod highlight;
 pub mod history;
+mod menu;
 
 use std::cell::{Cell, RefCell};
 
@@ -47,6 +48,7 @@ pub fn init_editor(sh: &Shell) -> bool {
     };
     let mut helper = ShellHelper::default();
     helper.ask = Some(ask);
+    menu::bind(&mut ed, &helper.menu);
     ed.set_helper(Some(helper));
     ed.set_completion_type(CompletionType::List);
     let size = sh
@@ -169,6 +171,10 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
         };
         if let Some(h) = ed.helper_mut() {
             h.names = names;
+            h.prompt.clone_from(plain.as_ref().unwrap_or(&text));
+            if let Ok(mut m) = h.menu.lock() {
+                m.close();
+            }
             h.highlight.colors = colors;
             h.highlight.context.clear();
             h.highlight.context.extend_from_slice(pending);
@@ -179,6 +185,12 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
         } else {
             rustyline::EditMode::Emacs
         });
+        // How long after Esc another key makes it a Meta key, as zsh's
+        // `KEYTIMEOUT` (without one, rustyline waits for the next key), so
+        // that Esc alone takes effect, and closes the completion menu. In vi
+        // insert mode Esc then a key is the same as Meta and the key, so
+        // the wait can be shorter.
+        ed.set_keyseq_timeout(Some(if vi { 100 } else { 400 }));
         let r = match &plain {
             Some(plain) => ed.readline(&(plain, &text)),
             None => ed.readline(&text),
