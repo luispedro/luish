@@ -5,8 +5,8 @@ echo hello > f
 ln -s f link
 ln -s nowhere broken
 mkfifo fifo
-touch -d '2020-01-01 00:00:00' old
-touch -d '2021-01-01 00:00:00' new
+touch -d '2020-01-01 00:00:00 UTC' old
+touch -d '2021-01-01 00:00:00 UTC' new
 mkdir l l/dir
 touch l/b l/a l/.hidden
 printf 'x\377y' > "l/$(printf 'bin\377')"
