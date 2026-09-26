@@ -20,3 +20,17 @@ fmt-check = "cargo fmt --check"
 lint = "cargo clippy --all-targets -- -D warnings"
 check = { depends-on = ["fmt-check", "lint", "test"] }
 luish = "cargo run --quiet --"
+
+# User documentation (docs/), published on Read the Docs, which installs from
+# docs/requirements.txt: keep the two in step.
+[feature.docs.dependencies]
+python = "3.13.*"
+sphinx = ">=8"
+myst-parser = ">=4"
+furo = "*"
+
+[feature.docs.tasks]
+docs = "sphinx-build -W -b html docs docs/_build/html"
+
+[environments]
+docs = { features = ["docs"], no-default-feature = true }

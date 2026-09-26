@@ -3,3 +3,5 @@
 !.pixi/config.toml
 
 /target
+
+/docs/_build

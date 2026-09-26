@@ -1,0 +1,4 @@
+# Used by Read the Docs; keep in step with the `docs` feature in pixi.toml.
+sphinx>=8
+myst-parser>=4
+furo

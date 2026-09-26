@@ -16,6 +16,9 @@ features is fine, as long as the prompt and line editor stay fast.
 - `STATUS.md`: what is implemented, how it is tested, and the known gaps. **Update it in the same commit as any
   change in behaviour.**
 - `DEVIATIONS.md`: deliberate differences from dash. Each needs a `.expected` test.
+- `docs/`: user-facing documentation (Sphinx with MyST Markdown), published on Read the Docs via
+  `.readthedocs.yaml`. Its Python dependencies are in both `docs/requirements.txt` (for Read the Docs) and the
+  `docs` feature in `pixi.toml`; keep them in step.
 
 ## Commands
 
@@ -29,6 +32,7 @@ LUISH_CASE=expand/ pixi run test  # only differential cases whose path contains 
 pixi run cargo test --bin luish parser::   # unit tests in one module
 pixi run luish -c 'echo hi'       # run the shell
 pixi run release                  # release build (LTO, panic=abort), used for benchmarks
+pixi run docs                     # build the user docs into docs/_build/html (warnings are errors)
 ```
 
 `rustfmt.toml` sets `max_width = 120`. Plugins (Phase 11) will use Rhai behind a `plugins` cargo feature (PLAN.md
