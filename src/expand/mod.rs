@@ -96,7 +96,11 @@ impl Shell {
             WordPart::SingleQuoted(s) => f.push_quoted(s),
             WordPart::Escaped(c) => f.push_quoted(&[*c]),
             WordPart::DoubleQuoted(inner) => {
-                if inner.is_empty() {
+                // A quoted word is a field even when it expands to nothing,
+                // except a lone "$@" with no positional parameters.
+                let lone_at = matches!(inner.as_slice(), [WordPart::Param(pe)]
+                    if pe.name == ParamName::Special(b'@') && matches!(pe.op, ParamOp::Plain));
+                if !lone_at {
                     f.cur_exists = true;
                 }
                 self.expand_parts(inner, true, false, f)?;

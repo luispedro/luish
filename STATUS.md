@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **67 differential cases, 24 unit tests and 7 pty tests
+Current state: **68 differential cases, 24 unit tests and 7 pty tests
 pass**.
 
 ## Environment
@@ -92,6 +92,8 @@ pass**.
 ### Expansion (`src/expand/`)
 - Tilde expansion (`~`, `~user`, and after `:` in assignments).
 - Every `ParamOp`, with and without `:`.
+- A double-quoted part is always a field, even when it expands to nothing
+  (`"$u"`, `"${u+x}"`), except a lone `"$@"` with no parameters.
 - `"$@"` produces zero or more fields, while `"$*"` joins the parameters
   with the first character of IFS.
 - `set -u` errors on unset variables, except for `$@` and `$*`.
