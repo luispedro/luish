@@ -62,6 +62,11 @@ pub fn geteuid() -> u32 {
     unsafe { libc::geteuid() }
 }
 
+pub fn getegid() -> u32 {
+    // SAFETY: always succeeds.
+    unsafe { libc::getegid() }
+}
+
 pub fn getcwd() -> Option<Vec<u8>> {
     use std::os::unix::ffi::OsStrExt;
     std::env::current_dir().ok().map(|p| p.as_os_str().as_bytes().to_vec())
@@ -308,6 +313,68 @@ pub fn own_home_dir() -> Option<Vec<u8>> {
             return None;
         }
         Some(CStr::from_ptr((*pw).pw_dir).to_bytes().to_vec())
+    }
+}
+
+/// The name of the user with the real user id.
+pub fn user_name() -> Option<Vec<u8>> {
+    // SAFETY: getpwuid returns a pointer to static storage or null.
+    unsafe {
+        let pw = libc::getpwuid(libc::getuid());
+        if pw.is_null() {
+            return None;
+        }
+        Some(CStr::from_ptr((*pw).pw_name).to_bytes().to_vec())
+    }
+}
+
+/// The host name (empty if it can't be found).
+pub fn hostname() -> Vec<u8> {
+    let mut buf = [0u8; 256];
+    // SAFETY: gethostname into a buffer of the given size.
+    let r = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len() - 1) };
+    if r != 0 {
+        return Vec::new();
+    }
+    buf.iter().take_while(|&&c| c != 0).copied().collect()
+}
+
+/// The name of the terminal open on `fd`.
+pub fn ttyname(fd: i32) -> Option<Vec<u8>> {
+    let mut buf = [0u8; 256];
+    // SAFETY: ttyname_r into a buffer of the given size.
+    let r = unsafe { libc::ttyname_r(fd, buf.as_mut_ptr() as *mut libc::c_char, buf.len()) };
+    (r == 0).then(|| buf.iter().take_while(|&&c| c != 0).copied().collect())
+}
+
+/// The current local time.
+pub fn localtime() -> libc::tm {
+    // SAFETY: time with a null pointer only returns the time, and
+    // localtime_r fills the `tm` it is given.
+    unsafe {
+        let t = libc::time(std::ptr::null_mut());
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&t, &mut tm);
+        tm
+    }
+}
+
+/// Formats a time with `strftime`.
+pub fn strftime(fmt: &[u8], tm: &libc::tm) -> Vec<u8> {
+    if fmt.is_empty() {
+        return Vec::new();
+    }
+    let c = cstr(fmt);
+    let mut buf = vec![0u8; 256];
+    loop {
+        // SAFETY: strftime writes at most `buf.len()` bytes into `buf`.
+        let n = unsafe { libc::strftime(buf.as_mut_ptr() as *mut libc::c_char, buf.len(), c.as_ptr(), tm) };
+        // 0 means the result didn't fit, or is empty.
+        if n > 0 || buf.len() >= 4096 {
+            buf.truncate(n);
+            return buf;
+        }
+        buf.resize(buf.len() * 2, 0);
     }
 }
 

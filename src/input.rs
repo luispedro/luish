@@ -44,7 +44,7 @@ impl Input {
             Input::Fd { fd, seekable, prompt } => {
                 if *prompt {
                     let p = interactive::prompt(sh, continuation);
-                    sys::write_all(2, &p);
+                    sys::write_all(2, &p.text);
                 }
                 match read_fd_line(*fd, *seekable) {
                     Some(l) => Line::Text(l),

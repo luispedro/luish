@@ -21,8 +21,8 @@ the options that are off, in alphabetical order.
 luish's own options, all off by default:
 
 `promptpercent`
-: Expand `%` sequences in prompts, as zsh does. Not implemented yet: the
-  option can be set, but has no effect.
+: Expand `%` sequences in `PS1`, `PS2` and `PS4`, after parameter
+  expansion, as zsh does (see the user documentation on prompts).
 
 The exit status is 1 if an option doesn't exist or can't be changed
 (`interactive` and `stdin`); the other options given are still set.

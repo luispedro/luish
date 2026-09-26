@@ -35,7 +35,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **120 differential cases, 10 plugin cases, 47 unit tests and 11 pty tests
+Current state: **121 differential cases, 10 plugin cases, 50 unit tests and 12 pty tests
 pass**.
 
 ## Environment
@@ -382,7 +382,7 @@ pass**.
 - `set -o` / `set +o` output matches dash, except that the last option is
   `hashall` rather than dash's `debug` (see DEVIATIONS.md).
 - luish's own options (`EXTENDED` in `options.rs`, all off by default:
-  `promptpercent`, which has no effect yet) have no letter and are not in
+  `promptpercent`) have no letter and are not in
   `set -o` or `$-`, so `set` stays as in dash. They are set with `setopt`
   and `unsetopt` (not POSIX; as in zsh), which also set dash's options.
   Names are as in zsh: case and `_` don't matter, and a `no` prefix is
@@ -415,6 +415,23 @@ pass**.
   Re-running `fc` is limited to 4 levels (dash's `MAXHISTLOOPS`). In a
   non-interactive shell `fc` fails with `history not active`.
 - `PS1` and `PS2` go through parameter expansion.
+- With `setopt promptpercent`, `PS1`, `PS2` and `PS4` then expand zsh's
+  `%` sequences (`src/prompt.rs`), in all shells: the directory (`%~`,
+  `%d`, `%c`, `%C`, with a number of components), user, host, `%#`, `%?`,
+  history number, jobs, `$SHLVL`, line number, terminal, dates and times
+  (`%D{...}` through `strftime`), bold, underline, standout, colours
+  (`%F`, `%K`: names, 0 to 255, `#rrggbb`), `%E`, `%{...%}` and `%G`,
+  conditionals `%(x.yes.no)` (conditions `? # ! g j L / C ~ . c T t d D
+  w`) and truncation (`%N<...<`, `%N>...>`, up to the end of the
+  enclosing group). Unknown sequences expand to nothing. Colours are
+  written as ANSI SGR sequences, whatever the terminal. The expansion keeps
+  escape sequences apart from the text, and the line editor is given both
+  (rustyline's `(raw, styled)` prompt), so the cursor position doesn't
+  count them. Nothing is done unless the option is on and the prompt has a
+  `%`. Tests: `misc/prompt_percent.sh` (checked against zsh while
+  written; zsh can't be the reference because its interactive mode writes
+  more than the prompts), `prompt_percent` in `tests/interactive.rs`, and
+  unit tests in `prompt.rs`.
 - After each line is read, the shell `stat`s the `PATH` directories and
   clears the command cache if one changed (device, inode or modification
   time), so a newly installed command is found even if it shadows a cached
@@ -576,6 +593,10 @@ notes how to rerun them):
 - `${@#pat}` and `${*%pat}` operate on the joined string rather than on each
   parameter.
 - `set -v` output is approximate.
+- Prompt expansion lacks zsh's `%_`, `%e`, `%I`, `%N`, `%x`, `%v`,
+  `%[...]`, the `l`, `S`, `_`, `e` and `v` conditions, and widths relative
+  to the terminal's (negative truncation lengths). luish doesn't maintain
+  `SHLVL`, so `%L` shows the inherited value.
 - Glob results are sorted in byte order; locale collation is not
   implemented.
 - Fds saved at 10 or above could collide with a user redirection to fd 10+

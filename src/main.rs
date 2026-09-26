@@ -13,6 +13,7 @@ mod options;
 mod parser;
 mod path;
 mod plugins;
+mod prompt;
 mod shell;
 mod signals;
 mod startcache;

@@ -136,17 +136,10 @@ pub fn config_dir(sh: &Shell, name: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn hostname() -> Vec<u8> {
-    let mut buf = [0u8; 256];
-    // SAFETY: gethostname into a buffer of the given size.
-    let r = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len() - 1) };
-    let name: Vec<u8> = if r == 0 {
-        buf.iter()
-            .take_while(|&&c| c != 0)
-            .map(|&c| if c == b'/' { b'_' } else { c })
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let name: Vec<u8> = sys::hostname()
+        .into_iter()
+        .map(|c| if c == b'/' { b'_' } else { c })
+        .collect();
     if name.is_empty() { b"localhost".to_vec() } else { name }
 }
 

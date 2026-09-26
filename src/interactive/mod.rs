@@ -75,12 +75,8 @@ pub fn with_history<R>(f: impl FnOnce(&mut ShellHistory) -> R) -> Option<R> {
     EDITOR.with(|e| e.borrow_mut().as_mut().map(|ed| f(ed.history_mut())))
 }
 
-pub fn prompt(sh: &mut Shell, continuation: bool) -> Vec<u8> {
-    if continuation {
-        sh.expand_prompt(b"PS2")
-    } else {
-        sh.expand_prompt(b"PS1")
-    }
+pub fn prompt(sh: &mut Shell, continuation: bool) -> crate::prompt::Prompt {
+    sh.prompt(if continuation { b"PS2" } else { b"PS1" })
 }
 
 /// The names the completer needs, taken from the shell before each prompt.
@@ -104,7 +100,10 @@ fn colors(sh: &Shell) -> Option<highlight::Colors> {
 /// Reads a line with the editor. `pending` is the text read so far of an
 /// incomplete command, which the highlighter continues from.
 pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
-    let p = String::from_utf8_lossy(&prompt(sh, continuation)).into_owned();
+    let p = prompt(sh, continuation);
+    let text = String::from_utf8_lossy(&p.text).into_owned();
+    // The line editor measures the prompt without its escape sequences.
+    let plain = p.plain.map(|s| String::from_utf8_lossy(&s).into_owned());
     let vi = sh.opt(Opt::Vi);
     let names = names(sh);
     let colors = colors(sh);
@@ -125,7 +124,11 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
         } else {
             rustyline::EditMode::Emacs
         });
-        match ed.readline(&p) {
+        let r = match &plain {
+            Some(plain) => ed.readline(&(plain, &text)),
+            None => ed.readline(&text),
+        };
+        match r {
             Ok(mut l) => {
                 l.push('\n');
                 Line::Text(l.into_bytes())

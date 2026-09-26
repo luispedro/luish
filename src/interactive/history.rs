@@ -66,6 +66,11 @@ impl ShellHistory {
         }
     }
 
+    /// The event number the next entry will get.
+    pub fn next_event(&self) -> usize {
+        self.first + self.entries.len()
+    }
+
     /// The entry with event number `n`.
     pub fn event(&self, n: usize) -> Option<&str> {
         self.entries.get(n.checked_sub(self.first)?).map(String::as_str)

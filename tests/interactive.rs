@@ -373,6 +373,23 @@ fn syntax_highlighting() {
 }
 
 #[test]
+fn prompt_percent() {
+    let mut sh = Pty::spawn_term("prompt", "vt100");
+    sh.expect("$ ");
+    // An OSC sequence in %{...%}, and colours: the line editor measures the
+    // prompt without them, so the cursor goes to column 4 + 4 after "echo".
+    sh.send("setopt promptpercent; PS1=\"$(printf '%%{\\033]0;t\\007%%}%%F{red}ab%%f%%%% ')\"\n");
+    sh.expect("\x1b]0;t\x07\x1b[31mab\x1b[39m% ");
+    sh.send("echo");
+    sh.expect("echo\x1b[0m\x1b[8C");
+    sh.send(" x\n");
+    sh.expect("x\n");
+    sh.expect("ab\x1b[39m% ");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
 fn tab_completion() {
     let mut sh = Pty::spawn_term("complete", "vt100");
     std::fs::write(sh.path("completeme file"), "found it\n").unwrap();

@@ -328,8 +328,24 @@ impl Shell {
         code
     }
 
-    /// Parameter-expands a prompt variable (`PS1`, `PS2`, `PS4`).
+    /// Expands a prompt variable (`PS1`, `PS2`, `PS4`): the text to write.
     pub fn expand_prompt(&mut self, var: &[u8]) -> Vec<u8> {
+        self.prompt(var).text
+    }
+
+    /// Expands a prompt variable: parameter expansion, then, with the
+    /// `promptpercent` option, `%` sequences (as zsh does).
+    pub fn prompt(&mut self, var: &[u8]) -> crate::prompt::Prompt {
+        let text = self.param_expand_prompt(var);
+        if self.opt(Opt::PromptPercent) && text.contains(&b'%') {
+            crate::prompt::expand(self, &text)
+        } else {
+            crate::prompt::Prompt::plain(text)
+        }
+    }
+
+    /// Parameter-expands a prompt variable.
+    fn param_expand_prompt(&mut self, var: &[u8]) -> Vec<u8> {
         let text = self.get_var(var).unwrap_or_default();
         if !text.contains(&b'$') && !text.contains(&b'`') && !text.contains(&b'\\') {
             return text;

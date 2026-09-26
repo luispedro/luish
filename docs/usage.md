@@ -19,6 +19,48 @@ In an interactive shell, `help` lists the built-in commands, and `help NAME` sho
 same text as in [](builtins.md)). `help` is not a built-in in scripts, so that they find the same commands as in
 other shells; there, `__luish_internal help` does the same.
 
+## Prompts
+
+`PS1` is the prompt, `PS2` the prompt for the continuation lines of a command, and `PS4` the prefix of the lines
+that `set -x` prints. As POSIX requires, they go through parameter expansion, so `PS1='$PWD\$ '` shows the current
+directory.
+
+With the `promptpercent` option (`setopt prompt_percent`), they then also expand `%` sequences, as in zsh:
+
+```sh
+setopt prompt_percent
+PS1='%F{blue}%~%f %(?..%F{red}[%?]%f )%# '
+```
+
+This shows the current directory (with `~` for `$HOME`) in blue, then the exit status of the last command in red if
+it failed, then `#` for root and `%` for other users. Parameter expansion comes first, so a `%` in the value of a
+variable is expanded too; write `%%` for a literal `%`. The sequences are those of zsh:
+
+| Sequence | Expands to |
+|---|---|
+| `%%`, `%)` | `%`, `)` |
+| `%~`, `%d` or `%/` | The current directory, with or without `~` for `$HOME`. With a number, `%N~` gives only its last `N` components, and `%-N~` its first `N` |
+| `%c` or `%.`, `%C` | The last component of the current directory, with or without `~` (`%Nc` for more) |
+| `%n`, `%m`, `%M` | The user name, the host name up to the first `.` (`%Nm`: `N` components), the full host name |
+| `%#` | `#` for root, `%` otherwise |
+| `%?` | The exit status of the last command |
+| `%h` or `%!` | The number of the next history event |
+| `%j` | The number of jobs |
+| `%L`, `%i` | `$SHLVL`, the line number (for `PS4`) |
+| `%l`, `%y` | The terminal, without `/dev/` (and, for `%l`, without `tty`) |
+| `%D`, `%T`, `%*`, `%t` or `%@`, `%w`, `%W` | The date as `yy-mm-dd`, the time as `HH:MM` or `HH:MM:SS`, or in 12-hour format, the weekday and day, the date as `mm/dd/yy` |
+| `%D{format}` | The time in a `strftime` format (and zsh's `%f`, `%K` and `%L`, the day and hours without padding) |
+| `%B` `%b`, `%U` `%u`, `%S` `%s` | Start and stop bold, underline and standout (reverse video) |
+| `%F{colour}` `%f`, `%K{colour}` `%k` | Start and stop a foreground and a background colour: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, a number from 0 to 255, or `#rrggbb`. `%NF` is `%F{N}` |
+| `%E` | Clear to the end of the line |
+| `%{...%}` | Text written as it is, taking no room on the screen: for other escape sequences, such as a terminal title |
+| `%NG` | Within `%{...%}`: the escape sequence takes `N` columns |
+| `%(x.yes.no)` | `yes` if the condition `x` holds, otherwise `no` (any character can replace the `.`s). The conditions take a number `N`, as in `%(N?.yes.no)` or `%N(?.yes.no)`: `?` the exit status is `N` (0 by default), `#` the user id is `N` (0: root), `!` the shell runs as root, `g` the group id is `N`, `j` there are at least `N` jobs, `L` `$SHLVL` is at least `N`, `/` or `C` the current directory has at least `N` components, `~`, `.` or `c` the same, with `~` for `$HOME` counting as one; `T`, `t`, `d`, `D` and `w`: the hour, minute, day of the month, month (from 0 for January) or day of the week (from 0 for Sunday) is `N` |
+| `%N<text<`, `%N>text>` | Shorten what follows (up to the end of the enclosing `%(...)`, or to the next `%<<`) to `N` characters, replacing what is cut on the left or the right by `text` |
+
+Other sequences expand to nothing. zsh's `%_`, `%e`, `%I`, `%N`, `%x`, `%v`, `%[...]`, and conditions and truncation
+widths relative to the terminal's width, aren't supported.
+
 ## Saving and restoring the shell's state
 
 luish's own commands are subcommands of the `__luish_internal` built-in. `__luish_internal savestate` prints shell
