@@ -5,7 +5,8 @@
 //! lines) and the colours, all set before each prompt. It classifies each
 //! byte with a rough tokenizer that follows quoting, expansions, operators,
 //! redirections, here-documents, comments and reserved words, and colours
-//! command names by whether they can be found.
+//! command names by whether they can be found. A name under the cursor is
+//! not marked as unknown, since it may still be being typed.
 //!
 //! The colours come from `$LUISH_HIGHLIGHT`, a colon-separated list of
 //! `class=SGR` entries (as in `GREP_COLORS`) that override the defaults; an
@@ -108,6 +109,8 @@ struct Scan<'a> {
     s: &'a [u8],
     cls: Vec<Class>,
     known: &'a dyn Fn(&[u8]) -> bool,
+    /// The cursor's position in the text.
+    cursor: Option<usize>,
     /// Pending here-documents: the delimiter, and whether tabs are stripped.
     heredocs: Vec<(Vec<u8>, bool)>,
     in_backquote: bool,
@@ -303,12 +306,11 @@ impl Scan<'_> {
         } else {
             let rest = &self.s[e..];
             let definition = rest.iter().find(|&&c| !is_blank(c)) == Some(&b'(');
-            let class = if definition || (self.known)(text) {
-                Class::Command
-            } else {
-                Class::Unknown
-            };
-            self.paint_plain(start, e, class);
+            if definition || (self.known)(text) {
+                self.paint_plain(start, e, Class::Command);
+            } else if !self.cursor.is_some_and(|c| (start..=e).contains(&c)) {
+                self.paint_plain(start, e, Class::Unknown);
+            }
             *precommand = PRECOMMANDS.contains(&text);
             *cmd = *precommand;
         }
@@ -555,11 +557,12 @@ impl Scan<'_> {
 
 /// Classifies each byte of `text`. `known` says whether a command name
 /// can be found.
-pub fn classify(text: &[u8], known: &dyn Fn(&[u8]) -> bool) -> Vec<Class> {
+pub fn classify(text: &[u8], cursor: Option<usize>, known: &dyn Fn(&[u8]) -> bool) -> Vec<Class> {
     let mut sc = Scan {
         s: text,
         cls: vec![Class::Plain; text.len()],
         known,
+        cursor,
         heredocs: Vec::new(),
         in_backquote: false,
     };
@@ -627,19 +630,21 @@ impl ShellHelper {
 }
 
 impl Highlighter for ShellHelper {
-    fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
+    fn highlight<'l>(&self, line: &'l str, pos: usize) -> Cow<'l, str> {
         let Some(colors) = &self.highlight.colors else {
             return Cow::Borrowed(line);
         };
         let context = &self.highlight.context;
         let text = [&context[..], line.as_bytes()].concat();
-        let cls = classify(&text, &|name| self.is_known(name));
+        let cls = classify(&text, Some(context.len() + pos), &|name| self.is_known(name));
         String::from_utf8(render(line.as_bytes(), &cls[context.len()..], colors))
             .map_or(Cow::Borrowed(line), Cow::Owned)
     }
 
-    fn highlight_char(&self, _line: &str, _pos: usize, kind: CmdKind) -> bool {
-        self.highlight.colors.is_some() && kind != CmdKind::MoveCursor
+    /// Every change repaints, including cursor moves, since the word under
+    /// the cursor is coloured differently.
+    fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
+        self.highlight.colors.is_some()
     }
 }
 
@@ -651,8 +656,12 @@ mod tests {
     /// `v`ar, `$` substitution, `o`perator, `r`edirection, `#` comment,
     /// `a`ssignment, `.` plain.
     fn classes(text: &str) -> String {
+        classes_at(text, None)
+    }
+
+    fn classes_at(text: &str, cursor: Option<usize>) -> String {
         let known = |n: &[u8]| [&b"echo"[..], b"cat", b"ls", b"sudo"].contains(&n);
-        classify(text.as_bytes(), &known)
+        classify(text.as_bytes(), cursor, &known)
             .into_iter()
             .map(|c| match c {
                 Class::Plain => '.',
@@ -726,13 +735,25 @@ mod tests {
     }
 
     #[test]
+    fn word_being_typed() {
+        // Not unknown while the cursor is on it (it may be unfinished).
+        assert_eq!(classes_at("ech", Some(3)), "...");
+        assert_eq!(classes_at("ech", Some(0)), "...");
+        assert_eq!(classes_at("ech ", Some(4)), "uuu.");
+        assert_eq!(classes_at("nope; ec", Some(2)), "....o.uu");
+        assert_eq!(classes_at("nope; ec", Some(8)), "uuuuo...");
+        // Known commands are coloured as they are.
+        assert_eq!(classes_at("ls", Some(2)), "cc");
+    }
+
+    #[test]
     fn colors() {
         let c = Colors::parse(b"keyword=4:command=:bogus=1:string=1m").unwrap();
         assert_eq!(c.0[Class::Keyword as usize], b"4");
         assert_eq!(c.0[Class::Command as usize], b"");
         assert_eq!(c.0[Class::String as usize], b"33");
         assert_eq!(Colors::parse(b"none"), None);
-        let cls = classify(b"if ls", &|_| true);
+        let cls = classify(b"if ls", None, &|_| true);
         assert_eq!(render(b"if ls", &cls, &c), b"\x1b[4mif\x1b[0m ls");
     }
 }

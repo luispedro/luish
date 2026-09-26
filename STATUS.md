@@ -344,7 +344,8 @@ pass**.
 - Syntax highlighting (`src/interactive/highlight.rs`), on by default:
   reserved words (in command position only), command names (in a
   different colour when they are not a built-in, function, alias or
-  executable), quoted strings, parameter and arithmetic expansions,
+  executable, except while the cursor is on them, since they may be
+  unfinished), quoted strings, parameter and arithmetic expansions,
   `$(...)` and backquotes (whose contents are highlighted as commands),
   operators, redirections, here-document bodies, comments and the `NAME=` of
   assignments. A `PS2` line is highlighted in the context of the earlier
