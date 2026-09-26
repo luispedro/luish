@@ -744,11 +744,11 @@ Rhai or back into the shell.
    feature, which is on by default. `luish -c true` must be as fast with the
    feature as without it (measured on a release build).
    `--no-default-features` builds a shell without plugin support. Rhai is
-   built without default features (whose `runtime-rng` pulls in `libdl`),
-   with `no_float` and `only_i64`: floats make the executable depend on
-   `libm`, whose loading added about 175 µs to every startup, and
-   `only_i64` roughly halves Rhai's load-time relocations. Shell
-   arithmetic is integer-only anyway.
+   built without default features (whose `runtime-rng` pulls in `libdl`)
+   and with `only_i64`, which roughly halves Rhai's load-time relocations.
+   Floats are kept, although they make the executable depend on `libm`
+   (about 175 µs at every startup): startup overhead from the feature is
+   acceptable while it stays well under 1 ms.
 7. **Plugin search.** `plugin load foo` loads
    `$XDG_CONFIG_HOME/luish/plugins/foo.rhai` (by default
    `~/.config/luish/plugins`). An argument that contains a `/` is a file

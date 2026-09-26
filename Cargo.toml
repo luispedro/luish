@@ -8,7 +8,7 @@ license = "MIT"
 [dependencies]
 libc = "0.2.189"
 nix = { version = "0.31.3", features = ["process", "signal", "fs", "term", "resource", "user", "dir", "poll"] }
-rhai = { version = "1.26", optional = true, default-features = false, features = ["std", "no_float", "only_i64"] }
+rhai = { version = "1.26", optional = true, default-features = false, features = ["std", "only_i64"] }
 rustyline = "18.0.1"
 
 [profile.release]

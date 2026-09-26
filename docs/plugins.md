@@ -67,7 +67,8 @@ itself runs `cd` does not trigger `chpwd` again.
 
 Rhai's `print(text)` and `debug(text)` write a line to standard output and standard error.
 
-Rhai in luish has integers but no floating-point numbers.
+Integers in Rhai are 64-bit, as in shell arithmetic. Floating-point numbers are available too, for example to time
+things with `timestamp()` and `.elapsed`.
 
 ## Text and bytes
 

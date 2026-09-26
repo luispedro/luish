@@ -32,7 +32,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **108 differential cases, 9 plugin cases, 45 unit tests and 11 pty tests
+Current state: **108 differential cases, 10 plugin cases, 45 unit tests and 11 pty tests
 pass**.
 
 ## Environment
@@ -467,7 +467,7 @@ pass**.
   expression-depth and size limits), one AST per plugin. Rhai's `print`
   and `debug` write lines to fds 1 and 2. SIGINT stops plugin code (checked
   in `on_progress`), leaving the signal pending for the shell. Rhai is
-  built with `no_float` and `only_i64` (see PLAN.md §6.4).
+  built with `only_i64` (see PLAN.md §6.4); floats are available.
 - `sh` module: `hook`, `getvar`, `setvar`, `export`, `unsetvar`, `cwd`,
   `last_status`, `interactive`, `run` (shell code in the current shell;
   `exit` in it stops the plugin and exits the shell), `write` (fds 1 and 2).
@@ -477,7 +477,7 @@ pass**.
   others still run; a `chpwd` hook running `cd` doesn't re-trigger `chpwd`.
 - `plugins/bytes.rs`: non-UTF-8 bytes map to U+10FF80–U+10FFFF and back
   (PLAN.md §6.5); strings with NUL can't be set as variables.
-- Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `reload`,
+- Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `floats`, `reload`,
   `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`), unit
   tests for the byte conversion, `builtins/plugin.sh`,
   `builtins/internal_plugin.sh`, and `plugin_builtin` in
@@ -522,9 +522,10 @@ notes how to rerun them):
   `capture`, file functions or `parse_json`. The native built-ins have not
   been moved onto a `Builtin` trait (PLAN.md Phase 11, step 1). `import`
   in a plugin is not resolved relative to the plugin's directory.
-- With the `plugins` feature, `-c true` starts about 80 µs (4%) slower
-  than without it, from load-time relocations of Rhai's static data in the
-  PIE executable (a non-PIE build removes the difference).
+- With the `plugins` feature, `-c true` starts about 250 µs slower than
+  without it: loading `libm` (for Rhai's floats) and load-time relocations
+  of Rhai's static data in the PIE executable. This is accepted while it
+  stays under 1 ms.
 - `trap` with no arguments, run inside a subshell or `$(...)`, doesn't show
   the parent's traps.
 - `read` is not interrupted by trapped signals.
