@@ -56,7 +56,7 @@ pass**.
 | 9 Options and `set -e` | Done |
 | 10 Interactive / job control | Done (prompt loop, history and `fc`, job control, completion), with the gaps listed below |
 | 11 Plugins | Not started |
-| 12 Conformance / performance | Started: benchmark baseline below |
+| 12 Conformance / performance | Started: autoconf `configure` scripts and the Oils spec tests (see Conformance below), benchmark baseline |
 
 ## Implemented behaviour
 
@@ -352,6 +352,24 @@ pass**.
   pty tests use `TERM=dumb`, under which rustyline does no editing, except
   `tab_completion`, which uses `TERM=vt100`.
 
+## Conformance
+
+Checked on 2026-09-26 (the scripts are not in the repository; working-memory
+notes how to rerun them):
+
+- **autoconf**: GNU hello 2.12.1 and GNU sed 4.9 `configure` run under luish
+  (as `CONFIG_SHELL`) with the same output as under dash and the same
+  `config.h`; both build, and `make check` passes (sed: the same PASS/SKIP
+  lists as the dash-configured tree). The sed `configure` takes the same
+  time under both shells.
+- **Oils spec tests** (`spec/*.test.sh` whose `compare_shells` include
+  dash, 1620 cases), each run under dash and luish and compared on stdout
+  and status: 161 differed at first, 43 now. The rest are the deviations
+  in DEVIATIONS.md (`$LINENO`, `set -x` quoting, multi-digit fds, `exec --`,
+  `kill` of jobs without job control, `$((` fallback), bash-only features
+  (arrays, `shopt`, `printf -v`/`%q`, `declare`), cases that differ only by
+  temporary directory names or timestamps, and the gaps below.
+
 ## Known gaps
 
 - History entries are UTF-8 strings (rustyline's), so invalid bytes in a
@@ -375,21 +393,35 @@ pass**.
   implemented.
 - Fds saved at 10 or above could collide with a user redirection to fd 10+
   in the same command.
+- `command local x=1` keeps the variable in the function; in dash it is
+  local to the `command` invocation and disappears.
+- Startup makes about 185 syscalls to dash's 85 (see the performance
+  section).
 
 ## Performance baseline
 
-Release build, 2026-09-26, after starting external commands with
-`posix_spawn`. Loops are best of 3; this machine was less loaded than for
-earlier baselines, so compare only within a table.
+Release build, 2026-09-26, after the Oils conformance fixes. Loops are best
+of 3, on a loaded machine; the `/bin/true` loop varied between 1.8 and 2.0 s
+for both shells, so compare only within a table.
 
 | Benchmark | luish | dash |
 |---|---|---|
-| `-c true` (average of 200 runs) | 1.11 ms | 0.92 ms |
-| `-c /bin/true` (average of 200 runs) | 1.77 ms | 1.73 ms |
-| `while` loop, 100k `$((i+1))` iterations | 0.08 s | 0.08 s |
-| Loop running `/bin/true` 3000 times | 1.81 s | 1.76 s |
-| Loop running `x=$(echo hi)` 3000 times | 1.01 s | 1.06 s |
+| `-c true` (average of 200 runs) | 1.19 ms | 0.90 ms |
+| `-c /bin/true` (average of 200 runs) | 1.88 ms | 1.78 ms |
+| `while` loop, 100k `$((i+1))` iterations | 0.09 s | 0.09 s |
+| Loop running `/bin/true` 3000 times | 1.80 s | 1.81 s |
+| Loop running `x=$(echo hi)` 3000 times | 0.92 s | 0.90 s |
+
+Per external command, luish now makes the same syscalls as dash (a cached
+command is no longer checked with `stat`). The largest remaining gap is
+startup (`-c true`): 185 syscalls to dash's 85. Most come from querying all
+64 signal dispositions at startup (dash looks one up only when it first
+changes it), the Rust runtime's initialisation (stdio poll, reading
+`/proc/self/maps` for the stack guard, `sigaltstack`, SIGPIPE; avoidable
+with `#![no_main]`), `libgcc_s` found through a `RUNPATH` into the pixi
+environment plus a `libpthread` stub, `readlink /proc/self/exe` (could be
+lazy) and HashMap seeding. Deferred for now by decision.
 
 Before `posix_spawn`, the `/bin/true` loop took 2.42 s. The system dash
 (Debian) forks for the last command of `-c`; luish execs it, like upstream
-dash. The largest remaining gap is startup (`-c true`).
+dash.
