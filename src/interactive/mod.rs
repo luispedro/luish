@@ -2,6 +2,7 @@
 
 mod complete;
 mod highlight;
+mod histfile;
 pub mod history;
 mod menu;
 
@@ -9,13 +10,14 @@ use std::cell::{Cell, RefCell};
 
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
+use rustyline::history::History;
 use rustyline::{CompletionType, Config, Editor};
 
 pub use complete::Completion;
 #[cfg(feature = "plugins")]
 pub use complete::{Candidate, Suffix};
 use complete::{Names, ShellHelper};
-use history::ShellHistory;
+use history::{Save, ShellHistory};
 
 use crate::input::Line;
 use crate::jobs::JobTable;
@@ -32,8 +34,37 @@ thread_local! {
     static EXIT: Cell<Option<i32>> = const { Cell::new(None) };
 }
 
+/// `$HISTFILE`, or by default `$XDG_STATE_HOME/luish/history` (or
+/// `~/.local/state/luish/history`). An empty `HISTFILE` means none.
 fn history_file(sh: &Shell) -> Option<Vec<u8>> {
-    sh.get_var(b"HISTFILE").filter(|h| !h.is_empty())
+    match sh.get_var(b"HISTFILE") {
+        Some(h) => Some(h).filter(|h| !h.is_empty()),
+        None => {
+            let mut d = crate::startcache::xdg_dir(sh, b"XDG_STATE_HOME", b"/.local/state")?;
+            d.extend_from_slice(b"/luish/history");
+            Some(d)
+        }
+    }
+}
+
+fn number_var(sh: &Shell, name: &[u8]) -> Option<usize> {
+    String::from_utf8(sh.get_var(name)?).ok()?.parse().ok()
+}
+
+/// The number of entries kept in memory: `$HISTSIZE`, 1000 by default.
+fn history_size(sh: &Shell) -> usize {
+    number_var(sh, b"HISTSIZE").unwrap_or(1000)
+}
+
+/// How the history is saved to `path`: `$SAVEHIST` entries are kept (by
+/// default as many as `$HISTSIZE`).
+fn save_options<'a>(sh: &Shell, path: &'a [u8]) -> Save<'a> {
+    Save {
+        path,
+        limit: number_var(sh, b"SAVEHIST").unwrap_or_else(|| history_size(sh)),
+        share: sh.opt(Opt::ShareHistory),
+        no_dups: sh.opt(Opt::HistSaveNoDups),
+    }
 }
 
 pub fn to_path(b: &[u8]) -> std::path::PathBuf {
@@ -42,7 +73,7 @@ pub fn to_path(b: &[u8]) -> std::path::PathBuf {
 }
 
 /// Sets up the line editor. Returns false if it can't be used.
-pub fn init_editor(sh: &Shell) -> bool {
+pub fn init_editor() -> bool {
     let Ok(mut ed) = Editor::with_history(Config::default(), ShellHistory::default()) else {
         return false;
     };
@@ -51,37 +82,63 @@ pub fn init_editor(sh: &Shell) -> bool {
     menu::bind(&mut ed, &helper.menu);
     ed.set_helper(Some(helper));
     ed.set_completion_type(CompletionType::List);
-    let size = sh
-        .get_var(b"HISTSIZE")
-        .and_then(|s| String::from_utf8(s).ok()?.parse().ok())
-        .unwrap_or(1000);
-    let _ = ed.set_max_history_size(size);
-    if let Some(h) = history_file(sh) {
-        let _ = ed.load_history(&to_path(&h));
-    }
     EDITOR.with(|e| *e.borrow_mut() = Some(ed));
     true
 }
 
-pub fn save_history(sh: &Shell) {
-    let Some(h) = history_file(sh) else { return };
-    EDITOR.with(|e| {
-        if let Ok(mut ed) = e.try_borrow_mut()
-            && let Some(ed) = ed.as_mut()
-        {
-            let _ = ed.save_history(&to_path(&h));
+/// Reads the history file, once the startup files have set `HISTFILE`
+/// and `HISTSIZE`.
+pub fn load_history(sh: &Shell) {
+    let size = history_size(sh);
+    let file = history_file(sh);
+    with_history(|h| {
+        let _ = h.set_max_len(size);
+        if let Some(f) = file {
+            h.load(&f);
         }
     });
 }
 
+/// Appends the new entries to the history file (on exit, or after each
+/// command with `inc_append_history` or `share_history`).
+pub fn save_history(sh: &Shell) {
+    let Some(f) = history_file(sh) else { return };
+    let save = save_options(sh, &f);
+    with_history(|h| h.save(&save));
+}
+
 /// Adds the text of a command about to be run to the history.
-pub fn add_history(text: &[u8]) {
+pub fn add_history(sh: &Shell, text: &[u8]) {
     let text = String::from_utf8_lossy(text);
     let text = text.trim_end_matches('\n');
     if text.trim().is_empty() {
         return;
     }
-    with_history(|h| h.add_current(text));
+    let private = sh.opt(Opt::HistIgnoreSpace) && text.starts_with([' ', '\t']);
+    let reduced;
+    let text = if sh.opt(Opt::HistReduceBlanks) {
+        reduced = history::reduce_blanks(text);
+        &reduced
+    } else {
+        text
+    };
+    with_history(|h| h.add_current(text, private));
+    if sh.opt(Opt::IncAppendHistory) || sh.opt(Opt::ShareHistory) {
+        save_history(sh);
+    }
+}
+
+/// Before each prompt: applies `HISTSIZE`, and with `share_history` reads
+/// what other shells have added to the history file.
+fn update_history(sh: &Shell) {
+    let size = history_size(sh);
+    let file = history_file(sh).filter(|_| sh.opt(Opt::ShareHistory));
+    with_history(|h| {
+        let _ = h.set_max_len(size);
+        if let Some(f) = file {
+            h.sync(&f);
+        }
+    });
 }
 
 /// Runs `f` on the history. Returns None if there is no line editor (and
@@ -158,6 +215,9 @@ fn colors(sh: &Shell) -> Option<highlight::Colors> {
 /// Reads a line with the editor. `pending` is the text read so far of an
 /// incomplete command, which the highlighter continues from.
 pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
+    if !continuation {
+        update_history(sh);
+    }
     let p = prompt(sh, continuation);
     let text = String::from_utf8_lossy(&p.text).into_owned();
     // The line editor measures the prompt without its escape sequences.

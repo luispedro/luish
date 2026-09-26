@@ -399,7 +399,7 @@ impl Shell {
                     if self.opt(Opt::Verbose) && !self.interactive {
                         sys::write_all(2, &text);
                     }
-                    input.add_history(&text);
+                    input.add_history(self, &text);
                     if !self.opt(Opt::Noexec) || self.interactive {
                         let r = self.run_list(&list);
                         self.top_level_result(r);

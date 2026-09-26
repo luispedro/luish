@@ -409,7 +409,9 @@ pass**.
 - `set -o` / `set +o` output matches dash, except that the last option is
   `hashall` rather than dash's `debug` (see DEVIATIONS.md).
 - luish's own options (`EXTENDED` in `options.rs`, all off by default:
-  `promptpercent`, `globstar`, `bareglobqual` and `autocd`) have no letter and are
+  `promptpercent`, `globstar`, `bareglobqual`, `autocd`, and the history
+  options `histignorespace`, `histreduceblanks`, `histsavenodups`,
+  `incappendhistory` and `sharehistory`) have no letter and are
   not in `set -o` or `$-`, so `set` stays as in dash. They are set with `setopt`
   and `unsetopt` (not POSIX; as in zsh), which also set dash's options.
   Names are as in zsh: case and `_` don't matter, and a `no` prefix is
@@ -424,13 +426,30 @@ pass**.
 ### Interactive mode (`src/interactive/`)
 - A rustyline editor with emacs mode by default and vi mode under
   `set -o vi`.
-- History in `$HISTFILE`, limited to `$HISTSIZE` entries. Each entry is
-  one top-level command as read (possibly several lines); a command equal
-  to the newest entry is not added again. The store is luish's own
-  (`src/interactive/history.rs`), in rustyline's file format (`#V2`, with
-  `\` and newlines escaped, mode 0600); it gives entries event numbers that
-  stay the same when old entries are dropped. The file is written on exit,
-  only if the history changed.
+- History of `$HISTSIZE` entries (1000 by default) in `$HISTFILE`, by
+  default `$XDG_STATE_HOME/luish/history` (or
+  `~/.local/state/luish/history`; an empty `HISTFILE` means none). It is
+  read after the startup files, so they can set both. Each entry is one
+  top-level command as read (possibly several lines), with the time it
+  was run; a command equal to the newest entry is not added again. The
+  store is luish's own (`src/interactive/history.rs`); it gives entries
+  event numbers that stay the same when old entries are dropped.
+- The file is in zsh's format (`src/interactive/histfile.rs`): `: START:0;`
+  before each command, `\` before embedded newlines (and a space after a
+  final `\`), and zsh's metafied bytes, so zsh and luish can share it.
+  luish's older format (`#V2`) is still read. New entries are appended
+  (mode 0600, creating the directory) on exit, or after each command with
+  `inc_append_history` or `share_history`, under an `fcntl` lock on the
+  file (which zsh takes with `hist_fcntl_lock`). When the file has more
+  than 20% over `$SAVEHIST` entries (by default `$HISTSIZE`), it is
+  replaced by its last `$SAVEHIST` through a temporary file (leaving out
+  older duplicates with `hist_save_no_dups`). With `share_history`, the
+  entries other shells have appended are read before each prompt (one
+  `stat` when there are none): the shell remembers the size of the file
+  and its last entry seen, which it looks for if the file was replaced.
+- `hist_ignore_space`: a command starting with a blank isn't saved, and
+  the next command replaces it in memory. `hist_reduce_blanks`: runs of
+  blanks become one space, outside quotes and here-documents.
 - `fc` (POSIX; upstream dash has it with libedit, Debian's dash has none):
   `-l` lists (default: the last 16), `-n` omits numbers, `-r` reverses,
   `-s [old=new]` re-runs, and `-e editor` (default `$FCEDIT`, `$EDITOR`,
@@ -581,11 +600,13 @@ pass**.
   (command output, files tested with `[`, a sourced file that didn't
   exist), background revalidation, and merging into running shells.
 - Tests: `tests/interactive.rs` (job control, Ctrl-C and Ctrl-Z, terminal
-  input and modes, completion and its menu, highlighting, `fc`, and the
-  command cache), `builtins/fc_noninteractive.sh`, and unit tests in
-  `complete.rs`, `menu.rs`, `highlight.rs` and `history.rs`. The pty tests
-  use `TERM=dumb`, under which rustyline does no editing, except those of
-  completion and highlighting, which use `TERM=vt100`.
+  input and modes, completion and its menu, highlighting, `fc`, the
+  history file and `share_history`, and the command cache),
+  `builtins/fc_noninteractive.sh`, and unit tests in `complete.rs`,
+  `menu.rs`, `highlight.rs`, `history.rs` and `histfile.rs` (including
+  lines written by zsh). The pty tests use `TERM=dumb`, under which
+  rustyline does no editing, except those of completion and highlighting,
+  which use `TERM=vt100`.
 
 ### Plugins (`src/plugins/`)
 - Everything is behind the `plugins` cargo feature. Until the first
@@ -709,7 +730,16 @@ notes how to rerun them):
 - History entries are UTF-8 strings (rustyline's), so invalid bytes in a
   command are replaced when it is recorded.
 - `fc -e` runs the edited text as one history entry, rather than one entry
-  per command.
+  per command. With `inc_append_history` or `share_history`, the `fc`
+  command has been written to the file before it replaces its own entry
+  (as in zsh).
+- History entries have no elapsed time (written as 0, as zsh does with
+  `share_history`), nor other metadata such as the directory or exit
+  status, and `fc` can't show their times (zsh's `fc -d`, `-i`). Entries
+  read from other shells are not marked as such (zsh's
+  `set-local-history`). The zsh options `hist_ignore_dups` (always on),
+  `append_history` (always on), `extended_history` (always on) and
+  `hist_fcntl_lock` (always on) don't exist in luish.
 - The highlighter's tokenizer is approximate (like the completer's): it
   does not expand aliases, and a function or alias defined earlier on the
   same line is shown as unknown until the next prompt.

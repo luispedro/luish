@@ -22,6 +22,8 @@ struct Pty {
     /// Start of the output not yet matched by `expect`.
     mark: usize,
     dir: PathBuf,
+    /// The directory is removed when the shell is dropped.
+    owns_dir: bool,
 }
 
 impl Pty {
@@ -33,6 +35,15 @@ impl Pty {
         let dir = std::env::temp_dir().join(format!("luish-pty-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        Pty::spawn_at(dir, term, true)
+    }
+
+    /// Another shell in the directory (and `$HOME`) of `other`.
+    fn spawn_beside(other: &Pty) -> Pty {
+        Pty::spawn_at(other.dir.clone(), "dumb", false)
+    }
+
+    fn spawn_at(dir: PathBuf, term: &str, owns_dir: bool) -> Pty {
         let shell = CString::new(env!("CARGO_BIN_EXE_luish")).unwrap();
         let argv = [CString::new("luish").unwrap(), CString::new("-i").unwrap()];
         let env = [
@@ -81,6 +92,7 @@ impl Pty {
                 out: Vec::new(),
                 mark: 0,
                 dir,
+                owns_dir,
             }
         }
     }
@@ -212,7 +224,9 @@ impl Drop for Pty {
             libc::waitpid(self.pid, std::ptr::null_mut(), 0);
             libc::close(self.master);
         }
-        let _ = std::fs::remove_dir_all(&self.dir);
+        if self.owns_dir {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
     }
 }
 
@@ -700,6 +714,61 @@ fn fc_history() {
     assert_has(&sh.run("echo st=$?"), "st=2\n");
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
+fn history_file() {
+    let mut sh = Pty::spawn("histfile");
+    sh.expect("$ ");
+    sh.run("setopt hist_ignore_space hist_reduce_blanks");
+    sh.run("echo   one   'a  b'");
+    sh.run(" echo secret");
+    // A command starting with a space is replaced by the next one.
+    assert_eq!(sh.run("fc -l -1"), "fc -l -1\n2\techo one 'a  b'\n$ ");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+    // By default the file is in $XDG_STATE_HOME, in zsh's format.
+    let text = std::fs::read_to_string(sh.path(".local/state/luish/history")).unwrap();
+    let commands: Vec<&str> = text.lines().map(|l| l.split_once(';').unwrap().1).collect();
+    assert_eq!(
+        commands,
+        [
+            "setopt hist_ignore_space hist_reduce_blanks",
+            "echo one 'a  b'",
+            "fc -l -1",
+            "exit 0"
+        ]
+    );
+    assert!(text.starts_with(": 1") && text.contains(":0;setopt"), "{text}");
+
+    // HISTFILE set in a startup file is read after it.
+    std::fs::create_dir_all(sh.path(".config/luish")).unwrap();
+    std::fs::write(sh.path(".config/luish/luishrc"), "HISTFILE=~/h\n").unwrap();
+    std::fs::write(sh.path("h"), ": 1790000000:0;echo from\\\nzsh\n").unwrap();
+    let mut sh2 = Pty::spawn_beside(&sh);
+    sh2.expect("$ ");
+    assert_eq!(sh2.run("fc -l"), "fc -l\n1\techo from\n\tzsh\n$ ");
+}
+
+#[test]
+fn share_history() {
+    let mut a = Pty::spawn("share");
+    a.expect("$ ");
+    a.run("setopt share_history");
+    std::fs::create_dir_all(a.path(".config/luish")).unwrap();
+    std::fs::write(a.path(".config/luish/luishrc"), "setopt share_history\n").unwrap();
+    let mut b = Pty::spawn_beside(&a);
+    b.expect("$ ");
+    a.run("echo from a");
+    // b reads it before its next prompt.
+    b.run("");
+    assert_eq!(b.run("fc -l"), "fc -l\n1\tsetopt share_history\n2\techo from a\n$ ");
+    a.run(": another");
+    b.run(": from b");
+    assert_eq!(
+        a.run("fc -ln"),
+        "fc -ln\n\tsetopt share_history\n\techo from a\n\tfc -l\n\t: another\n\t: from b\n$ "
+    );
 }
 
 #[test]

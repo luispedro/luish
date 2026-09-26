@@ -1172,7 +1172,9 @@ from Stage 1, so that Stage 1 doesn't make them harder.
   metadata (working directory, exit status, duration). `history.rs` should own
   the storage format so that it can move from a plain `$HISTFILE` to a
   structured store without changing the editor. (It does: `history.rs`
-  implements rustyline's `History` trait itself.)
+  implements rustyline's `History` trait itself. The file is zsh's, with
+  start times, and `share_history` shares it; the other metadata is still
+  to do.)
 
 ### 9.2 Stage 3: caching of login scripts
 

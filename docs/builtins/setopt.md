@@ -40,5 +40,27 @@ luish's own options, all off by default:
   executable file of that name. A relative name not starting with `.` or
   `..` is looked for in the current directory, then in `CDPATH`.
 
+The history options (see the user documentation on history):
+
+`histignorespace`
+: Don't save a command that starts with a space or a tab. It stays in the
+  history, to be recalled, until the next command replaces it.
+
+`histreduceblanks`
+: Replace runs of blanks in a command by one space before it goes into
+  the history, except in quotes and here-documents.
+
+`histsavenodups`
+: When the history file is trimmed, leave out commands that are repeated
+  later in it.
+
+`incappendhistory`
+: Append each command to the history file when it is run, rather than
+  when the shell exits.
+
+`sharehistory`
+: As `incappendhistory`, and also read the commands that other shells
+  have added to the history file, before each prompt.
+
 The exit status is 1 if an option doesn't exist or can't be changed
 (`interactive` and `stdin`); the other options given are still set.

@@ -55,9 +55,9 @@ impl Input {
         }
     }
 
-    pub fn add_history(&mut self, text: &[u8]) {
+    pub fn add_history(&mut self, sh: &Shell, text: &[u8]) {
         if let Input::Editor = self {
-            interactive::add_history(text);
+            interactive::add_history(sh, text);
         }
     }
 }

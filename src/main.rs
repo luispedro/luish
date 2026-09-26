@@ -153,7 +153,7 @@ fn main() {
         sh.set_jobctl(sh.opt(Opt::Monitor));
         // With -c or a script, the interactive shell still runs that.
         if stdin_mode {
-            if sys::isatty(0) && interactive::init_editor(&sh) {
+            if sys::isatty(0) && interactive::init_editor() {
                 input = Input::Editor;
             } else {
                 input = Input::fd(0, true);
@@ -168,6 +168,7 @@ fn main() {
     }
     if interactive {
         interactive::startup(&mut sh);
+        interactive::load_history(&sh);
     }
     if stdin_mode {
         sh.options.set(Opt::Stdin, true);

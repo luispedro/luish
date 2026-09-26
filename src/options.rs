@@ -25,6 +25,11 @@ pub enum Opt {
     Globstar,
     Bareglobqual,
     Autocd,
+    HistIgnoreSpace,
+    HistReduceBlanks,
+    HistSaveNoDups,
+    IncAppendHistory,
+    ShareHistory,
 }
 
 /// Option table: (option, letter, long name), in dash's order. `$-` lists
@@ -58,6 +63,11 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::Globstar, "globstar"),
     (Opt::Bareglobqual, "bareglobqual"),
     (Opt::Autocd, "autocd"),
+    (Opt::HistIgnoreSpace, "histignorespace"),
+    (Opt::HistReduceBlanks, "histreduceblanks"),
+    (Opt::HistSaveNoDups, "histsavenodups"),
+    (Opt::IncAppendHistory, "incappendhistory"),
+    (Opt::ShareHistory, "sharehistory"),
 ];
 
 #[derive(Debug, Default, Clone)]

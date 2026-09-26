@@ -61,6 +61,36 @@ variable is expanded too; write `%%` for a literal `%`. The sequences are those 
 Other sequences expand to nothing. zsh's `%_`, `%e`, `%I`, `%N`, `%x`, `%v`, `%[...]`, and conditions and truncation
 widths relative to the terminal's width, aren't supported.
 
+## History
+
+An interactive shell keeps the last `HISTSIZE` commands (1000 by default) in its history, where the line editor
+(Up and Down, Ctrl-R) and `fc` find them. A command the same as the one before it is not added again. The history is
+saved to the file `HISTFILE`, by default `$XDG_STATE_HOME/luish/history` (`~/.local/state/luish/history` if
+`XDG_STATE_HOME` isn't set); set `HISTFILE` to an empty value to keep no file. The file is read after the startup
+files, so `HISTFILE` and `HISTSIZE` can be set there (or in `luishrc`).
+
+The file is in zsh's format, with the time of each command, so luish and zsh can use the same file:
+
+```sh
+HISTFILE=~/.histfile
+SAVEHIST=10000
+setopt share_history hist_ignore_space hist_reduce_blanks
+```
+
+The file keeps up to `SAVEHIST` commands (by default as many as `HISTSIZE`). New commands are added to the end of it
+when the shell exits, so several shells don't overwrite each other's commands, and when it has grown to more than
+20% over `SAVEHIST` the oldest commands are dropped. Some options change this, as in zsh (see `help setopt`):
+
+- `inc_append_history` adds each command to the file as soon as it is run;
+- `share_history` does too, and also reads the commands that other shells have added before each prompt, so that
+  commands typed in one terminal can be recalled in all of them;
+- `hist_ignore_space` keeps commands that start with a space out of the file (the next command replaces them in
+  memory as well), which is useful for commands with passwords;
+- `hist_reduce_blanks` removes superfluous blanks from commands;
+- `hist_save_no_dups` drops older copies of repeated commands when the file is trimmed.
+
+Unlike zsh, luish saves the history by default: zsh keeps no file unless `HISTFILE` and `SAVEHIST` are set.
+
 ## Tab completion
 
 In an interactive shell, Tab completes the word under the cursor: a command name (a built-in, function, alias or

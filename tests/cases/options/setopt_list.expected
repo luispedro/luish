@@ -9,7 +9,11 @@ emacs
 errexit
 globstar
 hashall
+histignorespace
+histreduceblanks
+histsavenodups
 ignoreeof
+incappendhistory
 interactive
 monitor
 noclobber
@@ -17,6 +21,7 @@ noexec
 nolog
 notify
 privileged
+sharehistory
 stdin
 verbose
 vi

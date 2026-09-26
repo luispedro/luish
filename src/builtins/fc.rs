@@ -241,7 +241,7 @@ pub fn fc(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             echo.push(b'\n');
         }
         sys::write_all(2, &echo);
-        interactive::add_history(&cmd);
+        interactive::add_history(sh, &cmd);
         status = sh.run_string(&cmd)?;
     }
     Ok(status)
