@@ -8,7 +8,10 @@
 //! - if `NAME.expected` exists, luish's stdout is compared with it instead
 //!   and dash is not run (and `NAME.status`, if present, holds the expected
 //!   exit status);
-//! - if `NAME.stdin` exists, it is fed to the script's standard input.
+//! - if `NAME.stdin` exists, it is fed to the script's standard input;
+//! - if the script contains the line `# reference: zsh`, it is compared
+//!   with `zsh --emulate sh` (from pixi) instead of dash, for behaviour
+//!   where luish follows zsh (see `DEVIATIONS.md`).
 //!
 //! Plugin cases (`tests/plugins/*.sh`, only with the `plugins` feature)
 //! can't run under dash, so each has a `NAME.expected`, and stderr must be
@@ -52,9 +55,17 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
     std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file())
 }
 
+/// The shell a case is compared with, and the arguments that go before the
+/// script.
+struct Reference<'a> {
+    name: &'static str,
+    path: Option<&'a Path>,
+    args: &'static [&'static str],
+}
+
 /// `id` names the directory, which must be the same for both shells (it
 /// can appear in the output).
-fn run(shell: &Path, script: &Path, id: &str) -> Outcome {
+fn run(shell: &Path, args: &[&str], script: &Path, id: &str) -> Outcome {
     let dir = std::env::temp_dir().join(format!("luish-test-{}-{}", std::process::id(), id));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -67,6 +78,7 @@ fn run(shell: &Path, script: &Path, id: &str) -> Outcome {
     let out_path = dir.join(".stdout");
     let err_path = dir.join(".stderr");
     let mut child = Command::new(shell)
+        .args(args)
         .arg(name)
         .current_dir(&dir)
         .env_clear()
@@ -118,10 +130,14 @@ fn show(b: &[u8]) -> String {
 }
 
 /// `plugin_case`: stderr must match `NAME.stderr`, or be empty.
-fn check(luish: &Path, dash: Option<&Path>, script: &Path, id: &str, plugin_case: bool) -> Result<(), String> {
+fn check(luish: &Path, refs: &[Reference], script: &Path, id: &str, plugin_case: bool) -> Result<(), String> {
     let text = std::fs::read_to_string(script).unwrap_or_default();
     let exact_stderr = text.lines().any(|l| l.trim() == "# stderr: exact");
-    let got = run(luish, script, id);
+    let reference = text
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("# reference: "))
+        .unwrap_or("dash");
+    let got = run(luish, &[], script, id);
     let expected_file = script.with_extension("expected");
     let stderr_file = script.with_extension("stderr");
     let exact_stderr = exact_stderr || plugin_case;
@@ -139,7 +155,15 @@ fn check(luish: &Path, dash: Option<&Path>, script: &Path, id: &str, plugin_case
             status,
         }
     } else {
-        run(dash.expect("dash is required for differential tests"), script, id)
+        let Some(r) = refs.iter().find(|r| r.name == reference) else {
+            return Err(format!("  unknown reference shell {reference}\n"));
+        };
+        let Some(path) = r.path else {
+            return Err(format!(
+                "  {reference} is required for this case (run the tests through pixi)\n"
+            ));
+        };
+        run(path, r.args, script, id)
     };
     let mut problems = String::new();
     if got.stdout != want.stdout {
@@ -188,6 +212,19 @@ fn run_cases(dir: &str, plugin_cases: bool) {
     }
     let luish = PathBuf::from(env!("CARGO_BIN_EXE_luish"));
     let dash = find_in_path("dash");
+    let zsh = find_in_path("zsh");
+    let refs = [
+        Reference {
+            name: "dash",
+            path: dash.as_deref(),
+            args: &[],
+        },
+        Reference {
+            name: "zsh",
+            path: zsh.as_deref(),
+            args: &["--emulate", "sh"],
+        },
+    ];
     let next = AtomicUsize::new(0);
     let failures = Mutex::new(Vec::new());
     let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
@@ -199,7 +236,7 @@ fn run_cases(dir: &str, plugin_cases: bool) {
                     let Some(case) = cases.get(i) else { break };
                     // Unique across the tests in this process, which run in parallel.
                     let id = format!("{}{i}", if plugin_cases { "p" } else { "" });
-                    if let Err(msg) = check(&luish, dash.as_deref(), case, &id, plugin_cases) {
+                    if let Err(msg) = check(&luish, &refs, case, &id, plugin_cases) {
                         let rel = case.strip_prefix(&root).unwrap_or(case);
                         failures.lock().unwrap().push(format!("{}:\n{msg}", rel.display()));
                     }

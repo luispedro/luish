@@ -1,4 +1,4 @@
-//! `.`, `times`, `alias`, `unalias`, `command`, `type`, `hash`, `ulimit`,
+//! `.`, `source`, `times`, `alias`, `unalias`, `command`, `type`, `hash`, `ulimit`,
 //! `umask`.
 
 use std::ffi::OsStr;
@@ -12,11 +12,35 @@ use crate::shell::{ExecResult, Flow, Shell};
 use crate::sys;
 
 pub fn dot(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    run_file(sh, argv, false)
+}
+
+/// `source`, as in zsh: `.`, but a name without `/` is looked for in the
+/// current directory before `PATH`, and further arguments are the positional
+/// parameters while the file runs.
+pub fn source(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    if argv.len() <= 2 {
+        return run_file(sh, argv, true);
+    }
+    let saved_pos = std::mem::replace(&mut sh.positional, argv[2..].to_vec());
+    let saved_getopts = (sh.optind, sh.optoff);
+    sh.reset_getopts();
+    let r = run_file(sh, &argv[..2], true);
+    sh.positional = saved_pos;
+    (sh.optind, sh.optoff) = saved_getopts;
+    r
+}
+
+fn is_regular(p: &[u8]) -> bool {
+    sys::stat(p).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG)
+}
+
+fn run_file(sh: &mut Shell, argv: &[Vec<u8>], cwd_first: bool) -> ExecResult {
     let Some(name) = argv.get(1) else {
         sh.berr(&argv[0], "filename argument required");
         return Err(Flow::Error(2));
     };
-    let path = if name.contains(&b'/') {
+    let path = if name.contains(&b'/') || (cwd_first && is_regular(name)) {
         Some(name.clone())
     } else {
         let path = sh.get_var(b"PATH").unwrap_or_default();
@@ -24,9 +48,7 @@ pub fn dot(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             let mut p = if dir.is_empty() { b".".to_vec() } else { dir.to_vec() };
             p.push(b'/');
             p.extend_from_slice(name);
-            sys::stat(&p)
-                .is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG)
-                .then_some(p)
+            is_regular(&p).then_some(p)
         })
     };
     if let (Some(rec), Some(p)) = (&mut sh.sourced_files, &path) {

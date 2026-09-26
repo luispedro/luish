@@ -1,3 +1,4 @@
+# reference: zsh
 # The last command of a -c string replaces the shell (as in upstream dash;
 # Debian's dash patches this out).
 echo $$ > me

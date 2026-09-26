@@ -19,9 +19,12 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   system `dash`. stdout and the exit status must match exactly. For stderr,
   only whether it is empty is compared, unless the script contains the line
   `# stderr: exact`.
-- A `NAME.expected` file (with an optional `NAME.status`) replaces the dash
-  comparison. Use one only for a deliberate deviation, and record it in
-  DEVIATIONS.md.
+- A script with the line `# reference: zsh` is compared with
+  `zsh --emulate sh` (from pixi, pinned in `pixi.toml`) instead, for a
+  deliberate deviation where luish follows zsh.
+- A `NAME.expected` file (with an optional `NAME.status`) replaces the
+  comparison, for a deliberate deviation that no reference shell matches.
+  Record every deviation in DEVIATIONS.md.
 - Each script runs in a fresh temporary directory (which is also `$HOME`),
   with `LC_ALL=C` and `$SH` set to the shell under test.
 - Plugin cases (`tests/plugins/*.sh`, run only with the `plugins` feature)
@@ -251,8 +254,8 @@ pass**.
 
 ### Built-ins (`src/builtins/`)
 - Special: `:` `.` `break` `continue` `eval` `exec` `exit` `export`
-  `local` (special in dash) `readonly` `return` `set` `shift` `times`
-  `trap` `unset`.
+  `local` (special in dash) `readonly` `return` `set` `shift` `source`
+  (not in POSIX or dash; as in zsh) `times` `trap` `unset`.
 - Regular: `[` `alias` `bg` `cd` `chdir` (another name for `cd`, as in
   dash) `command` `echo` `false` `fc` `fg` `getopts`
   `hash` `jobs` `kill` `printf` `pwd` `read` `test` `true` `type`
@@ -330,6 +333,10 @@ pass**.
   `builtins/cd_e.sh`.
 - `umask` and `ulimit` are ports of dash's (symbolic modes; `-H`/`-S`, `-a`
   format). Tests: `builtins/umask_modes.sh`, `builtins/ulimit_dash.sh`.
+- `source` is `.` as in zsh: a name without `/` is looked for in the
+  current directory, then in `PATH`, and further arguments are the
+  positional parameters while the file runs (restored afterwards). Tests:
+  `builtins/source.sh` (compared with zsh), `builtins/source_missing.sh`.
 - `unset` of a bad name is an error; `set -` turns off `-x` and `-v` without
   resetting the parameters; `.` of a directory reads nothing. Test:
   `builtins/special_misc.sh`.

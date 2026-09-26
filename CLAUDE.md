@@ -15,7 +15,8 @@ features is fine, as long as the prompt and line editor stay fast.
 - `PLAN.md`: the implementation plan, by phase (the phase numbers are used throughout the other documents).
 - `STATUS.md`: what is implemented, how it is tested, and the known gaps. **Update it in the same commit as any
   change in behaviour.**
-- `DEVIATIONS.md`: deliberate differences from dash. Each needs a `.expected` test.
+- `DEVIATIONS.md`: deliberate differences from dash, grouped by what luish follows instead (zsh is preferred
+  beyond POSIX). Each needs a test: a `# reference: zsh` case, or else a `.expected` one.
 - `docs/`: user-facing documentation (Sphinx with MyST Markdown), published on Read the Docs via
   `.readthedocs.yaml`. Its Python dependencies are in both `docs/requirements.txt` (for Read the Docs) and the
   `docs` feature in `pixi.toml`; keep them in step.
@@ -25,7 +26,7 @@ features is fine, as long as the prompt and line editor stay fast.
 ## Commands
 
 pixi coordinates everything. Run cargo through the pixi tasks or as `pixi run cargo ...`. dash and bash come from the
-system (`/usr/bin`), not pixi: the conda-forge `dash` package is Plotly Dash, not the shell.
+system (`/usr/bin`), not pixi: the conda-forge `dash` package is Plotly Dash, not the shell. zsh comes from pixi.
 
 ```sh
 pixi run check                    # cargo fmt --check, clippy --all-targets -D warnings, cargo test (must stay green)
@@ -46,8 +47,10 @@ Most coverage is differential (`tests/compare.rs`): each `tests/cases/**/*.sh` r
 
 - stdout and the exit status must match exactly. For stderr only emptiness is compared, unless the script contains
   the line `# stderr: exact`.
-- `NAME.expected` (with optional `NAME.status`) replaces the dash run. Use it only for a deliberate deviation, and
-  record the deviation in `DEVIATIONS.md`. `NAME.stdin` is fed to standard input.
+- A script with the line `# reference: zsh` is compared with `zsh --emulate sh` instead of dash, for a deliberate
+  deviation where luish follows zsh. zsh comes from pixi (pinned in `pixi.toml`), so run such cases through pixi.
+- `NAME.expected` (with optional `NAME.status`) replaces the reference run, for deviations that no reference shell
+  matches. Record every deviation in `DEVIATIONS.md`. `NAME.stdin` is fed to standard input.
 - Each script runs in a fresh temporary directory that is also `$HOME`, with a cleared environment, `LC_ALL=C`, and
   `$SH` set to the shell under test.
 - When fixing a bug, add a case first. Every behaviour listed as done in `STATUS.md` must stay covered.

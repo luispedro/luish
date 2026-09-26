@@ -38,6 +38,8 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"return", return_, true),
     (b"set", vars::set, true),
     (b"shift", vars::shift, true),
+    // Not POSIX: special, as in zsh's sh emulation.
+    (b"source", misc::source, true),
     (b"times", misc::times, true),
     (b"trap", trap::trap, true),
     (b"unset", vars::unset, true),

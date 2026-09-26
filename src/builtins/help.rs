@@ -49,6 +49,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"return", page!("return")),
     (b"set", page!("set")),
     (b"shift", page!("shift")),
+    (b"source", page!("dot")),
     (b"test", page!("test")),
     (b"times", page!("times")),
     (b"trap", page!("trap")),

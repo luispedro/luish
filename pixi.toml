@@ -7,9 +7,11 @@ version = "0.1.0"
 description = "A POSIX shell written in Rust, with optional Rhai plugins"
 
 # dash and bash (the reference shells for the differential tests) come from
-# the system: conda-forge has no dash-shell package.
+# the system: conda-forge has no dash-shell package. zsh, the reference for
+# the cases marked `# reference: zsh`, is pinned here.
 [dependencies]
 rust = ">=1.98.1,<1.99"
+zsh = "5.9.*"
 
 [tasks]
 build = "cargo build"
