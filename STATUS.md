@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **64 differential cases, 21 unit tests and 6 pty tests
+Current state: **66 differential cases, 21 unit tests and 6 pty tests
 pass**.
 
 ## Environment
@@ -115,8 +115,17 @@ pass**.
 - Command lookup order: special built-in, function, regular built-in, then
   `PATH` (with a cache).
 - Assignment scope: assignments before special built-ins persist. Before
-  functions and regular built-ins they are temporary and exported. Before
-  external commands they are set in the child only.
+  functions, regular built-ins and external commands they are temporary
+  and exported, and they are made in the shell (as in dash), so assigning
+  to a read-only variable is an error of the shell.
+- A simple external command in the foreground of a non-interactive shell
+  without job control is started with `posix_spawn` (glibc uses
+  `clone(CLONE_VM|CLONE_VFORK)`, so the page tables aren't copied), like
+  dash's `vforkexec`. Its redirections are made in the shell around the
+  spawn, and exec errors are reported by the shell. Interactive shells, and
+  shells doing job control, fork: the child has to take the terminal and
+  reset the signals the shell ignores. Tests: `exec/spawn.sh`,
+  `exec/readonly_assign.sh`.
 - Pipelines fork every stage, and the last stage's status is the pipeline's
   status. `!` inverts the status.
 - Async lists (`&`) set `$!`. In a non-interactive shell they ignore INT and
@@ -251,16 +260,18 @@ pass**.
 
 ## Performance baseline
 
-Release build, 2026-09-26, after job control (best of 3):
+Release build, 2026-09-26, after starting external commands with
+`posix_spawn`. Loops are best of 3; this machine was less loaded than for
+earlier baselines, so compare only within a table.
 
 | Benchmark | luish | dash |
 |---|---|---|
-| `-c true` (average of 200 runs) | 1.85 ms | 1.67 ms |
-| `-c /bin/true` (average of 200 runs) | 3.00 ms | 3.08 ms |
-| `while` loop, 100k `$((i+1))` iterations | 0.077 s | 0.081 s |
-| Loop running `/bin/true` 3000 times | 4.8 s | 3.4 s |
-| Loop running `x=$(echo hi)` 3000 times | 1.26 s | 1.16 s |
+| `-c true` (average of 200 runs) | 1.11 ms | 0.92 ms |
+| `-c /bin/true` (average of 200 runs) | 1.77 ms | 1.73 ms |
+| `while` loop, 100k `$((i+1))` iterations | 0.08 s | 0.08 s |
+| Loop running `/bin/true` 3000 times | 1.81 s | 1.76 s |
+| Loop running `x=$(echo hi)` 3000 times | 1.01 s | 1.06 s |
 
-The system dash (Debian) forks for the last command of `-c`; luish execs
-it, like upstream dash. External commands are the largest gap: dash starts
-them with `vfork`, luish with `fork`.
+Before `posix_spawn`, the `/bin/true` loop took 2.42 s. The system dash
+(Debian) forks for the last command of `-c`; luish execs it, like upstream
+dash. The largest remaining gap is startup (`-c true`).

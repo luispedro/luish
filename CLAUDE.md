@@ -56,7 +56,8 @@ Most coverage is differential (`tests/compare.rs`): each `tests/cases/**/*.sh` r
 
 All data (arguments, variables, filenames) is bytes (`Vec<u8>`), never UTF-8 strings. Process creation uses raw
 `fork`/`execve` (via `src/sys.rs`, whose wrappers retry on EINTR), not `std::process::Command`, because subshells fork
-without exec.
+without exec. Simple external commands in non-interactive shells without job control use `posix_spawn` instead
+(`can_spawn` in `exec/simple.rs`, like dash's `vforkexec`), with redirections and assignments made in the shell.
 
 Pipeline: `input.rs` → `lexer.rs`/`parser.rs` → `ast.rs` → `exec/` (which calls `expand/` and `builtins/`), with all
 state on the `Shell` struct in `shell.rs`.

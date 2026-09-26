@@ -139,29 +139,77 @@ impl Shell {
                 sh.restore_redirs(saved);
                 r
             }),
-            CommandKind::External => {
-                // Replace the shell process only if no trap needs it.
-                let exec_now = no_fork && !self.has_traps();
-                let pid = if exec_now {
-                    0
-                } else {
-                    self.fork_child(ForkKind::Foreground(0))?
-                };
-                if pid == 0 {
-                    if self.redirect(&cmd.redirs, false).is_err() {
-                        sys::exit(2);
-                    }
-                    for (n, v) in assigns {
-                        if self.set_var(&n, v).is_err() {
-                            sys::exit(2);
-                        }
-                        self.vars.entry(&n).exported = true;
-                    }
-                    self.exec_argv(&argv);
-                }
-                Ok(self.wait_foreground(&[pid], || vec![cmdtext::simple(cmd)]))
-            }
+            // As in dash, the assignments are made (temporarily) in the shell,
+            // so that an error in one is the shell's.
+            CommandKind::External => self.with_temp_assigns(assigns, |sh| sh.run_external(cmd, &argv, no_fork)),
         }
+    }
+
+    fn run_external(&mut self, cmd: &SimpleCommand, argv: &[Vec<u8>], no_fork: bool) -> ExecResult {
+        // Replace the shell process only if no trap needs it.
+        let exec_now = no_fork && !self.has_traps();
+        if !exec_now && self.can_spawn() {
+            // Like dash's `vforkexec`: the redirections are made in the
+            // shell, around the spawn.
+            let saved = match self.redirect(&cmd.redirs, true) {
+                Ok(s) => s,
+                Err(Flow::Error(n)) => return Ok(n),
+                Err(e) => return Err(e),
+            };
+            let r = self.spawn_argv(argv);
+            self.restore_redirs(saved);
+            return Ok(match r {
+                Ok(pid) => self.wait_foreground(&[pid], || vec![cmdtext::simple(cmd)]),
+                Err(status) => status,
+            });
+        }
+        let pid = if exec_now {
+            0
+        } else {
+            self.fork_child(ForkKind::Foreground(0))?
+        };
+        if pid == 0 {
+            if self.redirect(&cmd.redirs, false).is_err() {
+                sys::exit(2);
+            }
+            self.exec_argv(argv);
+        }
+        Ok(self.wait_foreground(&[pid], || vec![cmdtext::simple(cmd)]))
+    }
+
+    /// Whether an external command can be started with `spawn` instead of
+    /// `fork`. The child of `spawn` runs no shell code, so this needs a
+    /// shell whose children need no set-up: no job control (the child would
+    /// have to take the terminal), and not interactive (the child would have
+    /// to reset the signals the shell ignores).
+    fn can_spawn(&self) -> bool {
+        !self.interactive && self.jobctl.is_none()
+    }
+
+    /// Starts an external command without forking the shell (see
+    /// `can_spawn`). Returns its pid, or the status if it couldn't be run.
+    fn spawn_argv(&mut self, argv: &[Vec<u8>]) -> Result<i32, i32> {
+        let name = &argv[0];
+        let path = if name.contains(&b'/') {
+            name.clone()
+        } else {
+            match self.find_in_path(name) {
+                Some(p) => p,
+                None => {
+                    self.error(format!("{}: not found", String::from_utf8_lossy(name)));
+                    return Err(127);
+                }
+            }
+        };
+        // A new job: dash frees a finished job's slot at this point.
+        self.jobs.reclaim(false);
+        let env = self.vars.environ();
+        let mut r = sys::spawn(&path, argv, &env);
+        if r == Err(libc::ENOEXEC) {
+            // A script without `#!`: run it with this shell.
+            r = sys::spawn(&self.self_exe, &self.script_args(&path, argv), &env);
+        }
+        r.map_err(|e| self.exec_error(name, e))
     }
 
     /// Runs `f` with variable assignments that only last for its duration.
@@ -195,10 +243,18 @@ impl Shell {
             CommandKind::Special(f) | CommandKind::Builtin(f) => f(self, argv),
             CommandKind::Function(body) => self.call_function(&body, argv),
             CommandKind::External => {
-                let pid = self.fork_child(ForkKind::Foreground(0))?;
-                if pid == 0 {
-                    self.exec_argv(argv);
-                }
+                let pid = if self.can_spawn() {
+                    match self.spawn_argv(argv) {
+                        Ok(pid) => pid,
+                        Err(status) => return Ok(status),
+                    }
+                } else {
+                    let pid = self.fork_child(ForkKind::Foreground(0))?;
+                    if pid == 0 {
+                        self.exec_argv(argv);
+                    }
+                    pid
+                };
                 let text = || vec![String::from_utf8_lossy(&argv.join(&b' ')).into_owned()];
                 Ok(self.wait_foreground(&[pid], text))
             }
@@ -221,17 +277,30 @@ impl Shell {
         let mut e = sys::execve(&path, argv, &env);
         if e == libc::ENOEXEC {
             // A script without `#!`: run it with this shell.
-            let mut args = vec![self.arg0.clone(), path.clone()];
-            args.extend_from_slice(&argv[1..]);
-            e = sys::execve(&self.self_exe.clone(), &args, &env);
+            e = sys::execve(&self.self_exe, &self.script_args(&path, argv), &env);
         }
+        let code = self.exec_error(name, e);
+        sys::exit(code)
+    }
+
+    /// The arguments for running `path`, a script without `#!`, with this
+    /// shell.
+    fn script_args(&self, path: &[u8], argv: &[Vec<u8>]) -> Vec<Vec<u8>> {
+        let mut args = vec![self.arg0.clone(), path.to_vec()];
+        args.extend_from_slice(&argv[1..]);
+        args
+    }
+
+    /// Reports that `name` couldn't be executed (errno `e`), and returns
+    /// the status for it.
+    fn exec_error(&self, name: &[u8], e: i32) -> i32 {
         let (msg, code) = match e {
             libc::ENOENT | libc::ENOTDIR => ("not found".to_string(), 127),
             libc::EACCES | libc::EISDIR => ("Permission denied".to_string(), 126),
             _ => (sys::strerror(e), 126),
         };
         self.error(format!("{}: {msg}", String::from_utf8_lossy(name)));
-        sys::exit(code)
+        code
     }
 
     /// Parameter-expands a prompt variable (`PS1`, `PS2`, `PS4`).

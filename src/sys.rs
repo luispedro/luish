@@ -219,18 +219,51 @@ pub fn kill(pid: i32, sig: i32) -> Result<(), i32> {
     }
 }
 
-pub fn execve(path: &[u8], argv: &[Vec<u8>], env: &[CString]) -> i32 {
-    let path = cstr(path);
+/// Null-terminated pointer arrays for `argv` and `env`. The pointers borrow
+/// from the returned `CString`s and from `env`.
+fn exec_arrays(
+    argv: &[Vec<u8>],
+    env: &[CString],
+) -> (Vec<CString>, Vec<*const libc::c_char>, Vec<*const libc::c_char>) {
     let argv: Vec<CString> = argv.iter().map(|a| cstr(a)).collect();
     let mut argv_p: Vec<*const libc::c_char> = argv.iter().map(|a| a.as_ptr()).collect();
     argv_p.push(std::ptr::null());
     let mut env_p: Vec<*const libc::c_char> = env.iter().map(|a| a.as_ptr()).collect();
     env_p.push(std::ptr::null());
+    (argv, argv_p, env_p)
+}
+
+pub fn execve(path: &[u8], argv: &[Vec<u8>], env: &[CString]) -> i32 {
+    let path = cstr(path);
+    let (_argv, argv_p, env_p) = exec_arrays(argv, env);
     // SAFETY: null-terminated arrays of valid C strings.
     unsafe {
         libc::execve(path.as_ptr(), argv_p.as_ptr(), env_p.as_ptr());
     }
     errno()
+}
+
+/// Runs a program in a new process with `posix_spawn`, which glibc
+/// implements with `clone(CLONE_VM | CLONE_VFORK)`: unlike `fork`, it doesn't
+/// copy the page tables. The child inherits the signal mask, ignored
+/// signals and file descriptors. Returns the pid, or the error of `execve`.
+pub fn spawn(path: &[u8], argv: &[Vec<u8>], env: &[CString]) -> Result<i32, i32> {
+    let path = cstr(path);
+    let (_argv, argv_p, env_p) = exec_arrays(argv, env);
+    let mut pid = 0;
+    // SAFETY: null-terminated arrays of valid C strings; null attributes and
+    // file actions mean the defaults.
+    let r = unsafe {
+        libc::posix_spawn(
+            &mut pid,
+            path.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            argv_p.as_ptr() as *const *mut libc::c_char,
+            env_p.as_ptr() as *const *mut libc::c_char,
+        )
+    };
+    if r == 0 { Ok(pid) } else { Err(r) }
 }
 
 pub fn home_dir(user: &[u8]) -> Option<Vec<u8>> {
