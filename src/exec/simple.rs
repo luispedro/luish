@@ -350,7 +350,7 @@ impl Shell {
     }
 
     /// Parameter-expands a prompt variable.
-    fn param_expand_prompt(&mut self, var: &[u8]) -> Vec<u8> {
+    pub fn param_expand_prompt(&mut self, var: &[u8]) -> Vec<u8> {
         let text = self.get_var(var).unwrap_or_default();
         if !text.contains(&b'$') && !text.contains(&b'`') && !text.contains(&b'\\') {
             return text;

@@ -566,18 +566,23 @@ pass**.
   `pushd` the stack), also in subshells.
   `$?` is kept; a failing hook is reported with the plugin's file and the
   others still run; a `chpwd` hook running `cd` doesn't re-trigger `chpwd`.
-  `prompt`, called with no arguments before each `PS1` prompt (not `PS2`):
+  `prompt`, called before each `PS1` prompt (not `PS2`):
   the hooks are called from the most recently registered one until one
   returns a string, which is used instead of `PS1`, without parameter
   expansion but with `%` expansion under `promptpercent`. A hook that
   returns `()` leaves it to the earlier hooks, then `PS1`; one that fails
-  or returns something else is reported and skipped. Each hook sees the
-  `$?` of the last command, which is kept afterwards; `exit` in `sh::run`
-  exits the shell.
+  or returns something else is reported and skipped. A hook whose
+  function takes a parameter (beyond its captured variables; looked up in
+  the plugin's AST when it is registered) is given the previous prompt:
+  the earlier hooks' prompt, or else `PS1` parameter-expanded, which its
+  `()` or failure keeps; one without doesn't run the earlier hooks. Each
+  hook sees the `$?` of the last command, which is kept afterwards; `exit`
+  in `sh::run` exits the shell.
 - `plugins/bytes.rs`: non-UTF-8 bytes map to U+10FF80–U+10FFFF and back
   (PLAN.md §6.5); strings with NUL can't be set as variables.
 - Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `floats`, `fs`, `vcs`, `reload`,
-  `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`, `prompt`), unit
+  `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`, `prompt`,
+  `prompt_prev`), unit
   tests for the byte conversion and `git status` parsing, `builtins/plugin.sh`,
   `builtins/internal_plugin.sh`, and `plugin_builtin` in
   `tests/interactive.rs`. CI also runs clippy and the tests

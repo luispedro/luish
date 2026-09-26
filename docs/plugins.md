@@ -105,7 +105,7 @@ sh::hook("prompt", || {
 });
 ```
 
-A `prompt` hook is called before each prompt, with no arguments, and returns the prompt, which is used instead of
+A `prompt` hook is called before each prompt, with no arguments (but see below), and returns the prompt, which is used instead of
 `PS1` (`PS2`, for the continuation lines of a command, is unchanged). The prompt doesn't go through parameter
 expansion, but it does go through `%` expansion if the `promptpercent` option is on (`setopt prompt_percent`, see
 [](usage.md)), as in the example.
@@ -114,6 +114,22 @@ If several hooks are registered, the one registered last is called first, and th
 prompt. A hook that returns `()` leaves the prompt to the hooks before it, and then to `PS1`, so a plugin can give
 the prompt only in some directories, for example. A hook that fails is reported, and the next one is tried. `$?` is
 the same after the hooks as before them.
+
+A hook that takes a parameter is given the previous prompt: the one the hooks registered before it give, or else
+`PS1` (after parameter expansion, but before `%` expansion, which is done on the prompt the hook returns). So a plugin
+can add to the prompt of another plugin, or to `PS1`, instead of replacing it:
+
+```rust
+// ~/.config/luish/plugins/status.rhai
+sh::hook("prompt", |prev| {
+    let status = sh::last_status();
+    if status == 0 { prev } else { `%F{red}[${status}]%f ${prev}` }
+});
+```
+
+Returning `()` from such a hook, or failing, keeps the previous prompt. A hook without a parameter doesn't run the
+hooks before it at all, so it costs nothing to have them loaded. The hook must be defined in the plugin's own file
+(not in a module it imports), as a closure or a named function (`fn prompt(prev) { ... }`).
 
 ## The `sh` module
 

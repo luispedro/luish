@@ -689,7 +689,7 @@ error thrown by a built-in gives status 1.
 
 | Hook | Arguments | Result |
 |---|---|---|
-| `prompt` | none | The prompt string, used instead of `PS1` (with `%` expansion under `promptpercent`); `()` leaves it to earlier hooks, then `PS1` |
+| `prompt` | None, or (if the function takes one) the previous prompt: the earlier hooks', else `PS1` | The prompt string, used instead of `PS1` (with `%` expansion under `promptpercent`); `()` leaves it to earlier hooks, then `PS1` |
 | `precmd` | Last exit status | Ignored |
 | `preexec` | Command line | Ignored |
 | `chpwd` | Old and new directory | Ignored |
