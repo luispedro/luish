@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **79 differential cases, 24 unit tests and 7 pty tests
+Current state: **85 differential cases, 24 unit tests and 7 pty tests
 pass**.
 
 ## Environment
@@ -111,9 +111,13 @@ pass**.
   splitting off; unset IFS means the default.
 - Arithmetic (`arith.rs`): all the C operators, including assignment
   operators, short-circuit evaluation, and decimal, octal and hex literals.
-  Division by zero is an error.
-- Command substitution strips trailing newlines. It sets `$?` only for
-  commands consisting of assignments alone, as dash does.
+  Division by zero is an error. A variable holding only blanks is 0. As in
+  dash, quotes and backslashes inside `$((...))` are kept in the text given
+  to the evaluator, so they are errors. Test: `expand/arith_quotes.sh`.
+- Command substitution strips trailing newlines and, as in dash, drops NUL
+  bytes (so does `read`). It sets `$?` only for
+  commands consisting of assignments alone, as dash does. Test:
+  `expand/nul_bytes.sh`.
 - Pathname expansion is sorted in byte order and needs an explicit leading
   `.`. A `.*` pattern matches `.` and `..` (as in dash). A lone `[` is not a
   pattern.
@@ -153,6 +157,10 @@ pass**.
 - Redirections are applied left to right. In-process commands save and
   restore the fds they change, keeping the copies at fd 10 or above with
   close-on-exec. `exec` without a command makes redirections permanent.
+  `n>&n` does nothing even if `n` is closed, and `>&word` with a word that
+  is not a number or `-` is a fatal syntax error, as in dash. Fd numbers
+  may have several digits (a deviation: dash allows one). Tests:
+  `exec/redirect_dup.sh`, `exec/redirect_big_fd.sh`.
 - Exit statuses are 127 for not found, 126 for not executable, and 128+N for
   death by signal N. Signal deaths other than INT and PIPE print a message.
 - The last command of a forked child (subshell, background job, pipeline
@@ -215,10 +223,18 @@ pass**.
 - Regular: `[` `alias` `bg` `cd` `command` `echo` `false` `fc` `fg` `getopts`
   `hash` `jobs` `kill` `printf` `pwd` `read` `test` `true` `type`
   `ulimit` `umask` `unalias` `wait`.
-- `echo` follows dash: `-n` only, and XSI escapes are always processed.
+- `echo` follows dash: `-n` only, and XSI escapes are always processed
+  (with dash's octal forms `\0nnn` and `\nnn`, and Debian's `\e`).
 - `printf` supports every conversion (numeric ones use libc `snprintf`),
   `%b`, `*` for width and precision, and reuses the format while arguments
-  remain.
+  remain. As in dash, unsigned conversions parse with `strtoull` (so `-1`
+  wraps), out-of-range numbers are reported with `strerror(ERANGE)`, and an
+  invalid directive gives status 2. Test: `builtins/printf_escapes.sh`.
+- `getopts` is a port of dash's: `OPTIND` moves past an argument as soon as
+  its first letter is read, `OPTARG` is left alone at the end, and the
+  position is reset by assigning `OPTIND`, by `set --` and `shift`, and is
+  saved and restored across function calls. Test:
+  `builtins/getopts_dash.sh`.
 - `test` is a port of dash's parser (the POSIX rules for three and four
   arguments, then recursive descent with dash's operand/operator
   disambiguation), so ambiguous expressions such as `[ -a -a ]` and the

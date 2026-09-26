@@ -226,7 +226,7 @@ impl Arith<'_> {
         }
         match self.sh.get_var(name) {
             None => Ok(0),
-            Some(v) if v.is_empty() => Ok(0),
+            Some(v) if v.trim_ascii().is_empty() => Ok(0),
             Some(v) => parse_number(&v).ok_or_else(|| format!("Illegal number: {}", String::from_utf8_lossy(&v))),
         }
     }

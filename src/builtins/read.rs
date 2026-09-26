@@ -17,6 +17,10 @@ fn read_line(raw: bool) -> (Vec<(u8, bool)>, bool) {
             _ => return (out, true),
         }
         let c = buf[0];
+        if c == 0 {
+            // dash drops NUL bytes.
+            continue;
+        }
         if escape {
             escape = false;
             if c != b'\n' {
@@ -130,103 +134,112 @@ pub fn read(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     Ok(if eof { 1 } else { 0 })
 }
 
+/// A port of dash's `getopts`. The position is `sh.optind` (the next
+/// argument, as in `$OPTIND`) and `sh.optoff` (the offset in the previous
+/// argument when it has more option letters); assigning `OPTIND`, `set --`,
+/// `shift` and function calls reset it.
 pub fn getopts(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     if argv.len() < 3 {
-        sh.berr(&argv[0], "usage: getopts optstring var [arg ...]");
+        sh.berr(&argv[0], "Usage: getopts optstring var [arg...]");
         return Ok(2);
     }
-    let optstring = argv[1].clone();
-    let name = argv[2].clone();
-    let args: Vec<Vec<u8>> = if argv.len() > 3 {
-        argv[3..].to_vec()
-    } else {
+    let (optstr, optvar) = (&argv[1], &argv[2]);
+    if !crate::lexer::is_valid_name(optvar) {
+        sh.berr(
+            &argv[0],
+            format!("{}: bad variable name", String::from_utf8_lossy(optvar)),
+        );
+        return Ok(2);
+    }
+    let base: Vec<Vec<u8>> = if argv.len() == 3 {
         sh.positional.clone()
+    } else {
+        argv[3..].to_vec()
     };
-    let optind_var = sh.get_var(b"OPTIND").unwrap_or_default();
-    if optind_var != sh.getopts_optind {
-        sh.getopts_offset = 0;
+    if sh.optind > base.len() + 1 {
+        sh.optind = 1;
+        sh.optoff = None;
     }
-    let mut optind: usize = std::str::from_utf8(&optind_var)
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .filter(|&n| n >= 1)
-        .unwrap_or(1);
-    let silent = optstring.first() == Some(&b':');
-    let mut offset = sh.getopts_offset;
-
-    let finish = |sh: &mut Shell, optind: usize, offset: usize| -> Result<(), crate::shell::Flow> {
-        let s = optind.to_string().into_bytes();
-        sh.vars.set(b"OPTIND", s.clone()).ok();
-        sh.getopts_optind = s;
-        sh.getopts_offset = offset;
-        Ok(())
+    let ind = sh.optind;
+    let off = sh.optoff;
+    // `next`: the index of the next argument; `p`: the position of the
+    // next option letter in `base[next - 1]`.
+    let mut next = ind - 1;
+    let mut p = match off {
+        Some(o) if ind > 1 && base[next - 1].len() >= o => Some(o),
+        _ => None,
     };
-
-    let end = |sh: &mut Shell, optind: usize| -> ExecResult {
-        sh.set_var(&name, b"?".to_vec())?;
-        let _ = sh.vars.unset(b"OPTARG");
-        finish(sh, optind, 0)?;
-        Ok(1)
-    };
-
-    if offset == 0 {
-        let Some(arg) = args.get(optind - 1) else {
-            return end(sh, optind);
-        };
-        if arg == b"--" {
-            return end(sh, optind + 1);
-        }
-        if arg.len() < 2 || arg[0] != b'-' {
-            return end(sh, optind);
-        }
-        offset = 1;
-    }
-    let arg = args[optind - 1].clone();
-    let c = arg[offset];
-    offset += 1;
-    if offset >= arg.len() {
-        optind += 1;
-        offset = 0;
-    }
-    let spec = optstring.iter().position(|&o| o == c && c != b':');
-    let mut optarg: Option<Vec<u8>> = None;
-    let result: Vec<u8>;
-    match spec {
-        None => {
-            if silent {
-                optarg = Some(vec![c]);
-            } else {
-                sh.berr(&argv[0], format!("Illegal option -{}", c as char));
-            }
-            result = b"?".to_vec();
-        }
-        Some(p) if optstring.get(p + 1) == Some(&b':') => {
-            if offset != 0 {
-                optarg = Some(arg[offset..].to_vec());
-                optind += 1;
-                offset = 0;
-                result = vec![c];
-            } else if let Some(a) = args.get(optind - 1) {
-                optarg = Some(a.clone());
-                optind += 1;
-                result = vec![c];
-            } else if silent {
-                optarg = Some(vec![c]);
-                result = b":".to_vec();
-            } else {
-                sh.berr(&argv[0], format!("No arg for -{} option", c as char));
-                result = b"?".to_vec();
+    let mut c = b'?';
+    let mut done = false;
+    'out: {
+        if p.is_none_or(|o| o == base[next - 1].len()) {
+            // The current argument is done: advance.
+            match base.get(next) {
+                Some(w) if w.len() > 1 && w[0] == b'-' => {
+                    next += 1;
+                    p = Some(1);
+                    if w == b"--" {
+                        p = None;
+                        done = true;
+                        break 'out;
+                    }
+                }
+                _ => {
+                    p = None;
+                    done = true;
+                    break 'out;
+                }
             }
         }
-        Some(_) => result = vec![c],
-    }
-    match optarg {
-        Some(v) => sh.set_var(b"OPTARG", v)?,
-        None => {
-            let _ = sh.vars.unset(b"OPTARG");
+        let word = &base[next - 1];
+        let mut o = p.unwrap();
+        c = word[o];
+        o += 1;
+        p = Some(o);
+        let mut q = 0;
+        while optstr.get(q) != Some(&c) {
+            if q >= optstr.len() {
+                if optstr.first() == Some(&b':') {
+                    sh.set_var(b"OPTARG", vec![c])?;
+                } else {
+                    sys::write_all(2, format!("Illegal option -{}\n", c as char).as_bytes());
+                    let _ = sh.vars.unset(b"OPTARG");
+                }
+                c = b'?';
+                break 'out;
+            }
+            q += 1;
+            if optstr.get(q) == Some(&b':') {
+                q += 1;
+            }
+        }
+        if optstr.get(q + 1) == Some(&b':') {
+            let arg = if o < word.len() {
+                word[o..].to_vec()
+            } else if let Some(w) = base.get(next) {
+                next += 1;
+                w.clone()
+            } else {
+                if optstr.first() == Some(&b':') {
+                    sh.set_var(b"OPTARG", vec![c])?;
+                    c = b':';
+                } else {
+                    sys::write_all(2, format!("No arg for -{} option\n", c as char).as_bytes());
+                    let _ = sh.vars.unset(b"OPTARG");
+                    c = b'?';
+                }
+                break 'out;
+            };
+            sh.set_var(b"OPTARG", arg)?;
+            p = None;
+        } else {
+            sh.set_var(b"OPTARG", Vec::new())?;
         }
     }
-    sh.set_var(&name, result)?;
-    finish(sh, optind, offset)?;
-    Ok(0)
+    let ind = next + 1;
+    sh.set_var(b"OPTIND", ind.to_string().into_bytes())?;
+    sh.set_var(optvar, vec![c])?;
+    sh.optoff = p;
+    sh.optind = ind;
+    Ok(done as i32)
 }

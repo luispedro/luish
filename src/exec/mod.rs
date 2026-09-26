@@ -364,6 +364,8 @@ impl Shell {
     /// function name).
     pub fn call_function(&mut self, body: &FunctionBody, argv: &[Vec<u8>]) -> ExecResult {
         let saved_pos = std::mem::replace(&mut self.positional, argv[1..].to_vec());
+        let saved_getopts = (self.optind, self.optoff);
+        self.reset_getopts();
         let saved_loop = std::mem::replace(&mut self.loop_depth, 0);
         self.func_depth += 1;
         self.locals.push(Vec::new());
@@ -383,6 +385,7 @@ impl Shell {
         self.func_depth -= 1;
         self.loop_depth = saved_loop;
         self.positional = saved_pos;
+        (self.optind, self.optoff) = saved_getopts;
         match r {
             Err(Flow::Return(n)) => Ok(n),
             r => r,

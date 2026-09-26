@@ -63,8 +63,9 @@ pub struct Shell {
     /// Path of this executable, used to run scripts without `#!`.
     pub self_exe: Vec<u8>,
     /// Position inside a group of options for `getopts`.
-    pub getopts_offset: usize,
-    pub getopts_optind: Vec<u8>,
+    /// `getopts`'s position (dash's `shellparam.optind` and `optoff`).
+    pub optind: usize,
+    pub optoff: Option<usize>,
     /// Currently running the EXIT trap.
     pub in_exit_trap: bool,
 }
@@ -130,8 +131,8 @@ impl Shell {
             subst_status: None,
             locals: Vec::new(),
             self_exe,
-            getopts_offset: 0,
-            getopts_optind: b"1".to_vec(),
+            optind: 1,
+            optoff: None,
             in_exit_trap: false,
         }
     }
@@ -163,11 +164,24 @@ impl Shell {
         Ok(())
     }
 
+    /// Restarts `getopts` at the first argument (new positional parameters).
+    pub fn reset_getopts(&mut self) {
+        self.optind = 1;
+        self.optoff = None;
+    }
+
     pub fn var_changed(&mut self, name: &[u8]) {
         if name == b"PATH" {
             self.hash.clear();
         } else if name == b"OPTIND" {
-            self.getopts_offset = 0;
+            // dash's `getoptsreset`.
+            let v = self.vars.get(b"OPTIND").unwrap_or_default();
+            self.optind = std::str::from_utf8(v)
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .filter(|&n| n > 0)
+                .unwrap_or(1);
+            self.optoff = None;
         }
     }
 

@@ -127,6 +127,7 @@ pub fn shift(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         return Err(Flow::Error(2));
     }
     sh.positional.drain(..n);
+    sh.reset_getopts();
     Ok(0)
 }
 
@@ -220,6 +221,7 @@ pub fn set(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     sh.set_jobctl(sh.opt(Opt::Monitor));
     if force || !rest.is_empty() {
         sh.positional = rest.to_vec();
+        sh.reset_getopts();
     }
     Ok(0)
 }

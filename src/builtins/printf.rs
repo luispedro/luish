@@ -23,6 +23,13 @@ impl Args<'_> {
     }
 
     fn int(&mut self, sh: &Shell) -> i64 {
+        self.number(sh, true)
+    }
+
+    /// dash's `getuintmax`: an argument converted with `strtoll` (signed)
+    /// or `strtoull` (for the unsigned conversions, where `-1` wraps).
+    /// The result is the bits of either.
+    fn number(&mut self, sh: &Shell, signed: bool) -> i64 {
         let Some(a) = self.next() else { return 0 };
         let a = a.to_vec();
         if let Some(&q) = a.first()
@@ -32,10 +39,14 @@ impl Args<'_> {
         }
         let c = sys::cstr(&a);
         let mut end: *mut libc::c_char = std::ptr::null_mut();
-        // SAFETY: valid C string; strtoll sets `end` inside it.
+        // SAFETY: valid C string; strtoll/strtoull set `end` inside it.
         let (v, consumed, err) = unsafe {
             *libc::__errno_location() = 0;
-            let v = libc::strtoll(c.as_ptr(), &mut end, 0);
+            let v = if signed {
+                libc::strtoll(c.as_ptr(), &mut end, 0)
+            } else {
+                libc::strtoull(c.as_ptr(), &mut end, 0) as i64
+            };
             (v, end.offset_from(c.as_ptr()) as usize, *libc::__errno_location())
         };
         if a.is_empty() {
@@ -46,7 +57,7 @@ impl Args<'_> {
         } else if consumed < a.len() {
             self.report(sh, &a, "not completely converted");
         } else if err == libc::ERANGE {
-            self.report(sh, &a, "Result too large");
+            self.report(sh, &a, &sys::strerror(libc::ERANGE));
         }
         v
     }
@@ -146,7 +157,8 @@ fn format_once(sh: &Shell, fmt: &[u8], args: &mut Args, out: &mut Vec<u8>) -> Re
                 b'r' => out.push(b'\r'),
                 b't' => out.push(b'\t'),
                 b'v' => out.push(11),
-                b'\\' | b'"' | b'\'' => out.push(e),
+                b'e' => out.push(0x1b),
+                b'\\' => out.push(e),
                 b'0'..=b'7' => {
                     let mut v = (e - b'0') as u32;
                     let mut n = 1;
@@ -217,7 +229,7 @@ fn format_once(sh: &Shell, fmt: &[u8], args: &mut Args, out: &mut Vec<u8>) -> Re
                 b"printf",
                 format!("{}: invalid directive", String::from_utf8_lossy(&fmt[start..])),
             );
-            args.status = 1;
+            args.status = 2;
             return Err(());
         };
         i += 1;
@@ -260,7 +272,7 @@ fn format_once(sh: &Shell, fmt: &[u8], args: &mut Args, out: &mut Vec<u8>) -> Re
                 pad(out, &s, uwidth, None, left);
             }
             b'd' | b'i' | b'o' | b'u' | b'x' | b'X' => {
-                let v = args.int(sh);
+                let v = args.number(sh, matches!(conv, b'd' | b'i'));
                 spec.extend_from_slice(b"ll");
                 spec.push(conv);
                 out.extend(c_format_int(&spec, v));
@@ -275,7 +287,7 @@ fn format_once(sh: &Shell, fmt: &[u8], args: &mut Args, out: &mut Vec<u8>) -> Re
                     b"printf",
                     format!("{}: invalid directive", String::from_utf8_lossy(&fmt[start..i])),
                 );
-                args.status = 1;
+                args.status = 2;
                 return Err(());
             }
         }

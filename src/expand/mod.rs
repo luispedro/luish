@@ -168,12 +168,45 @@ impl Shell {
                 push_result(&out, quoted, f);
             }
             WordPart::Arith(w) => {
-                let s = self.expand_word_str(w)?;
+                let mut s = Vec::new();
+                self.arith_text(&w.0, &mut s)?;
                 match arith::eval(self, &s) {
                     Ok(v) => push_result(v.to_string().as_bytes(), quoted, f),
                     Err(msg) => {
                         self.error(msg);
                         return Err(Flow::Error(2));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The text of `$((...))` after expansion. As in dash, quotes and
+    /// backslashes are kept, so the evaluator rejects them.
+    fn arith_text(&mut self, parts: &[WordPart], out: &mut Vec<u8>) -> EResult<()> {
+        for part in parts {
+            match part {
+                WordPart::DoubleQuoted(inner) => {
+                    out.push(b'"');
+                    self.arith_text(inner, out)?;
+                    out.push(b'"');
+                }
+                WordPart::SingleQuoted(s) => {
+                    out.push(b'\'');
+                    out.extend_from_slice(s);
+                    out.push(b'\'');
+                }
+                WordPart::Escaped(c) => {
+                    out.push(b'\\');
+                    out.push(*c);
+                }
+                WordPart::Literal(s) => out.extend_from_slice(s),
+                _ => {
+                    let mut f = Fields::new(None);
+                    self.expand_part(part, false, false, &mut f)?;
+                    if let Some(field) = f.into_fields().first() {
+                        out.extend(bytes(field));
                     }
                 }
             }
@@ -375,6 +408,8 @@ impl Shell {
         sys::close(r);
         let status = self.wait_for(pid);
         self.subst_status = Some(status);
+        // As in dash, NUL bytes are dropped (they can't be in a C string).
+        out.retain(|&b| b != 0);
         while out.last() == Some(&b'\n') {
             out.pop();
         }

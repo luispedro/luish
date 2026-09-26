@@ -26,9 +26,16 @@ pub fn echo_escapes(s: &[u8], out: &mut Vec<u8>) -> bool {
             b't' => out.push(b'\t'),
             b'v' => out.push(11),
             b'\\' => out.push(b'\\'),
-            b'0' => {
+            // Debian's dash has `\e`.
+            b'e' => out.push(0x1b),
+            // As in dash: `\0` then up to three octal digits, or up to three
+            // octal digits starting with 1-7.
+            b'0'..=b'7' => {
                 let mut v: u32 = 0;
                 let mut n = 0;
+                if e != b'0' || !s.get(i).is_some_and(|c| (b'0'..=b'7').contains(c)) {
+                    i -= 1;
+                }
                 while n < 3 && i < s.len() && (b'0'..=b'7').contains(&s[i]) {
                     v = v * 8 + (s[i] - b'0') as u32;
                     i += 1;

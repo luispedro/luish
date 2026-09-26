@@ -115,7 +115,7 @@ impl Shell {
             }
             RedirTarget::Word(w) => {
                 let target = self.expand_word_str(w)?;
-                self.redirect_action(r.kind, &target)?
+                self.redirect_action(r.kind, &target, fd)?
             }
         };
         if save && !saved.0.iter().any(|(f, _)| *f == fd) {
@@ -141,7 +141,7 @@ impl Shell {
         Ok(())
     }
 
-    fn redirect_action(&mut self, kind: RedirKind, target: &[u8]) -> Result<Action, RedirError> {
+    fn redirect_action(&mut self, kind: RedirKind, target: &[u8], fd: i32) -> Result<Action, RedirError> {
         let name = String::from_utf8_lossy(target).into_owned();
         let open = |sh: &Shell, flags: i32, create: bool| {
             sys::open(target, flags, 0o666).map(Action::Owned).map_err(|e| {
@@ -181,15 +181,17 @@ impl Shell {
                 let n = std::str::from_utf8(target).ok().and_then(|s| s.parse::<i32>().ok());
                 match n {
                     Some(n) if target.iter().all(|c| c.is_ascii_digit()) => {
-                        if !sys::fd_is_open(n) {
+                        // As in dash, `3>&3` does nothing, even if 3 is closed.
+                        if n != fd && !sys::fd_is_open(n) {
                             self.error(format!("{n}: Bad file descriptor"));
                             return Err(RedirError::Open(2));
                         }
                         Ok(Action::Dup(n))
                     }
                     _ => {
+                        // A syntax error in dash, so fatal.
                         self.error("Syntax error: Bad fd number");
-                        Err(RedirError::Open(2))
+                        Err(RedirError::Flow(Flow::Error(2)))
                     }
                 }
             }
