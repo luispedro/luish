@@ -35,7 +35,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **121 differential cases, 12 plugin cases, 50 unit tests and 12 pty tests
+Current state: **121 differential cases, 13 plugin cases, 51 unit tests and 12 pty tests
 pass**.
 
 ## Environment
@@ -537,6 +537,16 @@ pass**.
   missing file is older, as in make), `read_file`, `list_dir` (sorted),
   `readlink`, `find_up` (lexically up from `$PWD` or a directory). Missing
   files give `false` or `()`.
+- `vcs` module (`plugins/vcs.rs`), git only, like zsh's `vcs_info`:
+  `vcs::info([dir])` finds the repository lexically up from `$PWD` (a
+  `.git` directory, or a `.git` file naming one, with `commondir` for
+  worktrees) and reads `HEAD`, loose and packed refs, the action files
+  (with `vcs_info`'s names) and the stash log without forking; it runs git
+  only for the reftable format. `vcs::status([dir])` runs `git
+  --no-optional-locks status --porcelain=v2 --branch -z` (forked like
+  command substitution, stdin and stderr on `/dev/null`) and counts
+  staged, unstaged, untracked and conflicted files, ahead and behind.
+  Not supported: bare repositories, `GIT_DIR`, `GIT_CEILING_DIRECTORIES`.
 - Hooks: `chpwd`, called with the old and new directory after each
   successful `cd`, `pushd` or `popd` (after `cd -` prints the directory, or
   `pushd` the stack), also in subshells.
@@ -552,9 +562,9 @@ pass**.
   exits the shell.
 - `plugins/bytes.rs`: non-UTF-8 bytes map to U+10FF80–U+10FFFF and back
   (PLAN.md §6.5); strings with NUL can't be set as variables.
-- Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `floats`, `fs`, `reload`,
+- Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `floats`, `fs`, `vcs`, `reload`,
   `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`, `prompt`), unit
-  tests for the byte conversion, `builtins/plugin.sh`,
+  tests for the byte conversion and `git status` parsing, `builtins/plugin.sh`,
   `builtins/internal_plugin.sh`, and `plugin_builtin` in
   `tests/interactive.rs`. CI also runs clippy and the tests
   with `--no-default-features`.
@@ -593,9 +603,9 @@ notes how to rerun them):
   input read a line at a time (interactive or stdin), not in scripts run
   with `set -m`.
 - Plugins (Phase 11) support only the `chpwd` and `prompt` hooks, part
-  of the `sh` module and the `fs` module: no plugin built-ins, completers,
-  other hooks, time budgets (so a slow `prompt` hook delays the prompt),
-  `capture` or `parse_json`. The native built-ins have not
+  of the `sh` module and the `fs` and `vcs` modules: no plugin built-ins,
+  completers, other hooks, time budgets (so a slow `prompt` hook delays the
+  prompt), `capture` or `parse_json`. The native built-ins have not
   been moved onto a `Builtin` trait (PLAN.md Phase 11, step 1). `import`
   in a plugin is not resolved relative to the plugin's directory.
 - With the `plugins` feature, `-c true` starts about 250 µs slower than

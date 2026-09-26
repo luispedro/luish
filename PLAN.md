@@ -121,6 +121,7 @@ luish/
 │       ├── mod.rs          # plugin-agnostic traits (Builtin, Hook), registry
 │       ├── rhai.rs         # #[cfg(feature = "plugins")] Rhai engine and the `sh` module
 │       ├── fs.rs           # the `fs` module (file tests without forking)
+│       ├── vcs.rs          # the `vcs` module (git repository information, like zsh's vcs_info)
 │       └── bytes.rs        # byte <-> string conversion at the plugin boundary (§6.5)
 ├── plugins/                # example plugins (*.rhai) and the plugin API reference
 ├── tests/
@@ -712,6 +713,11 @@ finding `.git` (`fs::find_up`) or checking whether a cache is stale
 `is_link`, `kind`, access checks), `size`, `mtime`, `newer`/`older`,
 `read_file`, `list_dir` and `readlink`. Missing files give `false` or `()`,
 not errors.
+
+The `vcs` module gives what zsh's `vcs_info` does, for git only so far:
+`vcs::info()` reads `.git` (the branch, `HEAD`, the operation in progress,
+stashes) without forking, and `vcs::status()` runs `git status` for the
+staged, unstaged and untracked counts and the upstream.
 
 Rhai's own `print` and `debug` write a line to the current fd 1 and fd 2,
 unbuffered, the same way as `write`.

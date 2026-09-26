@@ -1,0 +1,46 @@
+~: no repository
+  no status
+~/r: git root=~/r name=r subdir=. git_dir=~/r/.git branch=main head=none action=none step=-/- stashes=0
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=0 clean=true
+~/r/a/b: git root=~/r name=r subdir=a/b git_dir=~/r/.git branch=main head=HEAD action=none step=-/- stashes=0
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=0 clean=true
+~/r: git root=~/r name=r subdir=. git_dir=~/r/.git branch=main head=HEAD action=none step=-/- stashes=0
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=0 clean=true
+packed refs:
+~/r: git root=~/r name=r subdir=. git_dir=~/r/.git branch=main head=HEAD action=none step=-/- stashes=0
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=0 clean=true
+changes:
+~/r: git root=~/r name=r subdir=. git_dir=~/r/.git branch=main head=HEAD action=none step=-/- stashes=0
+  upstream=none +0 -0 staged=1 unstaged=1 untracked=1 conflicts=0 clean=false
+~/r: git root=~/r name=r subdir=. git_dir=~/r/.git branch=main head=HEAD action=none step=-/- stashes=1
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=0 clean=true
+detached:
+~/r: git root=~/r name=r subdir=. git_dir=~/r/.git branch=none head=HEAD action=none step=-/- stashes=1
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=0 clean=true
+upstream:
+~/clone: git root=~/clone name=clone subdir=. git_dir=~/clone/.git branch=main head=HEAD action=none step=-/- stashes=0
+  upstream=origin/main +0 -0 staged=0 unstaged=0 untracked=0 conflicts=0 clean=true
+~/clone: git root=~/clone name=clone subdir=. git_dir=~/clone/.git branch=main head=HEAD action=none step=-/- stashes=0
+  upstream=origin/main +1 -0 staged=0 unstaged=0 untracked=0 conflicts=0 clean=true
+~/r: git root=~/r name=r subdir=. git_dir=~/r/.git branch=main head=HEAD action=none step=-/- stashes=1
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=0 clean=true
+merge conflict:
+~/r: git root=~/r name=r subdir=. git_dir=~/r/.git branch=main head=HEAD action=merge step=-/- stashes=1
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=1 clean=false
+rebase:
+~/r: git root=~/r name=r subdir=. git_dir=~/r/.git branch=side head=HEAD action=rebase-i step=1/1 stashes=1
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=1 clean=false
+cherry-pick:
+~/r: git root=~/r name=r subdir=. git_dir=~/r/.git branch=main head=HEAD action=cherry step=-/- stashes=1
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=1 clean=false
+bisect:
+~/r: git root=~/r name=r subdir=. git_dir=~/r/.git branch=main head=HEAD action=bisect step=-/- stashes=1
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=0 clean=true
+worktree:
+~/wt: git root=~/wt name=wt subdir=. git_dir=~/r/.git/worktrees/wt branch=other head=HEAD action=none step=-/- stashes=1
+  upstream=none +0 -0 staged=0 unstaged=0 untracked=0 conflicts=0 clean=true
+explicit directories:
+a
+none
+none
+none

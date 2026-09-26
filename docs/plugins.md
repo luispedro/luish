@@ -5,7 +5,8 @@ embedding. Plugins are opt-in: nothing is loaded unless you ask for it, and a sh
 for them.
 
 Plugin support is new. For now, a plugin can run code whenever the current directory changes (the `chpwd` hook),
-give the prompt (the `prompt` hook), and query files (the `fs` module).
+give the prompt (the `prompt` hook), query files (the `fs` module), and ask about git repositories (the `vcs`
+module).
 
 ## Loading plugins
 
@@ -124,6 +125,64 @@ if fs::newer("aliases.txt", `${sh::getvar("HOME")}/.cache/aliases`) {
 
 Integers in Rhai are 64-bit, as in shell arithmetic. Floating-point numbers are available too, for example to time
 things with `timestamp()` and `.elapsed`.
+
+## The `vcs` module
+
+The `vcs` module tells a plugin about the version-control repository around a directory, as zsh's `vcs_info` does.
+Only git is supported for now.
+
+`vcs::info()` (or `vcs::info(dir)`) finds the repository from the current directory (or `dir`) by reading the
+repository's files, without running git, so it is cheap enough to call often. It returns `()` outside a repository,
+and otherwise a map:
+
+| Field | Description | `vcs_info` |
+|---|---|---|
+| `vcs` | `"git"` | `%s` |
+| `root` | The top directory of the work tree | `%R` |
+| `name` | The last component of `root` | `%r` |
+| `subdir` | Where the directory is under `root` (`"."` at the top) | `%S` |
+| `git_dir` | The git directory (for a worktree or a submodule, the one its `.git` file names) | |
+| `branch` | The current branch (while rebasing, the branch being rebased), or `()` when `HEAD` is detached | `%b` |
+| `head` | The commit `HEAD` is at (the full hash), or `()` on a branch without commits | `%i` |
+| `action` | The operation in progress, or `()`: `"merge"`, `"rebase-i"`, `"rebase-m"`, `"rebase"`, `"am"`, `"am/rebase"`, `"cherry"`, `"cherry-seq"`, `"revert"`, `"cherry-or-revert"` or `"bisect"` | `%a` |
+| `step`, `steps` | For a rebase or `git am`, the current step and the number of steps, or `()` | |
+| `stashes` | The number of stash entries | |
+
+`vcs::status()` (or `vcs::status(dir)`) runs `git status`, for what needs the index and the work tree, so it costs
+more (as `check-for-changes` does in `vcs_info`). It returns `()` outside a repository or if git fails, and otherwise
+a map:
+
+| Field | Description |
+|---|---|
+| `staged` | The number of files with changes in the index (`%c` in `vcs_info`) |
+| `unstaged` | The number of files with changes in the work tree that are not in the index (`%u`) |
+| `untracked` | The number of untracked files |
+| `conflicts` | The number of files with merge conflicts |
+| `clean` | Whether all of the above are 0 |
+| `upstream` | The upstream branch (such as `"origin/main"`), or `()` |
+| `ahead`, `behind` | The number of commits the branch is ahead of and behind its upstream |
+
+git runs with `--no-optional-locks`, so that a prompt doesn't get in the way of git commands running at the same
+time.
+
+### Example: the branch in the prompt
+
+```rust
+// ~/.config/luish/plugins/vcs.rhai
+sh::hook("prompt", || {
+    let i = vcs::info();
+    if i == () {
+        return;     // outside a repository: PS1 (or an earlier prompt hook)
+    }
+    let branch = i.branch ?? i.head?.sub_string(0, 7) ?? "?";
+    let action = if i.action == () { "" } else { `|${i.action}` };
+    let dirty = if vcs::status()?.clean ?? true { "" } else { "*" };
+    `(${i.vcs})-[${branch}${action}${dirty}] ${i.name}/${i.subdir} $ `
+});
+```
+
+`vcs::info` is cheap enough to call before every prompt; `vcs::status` runs git, which can be slow in a large
+repository.
 
 ## Text and bytes
 

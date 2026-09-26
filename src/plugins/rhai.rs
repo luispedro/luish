@@ -1,6 +1,6 @@
 //! The Rhai plugin host (PLAN.md §6.4): one engine, one AST per plugin, and
-//! the `sh` module through which plugins reach the shell (and the `fs`
-//! module, `fs.rs`).
+//! the `sh` module through which plugins reach the shell (and the `fs` and
+//! `vcs` modules, `fs.rs` and `vcs.rs`).
 //!
 //! The `sh` functions reach the `Shell` through a pointer that is set for
 //! the length of each call into Rhai (`enter`). Calls are re-entrant: a hook
@@ -237,6 +237,7 @@ impl Host {
         let mut engine = Engine::new();
         engine.register_static_module("sh", sh_module().into());
         engine.register_static_module("fs", super::fs::module().into());
+        engine.register_static_module("vcs", super::vcs::module().into());
         engine.on_print(|s| write_line(1, s));
         engine.on_debug(|s, _, _| write_line(2, s));
         // Ctrl-C (or a trapped SIGINT) stops plugin code, as it would a

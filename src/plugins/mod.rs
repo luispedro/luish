@@ -8,6 +8,8 @@ mod bytes;
 mod fs;
 #[cfg(feature = "plugins")]
 mod rhai;
+#[cfg(feature = "plugins")]
+mod vcs;
 
 #[cfg(feature = "plugins")]
 pub use rhai::Host;
