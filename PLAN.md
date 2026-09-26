@@ -790,7 +790,8 @@ from Stage 1, so that Stage 1 doesn't make them harder.
 - **Interactive**: richer completion, and history shared across sessions with
   metadata (working directory, exit status, duration). `history.rs` should own
   the storage format so that it can move from a plain `$HISTFILE` to a
-  structured store without changing the editor.
+  structured store without changing the editor. (It does: `history.rs`
+  implements rustyline's `History` trait itself.)
 
 ### 9.2 Stage 3: caching of login scripts
 

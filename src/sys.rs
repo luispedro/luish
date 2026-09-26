@@ -118,6 +118,28 @@ pub fn open(path: &[u8], flags: i32, mode: u32) -> Result<i32, i32> {
     }
 }
 
+/// Creates a file named `prefix` followed by six random characters, with
+/// mode 0600 and close-on-exec (`mkostemp`). Returns the fd and the path.
+pub fn mkstemp(prefix: &[u8]) -> Result<(i32, Vec<u8>), i32> {
+    let mut template = prefix.to_vec();
+    template.extend_from_slice(b"XXXXXX\0");
+    // SAFETY: template is a writable, NUL-terminated buffer.
+    let fd = unsafe { libc::mkostemp(template.as_mut_ptr() as *mut libc::c_char, libc::O_CLOEXEC) };
+    if fd < 0 {
+        return Err(errno());
+    }
+    template.pop();
+    Ok((fd, template))
+}
+
+pub fn unlink(path: &[u8]) {
+    let c = cstr(path);
+    // SAFETY: valid path.
+    unsafe {
+        libc::unlink(c.as_ptr());
+    }
+}
+
 pub fn close(fd: i32) {
     // SAFETY: closing an fd we own.
     unsafe {

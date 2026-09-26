@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **66 differential cases, 21 unit tests and 6 pty tests
+Current state: **67 differential cases, 24 unit tests and 7 pty tests
 pass**.
 
 ## Environment
@@ -50,11 +50,11 @@ pass**.
 | 3 Parser | Done. There are unit tests, but no `insta` snapshots or fuzz target |
 | 4 Executor core | Done |
 | 5 Word expansion | Done |
-| 6 Variables and built-ins | Done, except `fc` |
+| 6 Variables and built-ins | Done |
 | 7 Functions, `eval`, `.`, control flow | Done |
 | 8 Signals and traps | Mostly done (see the gaps below) |
 | 9 Options and `set -e` | Done |
-| 10 Interactive / job control | Mostly done: prompt loop, job control and completion. No `fc` |
+| 10 Interactive / job control | Done (prompt loop, history and `fc`, job control, completion), with the gaps listed below |
 | 11 Plugins | Not started |
 | 12 Conformance / performance | Started: benchmark baseline below |
 
@@ -188,7 +188,7 @@ pass**.
 ### Built-ins (`src/builtins/`)
 - Special: `:` `.` `break` `continue` `eval` `exec` `exit` `export`
   `readonly` `return` `set` `shift` `times` `trap` `unset`.
-- Regular: `[` `alias` `bg` `cd` `command` `echo` `false` `fg` `getopts`
+- Regular: `[` `alias` `bg` `cd` `command` `echo` `false` `fc` `fg` `getopts`
   `hash` `jobs` `kill` `local` `printf` `pwd` `read` `test` `true` `type`
   `ulimit` `umask` `unalias` `wait`.
 - `echo` follows dash: `-n` only, and XSI escapes are always processed.
@@ -212,7 +212,23 @@ pass**.
 ### Interactive mode (`src/interactive/`)
 - A rustyline editor with emacs mode by default and vi mode under
   `set -o vi`.
-- History in `$HISTFILE`, limited to `$HISTSIZE` entries.
+- History in `$HISTFILE`, limited to `$HISTSIZE` entries. Each entry is
+  one top-level command as read (possibly several lines); a command equal
+  to the newest entry is not added again. The store is luish's own
+  (`src/interactive/history.rs`), in rustyline's file format (`#V2`, with
+  `\` and newlines escaped, mode 0600); it gives entries event numbers that
+  stay the same when old entries are dropped. The file is written on exit,
+  only if the history changed.
+- `fc` (POSIX; upstream dash has it with libedit, Debian's dash has none):
+  `-l` lists (default: the last 16), `-n` omits numbers, `-r` reverses,
+  `-s [old=new]` re-runs, and `-e editor` (default `$FCEDIT`, `$EDITOR`,
+  then `ed`; `-e -` is `-s`) edits the commands in a temporary file and
+  runs the result, unless the editor fails. `first` and `last` are event
+  numbers (clamped to the history), negative offsets, or a prefix of a
+  command. As in bash, the `fc` command's own entry is left out; when it
+  re-runs commands they replace that entry and are echoed to stderr.
+  Re-running `fc` is limited to 4 levels (dash's `MAXHISTLOOPS`). In a
+  non-interactive shell `fc` fails with `history not active`.
 - `PS1` and `PS2` go through parameter expansion.
 - Ctrl-C cancels the current input.
 - Tab completion (`src/interactive/complete.rs`), bash-style: the first Tab
@@ -233,13 +249,17 @@ pass**.
 - Startup files: `/etc/profile` and `~/.profile` for login shells, then
   `$ENV`, then `$XDG_CONFIG_HOME/luish/luishrc`.
 - Tests: `tests/interactive.rs` (job control, Ctrl-C and Ctrl-Z, terminal
-  input and modes, and completion), and unit tests in `complete.rs`. The
+  input and modes, completion, and `fc`), `builtins/fc_noninteractive.sh`,
+  and unit tests in `complete.rs` and `history.rs`. The
   pty tests use `TERM=dumb`, under which rustyline does no editing, except
   `tab_completion`, which uses `TERM=vt100`.
 
 ## Known gaps
 
-- No `fc`.
+- History entries are UTF-8 strings (rustyline's), so invalid bytes in a
+  command are replaced when it is recorded.
+- `fc -e` runs the edited text as one history entry, rather than one entry
+  per command.
 - Completion has no `~user`, no programmable (per-command) completion, and
   skips filenames that are not valid UTF-8 (rustyline works on `String`s).
 - `set -b` (immediate job notification) is accepted but does nothing: jobs

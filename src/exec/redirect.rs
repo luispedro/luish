@@ -162,6 +162,21 @@ impl Shell {
         }
     }
 
+    /// Creates a temporary file in `$TMPDIR` (or `/tmp`) whose name starts
+    /// with `name`. Returns the fd (close-on-exec) and the path.
+    pub fn temp_file(&self, name: &[u8]) -> Result<(i32, Vec<u8>), Flow> {
+        let mut prefix = self
+            .get_var(b"TMPDIR")
+            .filter(|d| !d.is_empty())
+            .unwrap_or_else(|| b"/tmp".to_vec());
+        prefix.push(b'/');
+        prefix.extend_from_slice(name);
+        sys::mkstemp(&prefix).map_err(|e| {
+            self.error(format!("cannot create temp file: {}", sys::strerror(e)));
+            Flow::Error(2)
+        })
+    }
+
     /// An fd from which the here-doc text can be read.
     fn heredoc_fd(&mut self, text: &[u8]) -> Result<i32, Flow> {
         if text.len() <= 65536
@@ -172,22 +187,8 @@ impl Shell {
             return Ok(r);
         }
         // Too big for a pipe buffer: use an unlinked temporary file.
-        let dir = self.get_var(b"TMPDIR").unwrap_or_else(|| b"/tmp".to_vec());
-        let mut template = dir;
-        template.extend_from_slice(b"/luish-heredoc-XXXXXX\0");
-        // SAFETY: template is a writable, NUL-terminated buffer.
-        let fd = unsafe { libc::mkstemp(template.as_mut_ptr() as *mut libc::c_char) };
-        if fd < 0 {
-            self.error(format!("cannot create temp file: {}", sys::strerror(sys::errno())));
-            return Err(Flow::Error(2));
-        }
-        template.pop();
-        let c = sys::cstr(&template);
-        // SAFETY: valid path; fd is ours.
-        unsafe {
-            libc::unlink(c.as_ptr());
-            libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
-        }
+        let (fd, path) = self.temp_file(b"luish-heredoc-")?;
+        sys::unlink(&path);
         sys::write_all(fd, text);
         let _ = sys::lseek(fd, 0, libc::SEEK_SET);
         Ok(fd)

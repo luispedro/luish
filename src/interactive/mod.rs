@@ -1,15 +1,16 @@
 //! Interactive mode: prompts, the line editor, history, and startup files.
 
 mod complete;
+pub mod history;
 
 use std::cell::RefCell;
 
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
-use rustyline::history::DefaultHistory;
-use rustyline::{CompletionType, Editor};
+use rustyline::{CompletionType, Config, Editor};
 
 use complete::{Names, ShellHelper};
+use history::ShellHistory;
 
 use crate::input::Line;
 use crate::options::Opt;
@@ -17,7 +18,7 @@ use crate::shell::Shell;
 use crate::sys;
 
 thread_local! {
-    static EDITOR: RefCell<Option<Editor<ShellHelper, DefaultHistory>>> = const { RefCell::new(None) };
+    static EDITOR: RefCell<Option<Editor<ShellHelper, ShellHistory>>> = const { RefCell::new(None) };
 }
 
 fn history_file(sh: &Shell) -> Option<Vec<u8>> {
@@ -31,7 +32,7 @@ fn to_path(b: &[u8]) -> std::path::PathBuf {
 
 /// Sets up the line editor. Returns false if it can't be used.
 pub fn init_editor(sh: &Shell) -> bool {
-    let Ok(mut ed) = Editor::new() else {
+    let Ok(mut ed) = Editor::with_history(Config::default(), ShellHistory::default()) else {
         return false;
     };
     ed.set_helper(Some(ShellHelper::default()));
@@ -57,17 +58,20 @@ pub fn save_history(sh: &Shell) {
     });
 }
 
+/// Adds the text of a command about to be run to the history.
 pub fn add_history(text: &[u8]) {
     let text = String::from_utf8_lossy(text);
     let text = text.trim_end_matches('\n');
     if text.trim().is_empty() {
         return;
     }
-    EDITOR.with(|e| {
-        if let Some(ed) = e.borrow_mut().as_mut() {
-            let _ = ed.add_history_entry(text);
-        }
-    });
+    with_history(|h| h.add_current(text));
+}
+
+/// Runs `f` on the history. Returns None if there is no line editor (and
+/// so no history). `f` must not run commands, which may use the history.
+pub fn with_history<R>(f: impl FnOnce(&mut ShellHistory) -> R) -> Option<R> {
+    EDITOR.with(|e| e.borrow_mut().as_mut().map(|ed| f(ed.history_mut())))
 }
 
 pub fn prompt(sh: &mut Shell, continuation: bool) -> Vec<u8> {

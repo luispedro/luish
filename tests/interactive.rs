@@ -368,3 +368,44 @@ fn tab_completion() {
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
 }
+
+#[test]
+fn fc_history() {
+    let mut sh = Pty::spawn("fc");
+    std::fs::write(
+        sh.path("ed.sh"),
+        "sed 's/one/ONE/' \"$1\" > \"$1.new\" && mv \"$1.new\" \"$1\"\n",
+    )
+    .unwrap();
+    sh.expect("$ ");
+    sh.run("echo one");
+    sh.run("echo two");
+    // The `fc` command itself is left out.
+    assert_eq!(sh.run("fc -l"), "fc -l\n1\techo one\n2\techo two\n$ ");
+    // Re-running echoes the command and puts it in place of the `fc` entry.
+    assert_eq!(sh.run("fc -s two=TWO 2"), "fc -s two=TWO 2\necho TWO\nTWO\n$ ");
+    assert_eq!(sh.run("fc -ln -2"), "fc -ln -2\n\tfc -l\n\techo TWO\n$ ");
+    assert_eq!(sh.run("fc -lr 1 2"), "fc -lr 1 2\n2\techo two\n1\techo one\n$ ");
+    // A string names the newest command starting with it.
+    assert_eq!(
+        sh.run("fc -l ech"),
+        "fc -l ech\n4\techo TWO\n5\tfc -ln -2\n6\tfc -lr 1 2\n$ "
+    );
+    assert_eq!(sh.run("fc -e 'sh ed.sh' 1"), "fc -e 'sh ed.sh' 1\necho ONE\nONE\n$ ");
+    assert_eq!(sh.run("fc -l -1"), "fc -l -1\n8\techo ONE\n$ ");
+    // A failing editor suppresses the re-execution.
+    sh.run("fc -e false");
+    assert_has(&sh.run("echo st=$?"), "st=1\n");
+    // Lines after the first of a multi-line command are indented.
+    sh.send("for i in 1 2\ndo echo $i\ndone\n");
+    sh.expect("\n2\n$ ");
+    assert_eq!(
+        sh.run("fc -l -1"),
+        "fc -l -1\n12\tfor i in 1 2\n\tdo echo $i\n\tdone\n$ "
+    );
+    let err = sh.run("fc -l nosuch");
+    assert_has(&err, "fc: history pattern not found: nosuch\n");
+    assert_has(&sh.run("echo st=$?"), "st=2\n");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}

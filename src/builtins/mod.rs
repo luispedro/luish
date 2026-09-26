@@ -2,6 +2,7 @@
 
 mod cd;
 mod echo;
+mod fc;
 mod jobs;
 mod misc;
 mod printf;
@@ -41,6 +42,7 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"command", misc::command, false),
     (b"echo", echo::echo, false),
     (b"false", false_, false),
+    (b"fc", fc::fc, false),
     (b"fg", jobs::fg, false),
     (b"getopts", read::getopts, false),
     (b"hash", misc::hash, false),
