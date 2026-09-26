@@ -57,7 +57,7 @@ pub fn jobs(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             }
         }
     }
-    Ok(sh.out_or_err(&argv[0], out.as_bytes()))
+    Ok(sh.out_status(out.as_bytes()))
 }
 
 /// `fg` and `bg`.
@@ -264,7 +264,7 @@ pub fn kill(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
                 out.push_str(&format!("{}\n", signals::name(n as i32)));
             }
         }
-        return Ok(sh.out_or_err(&argv[0], out.as_bytes()));
+        return Ok(sh.out_status(out.as_bytes()));
     }
     let sig = sig.unwrap();
     let mut status = 0;

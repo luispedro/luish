@@ -51,3 +51,16 @@ f -pq
 getopts xy opt; show $?
 getopts 'hc:' opt- -h; echo "status=$?"
 getopts 2>/dev/null; echo "status=$?"
+# A bad variable name is reported after OPTIND and OPTARG are set.
+OPTIND=1
+set -- -c foo -h
+getopts 'hc:' opt- 2>/dev/null
+echo "status=$? opt=$opt OPTARG=$OPTARG OPTIND=$OPTIND"
+# OPTIND must be a number (dash's getoptsreset).
+for v in -1 '' 0 abc 5 ' 3' '+4' 2147483648; do
+  $SH -c "OPTIND='$v'; echo \"ok \$OPTIND\"" 2>/dev/null; echo "status $?"
+done
+$SH -c 'unset OPTIND; echo notreached' 2>/dev/null; echo "status $?"
+for v in ' 3' '+3' '3 ' '-0' '03' '0x3' '-1' 2147483648; do
+  $SH -c "exit '$v'" 2>/dev/null; echo "exit [$v] $?"
+done

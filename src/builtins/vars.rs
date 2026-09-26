@@ -54,7 +54,7 @@ fn set_attr(sh: &mut Shell, argv: &[Vec<u8>], export: bool) -> ExecResult {
             }
         }
         let _ = print;
-        return Ok(sh.out_or_err(cmd, &out));
+        return Ok(sh.out_status(&out));
     }
     for a in args {
         let (name, value) = match a.iter().position(|&c| c == b'=') {
@@ -108,6 +108,11 @@ pub fn unset(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         if !is_valid_name(name) {
             return Err(bad_name(sh, &argv[0], name));
         }
+        if name == b"OPTIND" {
+            // dash resets getopts with the empty value, which isn't a number.
+            sh.berr(&argv[0], "Illegal number: ");
+            return Err(Flow::Error(2));
+        }
         if sh.vars.unset(name).is_err() {
             sh.berr(&argv[0], format!("{}: is read only", String::from_utf8_lossy(name)));
             return Err(Flow::Error(2));
@@ -144,7 +149,7 @@ fn print_vars(sh: &Shell) -> i32 {
             out.push(b'\n');
         }
     }
-    sh.out_or_err(b"set", &out)
+    sh.out_status(&out)
 }
 
 fn print_options(sh: &Shell, reinput: bool) -> i32 {
@@ -160,7 +165,7 @@ fn print_options(sh: &Shell, reinput: bool) -> i32 {
             out.push_str(&format!("{name:<16}{}\n", if on { "on" } else { "off" }));
         }
     }
-    sh.out_or_err(b"set", out.as_bytes())
+    sh.out_status(out.as_bytes())
 }
 
 /// Parses `set`-style option arguments (also used on the command line).

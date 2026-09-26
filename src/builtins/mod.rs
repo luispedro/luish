@@ -73,8 +73,25 @@ pub fn names() -> impl Iterator<Item = &'static [u8]> {
 
 impl Shell {
     /// Writes built-in output to stdout.
+    /// Writes built-in output to stdout. A failure is reported after the
+    /// built-in returns (see [`Shell::call_builtin`]).
     pub fn out(&self, s: &[u8]) -> bool {
-        sys::write_all(1, s)
+        let ok = sys::write_all(1, s);
+        if !ok {
+            self.out_failed.set(true);
+        }
+        ok
+    }
+
+    /// Runs a built-in. As in dash's `evalbltin`, if writing its output
+    /// failed, `name: I/O error` is printed and the status gets bit 1.
+    pub fn call_builtin(&mut self, f: BuiltinFn, argv: &[Vec<u8>]) -> ExecResult {
+        let r = f(self, argv);
+        if !self.out_failed.replace(false) {
+            return r;
+        }
+        self.berr(&argv[0], "I/O error");
+        r.map(|status| status | 1)
     }
 
     /// Prints `$0: LINENO: name: msg`.
@@ -83,22 +100,30 @@ impl Shell {
     }
 
     /// Reports a write error from a built-in.
-    pub fn out_or_err(&self, name: &[u8], s: &[u8]) -> i32 {
-        if self.out(s) {
-            0
-        } else {
-            self.berr(name, "I/O error");
-            1
-        }
+    /// [`Shell::out`] for a built-in whose status is 0 when it gets here.
+    pub fn out_status(&self, s: &[u8]) -> i32 {
+        self.out(s);
+        0
     }
 }
 
 /// Parses a non-negative decimal number, as for `exit`, `shift`, `break`.
+/// dash's `number`: a decimal number (with optional blanks around it and a
+/// sign, as `strtoimax` reads it) from 0 to `INT_MAX`.
 pub fn parse_uint(s: &[u8]) -> Option<i64> {
-    if s.is_empty() || !s.iter().all(|c| c.is_ascii_digit()) {
+    let t = s.trim_ascii_start();
+    let (neg, rest) = match t.first() {
+        Some(b'-') => (true, &t[1..]),
+        Some(b'+') => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let end = rest.iter().position(|c| !c.is_ascii_digit()).unwrap_or(rest.len());
+    if end == 0 || !rest[end..].iter().all(|c| c.is_ascii_whitespace()) {
         return None;
     }
-    std::str::from_utf8(s).ok()?.parse().ok()
+    let n: i64 = std::str::from_utf8(&rest[..end]).ok()?.parse().ok()?;
+    let n = if neg { -n } else { n };
+    (0..=i32::MAX as i64).contains(&n).then_some(n)
 }
 
 fn illegal_number(sh: &Shell, name: &[u8], arg: &[u8]) -> Flow {

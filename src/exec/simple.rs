@@ -122,8 +122,12 @@ impl Shell {
     }
 
     fn trace(&mut self, fd: i32, assigns: &[(Vec<u8>, Vec<u8>)], argv: &[Vec<u8>]) {
-        if self.opt(Opt::Xtrace) && (!argv.is_empty() || !assigns.is_empty()) && fd >= 0 {
+        // As in dash (`inps4`), commands run while `PS4` is expanded (in a
+        // command substitution in it) aren't traced, so there is no loop.
+        if self.opt(Opt::Xtrace) && !self.in_ps4 && (!argv.is_empty() || !assigns.is_empty()) && fd >= 0 {
+            self.in_ps4 = true;
             self.xtrace(fd, assigns, argv);
+            self.in_ps4 = false;
         }
     }
 
@@ -150,9 +154,9 @@ impl Shell {
             }
         }
         match kind {
-            CommandKind::Special(f) => f(self, &argv),
+            CommandKind::Special(f) => self.call_builtin(f, &argv),
             CommandKind::Function(body) => self.with_temp_assigns(assigns, |sh| sh.call_function(&body, &argv)),
-            CommandKind::Builtin(f) => self.with_temp_assigns(assigns, |sh| f(sh, &argv)),
+            CommandKind::Builtin(f) => self.with_temp_assigns(assigns, |sh| sh.call_builtin(f, &argv)),
             // As in dash, the assignments are made (temporarily) in the shell,
             // so that an error in one is the shell's.
             CommandKind::External => self.with_temp_assigns(assigns, |sh| sh.run_external(cmd, &argv, no_fork)),
@@ -234,7 +238,7 @@ impl Shell {
     /// redirections (for `command`; `alt_path` for `command -p`).
     pub fn run_argv(&mut self, argv: &[Vec<u8>], functions: bool, alt_path: Option<&[u8]>) -> ExecResult {
         match self.lookup_command(&argv[0], functions) {
-            CommandKind::Special(f) | CommandKind::Builtin(f) => f(self, argv),
+            CommandKind::Special(f) | CommandKind::Builtin(f) => self.call_builtin(f, argv),
             CommandKind::Function(body) => self.call_function(&body, argv),
             CommandKind::External => {
                 let pid = if self.can_spawn() {
@@ -281,10 +285,11 @@ impl Shell {
     /// Reports that `name` couldn't be executed (errno `e`), and returns
     /// the status for it.
     fn exec_error(&self, name: &[u8], e: i32) -> i32 {
+        // Debian's dash: 126 only for a file that can't be executed.
         let (msg, code) = match e {
             libc::ENOENT | libc::ENOTDIR => ("not found".to_string(), 127),
             libc::EACCES | libc::EISDIR => ("Permission denied".to_string(), 126),
-            _ => (sys::strerror(e), 126),
+            _ => (sys::strerror(e), 127),
         };
         self.error(format!("{}: {msg}", String::from_utf8_lossy(name)));
         code

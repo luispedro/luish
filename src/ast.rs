@@ -136,6 +136,10 @@ pub enum ParamOp {
     RemoveLargestSuffix(Word),
     RemoveSmallestPrefix(Word),
     RemoveLargestPrefix(Word),
+    /// Not a valid substitution (such as bash's `${x//a/b}`). As in dash,
+    /// this is an error only when it is expanded; the word is the rest of
+    /// the text up to `}`.
+    Bad(Word),
 }
 
 #[derive(Debug, Clone, PartialEq)]

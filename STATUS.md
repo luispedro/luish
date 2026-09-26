@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **93 differential cases, 24 unit tests and 7 pty tests
+Current state: **98 differential cases, 24 unit tests and 7 pty tests
 pass**.
 
 ## Environment
@@ -82,9 +82,17 @@ pass**.
   larger than 64 KiB go through an unlinked temporary file.
 - Aliases are expanded by splicing the alias text into the input buffer,
   with a recursion guard. An alias value ending in a blank also makes the
-  next word eligible for alias expansion.
+  next word eligible for alias expansion, wherever it is (also a `for`
+  variable, `in`, or a `case` word, as in dash). Test:
+  `parse/alias_blank_compound.sh`.
 - Reserved words are recognised only in command position.
-- Function definitions have the form `name() compound [redirs]`.
+- Function definitions have the form `name() command`: as in dash, the body
+  may be any command (`f() echo hi`, `f() g() { ...; }`).
+- As in dash, a bad `${...}` (such as bash's `${x//a/b}`) is an error only
+  when it is expanded, so it can sit in a branch that isn't taken, and `$(`
+  in a here-doc delimiter is a syntax error. Test: `parse/dash_lenient.sh`.
+- `$((` that isn't arithmetic is read as `$( (...) )` (a deviation: dash
+  reports an error). Test: `parse/arith_fallback.sh`.
 - Parsing is incremental: one line (list) is parsed and executed at a time.
   Incomplete input is reported as such, which triggers `PS2`.
 - Syntax errors use dash's wording and report the line number.
@@ -166,7 +174,8 @@ pass**.
   is not a number or `-` is a fatal syntax error, as in dash. Fd numbers
   may have several digits (a deviation: dash allows one). Tests:
   `exec/redirect_dup.sh`, `exec/redirect_big_fd.sh`.
-- Exit statuses are 127 for not found, 126 for not executable, and 128+N for
+- Exit statuses are 127 for not found (and, as in Debian's dash, for other
+  exec errors such as `ELOOP`), 126 for not executable, and 128+N for
   death by signal N. Signal deaths other than INT and PIPE print a message.
 - The last command of a forked child (subshell, background job, pipeline
   stage, command substitution) and of a `-c` string replaces the shell
@@ -242,8 +251,17 @@ pass**.
 - `getopts` is a port of dash's: `OPTIND` moves past an argument as soon as
   its first letter is read, `OPTARG` is left alone at the end, and the
   position is reset by assigning `OPTIND`, by `set --` and `shift`, and is
-  saved and restored across function calls. Test:
+  saved and restored across function calls. As in dash, `OPTIND` must be
+  a number (assigning anything else, or unsetting it, is an error). Test:
   `builtins/getopts_dash.sh`.
+- Numeric arguments (`exit`, `return`, `shift`, `kill`, `wait`) follow dash's
+  `number`: decimal, blanks and a sign allowed, 0 to `INT_MAX`.
+- As in dash's `evalbltin`, a built-in whose output can't be written prints
+  `name: I/O error`, and its status gets bit 1. Test:
+  `builtins/write_errors.sh`.
+- `set -x` doesn't trace commands run while `PS4` is expanded (dash's
+  `inps4`), so a command substitution in `PS4` doesn't loop. Test:
+  `options/xtrace_ps4_subst.sh`.
 - `test` is a port of dash's parser (the POSIX rules for three and four
   arguments, then recursive descent with dash's operand/operator
   disambiguation), so ambiguous expressions such as `[ -a -a ]` and the

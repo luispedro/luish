@@ -72,5 +72,5 @@ pub fn echo(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     if newline {
         out.push(b'\n');
     }
-    Ok(sh.out_or_err(&argv[0], &out))
+    Ok(sh.out_status(&out))
 }

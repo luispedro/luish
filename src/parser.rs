@@ -299,7 +299,21 @@ impl Parser {
         }
     }
 
+    /// After an alias whose value ends in a blank, the next word is checked
+    /// for aliases too, wherever it is (as in dash, also a `for` variable or
+    /// `in`).
+    fn alias_continuation(&mut self) -> PResult<()> {
+        if let Some(end) = self.alias_blank_end
+            && self.peek()?.start >= end
+        {
+            self.alias_blank_end = None;
+            self.maybe_expand_alias()?;
+        }
+        Ok(())
+    }
+
     fn parse_for(&mut self, lineno: u32) -> PResult<CompoundCommand> {
+        self.alias_continuation()?;
         let t = self.next()?;
         let var = match &t.tok {
             Tok::Word(w) if w.as_literal().is_some_and(is_valid_name) => w.as_literal().unwrap().to_vec(),
@@ -308,10 +322,12 @@ impl Parser {
         };
         let mut words = None;
         self.skip_newlines()?;
+        self.alias_continuation()?;
         if self.peek_is_kw(b"in")? {
             self.next()?;
             let mut ws = Vec::new();
             loop {
+                self.alias_continuation()?;
                 let t = self.next()?;
                 match t.tok {
                     Tok::Word(w) => ws.push(w),
@@ -337,11 +353,13 @@ impl Parser {
     }
 
     fn parse_case(&mut self, lineno: u32) -> PResult<CompoundCommand> {
+        self.alias_continuation()?;
         let t = self.next()?;
         let Tok::Word(word) = t.tok else {
             return self.unexpected(&t, None);
         };
         self.skip_newlines()?;
+        self.alias_continuation()?;
         self.expect_kw("in")?;
         let mut arms = Vec::new();
         loop {
@@ -409,6 +427,14 @@ impl Parser {
             return self.unexpected(&t, None);
         };
         let target = if kind == RedirKind::HereDoc {
+            // dash doesn't parse `$(` in a delimiter, so `(` is unexpected.
+            if word
+                .0
+                .iter()
+                .any(|p| matches!(p, WordPart::CmdSubst(_) | WordPart::Arith(_)))
+            {
+                return self.err("Syntax error: \"(\" unexpected");
+            }
             let raw = self.src[t.start..t.end].to_vec();
             RedirTarget::HereDoc(self.push_heredoc(&raw, op == Op::DLessDash))
         } else {
@@ -429,11 +455,8 @@ impl Parser {
             }
             if words.is_empty() {
                 self.maybe_expand_alias()?;
-            } else if let Some(end) = self.alias_blank_end
-                && self.peek()?.start >= end
-            {
-                self.alias_blank_end = None;
-                self.maybe_expand_alias()?;
+            } else {
+                self.alias_continuation()?;
             }
             if !matches!(self.peek()?.tok, Tok::Word(_)) {
                 break;
@@ -474,23 +497,27 @@ impl Parser {
         self.expect_op(Op::LParen)?;
         self.expect_op(Op::RParen)?;
         self.skip_newlines()?;
-        let is_compound = match &self.peek()?.tok {
-            Tok::Op(Op::LParen) => true,
-            Tok::Word(w) => matches!(
-                w.as_literal(),
-                Some(b"{" | b"if" | b"while" | b"until" | b"for" | b"case")
-            ),
-            _ => false,
+        // As in dash, the body can be any command (`f() echo hi`, or even
+        // `f() g() { ...; }`); one that isn't compound is kept as `{ cmd; }`.
+        let body = match self.parse_command()? {
+            Command::Compound(cmd, redirs) => FunctionBody { cmd, redirs },
+            cmd => FunctionBody {
+                cmd: CompoundCommand::BraceGroup(vec![CompleteCommand {
+                    list: AndOrList {
+                        first: Pipeline {
+                            negated: false,
+                            cmds: vec![cmd],
+                        },
+                        rest: Vec::new(),
+                    },
+                    async_: false,
+                }]),
+                redirs: Vec::new(),
+            },
         };
-        if !is_compound {
-            let t = self.next()?;
-            return self.unexpected(&t, None);
-        }
-        let cmd = self.parse_compound()?;
-        let redirs = self.parse_redirects()?;
         Ok(Command::FunctionDef {
             name,
-            body: Rc::new(FunctionBody { cmd, redirs }),
+            body: Rc::new(body),
         })
     }
 }

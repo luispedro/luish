@@ -182,7 +182,7 @@ pub fn fc(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
                 out.push(b'\n');
             }
         }
-        return Ok(sh.out_or_err(name, &out));
+        return Ok(sh.out_status(&out));
     }
     if selected.is_empty() {
         return fail("no command found");

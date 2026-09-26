@@ -128,7 +128,7 @@ pub fn pwd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     match dir {
         Some(mut d) => {
             d.push(b'\n');
-            Ok(sh.out_or_err(&argv[0], &d))
+            Ok(sh.out_status(&d))
         }
         None => {
             sh.berr(&argv[0], "getcwd() failed");

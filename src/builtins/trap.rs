@@ -59,7 +59,7 @@ pub fn trap(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
                 out.push(b'\n');
             }
         }
-        return Ok(sh.out_or_err(&argv[0], &out));
+        return Ok(sh.out_status(&out));
     }
     // `trap N...` with a signal number first resets (dash's `decode_signum`).
     let is_signum = |a: &[u8]| !a.is_empty() && a.iter().all(|c| c.is_ascii_digit()) && signals::parse(a, 0).is_some();

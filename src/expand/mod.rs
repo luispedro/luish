@@ -348,6 +348,10 @@ impl Shell {
                 push_result(&v, quoted, f);
             }
             ParamOp::Length => unreachable!(),
+            ParamOp::Bad(_) => {
+                self.error("Bad substitution");
+                return Err(Flow::Error(2));
+            }
         }
         Ok(())
     }

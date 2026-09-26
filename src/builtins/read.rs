@@ -144,13 +144,6 @@ pub fn getopts(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         return Ok(2);
     }
     let (optstr, optvar) = (&argv[1], &argv[2]);
-    if !crate::lexer::is_valid_name(optvar) {
-        sh.berr(
-            &argv[0],
-            format!("{}: bad variable name", String::from_utf8_lossy(optvar)),
-        );
-        return Ok(2);
-    }
     let base: Vec<Vec<u8>> = if argv.len() == 3 {
         sh.positional.clone()
     } else {
@@ -238,6 +231,15 @@ pub fn getopts(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     }
     let ind = next + 1;
     sh.set_var(b"OPTIND", ind.to_string().into_bytes())?;
+    // As in dash, a bad name is found only now, after OPTIND and OPTARG.
+    if !is_valid_name(optvar) {
+        sh.berr(
+            &argv[0],
+            format!("{}: bad variable name", String::from_utf8_lossy(optvar)),
+        );
+        (sh.optind, sh.optoff) = (ind, p);
+        return Ok(2);
+    }
     sh.set_var(optvar, vec![c])?;
     sh.optoff = p;
     sh.optind = ind;

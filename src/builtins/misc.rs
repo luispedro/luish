@@ -61,7 +61,7 @@ pub fn dot(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     }
 }
 
-pub fn times(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+pub fn times(sh: &mut Shell, _argv: &[Vec<u8>]) -> ExecResult {
     // SAFETY: plain times(2) and sysconf.
     let (t, hz) = unsafe {
         let mut t: libc::tms = std::mem::zeroed();
@@ -80,7 +80,7 @@ pub fn times(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         f(t.tms_cutime),
         f(t.tms_cstime)
     );
-    Ok(sh.out_or_err(&argv[0], out.as_bytes()))
+    Ok(sh.out_status(out.as_bytes()))
 }
 
 fn alias_line(name: &[u8], value: &[u8]) -> Vec<u8> {
@@ -96,7 +96,7 @@ pub fn alias(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         let mut names: Vec<_> = sh.aliases.iter().collect();
         names.sort();
         let out: Vec<u8> = names.into_iter().flat_map(|(n, v)| alias_line(n, v)).collect();
-        return Ok(sh.out_or_err(&argv[0], &out));
+        return Ok(sh.out_status(&out));
     }
     let mut status = 0;
     for a in &argv[1..] {
@@ -253,7 +253,7 @@ pub fn hash(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             out.extend(p);
             out.push(b'\n');
         }
-        return Ok(sh.out_or_err(&argv[0], &out));
+        return Ok(sh.out_status(&out));
     }
     let mut status = 0;
     for a in &argv[1..] {
@@ -359,10 +359,10 @@ pub fn ulimit(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         for &(_, res, unit, desc) in LIMITS {
             out.push_str(&format!("{desc:<20} {}", show(get(res), unit)));
         }
-        return Ok(sh.out_or_err(&argv[0], out.as_bytes()));
+        return Ok(sh.out_status(out.as_bytes()));
     }
     let Some(n) = value else {
-        return Ok(sh.out_or_err(&argv[0], show(get(res), unit).as_bytes()));
+        return Ok(sh.out_status(show(get(res), unit).as_bytes()));
     };
     let mut rl = get(res);
     if hard {
@@ -426,7 +426,7 @@ pub fn umask(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         } else {
             format!("{cur:04o}\n")
         };
-        return Ok(sh.out_or_err(&argv[0], out.as_bytes()));
+        return Ok(sh.out_status(out.as_bytes()));
     };
     let new_mask = if spec.first().is_some_and(|c| c.is_ascii_digit()) {
         let mut m: u32 = 0;

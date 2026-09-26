@@ -319,7 +319,6 @@ pub fn printf(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             break;
         }
     }
-    let status = args.status;
-    let w = sh.out_or_err(&argv[0], &out);
-    Ok(if w != 0 { w } else { status })
+    sh.out(&out);
+    Ok(args.status)
 }

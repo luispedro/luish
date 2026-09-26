@@ -64,6 +64,10 @@ pub struct Shell {
     /// Path of this executable, used to run scripts without `#!`.
     pub self_exe: Vec<u8>,
     /// Position inside a group of options for `getopts`.
+    /// Writing a built-in's output failed (checked after it returns).
+    pub out_failed: std::cell::Cell<bool>,
+    /// `PS4` is being expanded for `set -x` (dash's `inps4`).
+    pub in_ps4: bool,
     /// The logical current directory (dash's `curdir`), kept by `cd` and
     /// printed by `pwd`; `None` if it couldn't be found.
     pub curdir: Option<Vec<u8>>,
@@ -139,6 +143,8 @@ impl Shell {
             optind: 1,
             optoff: None,
             curdir,
+            in_ps4: false,
+            out_failed: std::cell::Cell::new(false),
             in_exit_trap: false,
         }
     }
@@ -159,6 +165,11 @@ impl Shell {
 
     /// Sets a variable, reporting an error if it is readonly.
     pub fn set_var(&mut self, name: &[u8], value: Vec<u8>) -> Result<(), Flow> {
+        // As in dash (`getoptsreset`), OPTIND must be a number.
+        if name == b"OPTIND" && crate::builtins::parse_uint(&value).is_none() {
+            self.error(format!("Illegal number: {}", String::from_utf8_lossy(&value)));
+            return Err(Flow::Error(2));
+        }
         if self.vars.set(name, value).is_err() {
             self.error(format!("{}: is read only", String::from_utf8_lossy(name)));
             return Err(Flow::Error(2));
@@ -182,11 +193,7 @@ impl Shell {
         } else if name == b"OPTIND" {
             // dash's `getoptsreset`.
             let v = self.vars.get(b"OPTIND").unwrap_or_default();
-            self.optind = std::str::from_utf8(v)
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .filter(|&n| n > 0)
-                .unwrap_or(1);
+            self.optind = crate::builtins::parse_uint(v).filter(|&n| n > 0).unwrap_or(1) as usize;
             self.optoff = None;
         }
     }
