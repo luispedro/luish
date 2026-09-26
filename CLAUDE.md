@@ -19,6 +19,8 @@ features is fine, as long as the prompt and line editor stay fast.
 - `docs/`: user-facing documentation (Sphinx with MyST Markdown), published on Read the Docs via
   `.readthedocs.yaml`. Its Python dependencies are in both `docs/requirements.txt` (for Read the Docs) and the
   `docs` feature in `pixi.toml`; keep them in step.
+- `docs/builtins/`: one Markdown page per built-in, which `help` shows (compiled in, see `src/builtins/help.rs`)
+  and `docs/builtins.md` includes. Keep them up to date with the built-ins' behaviour.
 
 ## Commands
 

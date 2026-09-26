@@ -267,7 +267,7 @@ pub fn hash(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             sh.hash.clear();
             continue;
         }
-        if a.contains(&b'/') || super::lookup(a).is_some() || sh.functions.contains_key(a) {
+        if a.contains(&b'/') || sh.builtin(a).is_some() || sh.functions.contains_key(a) {
             continue;
         }
         sh.hash.remove(a);

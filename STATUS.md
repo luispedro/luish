@@ -251,7 +251,8 @@ pass**.
   `trap` `unset`.
 - Regular: `[` `alias` `bg` `cd` `command` `echo` `false` `fc` `fg` `getopts`
   `hash` `jobs` `kill` `printf` `pwd` `read` `test` `true` `type`
-  `ulimit` `umask` `unalias` `wait`, and luish's own `__luish_internal`.
+  `ulimit` `umask` `unalias` `wait`, and luish's own `__luish_internal`,
+  and, only in interactive shells, `help`.
 - `__luish_internal` (`src/builtins/internal.rs`) holds luish's own
   commands as subcommands, so that they don't take names from the command
   namespace (widely used ones may later get aliases). A missing or unknown
@@ -261,6 +262,17 @@ pass**.
   if `src/`, `build.rs`, `Cargo.toml` or `Cargo.lock` differed from it, or
   `unknown` outside a git checkout). `build.rs` sets them at compile time,
   so they cost nothing at run time. Test: `builtins/internal_git_rev.sh`.
+- `help` (`src/builtins/help.rs`) lists the built-ins with a one-line
+  summary each, or shows the help for the names given (status 1 if one has
+  none). The text is the Markdown in `docs/builtins/`, compiled in with
+  `include_str!` and shown as plain text; the user documentation includes
+  the same files (`docs/builtins.md`). It is a built-in only in shells
+  started interactive (the `-i` option, which `set` can't change, so also
+  in their subshells), so scripts find the same commands as in dash;
+  `__luish_internal help` is the same command in any shell. Unit tests
+  check that every built-in has a page, that the pages fit 80 columns and
+  that the docs include them all. Tests: `builtins/help_noninteractive.sh`,
+  `builtins/internal_help.sh`, `help_builtin` in `tests/interactive.rs`.
 - `echo` follows dash: `-n` only, and XSI escapes are always processed
   (with dash's octal forms `\0nnn` and `\nnn`, and Debian's `\e`).
 - `printf` supports every conversion (numeric ones use libc `snprintf`),

@@ -1,0 +1,21 @@
+Built-in commands (`help NAME` shows more about one):
+
+  .                 Run the commands in a file in the current shell.
+true
+
+Do nothing, successfully (exit status 0).
+
+`true` ignores its arguments.
+
+false
+
+Do nothing, unsuccessfully (exit status 1).
+
+`false` ignores its arguments.
+status 0
+true
+
+Do nothing, successfully (exit status 0).
+
+`true` ignores its arguments.
+status 1

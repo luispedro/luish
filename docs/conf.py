@@ -7,9 +7,12 @@ copyright = "2026, Luis Pedro Coelho"
 
 extensions = ["myst_parser"]
 source_suffix = {".md": "markdown"}
-exclude_patterns = ["_build"]
+# The pages in builtins/ are included by builtins.md (and compiled into
+# luish for `help`).
+exclude_patterns = ["_build", "builtins"]
 
 myst_heading_anchors = 3
+myst_enable_extensions = ["deflist"]
 
 html_theme = "furo"
 html_title = "luish"

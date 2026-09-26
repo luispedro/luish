@@ -3,6 +3,7 @@
 mod cd;
 mod echo;
 mod fc;
+mod help;
 pub mod internal;
 mod jobs;
 mod misc;
@@ -14,6 +15,7 @@ mod vars;
 
 pub use vars::single_quote;
 
+use crate::options::Opt;
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::sys;
 
@@ -66,16 +68,35 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"wait", jobs::wait, false),
 ];
 
+/// Regular built-ins that exist only in shells started interactive (and
+/// their subshells), so that scripts find the same commands as in dash.
+const INTERACTIVE: &[(&[u8], BuiltinFn)] = &[(b"help", help::help)];
+
+/// Finds a built-in that every shell has: (function, special). See
+/// [`Shell::builtin`] for all of them.
 pub fn lookup(name: &[u8]) -> Option<(BuiltinFn, bool)> {
     TABLE.iter().find(|b| b.0 == name).map(|b| (b.1, b.2))
 }
 
-/// The names of all built-ins.
+/// The names of all built-ins, including the interactive-only ones (for
+/// the line editor).
 pub fn names() -> impl Iterator<Item = &'static [u8]> {
-    TABLE.iter().map(|b| b.0)
+    TABLE.iter().map(|b| b.0).chain(INTERACTIVE.iter().map(|b| b.0))
 }
 
 impl Shell {
+    /// Finds a built-in: (function, special). The `-i` option can't be
+    /// changed after startup, so it tells whether the shell was started
+    /// interactive, also in subshells.
+    pub fn builtin(&self, name: &[u8]) -> Option<(BuiltinFn, bool)> {
+        lookup(name).or_else(|| {
+            if !self.opt(Opt::Interactive) {
+                return None;
+            }
+            INTERACTIVE.iter().find(|b| b.0 == name).map(|b| (b.1, false))
+        })
+    }
+
     /// Writes built-in output to stdout.
     /// Writes built-in output to stdout. A failure is reported after the
     /// built-in returns (see [`Shell::call_builtin`]).

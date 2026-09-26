@@ -465,3 +465,19 @@ fn path_cache() {
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
 }
+
+#[test]
+fn help_builtin() {
+    let mut sh = Pty::spawn("help");
+    sh.expect("$ ");
+    // `help` is a built-in only in interactive shells, but also in their
+    // subshells (here, a pipeline's).
+    assert_has(&sh.run("type help"), "help is a shell builtin");
+    assert_has(&sh.run("help true"), "Do nothing, successfully");
+    assert_has(&sh.run("help false | cat"), "Do nothing, unsuccessfully");
+    let out = sh.run("help nosuch; echo \"status $?\"");
+    assert_has(&out, "help: no help for nosuch");
+    assert_has(&out, "status 1");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}

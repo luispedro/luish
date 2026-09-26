@@ -41,7 +41,7 @@ pub fn shell_quote(s: &[u8]) -> Vec<u8> {
 
 impl Shell {
     pub fn lookup_command(&self, name: &[u8], functions: bool) -> CommandKind {
-        if let Some((f, special)) = builtins::lookup(name) {
+        if let Some((f, special)) = self.builtin(name) {
             if special {
                 return CommandKind::Special(f);
             }

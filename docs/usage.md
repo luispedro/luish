@@ -11,6 +11,12 @@ luish                             # interactive when stdin is a terminal
 
 Options can be given as letters (`-e`, `-x`, ...) or with `-o name` / `+o name`.
 
+## Getting help
+
+In an interactive shell, `help` lists the built-in commands, and `help NAME` shows the help for one of them (the
+same text as in [](builtins.md)). `help` is not a built-in in scripts, so that they find the same commands as in
+other shells; there, `__luish_internal help` does the same.
+
 ## Saving and restoring the shell's state
 
 luish's own commands are subcommands of the `__luish_internal` built-in. `__luish_internal savestate` prints shell

@@ -8,6 +8,7 @@ type Subcommand = fn(&mut Shell, &[Vec<u8>]) -> ExecResult;
 
 /// (name, function); each gets the arguments from its own name on.
 const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
+    (b"help", help),
     (b"print-git-rev", print_git_rev),
     (b"print-git-rev-short", print_git_rev_short),
     (b"savestate", savestate),
@@ -37,6 +38,12 @@ pub fn internal(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             Ok(2)
         }
     }
+}
+
+/// `help`: the `help` built-in, which is also available here in shells that
+/// aren't interactive.
+fn help(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    super::help::run(sh, b"__luish_internal help", &argv[1..])
 }
 
 /// Fails with status 2 if there are arguments after the subcommand's name.
