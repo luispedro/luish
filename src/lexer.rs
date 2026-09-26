@@ -567,12 +567,12 @@ impl Parser {
     fn read_braced_param(&mut self, ctx: Ctx) -> PResult<WordPart> {
         // As in dash, a bad substitution is an error only when expanded:
         // the rest up to `}` is read as its word.
-        let bad = |p: &mut Parser, name| {
+        let bad = |p: &mut Parser, name, colon| {
             let word = p.read_param_word(ctx)?;
             Ok(WordPart::Param(Box::new(ParamExp {
                 name,
                 op: ParamOp::Bad(word),
-                colon: false,
+                colon,
             })))
         };
         let mk = |name, op, colon| WordPart::Param(Box::new(ParamExp { name, op, colon }));
@@ -597,7 +597,7 @@ impl Parser {
             return if self.at(0).is_none() {
                 self.eof_err("Syntax error: Missing '}'")
             } else {
-                bad(self, ParamName::Var(Vec::new()))
+                bad(self, ParamName::Var(Vec::new()), false)
             };
         };
         self.eat_bnl(0);
@@ -638,7 +638,7 @@ impl Parser {
             }
             _ => {
                 self.pos -= 1;
-                return bad(self, name);
+                return bad(self, name, colon);
             }
         };
         // Inside double quotes, the pattern of `%`/`#` starts a fresh quoting

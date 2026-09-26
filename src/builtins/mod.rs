@@ -3,6 +3,7 @@
 mod cd;
 mod echo;
 mod fc;
+mod internal;
 mod jobs;
 mod misc;
 mod printf;
@@ -10,6 +11,8 @@ mod read;
 mod test;
 mod trap;
 mod vars;
+
+pub use vars::single_quote;
 
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::sys;
@@ -37,6 +40,7 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"trap", trap::trap, true),
     (b"unset", vars::unset, true),
     // regular built-ins
+    (b"__luish_internal", internal::internal, false),
     (b"[", test::bracket, false),
     (b"alias", misc::alias, false),
     (b"bg", jobs::fg, false),

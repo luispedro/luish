@@ -14,7 +14,9 @@ mod parser;
 mod path;
 mod shell;
 mod signals;
+mod state;
 mod sys;
+mod unparse;
 mod vars;
 
 use std::ffi::OsStr;

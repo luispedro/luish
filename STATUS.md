@@ -251,7 +251,11 @@ pass**.
   `trap` `unset`.
 - Regular: `[` `alias` `bg` `cd` `command` `echo` `false` `fc` `fg` `getopts`
   `hash` `jobs` `kill` `printf` `pwd` `read` `test` `true` `type`
-  `ulimit` `umask` `unalias` `wait`.
+  `ulimit` `umask` `unalias` `wait`, and luish's own `__luish_internal`.
+- `__luish_internal` (`src/builtins/internal.rs`) holds luish's own
+  commands as subcommands, so that they don't take names from the command
+  namespace (widely used ones may later get aliases). A missing or unknown
+  subcommand is an error with status 2.
 - `echo` follows dash: `-n` only, and XSI escapes are always processed
   (with dash's octal forms `\0nnn` and `\nnn`, and Debian's `\e`).
 - `printf` supports every conversion (numeric ones use libc `snprintf`),
@@ -303,6 +307,20 @@ pass**.
   `builtins/special_misc.sh`.
 - `local` is scoped per function call. As in dash, `local x` keeps the
   current value.
+- `__luish_internal savestate` (`src/state.rs`) prints commands that restore the shell's
+  state when run with `.`: the working directory, `umask`, variables and
+  their attributes (not `PPID` or `LINENO`), traps, functions, aliases and
+  options (not `-i`, `-s`, `-m` or `-n`). Functions are printed from the
+  AST by `src/unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`),
+  so the text parses back to the same tree; command names in function
+  bodies that are aliases are quoted, and a function named like an alias is
+  preceded by `unalias`, so that reading the state back in a shell that has
+  the aliases doesn't expand them. Restoring adds to the current state
+  (nothing is unset or unexported), fails on a variable that is already
+  readonly, and doesn't restore traps when run as `eval "$(__luish_internal savestate)"`
+  (a command substitution resets them). Tests: `builtins/internal_savestate.sh`
+  (a new shell reading the state prints the same state), and unit tests in
+  `unparse.rs` (round trips through the parser).
 - Tests: `builtins/*`.
 
 ### Options (`src/options.rs`)

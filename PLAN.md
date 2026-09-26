@@ -1000,7 +1000,9 @@ The Stage 1 constraints are:
 - Shell state lives in `Shell` rather than in globals, so that it can be
   snapshotted, compared and restored.
 - The AST is serializable, including the `Rc` nodes, since functions are
-  part of the cached state.
+  part of the cached state. (Done as source text: `__luish_internal savestate` prints the
+  whole state as commands, with functions printed from the AST by
+  `unparse.rs`; cache entries can use the same format.)
 - Variable, function and alias lookups can record reads. As with provenance,
   this must cost nothing when no cache is being built.
 
