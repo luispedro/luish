@@ -50,11 +50,13 @@ g
 echo arithmetic: $((2*(3+4)))
 for f in d/*(.n); do printf '%s;' "$f"; done; echo
 
-# Sorting by size and time, with times set explicitly.
+# Sorting by size, time and links, with times set explicitly. zsh leaves
+# ties in no particular order, so no two files share a key: the extra hard
+# links are outside the directory.
 mkdir s; cd s
 printf 1 > a; printf 123 > b; printf 12 > c
 touch -m -d '2020-01-02' a; touch -m -d '2020-01-03' b; touch -m -d '2020-01-01' c
-ln b b2
+ln b ../../b.l; ln c ../../c.l1; ln c ../../c.l2
 echo sort: *(oL) / *(OL) / *(om) / *(Om) / *(om[1]) / *(Ol) / *(ol)
 cd ..
 
