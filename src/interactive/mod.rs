@@ -4,22 +4,30 @@ mod complete;
 mod highlight;
 pub mod history;
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
 use rustyline::{CompletionType, Config, Editor};
 
+pub use complete::Completion;
+#[cfg(feature = "plugins")]
+pub use complete::{Candidate, Suffix};
 use complete::{Names, ShellHelper};
 use history::ShellHistory;
 
 use crate::input::Line;
 use crate::options::Opt;
-use crate::shell::Shell;
+use crate::shell::{Flow, Shell};
 use crate::sys;
 
 thread_local! {
     static EDITOR: RefCell<Option<Editor<ShellHelper, ShellHistory>>> = const { RefCell::new(None) };
+    /// The shell, while the editor reads a line (for `ask`).
+    static SHELL: Cell<*mut Shell> = const { Cell::new(std::ptr::null_mut()) };
+    /// Set when a completer exits the shell, which happens once the editor
+    /// has given the terminal back.
+    static EXIT: Cell<Option<i32>> = const { Cell::new(None) };
 }
 
 fn history_file(sh: &Shell) -> Option<Vec<u8>> {
@@ -36,7 +44,9 @@ pub fn init_editor(sh: &Shell) -> bool {
     let Ok(mut ed) = Editor::with_history(Config::default(), ShellHistory::default()) else {
         return false;
     };
-    ed.set_helper(Some(ShellHelper::default()));
+    let mut helper = ShellHelper::default();
+    helper.ask = Some(ask);
+    ed.set_helper(Some(helper));
     ed.set_completion_type(CompletionType::List);
     let size = sh
         .get_var(b"HISTSIZE")
@@ -53,7 +63,9 @@ pub fn init_editor(sh: &Shell) -> bool {
 pub fn save_history(sh: &Shell) {
     let Some(h) = history_file(sh) else { return };
     EDITOR.with(|e| {
-        if let Some(ed) = e.borrow_mut().as_mut() {
+        if let Ok(mut ed) = e.try_borrow_mut()
+            && let Some(ed) = ed.as_mut()
+        {
             let _ = ed.save_history(&to_path(&h));
         }
     });
@@ -70,9 +82,10 @@ pub fn add_history(text: &[u8]) {
 }
 
 /// Runs `f` on the history. Returns None if there is no line editor (and
-/// so no history). `f` must not run commands, which may use the history.
+/// so no history), or if it is reading a line (and a completer runs `fc`).
+/// `f` must not run commands, which may use the history.
 pub fn with_history<R>(f: impl FnOnce(&mut ShellHistory) -> R) -> Option<R> {
-    EDITOR.with(|e| e.borrow_mut().as_mut().map(|ed| f(ed.history_mut())))
+    EDITOR.with(|e| e.try_borrow_mut().ok()?.as_mut().map(|ed| f(ed.history_mut())))
 }
 
 /// The prompt: `PS2` for a continuation line, otherwise the one a plugin's
@@ -95,6 +108,31 @@ fn names(sh: &Shell) -> Names {
         vars: sh.vars.names().cloned().collect(),
         path: sh.get_var(b"PATH").unwrap_or_default(),
         home: sh.get_var(b"HOME"),
+        completers: crate::plugins::completer_names(sh),
+    }
+}
+
+/// Runs a plugin's completer for the editor. The terminal is in raw mode
+/// and belongs to the editor, so the commands the completer runs are not
+/// jobs: like those of `$(...)`, they don't save or restore its modes.
+fn ask(words: &[Vec<u8>]) -> Completion {
+    let p = SHELL.get();
+    if p.is_null() || EXIT.get().is_some() {
+        return Completion::Default;
+    }
+    // SAFETY: `read_line` set the pointer from its `&mut Shell`, which it
+    // doesn't use while the editor runs, and resets it after.
+    let sh = unsafe { &mut *p };
+    let jobctl = sh.jobctl.take();
+    let r = crate::plugins::complete(sh, words);
+    sh.jobctl = jobctl;
+    match r {
+        Ok(c) => c,
+        Err(Flow::Exit(n)) => {
+            EXIT.set(Some(n));
+            Completion::Failed
+        }
+        Err(_) => Completion::Failed,
     }
 }
 
@@ -116,7 +154,8 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
     let vi = sh.opt(Opt::Vi);
     let names = names(sh);
     let colors = colors(sh);
-    EDITOR.with(|e| {
+    SHELL.set(sh as *mut Shell);
+    let line = EDITOR.with(|e| {
         let mut e = e.borrow_mut();
         let Some(ed) = e.as_mut() else {
             return Line::Eof;
@@ -145,7 +184,12 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
             Err(ReadlineError::Interrupted) => Line::Interrupted,
             Err(_) => Line::Eof,
         }
-    })
+    });
+    SHELL.set(std::ptr::null_mut());
+    if let Some(n) = EXIT.take() {
+        sh.exit(n);
+    }
+    line
 }
 
 /// Sources a file in the current shell if it exists.

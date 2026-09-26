@@ -11,11 +11,13 @@ use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::os::unix::ffi::OsStrExt;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, Position, Scope, Shared};
 
 use super::bytes::{to_bytes, to_str};
 use super::{HookKind, Loading};
+use crate::interactive::{Candidate, Completion, Suffix};
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::{signals, sys};
 
@@ -36,10 +38,10 @@ struct Plugin {
     ast: Option<Rc<AST>>,
 }
 
+/// A function registered by a plugin.
 #[derive(Clone)]
-struct Hook {
+struct Callback {
     plugin: u32,
-    kind: HookKind,
     f: FnPtr,
     ast: Rc<AST>,
     path: Rc<[u8]>,
@@ -48,11 +50,16 @@ struct Hook {
     takes_arg: bool,
 }
 
+/// How long a completer may run.
+const COMPLETE_BUDGET: Duration = Duration::from_secs(2);
+
 pub struct Host {
     /// Created when the first Rhai code is loaded.
     engine: OnceCell<Engine>,
     plugins: RefCell<Vec<Plugin>>,
-    hooks: RefCell<Vec<Hook>>,
+    hooks: RefCell<Vec<(HookKind, Callback)>>,
+    /// The completers, by command name.
+    completers: RefCell<Vec<(Vec<u8>, Callback)>>,
     next_id: Cell<u32>,
     /// The hook kinds whose hooks are running, so that a hook doesn't
     /// trigger itself (a `chpwd` hook that runs `cd`).
@@ -70,12 +77,15 @@ thread_local! {
     /// Set when shell code run by a plugin exits the shell: plugin code
     /// stops, and the exit happens once it has.
     static EXIT: Cell<Option<i32>> = const { Cell::new(None) };
+    /// When plugin code that the user is waiting for must stop.
+    static DEADLINE: Cell<Option<Instant>> = const { Cell::new(None) };
 }
 
 /// The values with which luish stops a script (`ErrorTerminated`), which
 /// are not errors to report: the shell is exiting, or SIGINT arrived.
 const EXITING: &str = "luish:exit";
 const INTERRUPTED: &str = "luish:interrupt";
+const TIMEOUT: &str = "luish:timeout";
 
 fn stop(why: &str) -> Box<EvalAltResult> {
     EvalAltResult::ErrorTerminated(why.into(), Position::NONE).into()
@@ -197,36 +207,136 @@ fn hook_kind(name: &str) -> Option<HookKind> {
     }
 }
 
+/// Registers `f` for the running plugin with `add`.
+fn register(f: FnPtr, add: impl FnOnce(&Host, Callback)) -> RhaiResult<()> {
+    with_shell(|sh| {
+        let host = host(sh)?;
+        let plugin = CURRENT.get();
+        let (ast, path) = {
+            let plugins = host.plugins.borrow();
+            let Some((p, Some(ast))) = plugins.iter().find(|p| p.id == plugin).map(|p| (p, &p.ast)) else {
+                return error("no plugin is running");
+            };
+            (ast.clone(), Rc::from(p.path.as_slice()))
+        };
+        let n = f.curry().len() + 1;
+        let takes_arg = ast
+            .iter_functions()
+            .any(|d| d.name == f.fn_name() && d.params.len() == n);
+        add(
+            &host,
+            Callback {
+                plugin,
+                f,
+                ast,
+                path,
+                takes_arg,
+            },
+        );
+        Ok(())
+    })
+}
+
+/// Runs `script` in a subshell, as `$(...)` does, and returns its status
+/// and its output without trailing newlines.
+fn capture(sh: &mut Shell, script: &[u8]) -> RhaiResult<rhai::Map> {
+    let Ok((r, w)) = sys::pipe() else {
+        return error("capture: cannot create a pipe");
+    };
+    let pid = match sh.fork_or_error() {
+        Ok(pid) => pid,
+        Err(_) => {
+            sys::close(r);
+            sys::close(w);
+            return error("capture: cannot fork");
+        }
+    };
+    if pid == 0 {
+        sys::close(r);
+        let _ = sys::dup2(w, 1);
+        sys::close(w);
+        let res = sh.run_string(script);
+        sh.child_exit(res);
+    }
+    sys::close(w);
+    let mut out = Vec::new();
+    let mut buf = [0u8; 4096];
+    while let Ok(n) = sys::read(r, &mut buf, false) {
+        if n == 0 {
+            break;
+        }
+        out.extend_from_slice(&buf[..n]);
+    }
+    sys::close(r);
+    let status = sh.wait_for(pid);
+    out.retain(|&b| b != 0);
+    while out.last() == Some(&b'\n') {
+        out.pop();
+    }
+    let mut m = rhai::Map::new();
+    m.insert("status".into(), (status as i64).into());
+    m.insert("out".into(), to_str(&out).into());
+    Ok(m)
+}
+
+/// Converts what a completer returned: `()` for the default completion,
+/// or an array of strings and of maps with a `value` and an optional
+/// `desc` and `suffix`.
+fn candidates(r: Dynamic) -> RhaiResult<Option<Vec<Candidate>>> {
+    if r.is_unit() {
+        return Ok(None);
+    }
+    let Some(items) = r.try_cast::<rhai::Array>() else {
+        return error("a completer must return an array or ()");
+    };
+    let string = |d: &Dynamic, what: &str| match d.clone().into_immutable_string() {
+        Ok(s) => Ok(to_bytes(&s)),
+        Err(_) => error(format!("a candidate's {what} must be a string")),
+    };
+    let mut out = Vec::with_capacity(items.len());
+    for item in items {
+        if item.is_string() {
+            out.push(Candidate::word(&string(&item, "value")?));
+            continue;
+        }
+        let Some(m) = item.try_cast::<rhai::Map>() else {
+            return error("a candidate must be a string or a map");
+        };
+        let Some(value) = m.get("value") else {
+            return error("a candidate has no value");
+        };
+        let mut c = Candidate::word(&string(value, "value")?);
+        if let Some(d) = m.get("desc") {
+            c.desc = Some(string(d, "desc")?);
+        }
+        if let Some(s) = m.get("suffix") {
+            let s = string(s, "suffix")?;
+            c.suffix = if s.is_empty() { Suffix::None } else { Suffix::Close(s) };
+        }
+        out.push(c);
+    }
+    Ok(Some(out))
+}
+
 fn sh_module() -> Module {
     let mut m = Module::new();
     m.set_native_fn("hook", |kind: &str, f: FnPtr| {
         let Some(kind) = hook_kind(kind) else {
             return error(format!("unknown hook: {kind}"));
         };
-        with_shell(|sh| {
-            let host = host(sh)?;
-            let plugin = CURRENT.get();
-            let (ast, path) = {
-                let plugins = host.plugins.borrow();
-                let Some((p, Some(ast))) = plugins.iter().find(|p| p.id == plugin).map(|p| (p, &p.ast)) else {
-                    return error("no plugin is running");
-                };
-                (ast.clone(), Rc::from(p.path.as_slice()))
-            };
-            let n = f.curry().len() + 1;
-            let takes_arg = ast
-                .iter_functions()
-                .any(|d| d.name == f.fn_name() && d.params.len() == n);
-            host.hooks.borrow_mut().push(Hook {
-                plugin,
-                kind,
-                f,
-                ast,
-                path,
-                takes_arg,
-            });
-            Ok(())
+        register(f, |host, cb| host.hooks.borrow_mut().push((kind, cb)))
+    });
+    m.set_native_fn("completer", |command: &str, f: FnPtr| {
+        let command = to_bytes(command);
+        register(f, |host, cb| {
+            let mut completers = host.completers.borrow_mut();
+            completers.retain(|c| c.0 != command);
+            completers.push((command, cb));
         })
+    });
+    m.set_native_fn("capture", |script: &str| {
+        let script = to_shell(script)?;
+        with_shell(|sh| capture(sh, &script))
     });
     m.set_native_fn("getvar", |name: &str| {
         with_shell(|sh| Ok(sh.get_var(&to_bytes(name)).map_or(Dynamic::UNIT, |v| to_str(&v).into())))
@@ -307,7 +417,17 @@ fn new_engine() -> Engine {
     // Ctrl-C (or a trapped SIGINT) stops plugin code, as it would a
     // command. The pending signal is handled when the shell regains
     // control.
-    engine.on_progress(|_| signals::is_pending(libc::SIGINT).then(|| INTERRUPTED.into()));
+    // Code that the user waits for, such as a completer, also stops
+    // when its time is up.
+    engine.on_progress(|ops| {
+        if signals::is_pending(libc::SIGINT) {
+            Some(INTERRUPTED.into())
+        } else if ops % 1024 == 0 && DEADLINE.get().is_some_and(|d| Instant::now() >= d) {
+            Some(TIMEOUT.into())
+        } else {
+            None
+        }
+    });
     // A buggy plugin gets an error rather than exhausting the stack or
     // memory.
     engine
@@ -325,6 +445,7 @@ impl Host {
             engine: OnceCell::new(),
             plugins: RefCell::new(Vec::new()),
             hooks: RefCell::new(Vec::new()),
+            completers: RefCell::new(Vec::new()),
             next_id: Cell::new(1),
             running: RefCell::new(Vec::new()),
             modules: RefCell::new(HashMap::new()),
@@ -356,6 +477,10 @@ impl Host {
         match stopped(e).as_deref() {
             Some(INTERRUPTED) => 128 + libc::SIGINT,
             Some(EXITING) => 1,
+            Some(TIMEOUT) => {
+                sh.error(format!("{}: took too long", String::from_utf8_lossy(path)));
+                1
+            }
             _ => {
                 // The innermost error, with its position: the call stack
                 // only adds noise for a hook.
@@ -437,7 +562,8 @@ impl Host {
 
     fn remove(&self, id: u32) {
         self.plugins.borrow_mut().retain(|p| p.id != id);
-        self.hooks.borrow_mut().retain(|h| h.plugin != id);
+        self.hooks.borrow_mut().retain(|h| h.1.plugin != id);
+        self.completers.borrow_mut().retain(|c| c.1.plugin != id);
     }
 
     /// Unloads a plugin by name. Returns false if it isn't loaded.
@@ -458,7 +584,13 @@ impl Host {
         if self.running.borrow().contains(&kind) {
             return Ok(());
         }
-        let hooks: Vec<Hook> = self.hooks.borrow().iter().filter(|h| h.kind == kind).cloned().collect();
+        let hooks: Vec<Callback> = self
+            .hooks
+            .borrow()
+            .iter()
+            .filter(|h| h.0 == kind)
+            .map(|h| h.1.clone())
+            .collect();
         if hooks.is_empty() {
             return Ok(());
         }
@@ -498,7 +630,13 @@ impl Host {
         if self.running.borrow().contains(&kind) {
             return Ok(None);
         }
-        let hooks: Vec<Hook> = self.hooks.borrow().iter().filter(|h| h.kind == kind).cloned().collect();
+        let hooks: Vec<Callback> = self
+            .hooks
+            .borrow()
+            .iter()
+            .filter(|h| h.0 == kind)
+            .map(|h| h.1.clone())
+            .collect();
         if hooks.is_empty() {
             return Ok(None);
         }
@@ -512,7 +650,7 @@ impl Host {
 
     /// The prompt that `hooks` give, trying the last first, or `None` for
     /// `PS1`. `saved` is `$?`, which each hook sees.
-    fn prompt_from(&self, sh: &mut Shell, hooks: &[Hook], saved: i32) -> Result<Option<Vec<u8>>, Flow> {
+    fn prompt_from(&self, sh: &mut Shell, hooks: &[Callback], saved: i32) -> Result<Option<Vec<u8>>, Flow> {
         for (i, h) in hooks.iter().enumerate().rev() {
             // What this hook returns replaces the earlier hooks' prompt,
             // and `()` keeps it.
@@ -549,5 +687,39 @@ impl Host {
             }
         }
         Ok(None)
+    }
+
+    /// The commands that have completers.
+    pub fn completer_names(&self) -> Vec<Vec<u8>> {
+        self.completers.borrow().iter().map(|c| c.0.clone()).collect()
+    }
+
+    /// Runs the completer for `words[0]`, if there is one, with the words
+    /// up to the cursor (the last one is being completed). An error is
+    /// reported on a line of its own, below the command line. `$?` is kept.
+    pub fn complete(&self, sh: &mut Shell, words: &[Vec<u8>]) -> Result<Completion, Flow> {
+        let cb = {
+            let completers = self.completers.borrow();
+            match completers.iter().find(|c| Some(&c.0) == words.first()) {
+                Some(c) => c.1.clone(),
+                None => return Ok(Completion::Default),
+            }
+        };
+        let array: rhai::Array = words.iter().map(|w| to_str(w).into()).collect();
+        let args = (array, words.len() as i64 - 1);
+        let saved = sh.last_status;
+        let deadline = DEADLINE.replace(Some(Instant::now() + COMPLETE_BUDGET));
+        let r = enter(sh, cb.plugin, || cb.f.call::<Dynamic>(self.engine(), &cb.ast, args));
+        DEADLINE.set(deadline);
+        sh.last_status = saved;
+        match r?.and_then(candidates) {
+            Ok(Some(c)) => Ok(Completion::Candidates(c)),
+            Ok(None) => Ok(Completion::Default),
+            Err(e) => {
+                sys::write_all(2, b"\n");
+                Self::report(sh, &cb.path, &e);
+                Ok(Completion::Failed)
+            }
+        }
     }
 }

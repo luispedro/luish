@@ -14,6 +14,7 @@ mod vcs;
 #[cfg(feature = "plugins")]
 pub use rhai::Host;
 
+use crate::interactive::Completion;
 use crate::shell::{ExecResult, Flow, Shell};
 
 /// Without plugin support there is never a host.
@@ -39,6 +40,14 @@ impl Host {
     }
 
     fn prompt(&self, _: &mut Shell) -> Result<Option<Vec<u8>>, Flow> {
+        match *self {}
+    }
+
+    fn completer_names(&self) -> Vec<Vec<u8>> {
+        match *self {}
+    }
+
+    fn complete(&self, _: &mut Shell, _: &[Vec<u8>]) -> Result<Completion, Flow> {
         match *self {}
     }
 }
@@ -67,6 +76,20 @@ pub fn prompt(sh: &mut Shell) -> Result<Option<Vec<u8>>, Flow> {
     match sh.plugins.clone() {
         None => Ok(None),
         Some(host) => host.prompt(sh),
+    }
+}
+
+/// The commands for which plugins provide completers.
+pub fn completer_names(sh: &Shell) -> Vec<Vec<u8>> {
+    sh.plugins.as_ref().map_or_else(Vec::new, |host| host.completer_names())
+}
+
+/// Runs the completer for `words[0]`, given the words of the command up
+/// to the cursor.
+pub fn complete(sh: &mut Shell, words: &[Vec<u8>]) -> Result<Completion, Flow> {
+    match sh.plugins.clone() {
+        None => Ok(Completion::Default),
+        Some(host) => host.complete(sh, words),
     }
 }
 

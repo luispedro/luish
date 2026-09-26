@@ -5,8 +5,8 @@ embedding. Plugins are opt-in: nothing is loaded unless you ask for it, and a sh
 for them.
 
 Plugin support is new. For now, a plugin can run code whenever the current directory changes (the `chpwd` hook),
-give the prompt (the `prompt` hook), query files (the `fs` module), and ask about git repositories (the `vcs`
-module).
+give the prompt (the `prompt` hook), provide Tab completion for the arguments of commands, query files (the `fs`
+module), and ask about git repositories (the `vcs` module).
 
 ## Loading plugins
 
@@ -28,7 +28,7 @@ be loaded from the cached startup files in `rc.d/`: the cache records which plug
 (but what a plugin's top level changed in the shell is cached with the rest). Start luish with
 `--no-plugins` to make `plugin load` do nothing, for example to check whether a problem comes from a plugin.
 
-`plugin load` runs the plugin's top level once, which registers its hooks. If the plugin has an error, it is
+`plugin load` runs the plugin's top level once, which registers its hooks and completers. If the plugin has an error, it is
 reported with the plugin's file and line, nothing from the plugin stays loaded, and the status is 1.
 
 ## Plugins with several files
@@ -131,11 +131,52 @@ Returning `()` from such a hook, or failing, keeps the previous prompt. A hook w
 hooks before it at all, so it costs nothing to have them loaded. The hook must be defined in the plugin's own file
 (not in a module it imports), as a closure or a named function (`fn prompt(prev) { ... }`).
 
+## Example: completing a command's arguments
+
+```rust
+// ~/.config/luish/plugins/git.rhai
+
+sh::completer("git", |words, i| {
+    if i == 1 {
+        return [
+            #{value: "add", desc: "Add file contents to the index"},
+            #{value: "commit", desc: "Record changes to the repository"},
+            #{value: "switch", desc: "Switch branches"},
+            #{value: "--git-dir=", suffix: ""},
+        ];
+    }
+    if words[1] == "switch" {
+        let r = sh::capture("git branch --format='%(refname:short)' 2>/dev/null");
+        return if r.status == 0 { r.out.split("\n") } else { [] };
+    }
+    ()   // the default: filenames
+});
+```
+
+A completer is called when Tab is pressed on an argument of its command (also after `sudo`, `env` and the like). It
+gets the words of the command up to the cursor, unquoted, starting with the command name, and the index of the word
+being completed (the last one, which may be empty). It returns an array of candidates, or `()` to complete the word
+as if there were no completer.
+
+A candidate is a string, or a map with a `value` and optionally a `desc`, shown next to it in the list of matches,
+and a `suffix`, added after the value when it is the only match (a space by default; `""` for none). luish keeps
+the candidates that start with the word typed, and quotes what it adds. So a completer can simply return everything
+that could come next.
+
+A completer registered for a command replaces any earlier one. If a completer fails, the error is shown below the
+command line. A completer that runs for more than 2 seconds is stopped (while it runs a command, the time is only
+checked when the command has finished).
+
+Commands that a completer runs are not jobs: like those of `$(...)`, they can't be stopped with Ctrl-Z, and Ctrl-C
+does not reach them (the terminal is in the line editor's mode). Their output goes to the terminal, over the command
+line, so use `sh::capture` or redirect it.
+
 ## The `sh` module
 
 | Function | Description |
 |---|---|
 | `sh::hook(kind, fn)` | Register a hook: `"chpwd"` or `"prompt"` |
+| `sh::completer(command, fn)` | Register a completer for a command's arguments |
 | `sh::getvar(name)` | The variable's value, or `()` if it is unset |
 | `sh::setvar(name, value)` | Set a shell variable. Throws an error if it is readonly |
 | `sh::export(name)`, `sh::unsetvar(name)` | Export or unset a variable |
@@ -144,6 +185,7 @@ hooks before it at all, so it costs nothing to have them loaded. The hook must b
 | `sh::last_status()` | `$?` |
 | `sh::interactive()` | Whether the shell is interactive |
 | `sh::run(script)` | Run shell code in the current shell, as `eval` does, and return its status. If it runs `exit`, the plugin stops and the shell exits |
+| `sh::capture(script)` | Run shell code in a subshell, as `$(...)` does, and return `#{status, out}`, with trailing newlines removed from `out` |
 | `sh::write(fd, text)` | Write text, unbuffered, to fd 1 or 2 |
 
 Rhai's `print(text)` and `debug(text)` write a line to standard output and standard error.

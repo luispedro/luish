@@ -7,7 +7,9 @@
 //!    command name, an argument, a redirection target, a variable name), the
 //!    quoting in effect, and the words of its command.
 //! 2. A generator lists `Candidate`s for it: command names, filenames,
-//!    variable names, or what a command's arguments complete to (`ARGS`).
+//!    variable names, or what a command's arguments complete to: a plugin's
+//!    completer (through `ShellHelper::ask`, the only call back into the
+//!    shell) or `ARGS`.
 //! 3. The candidates are matched against the text typed (`matches`).
 //! 4. Each match becomes a replacement for the line: the text already typed
 //!    is kept, and what is added is quoted for the quoting at the cursor.
@@ -33,13 +35,30 @@ pub struct Names {
     pub vars: Vec<Vec<u8>>,
     pub path: Vec<u8>,
     pub home: Option<Vec<u8>>,
+    /// The commands with a plugin's completer.
+    pub completers: Vec<Vec<u8>>,
 }
+
+/// Runs the completer for a command (in `Names::completers`), given the
+/// words of the command up to the cursor.
+pub type Ask = fn(&[Vec<u8>]) -> Completion;
 
 #[derive(Default)]
 pub struct ShellHelper {
     pub names: Names,
     pub highlight: super::highlight::State,
+    pub ask: Option<Ask>,
     path_cache: RefCell<PathCache>,
+}
+
+/// What a command's completer gave.
+pub enum Completion {
+    /// Use the default completion (see `ARGS`).
+    Default,
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    Candidates(Vec<Candidate>),
+    /// The completer failed, and printed why.
+    Failed,
 }
 
 /// A possible completion of the word under the cursor.
@@ -68,7 +87,7 @@ pub enum Suffix {
 
 impl Candidate {
     /// A candidate that ends the word.
-    fn word(value: &[u8]) -> Candidate {
+    pub fn word(value: &[u8]) -> Candidate {
         Candidate {
             value: value.to_vec(),
             display: None,
@@ -527,7 +546,22 @@ enum Files {
 impl ShellHelper {
     fn complete_bytes(&self, line: &[u8]) -> (usize, Vec<Pair>) {
         let w = analyze(line);
-        let (from, cands) = self.generate(&w);
+        let (from, cands) = match self.ask_completer(&w) {
+            Completion::Default => self.generate(&w),
+            Completion::Candidates(c) => (0, c),
+            Completion::Failed => {
+                // The line is left as it is, but with one candidate
+                // rustyline redraws it, below the error message.
+                let typed = String::from_utf8_lossy(&line[w.start..]).into_owned();
+                return (
+                    w.start,
+                    vec![Pair {
+                        display: typed.clone(),
+                        replacement: typed,
+                    }],
+                );
+            }
+        };
         let base = &w.text[from..];
         let cands: Vec<Candidate> = cands.into_iter().filter(|c| matches(c, base)).collect();
         // A variable name needs no quoting, and a `}` after it ends the
@@ -538,6 +572,18 @@ impl ShellHelper {
             w.quote
         };
         (w.start, pairs(&cands, &line[w.start..], base, quote))
+    }
+
+    /// What the completer of the word's command, if it has one, gives.
+    fn ask_completer(&self, w: &Word) -> Completion {
+        match (w.kind, self.ask) {
+            (Kind::Arg, Some(ask)) if self.names.completers.contains(&w.words[0]) => {
+                let mut words = w.words.clone();
+                words.push(w.text.clone());
+                ask(&words)
+            }
+            _ => Completion::Default,
+        }
     }
 
     /// The candidates for the word, and where in its text the part they
@@ -730,6 +776,23 @@ mod tests {
         assert_eq!(words("$(x) ad"), [""]);
     }
 
+    /// A completer for `git`, as a plugin could provide.
+    fn fake_git(words: &[Vec<u8>]) -> Completion {
+        assert_eq!(words[0], b"git");
+        match (words.len(), &words[words.len() - 1][..]) {
+            (2, _) => Completion::Candidates(vec![
+                Candidate::word(b"add"),
+                Candidate::word(b"commit"),
+                Candidate {
+                    suffix: Suffix::None,
+                    ..Candidate::word(b"--color=")
+                },
+            ]),
+            (_, b"boom") => Completion::Failed,
+            _ => Completion::Default,
+        }
+    }
+
     fn complete(h: &ShellHelper, line: &str) -> Vec<String> {
         h.complete_bytes(line.as_bytes())
             .1
@@ -755,7 +818,9 @@ mod tests {
                 vars: vec![b"HOME".to_vec(), b"HOSTNAME".to_vec()],
                 path: format!("{d}/sub dir").into_bytes(),
                 home: Some(dir.as_os_str().as_bytes().to_vec()),
+                completers: vec![b"git".to_vec()],
             },
+            ask: Some(fake_git),
             ..Default::default()
         };
         assert_eq!(complete(&h, "myt"), ["mytool "]);
@@ -783,6 +848,12 @@ mod tests {
         assert_eq!(complete(&h, "export HOME=~/f"), ["HOME=~/file\\ one "]);
         assert_eq!(complete(&h, "type myf"), ["myfunc "]);
         assert_eq!(complete(&h, "help ech"), ["echo "]);
+        // A plugin's completer.
+        assert_eq!(complete(&h, "git "), ["--color=", "add ", "commit "]);
+        assert_eq!(complete(&h, "sudo git 'a"), ["'add' "]);
+        assert_eq!(complete(&h, "git --c"), ["--color="]);
+        assert_eq!(complete(&h, "git add ~/f"), ["~/file\\ one "]);
+        assert_eq!(complete(&h, "git add boom"), ["boom"]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -416,6 +416,75 @@ fn tab_completion() {
     assert_eq!(sh.exit_status(), 0);
 }
 
+#[cfg(feature = "plugins")]
+#[test]
+fn plugin_completer() {
+    let mut sh = Pty::spawn_term("completer", "vt100");
+    std::fs::write(
+        sh.path("comp.rhai"),
+        r#"sh::completer("frob", |words, i| {
+    let w = words[i];
+    if i == 1 {
+        // An external command, and one whose output is captured.
+        sh::run("/bin/true");
+        let r = sh::capture("echo captured");
+        [r.out, "alpha", #{value: "beta", desc: "the second"}, #{value: "--opt=", suffix: ""}]
+    } else if w == "boom" {
+        throw "bad completer";
+    } else if w == "loop" {
+        loop {}
+    } else {
+        ()
+    }
+});
+"#,
+    )
+    .unwrap();
+    sh.expect("$ ");
+    sh.send("plugin load ./comp.rhai; frob() { echo \"frob:$*\"; }; echo \"loaded $?\"\n");
+    sh.expect("loaded 0\n");
+    sh.expect("$ ");
+    sh.send("frob al\t\n");
+    sh.expect("frob:alpha\n");
+    sh.expect("$ ");
+    sh.send("frob --o\tx\n");
+    sh.expect("frob:--opt=x\n");
+    sh.expect("$ ");
+    sh.send("frob cap\t\n");
+    sh.expect("frob:captured\n");
+    sh.expect("$ ");
+    // `()` gives the default completion (filenames).
+    sh.send("frob x comp.r\t\n");
+    sh.expect("frob:x comp.rhai\n");
+    sh.expect("$ ");
+    // Descriptions are listed after their candidates.
+    sh.send("frob \t\t");
+    sh.expect("beta  -- the second");
+    sh.send("\x03");
+    // The next prompt: input sent before it may be discarded.
+    sh.expect("\x1b[?2004h");
+    // An error is shown below the line, which is drawn again.
+    sh.send("frob x boom\t");
+    sh.expect("bad completer");
+    sh.expect("x boom");
+    sh.send("\x03");
+    // The next prompt: input sent before it may be discarded.
+    sh.expect("\x1b[?2004h");
+    // A completer that runs too long is stopped.
+    sh.send("frob x loop\t");
+    sh.expect("took too long");
+    sh.send("\x03");
+    // The next prompt: input sent before it may be discarded.
+    sh.expect("\x1b[?2004h");
+    // The completer's command wasn't a job, so the terminal modes the shell
+    // restores after a job that dies are not the editor's raw modes.
+    sh.send("sh -c 'kill -9 $$'; stty -a; echo stty-done\n");
+    let out = sh.expect("stty-done\n");
+    assert!(out.contains(" icanon") && !out.contains("-icanon"), "{out}");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
 #[test]
 fn fc_history() {
     let mut sh = Pty::spawn("fc");

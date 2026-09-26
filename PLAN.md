@@ -696,7 +696,10 @@ error thrown by a built-in gives status 1.
 | `exit` | Exit status | Ignored |
 
 A completer receives the words of the command line and the index of the word
-being completed, and returns an array of candidates.
+being completed, and returns an array of candidates: strings, or maps with a
+`value` and an optional `desc` and `suffix`. `()` asks for the default
+completion. The shell does the matching and quoting (see
+`interactive/complete.rs`).
 
 `sh` module:
 

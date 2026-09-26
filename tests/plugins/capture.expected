@@ -1,0 +1,5 @@
+status 3, out [a b]
+out changed, X is kept
+empty [] 0
+bytes 1  ff
+load: 0 X=kept

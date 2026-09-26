@@ -62,7 +62,7 @@ pass**.
 | 8 Signals and traps | Mostly done (see the gaps below) |
 | 9 Options and `set -e` | Done |
 | 10 Interactive / job control | Done (prompt loop, history and `fc`, job control, completion), with the gaps listed below |
-| 11 Plugins | Started: the `plugin` built-in, the Rhai host with a small `sh` module, and the `chpwd` and `prompt` hooks (see Plugins below) |
+| 11 Plugins | Started: the `plugin` built-in, the Rhai host with a small `sh` module, the `chpwd` and `prompt` hooks and completers (see Plugins below) |
 | 12 Conformance / performance | Started: autoconf `configure` scripts and the Oils spec tests (see Conformance below), benchmark baseline |
 
 ## Implemented behaviour
@@ -451,7 +451,8 @@ pass**.
   and variable names after `$` or `${`. Some commands' arguments complete
   to something else: directories for `cd`, `pushd` and `rmdir`, variable
   names for `export`, `local`, `readonly` and `unset`, command names for
-  `hash`, `type` and `which`, and built-ins for `help`. The completer
+  `hash`, `type` and `which`, and built-ins for `help`; a plugin's
+  completer (see Plugins) comes first. The completer
   analyses the line (the word, its kind, the quoting and the words of its
   command), generates candidates (with optional descriptions, shown
   aligned after them in the list), matches them against the text typed
@@ -549,10 +550,11 @@ pass**.
   and `debug` write lines to fds 1 and 2. SIGINT stops plugin code (checked
   in `on_progress`), leaving the signal pending for the shell. Rhai is
   built with `only_i64` (see PLAN.md §6.4); floats are available.
-- `sh` module: `hook`, `getvar`, `setvar`, `export`, `unsetvar`, `cwd`,
-  `plugin_dir`,
-  `last_status`, `interactive`, `run` (shell code in the current shell;
-  `exit` in it stops the plugin and exits the shell), `write` (fds 1 and 2).
+- `sh` module: `hook`, `completer`, `getvar`, `setvar`, `export`,
+  `unsetvar`, `cwd`, `plugin_dir`, `last_status`, `interactive`, `run`
+  (shell code in the current shell; `exit` in it stops the plugin and exits
+  the shell), `capture` (a subshell's status and output, as `$(...)`),
+  `write` (fds 1 and 2).
 - `fs` module (`plugins/fs.rs`), without forking: `exists`, `is_file`,
   `is_dir`, `is_link`, `kind` (lstat), `is_readable`, `is_writable`,
   `is_executable`, `size`, `mtime`, `newer` and `older` (nanoseconds; a
@@ -569,6 +571,18 @@ pass**.
   command substitution, stdin and stderr on `/dev/null`) and counts
   staged, unstaged, untracked and conflicted files, ahead and behind.
   Not supported: bare repositories, `GIT_DIR`, `GIT_CEILING_DIRECTORIES`.
+- Completers (`sh::completer(cmd, fn)`, one per command, the last
+  registered wins) are called by the line editor through
+  `ShellHelper::ask`, with the command's words up to the cursor and the
+  index of the last one. They return `()` (default completion) or an array
+  of strings and `#{value, desc, suffix}` maps; the shell matches and
+  quotes them. While one runs, `Shell::jobctl` is taken out, so its
+  commands are not jobs and don't save the editor's raw terminal modes;
+  `$?` is kept. It is stopped after 2 s (`on_progress`, checked every
+  1024 operations). An error is printed on a new line and the line is
+  redrawn (by returning the word itself as the only candidate); `exit`
+  in a completer takes effect once the line is read. `fc` and `history`
+  see no history while a completer runs (the editor is borrowed).
 - Hooks: `chpwd`, called with the old and new directory after each
   successful `cd`, `pushd` or `popd` (after `cd -` prints the directory, or
   `pushd` the stack), also in subshells.
@@ -590,10 +604,10 @@ pass**.
   (PLAN.md §6.5); strings with NUL can't be set as variables.
 - Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `floats`, `fs`, `vcs`, `reload`,
   `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`, `prompt`,
-  `prompt_prev`), unit
-  tests for the byte conversion and `git status` parsing, `builtins/plugin.sh`,
-  `builtins/internal_plugin.sh`, and `plugin_builtin` in
-  `tests/interactive.rs`. CI also runs clippy and the tests
+  `prompt_prev`, `capture`), unit tests for the byte conversion, `git status`
+  parsing and (with a stand-in completer) in `complete.rs`, `builtins/plugin.sh`,
+  `builtins/internal_plugin.sh`, and `plugin_builtin` and
+  `plugin_completer` in `tests/interactive.rs`. CI also runs clippy and the tests
   with `--no-default-features`.
 
 ## Conformance
@@ -623,16 +637,21 @@ notes how to rerun them):
 - The highlighter's tokenizer is approximate (like the completer's): it
   does not expand aliases, and a function or alias defined earlier on the
   same line is shown as unknown until the next prompt.
-- Completion has no `~user`, no programmable (per-command) completion, and
-  skips filenames that are not valid UTF-8 (rustyline works on `String`s).
+- Completion has no `~user`, no job specs, and skips filenames that are
+  not valid UTF-8 (rustyline works on `String`s). Matching is by prefix
+  only (no case-insensitive or fuzzy matching). Choosing among the matches
+  is rustyline's list: no menu, and descriptions are laid out in its
+  columns. Completers see only the words up to the cursor, aren't found
+  through aliases, and can't be interrupted with Ctrl-C (the terminal is
+  in raw mode) except by their time limit.
 - `set -b` (immediate job notification) is accepted but does nothing: jobs
   are reported only before a prompt. Job notifications are given only for
   input read a line at a time (interactive or stdin), not in scripts run
   with `set -m`.
-- Plugins (Phase 11) support only the `chpwd` and `prompt` hooks, part
-  of the `sh` module and the `fs` and `vcs` modules: no plugin built-ins,
-  completers, other hooks, time budgets (so a slow `prompt` hook delays the
-  prompt), `capture` or `parse_json`. The native built-ins have not
+- Plugins (Phase 11) support only the `chpwd` and `prompt` hooks,
+  completers, part of the `sh` module and the `fs` and `vcs` modules: no
+  plugin built-ins, other hooks, time budgets except for completers (so a
+  slow `prompt` hook delays the prompt), or `parse_json`. The native built-ins have not
   been moved onto a `Builtin` trait (PLAN.md Phase 11, step 1). `import`
   in a plugin is not resolved relative to the plugin's directory.
 - With the `plugins` feature, `-c true` starts about 250 µs slower than
