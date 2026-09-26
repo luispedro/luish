@@ -31,8 +31,8 @@ pixi run luish -c 'echo hi'       # run the shell
 pixi run release                  # release build (LTO, panic=abort), used for benchmarks
 ```
 
-`rustfmt.toml` sets `max_width = 120`. The `python` cargo feature enables the optional `pyo3` dependency; no plugin
-code exists yet.
+`rustfmt.toml` sets `max_width = 120`. Plugins (Phase 11) will use Rhai behind a `plugins` cargo feature (PLAN.md
+§6); no plugin code exists yet.
 
 ## Tests
 

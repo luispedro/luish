@@ -34,11 +34,11 @@ pass**.
 
 ## Environment
 
-- pixi provides `rust` and `python`. dash and bash come from the system,
+- pixi provides `rust`. dash and bash come from the system,
   because conda-forge has no dash *shell* package (its `dash` package is
   Plotly Dash).
-- Cargo feature `python` enables the optional `pyo3` dependency. No plugin
-  code exists yet.
+- Plugins will be written in Rhai (PLAN.md §6). No plugin code or dependency
+  exists yet.
 
 ## Phase status
 

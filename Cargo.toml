@@ -2,17 +2,13 @@
 name = "luish"
 version = "0.1.0"
 edition = "2024"
-description = "A POSIX shell with optional Python plugins"
+description = "A POSIX shell with optional Rhai plugins"
 license = "MIT"
 
 [dependencies]
 libc = "0.2.189"
 nix = { version = "0.31.3", features = ["process", "signal", "fs", "term", "resource", "user", "dir", "poll"] }
-pyo3 = { version = "0.29.2", features = ["auto-initialize"], optional = true }
 rustyline = "18.0.1"
-
-[features]
-python = ["dep:pyo3"]
 
 [profile.release]
 lto = true

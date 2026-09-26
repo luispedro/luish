@@ -1,7 +1,7 @@
 # luish — Implementation Plan
 
 `luish` is a POSIX-compliant shell for Linux, written in Rust, with optional
-support for plugins written in Python. The long-term aim is to replace zsh as
+support for plugins written in Rhai. The long-term aim is to replace zsh as
 a daily-driver shell.
 
 `GOALS.md` groups the goals into three stages. This plan covers Stage 1
@@ -22,8 +22,8 @@ design.
 - **As fast as dash**: `luish -c true` should start in under ~2 ms, and script
   execution should match `dash`. M3 requires being within ~1.5× of dash, and
   Phase 12 closes the remaining gap. Every later feature is
-  pay-for-what-you-use. For example, Python must add **no cost** unless a
-  plugin is actually loaded.
+  pay-for-what-you-use. For example, plugin support must add **no cost**
+  unless a plugin is actually loaded.
 - **Usable interactively as a daily driver**: line editing, history,
   completion, and job control.
 - **Correct with arbitrary bytes**: arguments, variables, and filenames are
@@ -34,7 +34,7 @@ design.
 These are planned, but none of them is built during Stage 1 (see §9).
 Stage 1 design must not rule them out.
 
-- **Stage 2:** Python plugins (Phase 11 and §6). Opt-in bash/zsh extensions
+- **Stage 2:** Rhai plugins (Phase 11 and §6). Opt-in bash/zsh extensions
   such as arrays, associative arrays, process substitution, `[[ ]]`, and
   `{a,b}` brace expansion. Modern terminal features. Better scripting
   and debugging support. Richer completion and history.
@@ -70,7 +70,7 @@ contributions for them will be rejected.
 | String type | `Vec<u8>` / `OsString` throughout | POSIX data is bytes |
 | Execution model | Tree-walking interpreter over an AST | Simple, and fast enough for a shell |
 | Line editing | `rustyline` (or `reedline`), behind a `LineEditor` interface | Mature and supports vi and emacs modes. The interface keeps the editor separate from the executor so it can later run on an SSH client (§9.3) |
-| Python | `pyo3`, embedded behind the `python` cargo feature, initialized lazily | No libpython dependency or startup cost when unused |
+| Plugins | Rhai (`rhai` crate), behind the `plugins` cargo feature, with the engine created on the first `plugin load` | Pure Rust, so no system dependency. No threads, global state or signal handlers, so it is safe across `fork`. Scripts can be interrupted and resource-limited (§6) |
 | Reference behaviour | `dash`, then `bash --posix` | Used to settle spec ambiguities in tests |
 
 ---
@@ -79,7 +79,7 @@ contributions for them will be rejected.
 
 ```
 luish/
-├── Cargo.toml              # [features] python = ["dep:pyo3"]
+├── Cargo.toml              # [features] plugins = ["dep:rhai"]
 ├── GOALS.md
 ├── PLAN.md
 ├── src/
@@ -119,13 +119,13 @@ luish/
 │   │   └── complete.rs
 │   └── plugins/
 │       ├── mod.rs          # plugin-agnostic traits (Builtin, Hook), registry
-│       └── python.rs       # #[cfg(feature = "python")] PyO3 bridge
-├── python/
-│   └── luish/              # stub `.pyi` files and docs for the plugin API
+│       ├── rhai.rs         # #[cfg(feature = "plugins")] Rhai engine and the `sh` module
+│       └── bytes.rs        # byte <-> string conversion at the plugin boundary (§6.5)
+├── plugins/                # example plugins (*.rhai) and the plugin API reference
 ├── tests/
 │   ├── cases/              # *.sh test scripts plus expected output
 │   ├── compare.rs          # differential harness (luish vs dash)
-│   └── plugins/            # Python plugin tests
+│   └── plugins/            # Rhai plugin tests
 ├── fuzz/                   # cargo-fuzz targets (lexer, parser, arith, pattern)
 └── bench/                  # hyperfine scripts
 ```
@@ -261,10 +261,8 @@ Phases 0–10 and 12 make up Stage 1. Phase 11 (plugins) belongs to Stage 2.
 
 ### Phase 0 — Scaffolding (½ day)
 
-- `cargo new luish`, with `nix`, `rustyline`, and an optional `pyo3` behind the
-  `python` feature.
-- CI running `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`, and
-  `cargo test --features python`.
+- `cargo new luish`, with `nix` and `rustyline`.
+- CI running `cargo fmt --check`, `cargo clippy -D warnings`, and `cargo test`.
 - **Differential test harness** (`tests/compare.rs`): for each
   `tests/cases/**/*.sh`, run the script under `luish` and `dash` and compare
   stdout, stderr (normalised, since error messages differ), and exit status.
@@ -552,10 +550,14 @@ See §6 for the design. This phase starts only once Stage 1 is usable (M4).
    built-ins go through the same code path.
 2. Add the `plugin` built-in: `plugin load <path|module>`, `plugin list`, and
    `plugin unload <name>`.
-3. Add the PyO3 bridge (`plugins/python.rs`) behind `#[cfg(feature = "python")]`.
-4. Write the Python API stubs (`python/luish/__init__.pyi`) and documentation.
-5. Add plugin tests: `cargo test --features python` runs `tests/plugins/*.py`
-   through the harness.
+3. Add the byte conversion (`plugins/bytes.rs`, §6.5), with unit tests for the
+   round trip.
+4. Add the Rhai bridge (`plugins/rhai.rs`) behind `#[cfg(feature = "plugins")]`:
+   the engine, the `sh` module, and the limits and interrupts of §6.4.
+5. Write the API reference and the example plugins (`plugins/`).
+6. Add plugin tests: `tests/plugins/*.rhai` run through the harness. CI also
+   builds with `--no-default-features`, and compares `luish -c true` with and
+   without the `plugins` feature.
 
 ### Phase 12 — Conformance and performance hardening (ongoing)
 
@@ -581,18 +583,37 @@ See §6 for the design. This phase starts only once Stage 1 is usable (M4).
 
 ## 6. Plugin system design
 
+Plugins are written in [Rhai](https://rhai.rs), a scripting language
+implemented in Rust and designed for embedding. The first plan used Python
+(through PyO3), which was dropped because:
+
+- linking libpython makes the dynamic loader map it at every startup, even
+  when no plugin is loaded, and makes the login shell depend on the system
+  Python;
+- an initialized Python interpreter complicates forking without exec (the GIL,
+  at-fork hooks, threads started by plugins) and luish's signal handling;
+- a runaway or crashing Python plugin can hang or kill the shell.
+
+Rhai is pure Rust, has no threads, global state or signal handlers, and can be
+interrupted and resource-limited. Its costs are strings that can only hold
+UTF-8 (§6.5), no library ecosystem (the `sh` module has to provide what
+plugins need), and a language few people know. Lua (through `mlua`) was the
+main alternative: its strings are 8-bit clean and it is faster, but it brings
+C code into the build and fits less naturally with Rust.
+
 ### 6.1 Principles
 
 - **Opt-in and lazy.** Plugins are loaded only by explicit `plugin load`
-  commands, usually from `luishrc`. The Python interpreter starts on the first
-  `plugin load` of a Python plugin. `luish` built without the `python` feature
-  prints a clear error for Python plugins.
+  commands, usually from `luishrc`. The Rhai engine is created on the first
+  `plugin load`. Until then plugin support costs only binary size. `luish`
+  built without the `plugins` feature prints a clear error for `plugin load`.
 - **No semantic changes to POSIX.** Plugins can add built-ins and hooks but
   cannot change the parser or expansion. `luish --no-plugins` and scripts run
   with `luish script.sh` load nothing unless the script loads plugins itself.
-- **Plugins can't crash the shell.** Python exceptions are caught, a traceback
-  is printed to stderr, and the command gets status 1. A failing hook is
-  reported and then skipped.
+- **Plugins can't crash or hang the shell.** A Rhai error is caught and
+  reported on stderr with the plugin's file and line, and the command gets
+  status 1. A failing hook is reported and then skipped. Ctrl-C interrupts
+  plugin code (§6.4).
 
 ### 6.2 Rust-side traits
 
@@ -615,81 +636,147 @@ Plugin built-ins rank as **regular** built-ins in command lookup, so a shell
 function with the same name overrides them. A plugin can't replace a special
 built-in.
 
-### 6.3 Python API (`import luish`)
+### 6.3 Rhai API (the `sh` module)
 
-The `luish` module is registered as a built-in module with PyO3 before the
-interpreter is initialized.
+A plugin is a Rhai script. `plugin load` runs its top level once, which
+registers built-ins, hooks and completers with functions from the `sh`
+module. The shell then calls the registered functions.
 
-```python
-import luish
+```rhai
+// ~/.config/luish/plugins/greet.rhai, loaded with `plugin load greet`
 
-@luish.builtin("greet")
-def greet(ctx: luish.Context, argv: list[str]) -> int:
-    name = argv[1] if len(argv) > 1 else (ctx.getvar("USER") or "world")
-    ctx.stdout.write(f"hello {name}\n")
-    return 0
+fn greet(argv) {
+    let name = if argv.len() > 1 { argv[1] } else { sh::getvar("USER") ?? "world" };
+    print(`hello ${name}`);
+    0
+}
 
-@luish.hook("prompt")
-def prompt(ctx) -> str:
-    return f"{ctx.getvar('PWD')} $ "
+fn prompt() {
+    let r = sh::capture("git symbolic-ref --short HEAD 2>/dev/null");
+    let branch = if r.status == 0 { ` (${r.out})` } else { "" };
+    `${sh::cwd()}${branch} $ `
+}
 
-@luish.hook("preexec")
-def log(ctx, cmdline: str) -> None: ...
+fn complete_git(words, index) {
+    if index == 1 { ["add", "commit", "push", "status"] } else { [] }
+}
 
-@luish.hook("precmd")
-def before_prompt(ctx, last_status: int) -> None: ...
+sh::builtin("greet", Fn("greet"));
+sh::hook("prompt", Fn("prompt"));
+sh::completer("git", Fn("complete_git"));
 
-@luish.hook("chpwd")
-def on_cd(ctx, old: str, new: str) -> None: ...
-
-@luish.completer("git")
-def complete_git(ctx, words: list[str], index: int) -> list[str]: ...
+// Rhai functions can't see the script's variables, but closures can, and
+// the variables they capture are shared between them.
+let started = timestamp();
+sh::hook("preexec", |cmdline| { started = timestamp(); });
+sh::hook("precmd", |status| {
+    if started.elapsed > 10.0 { sh::write(2, `took ${started.elapsed}s\n`); }
+});
 ```
 
-`Context` API:
+A built-in receives `argv` as an array of strings, with the command name
+first. It returns its exit status: an integer, where `()` counts as 0. An
+error thrown by a built-in gives status 1.
 
-| Member | Description |
+| Hook | Arguments | Result |
+|---|---|---|
+| `prompt` | none | The prompt string, used instead of `PS1` |
+| `precmd` | Last exit status | Ignored |
+| `preexec` | Command line | Ignored |
+| `chpwd` | Old and new directory | Ignored |
+| `exit` | Exit status | Ignored |
+
+A completer receives the words of the command line and the index of the word
+being completed, and returns an array of candidates.
+
+`sh` module:
+
+| Function | Description |
 |---|---|
-| `getvar(name) -> str \| None`, `setvar(name, value, export=False)`, `unsetvar(name)` | Shell variables. Setting a readonly variable raises `luish.Error` |
-| `getvar_bytes`, `setvar_bytes` | Byte-exact variants |
-| `argv0`, `positional` | `$0` and `$1...` |
-| `last_status` | `$?` |
-| `stdin`, `stdout`, `stderr` | Unbuffered file objects on the **current** fds 0, 1 and 2, so redirections like `greet > f` apply |
-| `run(script: str) -> int` | Parse and execute shell code in the current shell. Re-entrant |
-| `capture(script: str) -> tuple[int, str]` | Like `$(...)`: runs in a subshell and captures stdout |
-| `cwd`, `chdir(path)` | Changes the directory as `cd` would, updating `PWD` and running `chpwd` hooks |
-| `interactive` | bool |
+| `builtin(name, fn)`, `hook(kind, fn)`, `completer(command, fn)` | Register functions with the shell |
+| `getvar(name)` | The variable's value, or `()` if it is unset |
+| `setvar(name, value)`, `export(name)`, `unsetvar(name)` | Shell variables. Changing a readonly variable throws an error |
+| `argv0()`, `positional()` | `$0`, and `$1...` as an array |
+| `last_status()` | `$?` |
+| `interactive()` | Whether the shell is interactive |
+| `run(script)` | Parse and execute shell code in the current shell, and return its status. Re-entrant |
+| `capture(script)` | Like `$(...)`: run in a subshell and return `#{status, out}`, with trailing newlines removed from `out` |
+| `cwd()`, `chdir(path)` | `chdir` changes the directory as `cd` would, updating `PWD` and running `chpwd` hooks |
+| `write(fd, text)`, `read_line()` | Unbuffered I/O on the **current** fds 1, 2 and 0, so redirections like `greet > f` apply. `read_line` returns `()` at end of file |
+| `read_file(path)`, `exists(path)`, `is_dir(path)`, `list_dir(path)` | Enough file access for common prompt work, such as finding `.git`, without forking |
+| `parse_json(text)` | Parse JSON into Rhai maps and arrays |
 
-Arguments are passed to Python as `str`, decoded with `surrogateescape` so that
-the original bytes survive a round trip. The `*_bytes` variants are there for
-exact control.
+Rhai's own `print` and `debug` write a line to the current fd 1 and fd 2,
+unbuffered, the same way as `write`.
 
-### 6.4 Embedding constraints (`plugins/python.rs`)
+The `sh` functions reach the `Shell` through a pointer that is set for the
+length of each call into Rhai. Calls are re-entrant (`sh::run` can run a
+plugin built-in), so no `&mut Shell` borrow can be held across a call into
+Rhai or back into the shell.
 
-1. **Signals**: initialize the interpreter with `Py_InitializeEx(0)` (the
-   PyO3 embedding default) so that Python **doesn't install signal
-   handlers**. `luish` keeps full control of SIGINT and the job-control
-   signals. KeyboardInterrupt support: when SIGINT arrives while a Python
-   built-in is running, call `PyErr_SetInterrupt`.
-2. **Fork**: after `fork()`, if the child may run Python (for example a
-   Python built-in as a pipeline stage, or inside a subshell or command
-   substitution), call `PyOS_AfterFork_Child()` in the child. Call
-   `PyOS_BeforeFork` / `PyOS_AfterFork_Parent` around the fork in the parent
-   when Python is initialized.
-3. **Threads**: plugins must not start threads, because forking a
-   multithreaded process is unsafe. Document this, and emit a warning at fork
-   time if `threading.active_count() > 1`.
-4. **Buffered output**: flush `sys.stdout` and `sys.stderr` before every fork
-   and after every Python built-in or hook returns.
-5. **GIL**: `luish` is single-threaded. Acquire the GIL for each call into
-   Python and release it on return.
-6. **Linking**: the `python` feature links against libpython for one Python
-   version. Release builds come in two variants: `luish`, with no Python, and
-   `luish-py`, built with the `python` feature. Loading libpython dynamically
-   at runtime is a possible later improvement.
-7. **Module search**: `plugin load foo` imports `foo` from `sys.path`, with
-   `~/.config/luish/plugins` prepended. `plugin load ./foo.py` loads a file
-   directly.
+### 6.4 Embedding (`plugins/rhai.rs`)
+
+1. **One engine, one AST per plugin.** A single `Engine`, with `sh`
+   registered as a static module, is created on the first `plugin load`. Each
+   plugin is compiled once into its own AST, so helper functions with the same
+   name in different plugins don't clash. `import` in a plugin resolves
+   relative to the plugin's directory.
+2. **Interrupts and time limits.** Rhai installs no signal handlers, so luish
+   keeps full control of SIGINT and the job-control signals. The engine's
+   `on_progress` callback polls luish's pending-SIGINT flag and stops the
+   script, so Ctrl-C interrupts plugin code as it would a command (status
+   130). Hooks and completers that run while the user waits (`prompt`,
+   `precmd`, completion) also have a time budget, checked in `on_progress`
+   every few thousand operations. A hook that goes over its budget is
+   reported and skipped.
+3. **Resource limits.** Set limits on call depth, expression depth, and
+   string, array and map sizes, so that a buggy plugin gets an error instead
+   of overflowing the stack or exhausting memory.
+4. **Fork.** Rhai has no threads, global state or buffered output, so nothing
+   needs to happen around `fork`. A plugin built-in in a pipeline or subshell
+   runs in the child, on the child's copy of the engine. Build Rhai without
+   its `sync` feature.
+5. **Panics.** Rhai promises not to panic on any script. Release builds use
+   `panic = "abort"`, so a panic inside Rhai would still end the shell. Treat
+   one as a Rhai bug and report it upstream, rather than adding
+   `catch_unwind`.
+6. **Build.** `rhai` is an optional dependency behind the `plugins` cargo
+   feature, which is on by default. `luish -c true` must be as fast with the
+   feature as without it (measured on a release build).
+   `--no-default-features` builds a shell without plugin support.
+7. **Plugin search.** `plugin load foo` loads
+   `$XDG_CONFIG_HOME/luish/plugins/foo.rhai` (by default
+   `~/.config/luish/plugins`). An argument that contains a `/` is a file
+   path.
+
+### 6.5 Strings and bytes (`plugins/bytes.rs`)
+
+The shell core stays on bytes (§1). Rhai strings can only hold UTF-8, so
+luish converts at the plugin boundary, as Python's `surrogateescape` does
+(PEP 383). Rust strings can't hold the lone surrogates Python uses, so the
+escapes are the last private-use code points of Unicode instead:
+
+- **Shell to Rhai** (arguments, `getvar`, `capture`, `read_line`,
+  `read_file`, `list_dir`, completion words): valid UTF-8 passes through
+  unchanged. Each byte `b` of an invalid sequence becomes U+10FF00 + `b`, so
+  bytes 0x80–0xFF map to U+10FF80–U+10FFFF.
+- **Rhai to shell** (`setvar`, `run`, paths given to `sh` functions,
+  output): those code points become single bytes again, and all other text
+  is encoded as UTF-8.
+- Values therefore round-trip exactly, except that real U+10FF80–U+10FFFF
+  characters in shell data become raw bytes on the way back. That range is
+  effectively unused. (Nerd Fonts, common in prompts, use the BMP private-use
+  area and plane 15.)
+- Text that is only displayed (the prompt a hook returns) shows escaped
+  bytes as U+FFFD.
+- Completion candidates that contain escaped bytes are dropped, as the
+  built-in completer already drops filenames that aren't UTF-8 (the line
+  editor's buffer is a `String`).
+- A string containing NUL can't become a shell variable or argument, so
+  `setvar` throws an error for it.
+
+There are no byte-exact variants of the API. If one is ever needed, Rhai's
+`Blob` type can carry raw bytes.
 
 ---
 
@@ -703,7 +790,7 @@ exact control.
 | Conformance | Ported suites (Phase 12) | Coverage of the spec |
 | Interactive | pty harness in `tests/interactive.rs` | Prompts, line editing, job control, Ctrl-C and Ctrl-Z |
 | Fuzzing | `cargo-fuzz` | No panics in the lexer, parser, arithmetic, or pattern matcher; a round-trip property that pretty-printing then re-parsing an AST gives the same AST |
-| Plugins | `cargo test --features python` | API behaviour, redirection of plugin output, fork safety, exception handling |
+| Plugins | `tests/plugins/*.rhai` under `cargo test` | API behaviour, redirection of plugin output, plugins in pipelines and subshells, error reporting, Ctrl-C and time limits, the byte round trip |
 | Performance | `hyperfine` in CI (non-blocking) | Catch startup and loop regressions |
 
 Every bug fix comes with a test case in `tests/cases/`.
@@ -718,7 +805,7 @@ Every bug fix comes with a test case in `tests/cases/`.
 | **M2: POSIX script engine** | 1 | 5–9 | All expansions, built-ins, functions, traps and `set -e`. Passes the differential suite |
 | **M3: Real-world scripts** | 1 | 12 (partly) | Runs autoconf `configure` scripts correctly. Performance is within ~1.5× of dash |
 | **M4: Daily-driver interactive shell** | 1 | 10 | Line editing, history, completion and job control, behind the `LineEditor` interface |
-| **M5: Python plugins** | 2 | 11 | Plugin built-ins and hooks work. Example plugins ship: a git-aware prompt, a `json` query built-in, and a command-timing preexec/precmd pair |
+| **M5: Rhai plugins** | 2 | 11 | Plugin built-ins and hooks work. Example plugins ship: a git-aware prompt, a `json` query built-in, and a command-timing preexec/precmd pair |
 
 Stage 1 is complete at M4, plus performance that matches dash (Phase 12).
 Milestones for the rest of Stage 2 and for Stage 3 will be planned once
@@ -854,11 +941,12 @@ run on the remote host.
 | POSIX ambiguities and differences between shells | Treat dash as the reference. Record deliberate differences in `tests/cases/**/*.expected` and in `DEVIATIONS.md` |
 | Getting `set -e` wrong | Implement it with a single suppression counter (§5 Phase 9), backed by a dedicated test file |
 | Terminal and process-group races in job control | Call `setpgid` in both parent and child. Block signals across `fork` until the child has reset its dispositions. Do all terminal handover through `jobs.rs` |
-| Python and `fork` interacting badly | The rules in §6.4, plus a warning when plugins have started threads |
-| Non-UTF-8 data | Use `Vec<u8>` everywhere in the core. Convert only at the Python boundary, using `surrogateescape` |
+| A plugin hanging or slowing the prompt | Ctrl-C interrupts plugin code, and hooks that run before the prompt have a time budget (§6.4) |
+| Few people know Rhai, and it has no library ecosystem | Keep the API small, ship example plugins, and provide what plugins need (commands, files, JSON) in the `sh` module |
+| Non-UTF-8 data | Use `Vec<u8>` everywhere in the core. Convert only at the plugin boundary, escaping invalid bytes as private-use code points (§6.5) |
 | Scope creep into later stages | Build no Stage 2 or 3 features until Stage 1 is usable (M4). Keep extensions behind a `set -o luish-extensions` (or similar) option |
 | Stage 1 design ruling out later stages | Follow the constraints in §9: keep the `LineEditor` interface narrow, keep all state in `Shell`, and record call frames |
-| Python adding startup cost | Load Python lazily, keep it behind a feature flag, and benchmark `-c true` in CI |
+| Plugin support adding startup cost | Create the Rhai engine on the first `plugin load`, keep it behind a feature flag, and benchmark `-c true` with and without it in CI |
 
 ---
 
@@ -871,5 +959,6 @@ run on the remote host.
 - The source code of `dash`, a compact and close-to-POSIX reference.
 - mrsh (a minimal POSIX shell in C) and the Oils project's blog posts on shell
   parsing.
-- PyO3's guide to embedding Python in Rust.
+- The Rhai book (<https://rhai.rs/book>), especially the chapters on embedding,
+  safety limits, function pointers and closures.
 - The glibc manual's chapter "Implementing a Job Control Shell".
