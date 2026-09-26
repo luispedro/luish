@@ -209,7 +209,7 @@ pub fn parse_set_options<'a>(sh: &mut Shell, args: &'a [Vec<u8>], cmd: &[u8]) ->
         }
         i += 1;
     }
-    Ok((&args[i..], false))
+    Ok((&args[i.min(args.len())..], false))
 }
 
 pub fn set(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {

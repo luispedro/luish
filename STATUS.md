@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **68 differential cases, 24 unit tests and 7 pty tests
+Current state: **70 differential cases, 24 unit tests and 7 pty tests
 pass**.
 
 ## Environment
@@ -208,7 +208,8 @@ pass**.
 - Letters `e f I i m n s x v V E C a b u p h` and the long names, listed in
   dash's table order. `$-` shows the letters in reverse table order, as dash
   does.
-- `set -o` / `set +o` output matches dash.
+- `set -o` / `set +o` output matches dash, except that the last option is
+  `hashall` rather than dash's `debug` (see DEVIATIONS.md).
 - Tests: `options/*`.
 
 ### Interactive mode (`src/interactive/`)
