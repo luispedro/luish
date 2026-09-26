@@ -65,14 +65,15 @@ widths relative to the terminal's width, aren't supported.
 
 In an interactive shell, Tab completes the word under the cursor: a command name (a built-in, function, alias or
 program in `PATH`) at the start of a command, a variable name after `$` or `${`, a user's home directory after `~`,
-and a filename elsewhere, also after the `=` or `:` of an assignment and the `=` of a `--option=`. A few built-ins
-complete their arguments differently:
+and a filename elsewhere, also after the `=` or `:` of an assignment and the `=` of a `--option=`. After commands
+that run another command, such as `sudo`, `env`, `nohup`, `time` and `xargs`, the command they run (after their
+options) completes as a command name. Some commands complete their arguments differently:
 
-- `cd` completes directories;
-- `export`, `local`, `readonly`, `unset`, `read`, `getopts` (after the option string) and `for` complete variable
-  names (`unset -f` completes function names);
+- `cd`, `pushd` and `rmdir` complete directories;
+- `export`, `local`, `readonly`, `unset`, `read` (except the prompt after `-p`), `getopts` (after the option
+  string) and `for` (then `in`) complete variable names (`unset -f` completes function names);
 - `alias` and `unalias` complete aliases;
-- `type` and `hash` complete command names, and `help` completes built-ins;
+- `type`, `hash` and `which` complete command names, and `help` completes built-ins;
 - `fg`, `bg`, `jobs`, `wait` and `kill` complete job specs such as `%1`, listed with their commands (after `%` and
   a letter, they complete the command names instead, such as `%vim`);
 - `kill -` and `kill -s` complete signal names, as do the arguments of `trap` after its action;
@@ -82,7 +83,8 @@ Plugins can provide completion for other commands (see [Plugins](plugins.md)). A
 alias for `git`, then `g ` completes as `git ` does.
 
 The first Tab completes as much as is common to all the matches, and a second one lists them. What is added is quoted
-as needed: a file called `my file` is completed as `my\ file`, or as `'my file'` after a `'`.
+as needed: a file called `my file` is completed as `my\ file`, or as `'my file'` after a `'`. A directory is completed
+with a `/`, so Tab can go on into it; any other single match gets a space (and the closing quote).
 
 The matches are the names that start with the text typed. If there are none, case is ignored (smart case: a
 lowercase letter matches either case, but an uppercase one only itself), so `mak` completes to `Makefile`. If there
