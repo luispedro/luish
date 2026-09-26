@@ -390,7 +390,7 @@ impl Shell {
                     if !continuation {
                         self.notify_jobs();
                     }
-                    match input.read_line(self, continuation) {
+                    match input.read_line(self, continuation, &buf) {
                         Line::Text(line) => {
                             if self.opt(Opt::Verbose) && self.interactive {
                                 sys::write_all(2, &line);

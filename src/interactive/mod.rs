@@ -1,6 +1,7 @@
 //! Interactive mode: prompts, the line editor, history, and startup files.
 
 mod complete;
+mod highlight;
 pub mod history;
 
 use std::cell::RefCell;
@@ -92,10 +93,21 @@ fn names(sh: &Shell) -> Names {
     }
 }
 
-pub fn read_line(sh: &mut Shell, continuation: bool) -> Line {
+/// The highlighting colours, or None if highlighting is off.
+fn colors(sh: &Shell) -> Option<highlight::Colors> {
+    if sh.get_var(b"NO_COLOR").is_some_and(|v| !v.is_empty()) {
+        return None;
+    }
+    highlight::Colors::parse(&sh.get_var(b"LUISH_HIGHLIGHT").unwrap_or_default())
+}
+
+/// Reads a line with the editor. `pending` is the text read so far of an
+/// incomplete command, which the highlighter continues from.
+pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
     let p = String::from_utf8_lossy(&prompt(sh, continuation)).into_owned();
     let vi = sh.opt(Opt::Vi);
     let names = names(sh);
+    let colors = colors(sh);
     EDITOR.with(|e| {
         let mut e = e.borrow_mut();
         let Some(ed) = e.as_mut() else {
@@ -103,6 +115,10 @@ pub fn read_line(sh: &mut Shell, continuation: bool) -> Line {
         };
         if let Some(h) = ed.helper_mut() {
             h.names = names;
+            h.highlight.colors = colors;
+            h.highlight.context.clear();
+            h.highlight.context.extend_from_slice(pending);
+            h.highlight.known.get_mut().clear();
         }
         ed.set_edit_mode(if vi {
             rustyline::EditMode::Vi

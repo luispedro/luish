@@ -5,8 +5,8 @@
 //! some expected output, or a job taking over the terminal (the pty's
 //! foreground process group changing), before Ctrl-Z or Ctrl-C is sent.
 //! Carriage returns are removed from the transcript. `TERM=dumb` keeps the
-//! line editor from emitting escape sequences, except in the completion test,
-//! which needs the editor.
+//! line editor from emitting escape sequences, except in the completion and
+//! highlighting tests, which need the editor.
 
 use std::ffi::CString;
 use std::path::{Path, PathBuf};
@@ -340,6 +340,36 @@ fn job_control_off() {
         "without job control, jobs stay in the shell's group"
     );
     assert_ne!(on, sh.pid.to_string(), "under job control, a job has its own group");
+}
+
+#[test]
+fn syntax_highlighting() {
+    let mut sh = Pty::spawn_term("highlight", "vt100");
+    sh.expect("$ ");
+    // A reserved word, a string, and an unknown command, in the default colours.
+    sh.send("if nosuchcommand 'x'");
+    sh.expect("\x1b[1;34mif\x1b[0m \x1b[1;31mnosuchcommand\x1b[0m \x1b[33m'x'\x1b[0m");
+    sh.send("\x03");
+    sh.expect("$ ");
+    // $LUISH_HIGHLIGHT overrides a class; the second line continues a quote.
+    sh.send("LUISH_HIGHLIGHT='string=4'\n");
+    sh.expect("$ ");
+    sh.send("echo 'a\n");
+    sh.expect("> ");
+    sh.send("b' x");
+    sh.expect("\x1b[4mb'\x1b[0m x");
+    sh.send("\x03");
+    sh.expect("$ ");
+    // NO_COLOR turns it off.
+    sh.send("NO_COLOR=1\n");
+    sh.expect("$ ");
+    sh.send("if");
+    sh.expect("if");
+    sh.send(" true; then echo o''k; fi\n");
+    sh.expect("ok\n");
+    assert!(!sh.transcript()[sh.transcript().rfind("NO_COLOR").unwrap()..].contains("\x1b[1;34m"));
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
 }
 
 #[test]

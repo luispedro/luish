@@ -341,16 +341,32 @@ pass**.
   typed is kept, and what is added is quoted for the quoting in effect at
   the cursor. Directories get a `/`, other unique matches a space (and the
   closing quote). Dot files are listed only for a prefix starting with `.`.
-- The completer never sees `Shell`: before each prompt, the REPL gives it a
-  snapshot of function, alias and variable names, `PATH` and `HOME`.
+- Syntax highlighting (`src/interactive/highlight.rs`), on by default:
+  reserved words (in command position only), command names (in a
+  different colour when they are not a built-in, function, alias or
+  executable), quoted strings, parameter and arithmetic expansions,
+  `$(...)` and backquotes (whose contents are highlighted as commands),
+  operators, redirections, here-document bodies, comments and the `NAME=` of
+  assignments. A `PS2` line is highlighted in the context of the earlier
+  lines, so an open quote or here-document carries over. `$LUISH_HIGHLIGHT`
+  sets the colours as `class=SGR` entries separated by `:` (as in
+  `GREP_COLORS`), over the defaults
+  `keyword=1;34:command=32:unknown=1;31:string=33:var=36:subst=35:op=1:redir=1:comment=90:assign=34`;
+  an empty SGR leaves a class uncoloured. `LUISH_HIGHLIGHT=none`, or a
+  non-empty `$NO_COLOR`, turns it off. Both are read before each prompt.
+  Command lookups are cached until the next prompt.
+- The completer and the highlighter never see `Shell`: before each prompt,
+  the REPL gives them a snapshot of function, alias and variable names,
+  `PATH` and `HOME`, the colours, and the text of an incomplete command.
 - Startup files: `/etc/profile` and `~/.profile` for login shells
   (interactive or not, as in dash), then, for interactive shells, `$ENV`,
   then `$XDG_CONFIG_HOME/luish/luishrc`.
 - Tests: `tests/interactive.rs` (job control, Ctrl-C and Ctrl-Z, terminal
-  input and modes, completion, and `fc`), `builtins/fc_noninteractive.sh`,
-  and unit tests in `complete.rs` and `history.rs`. The
-  pty tests use `TERM=dumb`, under which rustyline does no editing, except
-  `tab_completion`, which uses `TERM=vt100`.
+  input and modes, completion, highlighting, and `fc`),
+  `builtins/fc_noninteractive.sh`, and unit tests in `complete.rs`,
+  `highlight.rs` and `history.rs`. The pty tests use `TERM=dumb`, under
+  which rustyline does no editing, except `tab_completion` and
+  `syntax_highlighting`, which use `TERM=vt100`.
 
 ## Conformance
 
@@ -376,6 +392,9 @@ notes how to rerun them):
   command are replaced when it is recorded.
 - `fc -e` runs the edited text as one history entry, rather than one entry
   per command.
+- The highlighter's tokenizer is approximate (like the completer's): it
+  does not expand aliases, and a function or alias defined earlier on the
+  same line is shown as unknown until the next prompt.
 - Completion has no `~user`, no programmable (per-command) completion, and
   skips filenames that are not valid UTF-8 (rustyline works on `String`s).
 - `set -b` (immediate job notification) is accepted but does nothing: jobs

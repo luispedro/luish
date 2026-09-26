@@ -36,7 +36,9 @@ impl Input {
         }
     }
 
-    pub fn read_line(&mut self, sh: &mut Shell, continuation: bool) -> Line {
+    /// Reads the next line. `pending` is the text read so far of an
+    /// incomplete command.
+    pub fn read_line(&mut self, sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
         match self {
             Input::Whole(..) => Line::Eof,
             Input::Fd { fd, seekable, prompt } => {
@@ -49,7 +51,7 @@ impl Input {
                     None => Line::Eof,
                 }
             }
-            Input::Editor => interactive::read_line(sh, continuation),
+            Input::Editor => interactive::read_line(sh, continuation, pending),
         }
     }
 

@@ -1,6 +1,6 @@
 //! Tab completion for the line editor.
 //!
-//! The completer never touches `Shell`: before each prompt the REPL gives it
+//! The completer (and the highlighter, in `highlight.rs`) never touches `Shell`: before each prompt the REPL gives it
 //! a snapshot of the names it needs (`Names`). It completes command names in
 //! command position (built-ins, reserved words, functions, aliases and
 //! `PATH`), variable names after `$` and `${`, and filenames elsewhere.
@@ -11,7 +11,6 @@ use std::cell::RefCell;
 use std::os::unix::ffi::OsStrExt;
 
 use rustyline::completion::{Completer, Pair};
-use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::validate::Validator;
 use rustyline::{Context, Helper};
@@ -31,6 +30,7 @@ pub struct Names {
 #[derive(Default)]
 pub struct ShellHelper {
     pub names: Names,
+    pub highlight: super::highlight::State,
     path_cache: RefCell<PathCache>,
 }
 
@@ -43,7 +43,7 @@ struct PathCache {
     names: Vec<Vec<u8>>,
 }
 
-const RESERVED: &[&[u8]] = &[
+pub(super) const RESERVED: &[&[u8]] = &[
     b"case", b"do", b"done", b"elif", b"else", b"esac", b"fi", b"for", b"if", b"in", b"then", b"until", b"while",
 ];
 
@@ -51,7 +51,7 @@ const RESERVED: &[&[u8]] = &[
 const BEFORE_COMMAND: &[&[u8]] = &[b"if", b"then", b"else", b"elif", b"do", b"while", b"until", b"!", b"{"];
 
 /// Commands that take another command as their argument (after options).
-const PRECOMMANDS: &[&[u8]] = &[
+pub(super) const PRECOMMANDS: &[&[u8]] = &[
     b"command", b"exec", b"nohup", b"sudo", b"doas", b"env", b"time", b"nice", b"xargs",
 ];
 
@@ -350,7 +350,7 @@ fn mtime(dir: &[u8]) -> Option<(i64, i64)> {
     sys::stat(dir).map(|st| (st.st_mtime, st.st_mtime_nsec))
 }
 
-fn is_executable(path: &[u8]) -> bool {
+pub(super) fn is_executable(path: &[u8]) -> bool {
     sys::stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) && sys::access(path, libc::X_OK)
 }
 
@@ -472,7 +472,6 @@ impl Completer for ShellHelper {
 impl Hinter for ShellHelper {
     type Hint = String;
 }
-impl Highlighter for ShellHelper {}
 impl Validator for ShellHelper {}
 impl Helper for ShellHelper {}
 

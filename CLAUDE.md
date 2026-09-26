@@ -88,8 +88,9 @@ state on the `Shell` struct in `shell.rs`.
 - **Signals** are installed without `SA_RESTART` so `wait` gets EINTR. Rust ignores SIGPIPE before `main`, so `main`
   restores the default.
 - **Interactive mode** (`interactive/`) uses rustyline, kept behind its own module so the line editor stays separate
-  from the executor (a Stage 3 SSH mode depends on this). The completer (`interactive/complete.rs`) never sees
-  `Shell`: `read_line` hands it a `Names` snapshot before each prompt.
+  from the executor (a Stage 3 SSH mode depends on this). The completer (`interactive/complete.rs`) and the
+  syntax highlighter (`interactive/highlight.rs`) never see `Shell`: `read_line` hands them a `Names` snapshot (and
+  the colours and pending text) before each prompt.
   The history store (`interactive/history.rs`) is luish's own rustyline `History`, so that `fc` gets stable event
   numbers and can replace its own entry.
 - **Jobs** (`jobs.rs`) follow dash's model: numbered slots plus a "current job" order, finished jobs kept until
