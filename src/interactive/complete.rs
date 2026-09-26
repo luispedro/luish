@@ -497,7 +497,8 @@ impl<'a> Scan<'a> {
                         _ => {
                             self.push(c, i);
                             let assignment = self.in_assignment();
-                            if (c == b'=' && (assignment || self.text.starts_with(b"--"))) || (c == b':' && assignment) {
+                            if (c == b'=' && (assignment || self.text.starts_with(b"--"))) || (c == b':' && assignment)
+                            {
                                 self.split = self.text.len();
                             }
                         }
@@ -1190,7 +1191,10 @@ mod tests {
         use Kind::*;
         assert_eq!(analyze("g ad"), (Arg, vec!["git".into()]));
         assert_eq!(analyze("g"), (Command, vec![]));
-        assert_eq!(analyze("gc -m"), (Arg, vec!["git".into(), "-C".into(), "my dir".into(), "commit".into()]));
+        assert_eq!(
+            analyze("gc -m"),
+            (Arg, vec!["git".into(), "-C".into(), "my dir".into(), "commit".into()])
+        );
         assert_eq!(analyze("ls x"), (Arg, vec!["ls".into(), "-F".into()]));
         assert_eq!(analyze("s g ad"), (Arg, vec!["git".into()]));
         assert_eq!(analyze("s gi"), (Command, vec!["sudo".into()]));
@@ -1328,7 +1332,12 @@ mod tests {
         assert_eq!(complete(&h, "fg %v"), ["%vi "]);
         assert_eq!(complete(&h, "kill %s"), ["%sleep "]);
         assert_eq!(complete(&h, "kill %2"), ["%2 "]);
-        let shown: Vec<_> = h.complete_bytes(b"wait ", b"").1.into_iter().map(|p| p.display).collect();
+        let shown: Vec<_> = h
+            .complete_bytes(b"wait ", b"")
+            .1
+            .into_iter()
+            .map(|p| p.display)
+            .collect();
         assert_eq!(shown, ["%1  -- sleep 10 | cat", "%2  -- vi notes"]);
         // Plugins.
         std::fs::create_dir(dir.join("plugins")).unwrap();

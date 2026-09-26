@@ -338,6 +338,22 @@ fn sh_module() -> Module {
         let script = to_shell(script)?;
         with_shell(|sh| capture(sh, &script))
     });
+    m.set_native_fn("quote", |s: &str| {
+        Ok(to_str(&crate::builtins::single_quote(&to_bytes(s))))
+    });
+    m.set_native_fn("quote", |words: rhai::Array| {
+        let mut out = Vec::new();
+        for (i, w) in words.into_iter().enumerate() {
+            let Ok(w) = w.into_immutable_string() else {
+                return error("quote: the array must hold strings");
+            };
+            if i > 0 {
+                out.push(b' ');
+            }
+            out.extend(crate::builtins::single_quote(&to_bytes(&w)));
+        }
+        Ok(to_str(&out))
+    });
     m.set_native_fn("getvar", |name: &str| {
         with_shell(|sh| Ok(sh.get_var(&to_bytes(name)).map_or(Dynamic::UNIT, |v| to_str(&v).into())))
     });

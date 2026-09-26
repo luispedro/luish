@@ -520,6 +520,58 @@ fn plugin_completer() {
     assert_eq!(sh.exit_status(), 0);
 }
 
+/// The Cobra plugin of the documentation, with a stand-in for a program
+/// built with Cobra.
+#[cfg(feature = "plugins")]
+#[test]
+fn cobra_completer() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut sh = Pty::spawn_term("cobra", "vt100");
+    let plugin = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/examples/cobra.rhai")).unwrap();
+    std::fs::write(
+        sh.path("cobra.rhai"),
+        plugin + "sh::completer(\"frob\", Fn(\"cobra\"));\n",
+    )
+    .unwrap();
+    std::fs::create_dir(sh.path("bin")).unwrap();
+    let frob = sh.path("bin/frob");
+    std::fs::write(
+        &frob,
+        r#"#!/bin/sh
+[ "$1" = __complete ] || { echo "frob:$*"; exit; }
+shift
+case $#:$1 in
+1:*) printf 'serve\tStart the server\nstatus\tShow the status\n:4\n' ;;
+*:serve) printf -- '--port=\n--verbose\n:6\n' ;;
+*) echo ':0' ;;
+esac
+"#,
+    )
+    .unwrap();
+    std::fs::set_permissions(&frob, std::fs::Permissions::from_mode(0o755)).unwrap();
+    sh.expect("$ ");
+    sh.send("PATH=$HOME/bin:$PATH; plugin load ./cobra.rhai; echo \"loaded $?\"\n");
+    sh.expect("loaded 0\n");
+    sh.expect("$ ");
+    sh.send("frob ser\t\n");
+    sh.expect("frob:serve\n");
+    sh.expect("$ ");
+    // No space after `--port=` (flag 2).
+    sh.send("frob serve --p\t80\n");
+    sh.expect("frob:serve --port=80\n");
+    sh.expect("$ ");
+    // Filenames when the program gives nothing (flag 4 unset).
+    sh.send("frob status cob\t\n");
+    sh.expect("frob:status cobra.rhai\n");
+    sh.expect("$ ");
+    sh.send("frob \t\t");
+    sh.expect("serve   -- Start the server");
+    sh.send("\x03");
+    sh.expect("\x1b[?2004h");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
 #[test]
 fn fc_history() {
     let mut sh = Pty::spawn("fc");

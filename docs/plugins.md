@@ -173,6 +173,20 @@ Commands that a completer runs are not jobs: like those of `$(...)`, they can't 
 does not reach them (the terminal is in the line editor's mode). Their output goes to the terminal, over the command
 line, so use `sh::capture` or redirect it.
 
+## Example: programs that complete themselves
+
+Many programs can list the completions of their own arguments. Those built with the Go library
+[Cobra](https://cobra.dev), such as `gh`, `docker`, `kubectl` and `helm`, do it when run as
+`prog __complete ARGS...`. luish doesn't run programs to ask them (a program that doesn't know the convention might
+do something else), but a plugin can, for the programs it names:
+
+```{literalinclude} examples/cobra.rhai
+:language: rust
+```
+
+Save it as `~/.config/luish/plugins/cobra.rhai`, change the list of programs at the end, and load it with
+`plugin load cobra`.
+
 ## The `sh` module
 
 | Function | Description |
@@ -188,6 +202,7 @@ line, so use `sh::capture` or redirect it.
 | `sh::interactive()` | Whether the shell is interactive |
 | `sh::run(script)` | Run shell code in the current shell, as `eval` does, and return its status. If it runs `exit`, the plugin stops and the shell exits |
 | `sh::capture(script)` | Run shell code in a subshell, as `$(...)` does, and return `#{status, out}`, with trailing newlines removed from `out` |
+| `sh::quote(text)` | `text` quoted for the shell (in single quotes). Given an array, its strings quoted and separated by spaces |
 | `sh::write(fd, text)` | Write text, unbuffered, to fd 1 or 2 |
 
 Rhai's `print(text)` and `debug(text)` write a line to standard output and standard error.

@@ -713,6 +713,7 @@ completion. The shell does the matching and quoting (see
 | `interactive()` | Whether the shell is interactive |
 | `run(script)` | Parse and execute shell code in the current shell, and return its status. Re-entrant |
 | `capture(script)` | Like `$(...)`: run in a subshell and return `#{status, out}`, with trailing newlines removed from `out` |
+| `quote(text)`, `quote(array)` | Quote for the shell (an array's strings are quoted and joined with spaces) |
 | `cwd()`, `chdir(path)` | `chdir` changes the directory as `cd` would, updating `PWD` and running `chpwd` hooks |
 | `write(fd, text)`, `read_line()` | Unbuffered I/O on the **current** fds 1, 2 and 0, so redirections like `greet > f` apply. `read_line` returns `()` at end of file |
 | `parse_json(text)` | Parse JSON into Rhai maps and arrays |

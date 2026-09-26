@@ -569,7 +569,9 @@ pass**.
   `unsetvar`, `cwd`, `plugin_dir`, `last_status`, `interactive`, `run`
   (shell code in the current shell; `exit` in it stops the plugin and exits
   the shell), `capture` (a subshell's status and output, as `$(...)`),
-  `write` (fds 1 and 2).
+  `quote` (a string, or an array's strings, quoted for the shell), `write`
+  (fds 1 and 2). `docs/examples/cobra.rhai`, included in the documentation,
+  is a completer for programs built with Cobra (`prog __complete`).
 - `fs` module (`plugins/fs.rs`), without forking: `exists`, `is_file`,
   `is_dir`, `is_link`, `kind` (lstat), `is_readable`, `is_writable`,
   `is_executable`, `size`, `mtime`, `newer` and `older` (nanoseconds; a
@@ -621,10 +623,11 @@ pass**.
   (PLAN.md §6.5); strings with NUL can't be set as variables.
 - Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `floats`, `fs`, `vcs`, `reload`,
   `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`, `prompt`,
-  `prompt_prev`, `capture`), unit tests for the byte conversion, `git status`
+  `prompt_prev`, `capture`, `quote`), unit tests for the byte conversion, `git status`
   parsing and (with a stand-in completer) in `complete.rs`, `builtins/plugin.sh`,
   `builtins/internal_plugin.sh`, and `plugin_builtin` and
-  `plugin_completer` in `tests/interactive.rs`. CI also runs clippy and the tests
+  `plugin_completer` and `cobra_completer` (the example plugin, with a
+  stand-in program) in `tests/interactive.rs`. CI also runs clippy and the tests
   with `--no-default-features`.
 
 ## Conformance

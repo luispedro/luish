@@ -1,0 +1,6 @@
+'it'"'"'s a $test'
+'printf' '[%s]' 'a b' '' ''"'"
+[a b][][it's]
+true
+quote: the array must hold strings
+load: 0
