@@ -29,7 +29,7 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **98 differential cases, 24 unit tests and 7 pty tests
+Current state: **101 differential cases, 24 unit tests and 7 pty tests
 pass**.
 
 ## Environment
@@ -63,8 +63,11 @@ pass**.
 ### Command line (`src/main.rs`)
 - `luish script [args]`, `luish -c cmd [arg0 [args]]`, `luish -s [args]`,
   and reading stdin when there are no operands.
-- Option letters and `-o name` / `+o name`. `-i` forces interactive mode.
-  `--no-plugins` is accepted and currently does nothing.
+- Option letters and `-o name` / `+o name`. `-i` forces interactive mode;
+  with `-c` or a script it runs that (it reads stdin only without them).
+  As in dash, `+c` works like `-c` and `-l` (or `+l`) makes a login shell.
+  `--no-plugins` is accepted and currently does nothing. Test:
+  `options/interactive_c.sh`.
 - A missing script prints `cannot open X: No such file` and exits with
   status 127.
 - A script without `#!` (execve returns ENOEXEC) is re-run with this
@@ -193,7 +196,8 @@ pass**.
   left side of `&&`/`||`, and after `!`. As in dash, only simple commands,
   subshells and pipelines (and a compound command whose redirection
   fails) exit on their own status, so `{ false && true; }` does not exit.
-  Test: `errexit/compound.sh`.
+  Inside `$(...)` the suppression is reset (dash runs it with fresh
+  flags). Tests: `errexit/compound.sh`, `errexit/cmdsubst_condition.sh`.
 - Tests: `exec/*`, `errexit/*`.
 
 ### Jobs and job control (`src/jobs.rs`, `src/builtins/jobs.rs`)
@@ -247,7 +251,11 @@ pass**.
   `%b`, `*` for width and precision, and reuses the format while arguments
   remain. As in dash, unsigned conversions parse with `strtoull` (so `-1`
   wraps), out-of-range numbers are reported with `strerror(ERANGE)`, and an
-  invalid directive gives status 2. Test: `builtins/printf_escapes.sh`.
+  invalid directive gives status 2. Like dash's, it has no options. Test:
+  `builtins/printf_escapes.sh`.
+- Values in `set`, `export -p`, `readonly -p`, `alias` and `trap` output
+  are quoted as dash's `single_quote` does (`'"'"'` for a quote). Test:
+  `builtins/quoting_output.sh`.
 - `getopts` is a port of dash's: `OPTIND` moves past an argument as soon as
   its first letter is read, `OPTARG` is left alone at the end, and the
   position is reset by assigning `OPTIND`, by `set --` and `shift`, and is
@@ -335,8 +343,9 @@ pass**.
   closing quote). Dot files are listed only for a prefix starting with `.`.
 - The completer never sees `Shell`: before each prompt, the REPL gives it a
   snapshot of function, alias and variable names, `PATH` and `HOME`.
-- Startup files: `/etc/profile` and `~/.profile` for login shells, then
-  `$ENV`, then `$XDG_CONFIG_HOME/luish/luishrc`.
+- Startup files: `/etc/profile` and `~/.profile` for login shells
+  (interactive or not, as in dash), then, for interactive shells, `$ENV`,
+  then `$XDG_CONFIG_HOME/luish/luishrc`.
 - Tests: `tests/interactive.rs` (job control, Ctrl-C and Ctrl-Z, terminal
   input and modes, completion, and `fc`), `builtins/fc_noninteractive.sh`,
   and unit tests in `complete.rs` and `history.rs`. The

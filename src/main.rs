@@ -37,7 +37,7 @@ fn main() {
     let args: Vec<Vec<u8>> = std::env::args_os().map(|a| a.into_vec()).collect();
     let mut sh = Shell::new();
     sh.arg0 = args.first().cloned().unwrap_or_else(|| b"luish".to_vec());
-    let login = sh.arg0.first() == Some(&b'-');
+    let mut login = sh.arg0.first() == Some(&b'-');
 
     // Option letters that only make sense on the command line.
     let mut command_mode = false;
@@ -54,7 +54,8 @@ fn main() {
         if a.starts_with(b"--") {
             // long options: --no-plugins is accepted for forward compatibility
             if a != b"--no-plugins" {
-                usage_error(&sh, &format!("Illegal option {}", String::from_utf8_lossy(a)));
+                // dash's wording: the second `-` is the illegal letter.
+                usage_error(&sh, "Illegal option --");
             }
             i += 1;
             continue;
@@ -65,7 +66,9 @@ fn main() {
         let on = a[0] == b'-';
         for &c in &a[1..] {
             match c {
-                b'c' => command_mode = on,
+                // As in dash, `+c` and `+l` work like `-c` and `-l`.
+                b'c' => command_mode = true,
+                b'l' => login = true,
                 b's' => stdin_mode = on,
                 b'i' => force_interactive = on,
                 b'o' => {
@@ -143,12 +146,20 @@ fn main() {
             }
         }
         sh.set_jobctl(sh.opt(Opt::Monitor));
-        if sys::isatty(0) && interactive::init_editor(&sh) {
-            input = Input::Editor;
-        } else {
-            input = Input::fd(0, true);
+        // With -c or a script, the interactive shell still runs that.
+        if stdin_mode {
+            if sys::isatty(0) && interactive::init_editor(&sh) {
+                input = Input::Editor;
+            } else {
+                input = Input::fd(0, true);
+            }
         }
-        interactive::startup(&mut sh, login);
+    }
+    if login {
+        interactive::login_profiles(&mut sh);
+    }
+    if interactive {
+        interactive::startup(&mut sh);
     }
     if stdin_mode {
         sh.options.set(Opt::Stdin, true);

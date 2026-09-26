@@ -135,14 +135,19 @@ pub fn source_file(sh: &mut Shell, path: &[u8]) {
 }
 
 /// Runs the startup files of an interactive (and possibly login) shell.
-pub fn startup(sh: &mut Shell, login: bool) {
-    if login {
-        source_file(sh, b"/etc/profile");
-        if let Some(mut home) = sh.get_var(b"HOME") {
-            home.extend_from_slice(b"/.profile");
-            source_file(sh, &home);
-        }
+/// Reads `/etc/profile` and `~/.profile`, for a login shell (interactive or
+/// not, as in dash).
+pub fn login_profiles(sh: &mut Shell) {
+    source_file(sh, b"/etc/profile");
+    if let Some(mut home) = sh.get_var(b"HOME") {
+        home.extend_from_slice(b"/.profile");
+        source_file(sh, &home);
     }
+}
+
+/// Reads the startup files of an interactive shell: `$ENV`, then luish's
+/// own `luishrc`.
+pub fn startup(sh: &mut Shell) {
     if let Some(env) = sh.get_var(b"ENV")
         && let Ok(w) = crate::lexer::parse_string_word(&env)
         && let Ok(path) = sh.expand_word_str(&w)

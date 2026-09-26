@@ -6,17 +6,29 @@ use crate::options::{OPTIONS, Opt, Options};
 use crate::shell::{ExecResult, Flow, Shell};
 
 /// Single-quotes a value for output that can be read back by the shell.
+/// dash's `single_quote`: the text in single quotes, with each run of
+/// single quotes in double quotes (`a'b` is `'a'"'"'b'`).
 pub fn single_quote(s: &[u8]) -> Vec<u8> {
-    let mut out = vec![b'\''];
-    for &c in s {
-        if c == b'\'' {
-            out.extend_from_slice(b"'\\''");
-        } else {
-            out.push(c);
+    let mut out = Vec::with_capacity(s.len() + 2);
+    let mut rest = s;
+    loop {
+        let len = rest.iter().position(|&c| c == b'\'').unwrap_or(rest.len());
+        out.push(b'\'');
+        out.extend_from_slice(&rest[..len]);
+        out.push(b'\'');
+        rest = &rest[len..];
+        if rest.is_empty() {
+            return out;
+        }
+        let quotes = rest.iter().take_while(|&&c| c == b'\'').count();
+        out.push(b'"');
+        out.extend_from_slice(&rest[..quotes]);
+        out.push(b'"');
+        rest = &rest[quotes..];
+        if rest.is_empty() {
+            return out;
         }
     }
-    out.push(b'\'');
-    out
 }
 
 fn bad_name(sh: &Shell, cmd: &[u8], name: &[u8]) -> Flow {

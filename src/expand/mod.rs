@@ -397,6 +397,9 @@ impl Shell {
                 let _ = sys::dup2(w, 1);
                 sys::close(w);
             }
+            // As in dash, a condition around `$(...)` doesn't suppress
+            // `set -e` inside it.
+            self.errexit_suppressed = 0;
             let res = self.run_list_exit(list, true);
             self.child_exit(res);
         }

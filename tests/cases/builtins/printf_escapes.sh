@@ -10,3 +10,6 @@ printf '%d %u %x %o\n' 18446744073709551615 18446744073709551615 -1 -1 2>/dev/nu
 printf '%d\n' 9223372036854775808 -9223372036854775809 2>/dev/null; echo "st $?"
 printf '%u\n' -1 -18446744073709551615 -18446744073709551616 2>/dev/null; echo "st $?"
 printf '%x %X %o\n' 18446744073709551615 0x10 010; echo "st $?"
+printf '-%s\n' a 2>/dev/null; echo "status $?"
+printf -v x 2>/dev/null; echo "status $?"
+printf -- '-%s\n' b

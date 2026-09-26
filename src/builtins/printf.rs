@@ -297,8 +297,14 @@ fn format_once(sh: &Shell, fmt: &[u8], args: &mut Args, out: &mut Vec<u8>) -> Re
 
 pub fn printf(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let mut rest = &argv[1..];
-    if rest.first().is_some_and(|a| a == b"--") {
-        rest = &rest[1..];
+    // As in dash (`nextopt("")`), printf has no options.
+    match rest.first() {
+        Some(a) if a == b"--" => rest = &rest[1..],
+        Some(a) if a.len() > 1 && a[0] == b'-' => {
+            sh.berr(&argv[0], format!("Illegal option -{}", a[1] as char));
+            return Ok(2);
+        }
+        _ => {}
     }
     let Some(fmt) = rest.first() else {
         sh.berr(&argv[0], "usage: printf format [arg ...]");

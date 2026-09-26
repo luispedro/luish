@@ -15,3 +15,4 @@ these places. Each one has a test with a `.expected` file in `tests/cases/`.
 | fd numbers in redirections | Only a single digit is an fd number: `exec 20>f` runs a command named `20`, and `echo hi 99>&1` prints `hi 99` | Any number of digits, as POSIX allows (and bash and zsh do) | `exec/redirect_big_fd.sh` |
 | `exec -- cmd` | No `--` handling: tries to run a command named `--` (status 127) | `--` ends the options, as POSIX requires (and bash does) | `exec/exec_dashdash.sh` |
 | `$((` that is not arithmetic | Syntax error (dash always reads `$((` as arithmetic) | Read as `$( (...) )`, a command substitution of a subshell, as bash does (POSIX leaves it unspecified) | `parse/arith_fallback.sh` |
+| `emacs` option in interactive shells | Off (Debian's dash has no line editor) | On unless `vi` is set, since it is the line editor's mode, so `$-` has `E` (as in bash) | `options/interactive_c.sh` |
