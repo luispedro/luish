@@ -1,0 +1,4 @@
+__luish_internal plugin load 'HOME/p.rhai'
+hook
+p
+hook

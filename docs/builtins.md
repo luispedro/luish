@@ -95,6 +95,10 @@ and `help NAME` shows the same text as here in the terminal.
 :heading-offset: 1
 ```
 
+```{include} builtins/plugin.md
+:heading-offset: 1
+```
+
 ```{include} builtins/printf.md
 :heading-offset: 1
 ```

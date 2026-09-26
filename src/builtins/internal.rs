@@ -9,6 +9,7 @@ type Subcommand = fn(&mut Shell, &[Vec<u8>]) -> ExecResult;
 /// (name, function); each gets the arguments from its own name on.
 const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
     (b"help", help),
+    (b"plugin", plugin),
     (b"print-git-rev", print_git_rev),
     (b"print-git-rev-short", print_git_rev_short),
     (b"savestate", savestate),
@@ -44,6 +45,12 @@ pub fn internal(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 /// aren't interactive.
 fn help(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     super::help::run(sh, b"__luish_internal help", &argv[1..])
+}
+
+/// `plugin`: the `plugin` built-in, which is also available here in shells
+/// that aren't interactive.
+fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    crate::plugins::run(sh, b"__luish_internal plugin", &argv[1..])
 }
 
 /// Fails with status 2 if there are arguments after the subcommand's name.

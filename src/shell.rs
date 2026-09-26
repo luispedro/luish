@@ -81,6 +81,10 @@ pub struct Shell {
     /// While the login cache is built: the absolute paths of the files
     /// read by `.`.
     pub sourced_files: Option<Vec<Vec<u8>>>,
+    /// The plugin host, created by the first `plugin load`.
+    pub plugins: Option<Rc<crate::plugins::Host>>,
+    /// `--no-plugins`: `plugin load` does nothing.
+    pub no_plugins: bool,
 }
 
 impl Shell {
@@ -153,6 +157,8 @@ impl Shell {
             out_failed: std::cell::Cell::new(false),
             in_exit_trap: false,
             sourced_files: None,
+            plugins: None,
+            no_plugins: false,
         }
     }
 
@@ -172,14 +178,20 @@ impl Shell {
 
     /// Sets a variable, reporting an error if it is readonly.
     pub fn set_var(&mut self, name: &[u8], value: Vec<u8>) -> Result<(), Flow> {
+        self.try_set_var(name, value).map_err(|msg| {
+            self.error(msg);
+            Flow::Error(2)
+        })
+    }
+
+    /// Sets a variable, or returns the error message.
+    pub fn try_set_var(&mut self, name: &[u8], value: Vec<u8>) -> Result<(), String> {
         // As in dash (`getoptsreset`), OPTIND must be a number.
         if name == b"OPTIND" && crate::builtins::parse_uint(&value).is_none() {
-            self.error(format!("Illegal number: {}", String::from_utf8_lossy(&value)));
-            return Err(Flow::Error(2));
+            return Err(format!("Illegal number: {}", String::from_utf8_lossy(&value)));
         }
         if self.vars.set(name, value).is_err() {
-            self.error(format!("{}: is read only", String::from_utf8_lossy(name)));
-            return Err(Flow::Error(2));
+            return Err(format!("{}: is read only", String::from_utf8_lossy(name)));
         }
         if self.opt(Opt::Allexport) {
             self.vars.entry(name).exported = true;

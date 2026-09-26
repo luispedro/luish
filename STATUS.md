@@ -24,12 +24,15 @@ LUISH_CASE=expand/ pixi run test   # only differential cases matching a substrin
   DEVIATIONS.md.
 - Each script runs in a fresh temporary directory (which is also `$HOME`),
   with `LC_ALL=C` and `$SH` set to the shell under test.
+- Plugin cases (`tests/plugins/*.sh`, run only with the `plugins` feature)
+  can't be compared with dash: each has a `NAME.expected`, and stderr must
+  be empty or match `NAME.stderr` exactly.
 - Interactive behaviour is tested in `tests/interactive.rs`, which runs
   `luish -i` on a pseudo-terminal (a small harness on `libc`, no extra
   crates). Each step waits for expected output, or for named processes to
   be in the terminal's foreground process group, never for a fixed time.
 
-Current state: **106 differential cases, 35 unit tests and 9 pty tests
+Current state: **108 differential cases, 9 plugin cases, 45 unit tests and 11 pty tests
 pass**.
 
 ## Environment
@@ -37,8 +40,9 @@ pass**.
 - pixi provides `rust`. dash and bash come from the system,
   because conda-forge has no dash *shell* package (its `dash` package is
   Plotly Dash).
-- Plugins will be written in Rhai (PLAN.md §6). No plugin code or dependency
-  exists yet.
+- Plugins are written in Rhai (PLAN.md §6), an optional dependency behind
+  the `plugins` cargo feature (on by default). `cargo build
+  --no-default-features` builds a shell without it.
 
 ## Phase status
 
@@ -55,7 +59,7 @@ pass**.
 | 8 Signals and traps | Mostly done (see the gaps below) |
 | 9 Options and `set -e` | Done |
 | 10 Interactive / job control | Done (prompt loop, history and `fc`, job control, completion), with the gaps listed below |
-| 11 Plugins | Not started |
+| 11 Plugins | Started: the `plugin` built-in, the Rhai host with a small `sh` module, and the `chpwd` hook (see Plugins below) |
 | 12 Conformance / performance | Started: autoconf `configure` scripts and the Oils spec tests (see Conformance below), benchmark baseline |
 
 ## Implemented behaviour
@@ -66,8 +70,8 @@ pass**.
 - Option letters and `-o name` / `+o name`. `-i` forces interactive mode;
   with `-c` or a script it runs that (it reads stdin only without them).
   As in dash, `+c` works like `-c` and `-l` (or `+l`) makes a login shell.
-  `--no-plugins` is accepted and currently does nothing. Test:
-  `options/interactive_c.sh`.
+  `--no-plugins` makes `plugin load` do nothing. Tests:
+  `options/interactive_c.sh`, `tests/plugins/no-plugins.sh`.
 - A missing script prints `cannot open X: No such file` and exits with
   status 127.
 - A script without `#!` (execve returns ENOEXEC) is re-run with this
@@ -252,7 +256,7 @@ pass**.
 - Regular: `[` `alias` `bg` `cd` `command` `echo` `false` `fc` `fg` `getopts`
   `hash` `jobs` `kill` `printf` `pwd` `read` `test` `true` `type`
   `ulimit` `umask` `unalias` `wait`, and luish's own `__luish_internal`,
-  and, only in interactive shells, `help`.
+  and, only in interactive shells, `help` and `plugin` (see Plugins).
 - `__luish_internal` (`src/builtins/internal.rs`) holds luish's own
   commands as subcommands, so that they don't take names from the command
   namespace (widely used ones may later get aliases). A missing or unknown
@@ -326,8 +330,8 @@ pass**.
   current value.
 - `__luish_internal savestate` (`src/state.rs`) prints commands that restore the shell's
   state when run with `.`: the working directory, `umask`, variables and
-  their attributes (not `PPID` or `LINENO`), traps, functions, aliases and
-  options (not `-i`, `-s`, `-m` or `-n`). Functions are printed from the
+  their attributes (not `PPID` or `LINENO`), traps, functions, aliases,
+  loaded plugins and options (not `-i`, `-s`, `-m` or `-n`). Functions are printed from the
   AST by `src/unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`),
   so the text parses back to the same tree; command names in function
   bodies that are aliases are quoted, and a function named like an alias is
@@ -443,6 +447,43 @@ pass**.
   which rustyline does no editing, except `tab_completion` and
   `syntax_highlighting`, which use `TERM=vt100`.
 
+### Plugins (`src/plugins/`)
+- Everything is behind the `plugins` cargo feature. Until the first
+  `plugin load`, the only state is `Shell::plugins` (`None`) and the only
+  cost is the `None` check in `cd`. Without the feature, `plugin load`
+  fails with "luish was built without plugin support".
+- `plugin` is a built-in only in interactive shells (and their
+  subshells), like `help`; `__luish_internal plugin` is the same anywhere.
+- `plugin load NAME|PATH...` loads `$XDG_CONFIG_HOME/luish/plugins/NAME.rhai`
+  (default `~/.config/luish/plugins`), or a path if the argument contains a
+  `/`; loading a plugin again replaces it (its hooks move to the end).
+  `plugin list` prints the names, `plugin unload NAME...` removes a
+  plugin's hooks. Errors: status 1 (130 if interrupted); usage errors: 2.
+- `savestate` prints `__luish_internal plugin load PATH` (absolute) for
+  each loaded plugin, after aliases and before options, so the startup
+  cache loads the plugins from `rc.d` again; what a plugin's top level
+  changed is cached with the rest of the state.
+- `plugins/rhai.rs`: one `Engine` (created on first load, with call-depth,
+  expression-depth and size limits), one AST per plugin. Rhai's `print`
+  and `debug` write lines to fds 1 and 2. SIGINT stops plugin code (checked
+  in `on_progress`), leaving the signal pending for the shell. Rhai is
+  built with `no_float` and `only_i64` (see PLAN.md §6.4).
+- `sh` module: `hook`, `getvar`, `setvar`, `export`, `unsetvar`, `cwd`,
+  `last_status`, `interactive`, `run` (shell code in the current shell;
+  `exit` in it stops the plugin and exits the shell), `write` (fds 1 and 2).
+- Hooks: `chpwd`, called with the old and new directory after each
+  successful `cd` (after `cd -` prints the directory), also in subshells.
+  `$?` is kept; a failing hook is reported with the plugin's file and the
+  others still run; a `chpwd` hook running `cd` doesn't re-trigger `chpwd`.
+- `plugins/bytes.rs`: non-UTF-8 bytes map to U+10FF80–U+10FFFF and back
+  (PLAN.md §6.5); strings with NUL can't be set as variables.
+- Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `reload`,
+  `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`), unit
+  tests for the byte conversion, `builtins/plugin.sh`,
+  `builtins/internal_plugin.sh`, and `plugin_builtin` in
+  `tests/interactive.rs`. CI also runs clippy and the tests
+  with `--no-default-features`.
+
 ## Conformance
 
 Checked on 2026-09-26 (the scripts are not in the repository; working-memory
@@ -476,7 +517,14 @@ notes how to rerun them):
   are reported only before a prompt. Job notifications are given only for
   input read a line at a time (interactive or stdin), not in scripts run
   with `set -m`.
-- No plugin system (Phase 11).
+- Plugins (Phase 11) support only the `chpwd` hook and part of the `sh`
+  module: no plugin built-ins, completers, other hooks, time budgets,
+  `capture`, file functions or `parse_json`. The native built-ins have not
+  been moved onto a `Builtin` trait (PLAN.md Phase 11, step 1). `import`
+  in a plugin is not resolved relative to the plugin's directory.
+- With the `plugins` feature, `-c true` starts about 80 µs (4%) slower
+  than without it, from load-time relocations of Rhai's static data in the
+  PIE executable (a non-PIE build removes the difference).
 - `trap` with no arguments, run inside a subshell or `$(...)`, doesn't show
   the parent's traps.
 - `read` is not interrupted by trapped signals.

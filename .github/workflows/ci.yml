@@ -44,5 +44,10 @@ jobs:
       - name: Test
         run: pixi run test
 
+      - name: Without plugins
+        run: |
+          pixi run cargo clippy --all-targets --no-default-features -- -D warnings
+          pixi run cargo test --no-default-features
+
       - name: Release build
         run: pixi run release

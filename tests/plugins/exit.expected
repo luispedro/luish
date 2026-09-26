@@ -1,0 +1,3 @@
+in hook
+run returned 1
+EXIT trap, status 7

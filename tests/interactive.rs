@@ -481,3 +481,16 @@ fn help_builtin() {
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
 }
+
+#[test]
+fn plugin_builtin() {
+    let mut sh = Pty::spawn("plugin");
+    sh.expect("$ ");
+    // Like `help`, `plugin` is a built-in only in interactive shells.
+    assert_has(&sh.run("type plugin"), "plugin is a shell builtin");
+    let out = sh.run("plugin unload nosuch; echo \"status $?\"");
+    assert_has(&out, "plugin: nosuch: not loaded");
+    assert_has(&out, "status 1");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}

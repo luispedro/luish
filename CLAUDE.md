@@ -37,8 +37,8 @@ pixi run release                  # release build (LTO, panic=abort), used for b
 pixi run docs                     # build the user docs into docs/_build/html (warnings are errors)
 ```
 
-`rustfmt.toml` sets `max_width = 120`. Plugins (Phase 11) will use Rhai behind a `plugins` cargo feature (PLAN.md
-§6); no plugin code exists yet.
+`rustfmt.toml` sets `max_width = 120`. Plugins (Phase 11, `src/plugins/`) use Rhai behind the default `plugins`
+cargo feature (PLAN.md §6); `cargo clippy --all-targets --no-default-features` must also stay clean.
 
 ## Tests
 
@@ -55,6 +55,8 @@ Most coverage is differential (`tests/compare.rs`): each `tests/cases/**/*.sh` r
   background pipeline only kills its last process, so use `: | sleep 10`, not `sleep 10 | sleep 10`.
 - The system dash is Debian's, which has patches (e.g. it forks the last command of `sh -c`). Upstream dash
   source is the reference for intent; `DEVIATIONS.md` records where the two matter.
+- Plugin cases (`tests/plugins/*.sh`) can't run under dash: each needs `NAME.expected`, and stderr must be empty or
+  match `NAME.stderr`.
 - Interactive behaviour (job control, Ctrl-C/Ctrl-Z, terminal modes) is tested on a pty in `tests/interactive.rs`.
   Steps wait for output or for named processes to be in the terminal's foreground group, never for fixed times.
 

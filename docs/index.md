@@ -11,5 +11,6 @@ luish is at an early stage. Most of POSIX is implemented, but expect rough edges
 installation
 usage
 builtins
+plugins
 improvements
 ```

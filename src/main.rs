@@ -12,6 +12,7 @@ mod lexer;
 mod options;
 mod parser;
 mod path;
+mod plugins;
 mod shell;
 mod signals;
 mod startcache;
@@ -55,11 +56,11 @@ fn main() {
             break;
         }
         if a.starts_with(b"--") {
-            // long options: --no-plugins is accepted for forward compatibility
             if a != b"--no-plugins" {
                 // dash's wording: the second `-` is the illegal letter.
                 usage_error(&sh, "Illegal option --");
             }
+            sh.no_plugins = true;
             i += 1;
             continue;
         }

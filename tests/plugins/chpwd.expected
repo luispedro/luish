@@ -1,0 +1,22 @@
+load: 0
+dirs
+chpwd 1: HOME -> HOME/d1 (PWD=HOME/d1)
+named hook, $? is 0
+cd: 0 HOME/d1
+chpwd 2: HOME/d1 -> HOME/d2 (PWD=HOME/d2)
+named hook, $? is 1
+$? kept: 0
+HOME/d1
+chpwd 3: HOME/d2 -> HOME/d1 (PWD=HOME/d1)
+named hook, $? is 0
+failed cd:
+status 2
+HOME/d2/sub
+chpwd 4: HOME/d1 -> HOME/d2/sub (PWD=HOME/d2/sub)
+named hook, $? is 0
+chpwd 5: HOME/d2/sub -> HOME (PWD=HOME)
+named hook, $? is 0
+subshell:
+chpwd 6: HOME -> HOME/d1 (PWD=HOME/d1)
+named hook, $? is 0
+back in HOME, LAST_TO=HOME

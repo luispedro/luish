@@ -10,6 +10,10 @@
 //!   exit status);
 //! - if `NAME.stdin` exists, it is fed to the script's standard input.
 //!
+//! Plugin cases (`tests/plugins/*.sh`, only with the `plugins` feature)
+//! can't run under dash, so each has a `NAME.expected`, and stderr must be
+//! empty or match `NAME.stderr`.
+//!
 //! Scripts run in a fresh temporary directory (which is also `$HOME`),
 //! with `$SH` set to the shell under test. Set `LUISH_CASE` to a substring
 //! to run only matching cases.
@@ -48,7 +52,9 @@ fn find_in_path(name: &str) -> Option<PathBuf> {
     std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file())
 }
 
-fn run(shell: &Path, script: &Path, id: usize) -> Outcome {
+/// `id` names the directory, which must be the same for both shells (it
+/// can appear in the output).
+fn run(shell: &Path, script: &Path, id: &str) -> Outcome {
     let dir = std::env::temp_dir().join(format!("luish-test-{}-{}", std::process::id(), id));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -111,18 +117,25 @@ fn show(b: &[u8]) -> String {
     }
 }
 
-fn check(luish: &Path, dash: Option<&Path>, script: &Path, id: usize) -> Result<(), String> {
+/// `plugin_case`: stderr must match `NAME.stderr`, or be empty.
+fn check(luish: &Path, dash: Option<&Path>, script: &Path, id: &str, plugin_case: bool) -> Result<(), String> {
     let text = std::fs::read_to_string(script).unwrap_or_default();
     let exact_stderr = text.lines().any(|l| l.trim() == "# stderr: exact");
     let got = run(luish, script, id);
     let expected_file = script.with_extension("expected");
+    let stderr_file = script.with_extension("stderr");
+    let exact_stderr = exact_stderr || plugin_case;
     let want = if expected_file.exists() {
         let status = std::fs::read_to_string(script.with_extension("status"))
             .map(|s| s.trim().to_string())
             .unwrap_or_else(|_| "0".into());
         Outcome {
             stdout: std::fs::read(&expected_file).unwrap(),
-            stderr: got.stderr.clone(),
+            stderr: match std::fs::read(&stderr_file) {
+                Ok(e) => e,
+                Err(_) if plugin_case => Vec::new(),
+                Err(_) => got.stderr.clone(),
+            },
             status,
         }
     } else {
@@ -156,7 +169,17 @@ fn check(luish: &Path, dash: Option<&Path>, script: &Path, id: usize) -> Result<
 
 #[test]
 fn differential() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/cases");
+    run_cases("tests/cases", false);
+}
+
+#[cfg(feature = "plugins")]
+#[test]
+fn plugins() {
+    run_cases("tests/plugins", true);
+}
+
+fn run_cases(dir: &str, plugin_cases: bool) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(dir);
     let mut cases = Vec::new();
     collect(&root, &mut cases);
     cases.sort();
@@ -174,7 +197,9 @@ fn differential() {
                 loop {
                     let i = next.fetch_add(1, Ordering::SeqCst);
                     let Some(case) = cases.get(i) else { break };
-                    if let Err(msg) = check(&luish, dash.as_deref(), case, i) {
+                    // Unique across the tests in this process, which run in parallel.
+                    let id = format!("{}{i}", if plugin_cases { "p" } else { "" });
+                    if let Err(msg) = check(&luish, dash.as_deref(), case, &id, plugin_cases) {
                         let rel = case.strip_prefix(&root).unwrap_or(case);
                         failures.lock().unwrap().push(format!("{}:\n{msg}", rel.display()));
                     }
@@ -192,5 +217,6 @@ fn differential() {
             failures.join("\n")
         );
     }
-    eprintln!("{} differential cases passed", cases.len());
+    let what = if plugin_cases { "plugin" } else { "differential" };
+    eprintln!("{} {what} cases passed", cases.len());
 }

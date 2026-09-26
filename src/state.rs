@@ -3,10 +3,10 @@
 //! (for the startup cache, `startcache.rs`).
 //!
 //! The state is the working directory, the file mode mask, variables (with
-//! their export and readonly attributes), traps, functions, aliases and
-//! options. It is written as shell commands, so it is restored by running
-//! them with `.`. Restoring sets everything that was saved, but doesn't
-//! remove what wasn't (such as variables set since).
+//! their export and readonly attributes), traps, functions, aliases, loaded
+//! plugins and options. It is written as shell commands, so it is restored
+//! by running them with `.`. Restoring sets everything that was saved, but
+//! doesn't remove what wasn't (such as variables set since).
 
 use crate::builtins::single_quote;
 use crate::options::{OPTIONS, Opt};
@@ -25,7 +25,8 @@ const PROCESS_VARS: &[&[u8]] = &[b"PPID", b"LINENO"];
 /// before aliases (which would otherwise be expanded in their bodies;
 /// command names that are aliases are also quoted, for a shell that has
 /// them already), and options come last (so that `set -e`, `-u`, `-x` or
-/// `-a` don't affect the rest).
+/// `-a` don't affect the rest). Plugins are loaded after everything that
+/// their top level might use.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
     Dir,
@@ -35,6 +36,7 @@ pub enum Kind {
     Trap,
     Function,
     Alias,
+    Plugin,
     Option,
 }
 
@@ -134,6 +136,15 @@ impl Shell {
             add(Kind::Alias, name, t);
         }
 
+        if let Some(host) = &self.plugins {
+            for (name, path) in host.loaded() {
+                let mut t = b"__luish_internal plugin load ".to_vec();
+                t.extend(single_quote(&path));
+                t.push(b'\n');
+                add(Kind::Plugin, &name, t);
+            }
+        }
+
         for (o, _, name) in OPTIONS {
             if !MODE_OPTIONS.contains(o) {
                 let sign = if self.options.get(*o) { '-' } else { '+' };
@@ -172,6 +183,7 @@ pub fn difference(before: &[Entry], after: &[Entry]) -> Vec<u8> {
             Kind::Function => out.extend([b"unset -f ".to_vec(), e.name.clone()].concat()),
             Kind::Alias => out.extend([b"command unalias ".to_vec(), quoted()].concat()),
             Kind::Trap => out.extend([b"trap - ".to_vec(), e.name.clone()].concat()),
+            Kind::Plugin => out.extend([b"__luish_internal plugin unload ".to_vec(), quoted()].concat()),
             Kind::Dir | Kind::Umask | Kind::Readonly | Kind::Option => continue,
         }
         out.push(b'\n');

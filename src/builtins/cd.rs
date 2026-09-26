@@ -5,7 +5,7 @@ use crate::sys;
 
 /// Lexically canonicalizes an absolute path: removes `.` components and
 /// resolves `..` against the preceding component.
-fn canonicalize(path: &[u8]) -> Vec<u8> {
+pub fn canonicalize(path: &[u8]) -> Vec<u8> {
     let mut comps: Vec<&[u8]> = Vec::new();
     for c in path.split(|&c| c == b'/') {
         match c {
@@ -99,7 +99,8 @@ pub fn cd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             target
         };
         // As in dash's `setpwd`: both are exported.
-        sh.set_var(b"OLDPWD", old.unwrap_or_default())?;
+        let old = old.unwrap_or_default();
+        sh.set_var(b"OLDPWD", old.clone())?;
         sh.vars.entry(b"OLDPWD").exported = true;
         sh.set_var(b"PWD", new.clone())?;
         sh.vars.entry(b"PWD").exported = true;
@@ -108,10 +109,11 @@ pub fn cd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         // again (dash's `rehash`).
         sh.hash.retain(|_, (p, _)| p.first() == Some(&b'/'));
         if print || from_cdpath {
-            let mut line = new;
+            let mut line = new.clone();
             line.push(b'\n');
             sh.out(&line);
         }
+        crate::plugins::chpwd(sh, &old, &new)?;
         return Ok(0);
     }
     sh.berr(&argv[0], format!("can't cd to {}", String::from_utf8_lossy(&dir)));

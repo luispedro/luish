@@ -40,6 +40,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"jobs", page!("jobs")),
     (b"kill", page!("kill")),
     (b"local", page!("local")),
+    (b"plugin", page!("plugin")),
     (b"printf", page!("printf")),
     (b"pwd", page!("pwd")),
     (b"read", page!("read")),

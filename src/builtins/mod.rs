@@ -1,6 +1,6 @@
 //! Built-in commands.
 
-mod cd;
+pub mod cd;
 mod echo;
 mod fc;
 mod help;
@@ -70,7 +70,7 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
 
 /// Regular built-ins that exist only in shells started interactive (and
 /// their subshells), so that scripts find the same commands as in dash.
-const INTERACTIVE: &[(&[u8], BuiltinFn)] = &[(b"help", help::help)];
+const INTERACTIVE: &[(&[u8], BuiltinFn)] = &[(b"help", help::help), (b"plugin", crate::plugins::plugin)];
 
 /// Finds a built-in that every shell has: (function, special). See
 /// [`Shell::builtin`] for all of them.
