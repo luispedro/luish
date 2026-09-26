@@ -60,6 +60,15 @@ uncached
 B=1-b D=unset
 uncached
 B=1-b D=unset
+--- a cache written by another build of luish
+1
+running 10-a
+running 20-b
+uncached
+extra2
+uncached
+extra2
+0
 --- a file changed, in an interactive shell
 running rc
 uncached rc

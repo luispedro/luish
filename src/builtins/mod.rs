@@ -3,7 +3,7 @@
 mod cd;
 mod echo;
 mod fc;
-mod internal;
+pub mod internal;
 mod jobs;
 mod misc;
 mod printf;

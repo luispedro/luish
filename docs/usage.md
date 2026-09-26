@@ -26,6 +26,12 @@ Restoring adds to the current state: variables, functions and aliases defined si
 already `readonly` can't be restored, so reading the state back into the shell that saved it fails if it has any.
 In `eval "$(__luish_internal savestate)"`, traps are lost, because a command substitution resets them.
 
+## The version of luish
+
+`__luish_internal print-git-rev` prints the git revision luish was built from, and `__luish_internal
+print-git-rev-short` the same with the abbreviated hash. A build from sources with uncommitted changes adds `-dirty`,
+and a build outside a git checkout prints `unknown`.
+
 ## Cached startup files
 
 luish can cache the effects of your startup files, so that a new shell restores their result instead of running
@@ -50,8 +56,9 @@ echo "alias ll='ls -l'" > ~/.config/luish/rc.d/aliases.lsh
 ```
 
 The caches are `~/.cache/luish/rc-HOST` and `~/.cache/luish/login-HOST` (or under `$XDG_CACHE_HOME`). A cache is
-used as long as the `.lsh` files and the files they read with `.` are unchanged. When one of them changes (luish
-compares their size and modification time), the next shell reruns the files and updates the cache.
+used as long as the `.lsh` files and the files they read with `.` are unchanged, and luish itself is the same build.
+When one of them changes (luish compares their size and modification time), or after luish is upgraded, the next
+shell reruns the files and updates the cache.
 
 Some things belong in a directory's `_uncached.lsh`, which runs every time, after that directory's cached state is
 restored:

@@ -50,6 +50,16 @@ $SH -l -c 'echo "B=$B D=$D"'
 rm .config/luish/login.d/15-d.lsh
 $SH -l -c 'echo "B=$B D=${D-unset}"'
 $SH -l -c 'echo "B=$B D=${D-unset}"'
+echo '--- a cache written by another build of luish'
+# The cache records the build (\`b ID\`); on a mismatch, the files rerun,
+# silently (stderr is shown here).
+set -- .cache/luish/login-*
+grep -c "^b $(__luish_internal print-git-rev)" "$1"
+sed 's/^b .*/b another-build/' "$1" > ../other
+cat ../other > "$1"
+$SH -l -c 'echo $E' 2>&1
+$SH -l -c 'echo $E' 2>&1
+grep -c '^b another-build' "$1"
 echo '--- a file changed, in an interactive shell'
 echo "echo running rc; alias origin='echo rc2'" > .config/luish/rc.d/rc.lsh
 $SH -i -c 'origin' 2>/dev/null

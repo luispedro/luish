@@ -7,22 +7,23 @@
 //! in byte order. What they change (variables, functions, aliases, options,
 //! traps, `umask` and the directory) is saved as commands in
 //! `$XDG_CACHE_HOME/luish/NAME-HOST` (`rc-HOST`, `login-HOST`), with the
-//! fingerprints of the files and of every file they sourced with `.`. Later
-//! shells check the fingerprints and run the saved commands instead of the
-//! files; when a fingerprint differs, they rerun the files and rewrite the
-//! cache. A directory's `_uncached.lsh` runs every time, after the rest.
+//! fingerprints of the files and of every file they sourced with `.`, and
+//! the build of luish that wrote it. Later shells check the fingerprints and
+//! the build and run the saved commands instead of the files; when either
+//! differs, they rerun the files and rewrite the cache. A directory's `_uncached.lsh` runs every time, after the rest.
 //!
 //! Not yet done (see the plan): keying the cache on the variables the files
 //! read, so the saved values are those of the environment the cache was
 //! built in; noticing changes that a fingerprint can't show (the output of
 //! commands, files tested with `[`); and revalidating in the background.
 
+use crate::builtins::internal::BUILD_ID;
 use crate::interactive::{run_file, source_file};
 use crate::shell::Shell;
 use crate::{state, sys};
 
 /// Bumped when the format of the cache changes.
-const HEADER: &[u8] = b"# luish startup cache 1\n";
+const HEADER: &[u8] = b"# luish startup cache 2\n";
 /// Separates the key from the saved state.
 const STATE_MARK: &[u8] = b"# state\n";
 
@@ -49,9 +50,10 @@ struct Dep {
     stamp: String,
 }
 
-/// A cache file: the directory it was built from, what it depends on, and
-/// the commands that restore the state.
+/// A cache file: the build of luish that wrote it, the directory it was
+/// built from, what it depends on, and the commands that restore the state.
 struct Cache {
+    build: Vec<u8>,
     dir: Vec<u8>,
     deps: Vec<Dep>,
     state: Vec<u8>,
@@ -60,11 +62,13 @@ struct Cache {
 impl Cache {
     fn parse(text: &[u8]) -> Option<Cache> {
         let mut rest = text.strip_prefix(HEADER)?;
+        let mut build = None;
         let mut dir = None;
         let mut deps = Vec::new();
         loop {
             if let Some(state) = rest.strip_prefix(STATE_MARK) {
                 return Some(Cache {
+                    build: build?,
                     dir: dir?,
                     deps,
                     state: state.to_vec(),
@@ -74,6 +78,7 @@ impl Cache {
             let line = &rest[..nl];
             rest = &rest[nl + 1..];
             match line.split_first()? {
+                (b'b', id) => build = Some(id.strip_prefix(b" ")?.to_vec()),
                 (b'd', path) => dir = Some(path.strip_prefix(b" ")?.to_vec()),
                 (&c @ (b'l' | b's'), fields) => {
                     // `l DEV INO SIZE SEC NSEC NAME`: five fields, then the name.
@@ -93,6 +98,9 @@ impl Cache {
 
     fn serialize(&self) -> Vec<u8> {
         let mut out = HEADER.to_vec();
+        out.extend_from_slice(b"b ");
+        out.extend_from_slice(&self.build);
+        out.push(b'\n');
         out.extend_from_slice(b"d ");
         out.extend_from_slice(&self.dir);
         out.push(b'\n');
@@ -167,11 +175,12 @@ fn join(dir: &[u8], name: &[u8]) -> Vec<u8> {
     [dir, b"/", name].concat()
 }
 
-/// Whether the cache was built from `dir` and the files it depends on
-/// haven't changed since.
+/// Whether the cache was written by this build of luish, from `dir`, and
+/// the files it depends on haven't changed since.
 fn is_current(cache: &Cache, dir: &[u8], files: &[Dep]) -> bool {
     let mut cached = cache.deps.iter().filter(|d| !d.sourced);
-    cache.dir == dir
+    cache.build == BUILD_ID.as_bytes()
+        && cache.dir == dir
         && files.iter().all(|f| cached.next() == Some(f))
         && cached.next().is_none()
         && cache
@@ -231,6 +240,7 @@ fn build(sh: &mut Shell, dir: &[u8], files: Vec<Dep>, cache_path: Option<&[u8]>)
         return;
     }
     let cache = Cache {
+        build: BUILD_ID.as_bytes().to_vec(),
         dir: dir.to_vec(),
         deps,
         state: state::difference(&before, &sh.state_entries()),

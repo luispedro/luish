@@ -1,0 +1,5 @@
+ok
+internal_git_rev.sh: 16: __luish_internal print-git-rev: too many arguments: x
+status 2
+internal_git_rev.sh: 17: __luish_internal print-git-rev-short: too many arguments: x
+status 2

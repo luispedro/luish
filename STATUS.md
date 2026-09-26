@@ -256,6 +256,11 @@ pass**.
   commands as subcommands, so that they don't take names from the command
   namespace (widely used ones may later get aliases). A missing or unknown
   subcommand is an error with status 2.
+- `__luish_internal print-git-rev` and `print-git-rev-short` print the git
+  revision luish was built from (the full or abbreviated hash, with `-dirty`
+  if `src/`, `build.rs`, `Cargo.toml` or `Cargo.lock` differed from it, or
+  `unknown` outside a git checkout). `build.rs` sets them at compile time,
+  so they cost nothing at run time. Test: `builtins/internal_git_rev.sh`.
 - `echo` follows dash: `-n` only, and XSI escapes are always processed
   (with dash's octal forms `\0nnn` and `\nnn`, and Debian's `\e`).
 - `printf` supports every conversion (numeric ones use libc `snprintf`),
@@ -403,12 +408,13 @@ pass**.
   `login-HOST` (mode 0600, written through a rename): the difference
   between the state (`state.rs`) before and after, as commands
   (assignments, `unset`, function definitions, ...), so inherited
-  variables that the files don't touch aren't saved. The key is the
-  directory, the list of files, and the fingerprint (device, inode, size,
+  variables that the files don't touch aren't saved. The key is the build
+  of luish (the git revision, plus a hash of the sources for a dirty build;
+  see `build.rs`), the directory, the list of files, and the fingerprint (device, inode, size,
   modification time) of each file and of every file they read with `.`. A
   later shell stats those files, reads the cache and runs the saved
-  commands; if a fingerprint differs, it reruns the files and rewrites the
-  cache, without asking. A directory's `_uncached.lsh` runs every time,
+  commands; if a fingerprint or the build differs, it reruns the files and
+  rewrites the cache, without asking. A directory's `_uncached.lsh` runs every time,
   after its cached state. On the warm path this costs a stat per file, a
   directory read and one file read per directory. Test:
   `misc/startup_cache.sh`. Not yet done: keying on the inherited values the
