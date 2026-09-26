@@ -406,6 +406,15 @@ fn tab_completion() {
     sh.send("myuniquef\tx\n");
     sh.expect("ran-x\n");
     sh.expect("$ ");
+    // A match ignoring case, then one in the middle of the name: the text
+    // typed is replaced.
+    std::fs::write(sh.path("Upper Case"), "upper\n").unwrap();
+    sh.send("cat upp\t\n");
+    sh.expect("upper\n");
+    sh.expect("$ ");
+    sh.send("cat etem\t\n");
+    sh.expect("found it\n");
+    sh.expect("$ ");
     // A second tab lists the candidates.
     sh.send("echo alp\t\t");
     sh.expect("alpha1  alpha2");

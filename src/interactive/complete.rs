@@ -175,6 +175,9 @@ struct Word {
     text: Vec<u8>,
     /// Where in `text` a filename starts (after `=` or `:`).
     split: usize,
+    /// For each prefix `text[..j]`, where its raw text ends in the line and
+    /// the quoting there.
+    offsets: Vec<(usize, Quote)>,
     /// The words of the command before this one, unquoted, starting with
     /// the command name. A word containing a substitution is empty.
     words: Vec<Vec<u8>>,
@@ -197,18 +200,41 @@ struct Scan {
     text: Vec<u8>,
     /// Where in `text` the part to complete begins (after `=` or `:`).
     split: usize,
+    /// As in `Word`.
+    offsets: Vec<(usize, Quote)>,
+    /// Whether the current word contains a substitution.
+    subst: bool,
     quote: Quote,
     /// The words of the current command so far.
     words: Vec<Vec<u8>>,
 }
 
 impl Scan {
+    /// Starts a word at `at` in the line, unless in one.
+    fn begin(&mut self, at: usize) {
+        if self.start.is_none() {
+            self.start = Some(at);
+            self.split = 0;
+            self.offsets = vec![(at, self.quote)];
+        }
+    }
+
+    /// Adds `c` to the word, whose raw text now ends at `end`.
+    fn push(&mut self, c: u8, end: usize) {
+        self.text.push(c);
+        self.offsets.push((end, self.quote));
+    }
+
     /// Ends the current word, updating the command-position state.
     fn end_word(&mut self) {
         if self.start.take().is_none() {
             return;
         }
-        let w = std::mem::take(&mut self.text);
+        let mut w = std::mem::take(&mut self.text);
+        self.offsets.clear();
+        if std::mem::take(&mut self.subst) {
+            w.clear();
+        }
         if self.redirect {
             self.redirect = false;
         } else if !self.cmd_pos {
@@ -234,9 +260,18 @@ impl Scan {
         self.words.clear();
     }
 
-    /// Starts a nested command (`$(`, `(` or a backquote).
+    /// Forgets the current word.
+    fn drop_word(&mut self) {
+        self.start = None;
+        self.text.clear();
+        self.offsets.clear();
+        self.subst = false;
+    }
+
+    /// Starts a nested command (`$(`, `(` or a backquote). The word it is
+    /// in goes on after it.
     fn open(&mut self, backquote: bool) {
-        self.end_word();
+        self.drop_word();
         self.stack
             .push((self.quote, backquote, std::mem::take(&mut self.words)));
         self.quote = Quote::None;
@@ -245,16 +280,18 @@ impl Scan {
         self.redirect = false;
     }
 
-    /// Ends a nested command. The rest of a word containing a substitution
-    /// can't be completed, so it is treated as a new argument.
-    fn close(&mut self) {
-        self.end_word();
+    /// Ends a nested command, whose raw text ends at `end`. A word
+    /// containing a substitution counts as empty, and the rest of it is
+    /// completed as if it were the whole word.
+    fn close(&mut self, end: usize) {
+        self.drop_word();
         if let Some((q, _, words)) = self.stack.pop() {
             self.quote = q;
             self.words = words;
         }
-        self.words.push(Vec::new());
         self.cmd_pos = false;
+        self.begin(end);
+        self.subst = true;
     }
 
     fn in_backquote(&self) -> bool {
@@ -282,6 +319,8 @@ fn analyze(line: &[u8]) -> Word {
         start: None,
         text: Vec::new(),
         split: 0,
+        offsets: Vec::new(),
+        subst: false,
         quote: Quote::None,
         words: Vec::new(),
     };
@@ -292,27 +331,27 @@ fn analyze(line: &[u8]) -> Word {
         i += 1;
         match (s.quote, c) {
             (Quote::Single, b'\'') | (Quote::Double, b'"') => s.quote = Quote::None,
-            (Quote::Single, _) => s.text.push(c),
+            (Quote::Single, _) => s.push(c, i),
             (Quote::Double | Quote::None, b'$') if next == Some(b'(') => {
                 s.open(false);
                 i += 1;
             }
             (Quote::Double | Quote::None, b'`') => {
                 if s.in_backquote() {
-                    s.close();
+                    s.close(i);
                 } else {
                     s.open(true);
                 }
             }
             (Quote::Double, b'\\') if next.is_some_and(|n| b"$`\"\\\n".contains(&n)) => {
-                s.text.push(line[i]);
                 i += 1;
+                s.push(line[i - 1], i);
             }
-            (Quote::Double, _) => s.text.push(c),
+            (Quote::Double, _) => s.push(c, i),
             (Quote::None, b' ' | b'\t') => s.end_word(),
             (Quote::None, b'\n' | b';' | b'&' | b'|') => s.end_command(),
             (Quote::None, b'(') => s.open(false),
-            (Quote::None, b')') => s.close(),
+            (Quote::None, b')') => s.close(i),
             (Quote::None, b'<' | b'>') => {
                 // A word of digits before the operator is an fd number.
                 if !s.text.iter().all(u8::is_ascii_digit) {
@@ -320,6 +359,7 @@ fn analyze(line: &[u8]) -> Word {
                 }
                 s.start = None;
                 s.text.clear();
+                s.offsets.clear();
                 while i < line.len() && b"<>&|-".contains(&line[i]) {
                     i += 1;
                 }
@@ -332,25 +372,23 @@ fn analyze(line: &[u8]) -> Word {
                     quote: Quote::None,
                     text: Vec::new(),
                     split: 0,
+                    offsets: vec![(line.len(), Quote::None)],
                     words: Vec::new(),
                 };
             }
             (Quote::None, _) => {
-                if s.start.is_none() {
-                    s.start = Some(i - 1);
-                    s.split = 0;
-                }
+                s.begin(i - 1);
                 match c {
                     b'\\' => {
                         if let Some(n) = next {
-                            s.text.push(n);
                             i += 1;
+                            s.push(n, i);
                         }
                     }
                     b'\'' => s.quote = Quote::Single,
                     b'"' => s.quote = Quote::Double,
                     _ => {
-                        s.text.push(c);
+                        s.push(c, i);
                         let assignment = s.in_assignment();
                         if (c == b'=' && (assignment || s.text.starts_with(b"--"))) || (c == b':' && assignment) {
                             s.split = s.text.len();
@@ -380,6 +418,7 @@ fn analyze(line: &[u8]) -> Word {
                     quote: s.quote,
                     text: line[name_start..].to_vec(),
                     split: 0,
+                    offsets: (name_start..=line.len()).map(|e| (e, Quote::None)).collect(),
                     words: Vec::new(),
                 };
             }
@@ -393,12 +432,17 @@ fn analyze(line: &[u8]) -> Word {
     } else {
         Kind::Arg
     };
+    if s.start.is_none() {
+        s.offsets = vec![(line.len(), s.quote)];
+    }
+    debug_assert_eq!(s.offsets.len(), s.text.len() + 1);
     Word {
         start: s.start.unwrap_or(line.len()),
         kind,
         quote: s.quote,
         text: s.text,
         split: s.split,
+        offsets: s.offsets,
         words: s.words,
     }
 }
@@ -411,9 +455,37 @@ fn is_assignment(w: &[u8]) -> bool {
     }
 }
 
-/// Whether a candidate matches the text typed.
-fn matches(c: &Candidate, typed: &[u8]) -> bool {
-    c.value.starts_with(typed)
+/// How well `value` matches the text typed, if it does: 0 if it starts
+/// with it, 1 if it does ignoring case, and 2 if the last part of it (after
+/// a `/`) is found in the last part of `value`, ignoring case. A lowercase
+/// letter typed matches either case, but an uppercase one only itself.
+fn rank(value: &[u8], typed: &[u8]) -> Option<u8> {
+    let same = |v: &u8, t: &u8| v == t || (t.is_ascii_lowercase() && *v == t.to_ascii_uppercase());
+    let starts = |v: &[u8], t: &[u8]| v.len() >= t.len() && v.iter().zip(t).all(|(v, t)| same(v, t));
+    if value.starts_with(typed) {
+        return Some(0);
+    }
+    if starts(value, typed) {
+        return Some(1);
+    }
+    let d = typed.iter().rposition(|&c| c == b'/').map_or(0, |i| i + 1);
+    let (dir, last) = typed.split_at(d);
+    if starts(value, dir) && (d..value.len()).any(|i| starts(&value[i..], last)) {
+        return Some(2);
+    }
+    None
+}
+
+/// The candidates that match best (see `rank`).
+fn best_matches<T>(items: Vec<T>, value: impl Fn(&T) -> &[u8], typed: &[u8]) -> Vec<T> {
+    let ranked: Vec<(u8, T)> = items
+        .into_iter()
+        .filter_map(|c| Some((rank(value(&c), typed)?, c)))
+        .collect();
+    let Some(best) = ranked.iter().map(|r| r.0).min() else {
+        return Vec::new();
+    };
+    ranked.into_iter().filter(|r| r.0 == best).map(|r| r.1).collect()
 }
 
 /// Quotes `s` for insertion where the quoting state is `quote`. `at_start`
@@ -459,22 +531,49 @@ fn closing(quote: Quote) -> &'static [u8] {
     }
 }
 
-/// The text replacing `typed` (the raw text already in the line, whose
-/// unquoted form `base` is a prefix of the candidate's value): `typed`,
-/// then the quoted rest of the value and the suffix.
-fn replacement(c: &Candidate, typed: &[u8], base: &[u8], quote: Quote) -> Vec<u8> {
-    let mut r = typed.to_vec();
-    quote_suffix(&c.value[base.len()..], quote, typed.is_empty(), &mut r);
-    if let Suffix::Close(s) = &c.suffix {
-        r.extend_from_slice(closing(quote));
-        r.extend_from_slice(s);
+/// What is being completed: the word, the raw line, where in the word's
+/// text the candidates' values start, and the quoting to insert with.
+struct Target<'a> {
+    w: &'a Word,
+    line: &'a [u8],
+    from: usize,
+    quote: Quote,
+}
+
+impl Target<'_> {
+    /// The text replacing the word in the line. The raw text for the part
+    /// of the value already typed is kept (all of it, for a prefix match),
+    /// then comes the quoted rest of the value and the suffix. If the raw
+    /// text kept ends outside quotes, the rest is quoted as at the cursor.
+    fn replacement(&self, c: &Candidate) -> Vec<u8> {
+        let base = &self.w.text[self.from..];
+        let k = c.value.iter().zip(base).take_while(|(a, b)| a == b).count();
+        let (end, quote) = if k == base.len() {
+            (self.line.len(), self.quote)
+        } else {
+            self.w.offsets[self.from + k]
+        };
+        let mut r = self.line[self.w.start..end].to_vec();
+        let at_start = r.is_empty();
+        let quote = if quote == Quote::None && self.quote != Quote::None {
+            // (The closing quote is also the opening one.)
+            r.extend_from_slice(closing(self.quote));
+            self.quote
+        } else {
+            quote
+        };
+        quote_suffix(&c.value[k..], quote, at_start, &mut r);
+        if let Suffix::Close(s) = &c.suffix {
+            r.extend_from_slice(closing(quote));
+            r.extend_from_slice(s);
+        }
+        r
     }
-    r
 }
 
 /// The candidates as rustyline's pairs. A description follows its
 /// candidate, aligned with the others.
-fn pairs(cands: &[Candidate], typed: &[u8], base: &[u8], quote: Quote) -> Vec<Pair> {
+fn pairs(cands: &[Candidate], t: &Target) -> Vec<Pair> {
     let show = |c: &Candidate| String::from_utf8_lossy(c.display.as_ref().unwrap_or(&c.value)).into_owned();
     let width = cands
         .iter()
@@ -484,7 +583,7 @@ fn pairs(cands: &[Candidate], typed: &[u8], base: &[u8], quote: Quote) -> Vec<Pa
         .unwrap_or(0);
     let mut out = Vec::new();
     for c in cands {
-        let Ok(replacement) = String::from_utf8(replacement(c, typed, base, quote)) else {
+        let Ok(replacement) = String::from_utf8(t.replacement(c)) else {
             continue;
         };
         let mut display = show(c);
@@ -562,8 +661,7 @@ impl ShellHelper {
                 );
             }
         };
-        let base = &w.text[from..];
-        let cands: Vec<Candidate> = cands.into_iter().filter(|c| matches(c, base)).collect();
+        let cands = best_matches(cands, |c| &c.value, &w.text[from..]);
         // A variable name needs no quoting, and a `}` after it ends the
         // expansion, not the quoted word.
         let quote = if matches!(w.kind, Kind::Var(_)) {
@@ -571,7 +669,13 @@ impl ShellHelper {
         } else {
             w.quote
         };
-        (w.start, pairs(&cands, &line[w.start..], base, quote))
+        let t = Target {
+            w: &w,
+            line,
+            from,
+            quote,
+        };
+        (w.start, pairs(&cands, &t))
     }
 
     /// What the completer of the word's command, if it has one, gives.
@@ -671,10 +775,10 @@ impl ShellHelper {
         if prefix == b".." {
             names.push(b"..".to_vec());
         }
-        for name in names {
-            if !name.starts_with(prefix) || (name.starts_with(b".") && !prefix.starts_with(b".")) {
-                continue;
-            }
+        names.retain(|n| !n.starts_with(b".") || prefix.starts_with(b"."));
+        // Only the best matches are kept in the end, so the others need no
+        // `stat`.
+        for name in best_matches(names, |n| n, prefix) {
             let mut full = if dir.is_empty() { b"./".to_vec() } else { dir.clone() };
             full.extend_from_slice(&name);
             let is_dir = sys::stat(&full).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR);
@@ -774,6 +878,9 @@ mod tests {
         assert_eq!(words("if git ad"), ["git"]);
         assert_eq!(words("git $(x) ad"), ["git", ""]);
         assert_eq!(words("$(x) ad"), [""]);
+        assert_eq!(words("echo \"$(x)y\" ad"), ["echo", ""]);
+        assert_eq!(words("echo a`x`b$(y) ad"), ["echo", ""]);
+        assert_eq!(kind("echo \"$(x)y"), (Kind::Arg, "y".into()));
     }
 
     /// A completer for `git`, as a plugin could provide.
@@ -854,6 +961,27 @@ mod tests {
         assert_eq!(complete(&h, "git --c"), ["--color="]);
         assert_eq!(complete(&h, "git add ~/f"), ["~/file\\ one "]);
         assert_eq!(complete(&h, "git add boom"), ["boom"]);
+        // Matches ignoring case, then in the middle of the name.
+        std::fs::create_dir(dir.join("cases")).unwrap();
+        for f in ["Makefile", "README", "my Config.toml", "notes.txt"] {
+            std::fs::write(dir.join("cases").join(f), "").unwrap();
+        }
+        assert_eq!(complete(&h, "ls ~/cases/mak"), ["~/cases/Makefile "]);
+        assert_eq!(complete(&h, "ls ~/cases/Rea"), ["~/cases/README "]);
+        assert_eq!(complete(&h, "ls ~/cases/MAK"), Vec::<String>::new());
+        assert_eq!(complete(&h, "ls ~/cases/conf"), ["~/cases/my\\ Config.toml "]);
+        assert_eq!(
+            complete(&h, "ls ~/cases/t"),
+            ["~/cases/my\\ Config.toml ", "~/cases/notes.txt "]
+        );
+        assert_eq!(complete(&h, "ls ~/cases/'conf"), ["~/cases/'my Config.toml' "]);
+        assert_eq!(complete(&h, "ls ~/cases/\"my c"), ["~/cases/\"my Config.toml\" "]);
+        assert_eq!(complete(&h, "ls ~/cases/my\\ c"), ["~/cases/my\\ Config.toml "]);
+        assert_eq!(complete(&h, "X=~/cases/'conf"), ["X=~/cases/'my Config.toml' "]);
+        assert_eq!(complete(&h, "echo $home"), ["HOME"]);
+        assert_eq!(complete(&h, "echo \"${home"), ["HOME}"]);
+        assert_eq!(complete(&h, "git 'Com"), Vec::<String>::new());
+        assert_eq!(complete(&h, "git 'mit"), ["'commit' "]);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -869,9 +997,12 @@ mod tests {
                 c("commit", Some("Record changes")),
                 c("x", None),
             ],
-            b"",
-            b"",
-            Quote::None,
+            &Target {
+                w: &analyze(b""),
+                line: b"",
+                from: 0,
+                quote: Quote::None,
+            },
         );
         let shown: Vec<_> = p.iter().map(|p| p.display.as_str()).collect();
         assert_eq!(shown, ["add     -- Add files", "commit  -- Record changes", "x"]);

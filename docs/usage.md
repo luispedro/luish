@@ -73,6 +73,11 @@ and `hash` complete command names, and `help` completes built-ins. Plugins can p
 The first Tab completes as much as is common to all the matches, and a second one lists them. What is added is quoted
 as needed: a file called `my file` is completed as `my\ file`, or as `'my file'` after a `'`.
 
+The matches are the names that start with the text typed. If there are none, case is ignored (smart case: a
+lowercase letter matches either case, but an uppercase one only itself), so `mak` completes to `Makefile`. If there
+are still none, the names that contain the text are used, so `conf` completes to `my.config`. Either way, the text
+typed is replaced.
+
 ## Saving and restoring the shell's state
 
 luish's own commands are subcommands of the `__luish_internal` built-in. `__luish_internal savestate` prints shell

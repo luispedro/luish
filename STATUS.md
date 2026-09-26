@@ -456,9 +456,15 @@ pass**.
   analyses the line (the word, its kind, the quoting and the words of its
   command), generates candidates (with optional descriptions, shown
   aligned after them in the list), matches them against the text typed
-  (by prefix), and builds the replacements. The text already
-  typed is kept, and what is added is quoted for the quoting in effect at
-  the cursor. Directories get a `/`, other unique matches a space (and the
+  and builds the replacements. Only the best matches are kept: those that
+  start with the text typed, else those that do ignoring case (a lowercase
+  letter typed matches either case, an uppercase one only itself), else
+  those whose last path component contains the text's last component
+  (also ignoring case). For a prefix match the text already typed is kept,
+  and what is added is quoted for the quoting in effect at the cursor;
+  otherwise the text is kept up to where it stops matching (the tokenizer
+  records where each unquoted byte ends in the line) and the rest is
+  replaced. Directories get a `/`, other unique matches a space (and the
   closing quote). Dot files are listed only for a prefix starting with `.`.
 - Syntax highlighting (`src/interactive/highlight.rs`), on by default:
   reserved words (in command position only), command names (in a
@@ -638,8 +644,9 @@ notes how to rerun them):
   does not expand aliases, and a function or alias defined earlier on the
   same line is shown as unknown until the next prompt.
 - Completion has no `~user`, no job specs, and skips filenames that are
-  not valid UTF-8 (rustyline works on `String`s). Matching is by prefix
-  only (no case-insensitive or fuzzy matching). Choosing among the matches
+  not valid UTF-8 (rustyline works on `String`s). Matching has no
+  subsequence (fuzzy) matching and no ranking within the best matches,
+  and isn't configurable. Choosing among the matches
   is rustyline's list: no menu, and descriptions are laid out in its
   columns. Completers see only the words up to the cursor, aren't found
   through aliases, and can't be interrupted with Ctrl-C (the terminal is
