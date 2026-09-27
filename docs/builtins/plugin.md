@@ -26,7 +26,8 @@ be loaded. `plugin list-loaded` prints the names of the loaded plugins, and
 `plugin list-available` the names of the plugins that `plugin load` can
 load by name and that aren't loaded: those in the plugin directory, and
 those of the sources in `config.toml` that are installed. `plugin unload`
-removes plugins and their hooks.
+removes plugins and their hooks; each is named as `plugin list-loaded`
+shows it, or as `plugin load` was given it (such as `std/NAME`).
 
 `plugin sync` fetches, with git, the sources of the plugins in
 `config.toml`'s `plugins.enabled` (and of their dependencies) and of its

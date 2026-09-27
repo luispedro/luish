@@ -44,6 +44,13 @@ tool
 greet
 coll/cyc1
 coll/cyc2
+--- plugin unload SOURCE/NAME, and a path
+helper
+one
+luish: 1: __luish_internal plugin: coll/tool: not loaded
+luish: 1: __luish_internal plugin: coll/nosuch: not loaded
+luish: 1: __luish_internal plugin: nosuch/x: not loaded
+status 1
 --- plugin load: a path, whose plain dependencies are next to it
 lib
 one

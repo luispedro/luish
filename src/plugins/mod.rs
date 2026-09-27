@@ -635,6 +635,27 @@ fn load(sh: &mut Shell, name: &[u8], arg: &[u8], _: Option<Vec<u8>>) -> ExecResu
     Ok(1)
 }
 
+/// `plugin unload ARG`: the plugin loaded under the name ARG, else the one
+/// that `plugin load ARG` would load (so `std/NAME` unloads `NAME`).
+#[cfg(feature = "plugins")]
+fn unload(sh: &mut Shell, arg: &[u8]) -> bool {
+    let Some(host) = sh.plugins.clone() else {
+        return false;
+    };
+    if host.unload(arg) {
+        return true;
+    }
+    let path = match package::location(sh, arg) {
+        Some(path) => path,
+        None => match find(sh, arg) {
+            Some(found) => found.path,
+            None => return false,
+        },
+    };
+    host.unload_path(&absolute(sh, &path))
+}
+
+#[cfg(not(feature = "plugins"))]
 fn unload(sh: &mut Shell, name: &[u8]) -> bool {
     sh.plugins.as_ref().is_some_and(|host| host.unload(name))
 }

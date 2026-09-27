@@ -387,9 +387,10 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   don't stop the lock being written, while problems with enabled plugins do. The lock is written only if its text
   changed (so the rc cache, which fingerprints it, stays valid). Messages about manifests of git plugins show
   `SOURCE:PATH/plugin.toml` rather than the data directory.
-- `plugin list-available` leaves out the loaded plugins by absolute path, not by name, since a loaded plugin is
-  named after its file or directory (`std/git-completion` loads as `git-completion`). Test:
-  `tests/plugins/packages.sh`.
+- A loaded plugin is named after its file or directory (`std/git-completion` loads as `git-completion`), so
+  `plugin list-available` leaves out the loaded plugins by absolute path, and `plugin unload ARG`, if no plugin is
+  loaded under the name ARG, unloads the one at the path that `plugin load ARG` would load (`package::location`,
+  else `find`). Test: `tests/plugins/packages.sh`.
 - `plugin.toml`'s `options`, `alias` and `bindkey` tables are applied by `load_found` (with `config.rs`'s code), in
   interactive shells, after the extension loads and before `rc.lsh`; its options override `config.toml`'s, by design
   (a plugin can package a set of options). The file is parsed again there (the resolver only keeps the

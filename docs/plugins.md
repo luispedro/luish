@@ -24,7 +24,7 @@ module), and ask about git repositories (the `vcs` module).
 plugin load NAME|PATH...   # load plugins (loading one again reloads it)
 plugin list-loaded         # print the names of the loaded plugins
 plugin list-available      # print the names of the plugins that plugin load finds by name, less the loaded ones
-plugin unload NAME...      # remove plugins and their hooks
+plugin unload NAME...      # remove plugins and their hooks (NAME as listed, or as loaded)
 plugin sync                # fetch the plugins that config.toml lists, and write plugins.lock
 plugin update [SOURCE...]  # the same, with the newest commits of git sources
 ```

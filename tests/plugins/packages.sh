@@ -57,6 +57,10 @@ echo '--- plugin load: by SOURCE/NAME, with the dependencies not loaded yet'
 $SH -c '__luish_internal plugin load helper coll/tool; __luish_internal plugin list-loaded'
 echo '--- plugin list-available leaves out the loaded plugins, SOURCE/NAME too'
 $SH -c '__luish_internal plugin load helper coll/tool >/dev/null; __luish_internal plugin list-available'
+echo '--- plugin unload SOURCE/NAME, and a path'
+$SH -c 'u() { __luish_internal plugin unload "$@"; }
+__luish_internal plugin load helper coll/tool >/dev/null; u coll/tool ./src/coll/lib.lsh
+__luish_internal plugin list-loaded; u coll/tool; u coll/nosuch nosuch/x; echo "status $?"' 2>&1 | sed "s|$SH|luish|"
 echo '--- plugin load: a path, whose plain dependencies are next to it'
 $SH -c '__luish_internal plugin load ./src/coll/tool; __luish_internal plugin list-loaded'
 echo '--- a dependency cycle'

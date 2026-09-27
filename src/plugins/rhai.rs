@@ -633,7 +633,16 @@ impl Host {
 
     /// Unloads a plugin by name. Returns false if it isn't loaded.
     pub fn unload(&self, name: &[u8]) -> bool {
-        let id = self.plugins.borrow().iter().find(|p| p.name == name).map(|p| p.id);
+        self.unload_if(|p| p.name == name)
+    }
+
+    /// Unloads the plugin at `abs` (an absolute path), if it is loaded.
+    pub fn unload_path(&self, abs: &[u8]) -> bool {
+        self.unload_if(|p| p.abs == abs)
+    }
+
+    fn unload_if(&self, pred: impl Fn(&Plugin) -> bool) -> bool {
+        let id = self.plugins.borrow().iter().find(|p| pred(p)).map(|p| p.id);
         match id {
             Some(id) => {
                 self.remove(id);

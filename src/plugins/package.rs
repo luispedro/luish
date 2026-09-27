@@ -1262,6 +1262,23 @@ pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>) -> ExecResul
     Ok(status.max(if problems.is_empty() { 0 } else { 1 }))
 }
 
+/// The path of the plugin that `plugin load ARG` loads from a source (`ARG`
+/// a source, or `SOURCE/NAME`), if it is installed. For `plugin unload`.
+pub fn location(sh: &mut Shell, arg: &[u8]) -> Option<Vec<u8>> {
+    let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
+    let text = String::from_utf8_lossy(arg);
+    let (src, name, only) = match text.split_once('/') {
+        Some((src, name)) if valid_name(name) => (src, name, false),
+        Some(_) => return None,
+        None => (&*text, &*text, true),
+    };
+    let source = config.named(src)?;
+    let pins = read_lock(&lock_path(sh).unwrap_or_default()).unwrap_or_default();
+    let mut r = Resolver::new(sh, &config, pins, Fetching::No);
+    let root = r.root(&source, src, None).ok()?;
+    r.pick(&root, src, name, only, None).ok().map(|(found, _)| found.path)
+}
+
 /// The plugins of the available sources that are installed, for `plugin
 /// list-available`: `SOURCE` for a source that is one plugin, and
 /// `SOURCE/NAME` for each plugin of a collection, with the plugin's path.
