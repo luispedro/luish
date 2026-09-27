@@ -31,7 +31,7 @@ second (nvm) are otherwise a daily cost.
 1. **Phase 13, in its order**: a generic completion bridge (needs a design note first) and typing to narrow the
    menu; shell-function `chpwd`/`precmd`/`preexec`; lazy function parsing of the startup cache.
 2. **Startup cost** (deferred by the user for now; see Performance in `DEVELOPING.md`): the dynamic loader's share,
-   and parsing the rc cache about twice as slowly as dash.
+   and parsing large files (the rc cache, `nvm.sh`) about three times as slowly as dash.
 3. **More conformance**: larger `configure` scripts (coreutils), other Oils files that don't list dash, the smoosh
    and modernish suites.
 4. **Completion polish** beyond Phase 13: group headings (as zsh's commands / files / ..., which needs a group on
@@ -171,8 +171,8 @@ rewritten in POSIX sh. That is configuration, not luish work, but each item abov
 ### Lazy function parsing
 
 zsh's `autoload` parses a function's body on its first call. The startup cache saves functions as source text,
-parsed again at every startup: on the author's setup this adds about 11 ms to a warm start, 9 ms of it parsing nvm
-functions that are rarely called (timings in `docs/performance.md`).
+parsed again at every startup: on the author's setup this added about 11 ms to a warm start, 9 ms of it parsing nvm
+functions that are rarely called (`docs/performance.md` has the timings of a smaller nvm setup).
 
 When replaying the cache, define each function as a stub holding its byte range in the cache text (kept in memory,
 not re-read by path, since another shell may replace the cache), and parse the body on its first call. `type`, the

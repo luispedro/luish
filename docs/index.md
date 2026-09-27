@@ -48,7 +48,7 @@ config.toml](usage.md#settings-in-configtoml).
 
 ## Getting started
 
-Build luish (see [](installation.md)), and start it:
+Install luish (see [](installation.md)), and start it:
 
 ```sh
 luish                             # an interactive shell

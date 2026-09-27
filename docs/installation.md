@@ -72,4 +72,4 @@ luish uses [pixi](https://pixi.sh) to provide the Rust toolchain:
 pixi run release                  # release build: target/release/luish
 ```
 
-Plain `cargo build --release` also works with a recent Rust toolchain (edition 2024).
+Plain `cargo build --release` also works, with Rust 1.95 or later.

@@ -115,8 +115,9 @@ back. They aren't listed by `setopt` or `unsetopt` without arguments.
 Interactive shells also read these settings from
 `~/.config/luish/config.toml`, where each table under `options` is a
 group, as in `[options.history]`, a key directly under `options` is a
-setting by its own name, and its `alias` table defines aliases (see the
-user documentation).
+setting by its own name. Its `alias`, `bindkey` and `plugins` tables
+define aliases, key bindings and the plugins to load (see the user
+documentation).
 
 The exit status is 1 if an option doesn't exist or can't be changed
 (`interactive` and `stdin`), if a value is wrong or missing, if

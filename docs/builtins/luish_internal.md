@@ -4,7 +4,7 @@
 __luish_internal bindkey [arg...]
 __luish_internal complete line
 __luish_internal help [name...]
-__luish_internal plugin load|list-loaded|list-available|unload [arg...]
+__luish_internal plugin subcommand [arg...]
 __luish_internal print-git-rev
 __luish_internal print-git-rev-short
 __luish_internal savestate
@@ -30,7 +30,7 @@ take names that scripts might use for something else.
 : Show help for built-in commands (see `help help`).
 
 `plugin`
-: Load, list and unload plugins (see `help plugin`).
+: Load, list, unload and fetch plugins (see `help plugin`).
 
 `print-git-rev`, `print-git-rev-short`
 : Print the git revision luish was built from (the full or abbreviated

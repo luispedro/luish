@@ -61,9 +61,12 @@ src/
 ├── state.rs            # the shell's state as commands (savestate), and differences of states
 ├── startcache.rs       # cached rc.d / login.d
 ├── config.rs           # config.toml
-├── expand/             # mod.rs (driver), param.rs, arith.rs, cmdsubst.rs, split.rs, pattern.rs, glob.rs, qual.rs
-├── exec/               # mod.rs, simple.rs (commands, lookup), pipeline.rs, fork.rs, redirect.rs
-├── vars.rs, options.rs, jobs.rs, signals.rs, trap.rs, path.rs
+├── expand/             # mod.rs (driver, parameters, command substitution), arith.rs, split.rs, pattern.rs, glob.rs,
+│                       # qual.rs
+├── exec/               # mod.rs (lists, pipelines, compound commands), simple.rs (commands, lookup), fork.rs,
+│                       # redirect.rs
+├── vars.rs, options.rs, jobs.rs, signals.rs, path.rs
+├── hash.rs             # the hash for the shell's tables (not SipHash)
 ├── builtins/           # mod.rs (table, special vs regular), one file per built-in or small group; help.rs
 ├── interactive/        # mod.rs (REPL, rustyline helper), history.rs, histfile.rs, complete.rs, menu.rs,
 │                       # keys.rs, highlight.rs
@@ -537,22 +540,30 @@ docs, `docs/performance.md`; update them there after rerunning `bench/run.sh` or
 follows is what they came from and what is left.
 
 Per external command, luish makes the same syscalls as dash (before `posix_spawn`, a loop running `/bin/true` 3000
-times took 2.42 s, now 1.80 s as in dash). Startup makes 56 syscalls to dash's 49 (it made 140 before `#![no_main]`,
-lazy signal-disposition lookup, and looking up the executable's path only when a script without `#!` needs it). The
-remaining startup gap (about 1.5 ms to dash's 1.15 ms per `-c :` from a loop) is the dynamic loader: relocating a 3 MB
-binary and loading `libm` (for Rhai's floats) and `libgcc_s`. The `plugins` feature accounts for about 250 µs,
-accepted while it stays under 1 ms. A build without it takes 1.34 ms, and a static one
-(`-C target-feature=+crt-static`) 1.09 ms, but static glibc looks users up (`~user`) through NSS modules loaded at
-run time.
+times took 2.42 s, then 1.80 s as in dash). Startup makes 66 syscalls to dash's 49 (56 without the `plugins`
+feature; it made 140 before `#![no_main]`, lazy signal-disposition lookup, and looking up the executable's path only
+when a script without `#!` needs it). The remaining startup gap (2.0 ms to dash's 1.5 ms per `-c true` in
+`docs/performance.md`) is the dynamic loader: relocating a 4 MB binary and loading `libm` (for Rhai's floats),
+`libpthread` and `libgcc_s`. The `plugins` feature accounted for about 250 µs on 2026-09-26, accepted while it stays
+under 1 ms; on the machine of the current tables a build without it starts in the same time, within the noise. A
+static build (`-C target-feature=+crt-static`) started in 1.09 ms to the dynamic build's 1.5 ms, but static glibc
+looks users up (`~user`) through NSS modules loaded at run time.
+
+Binaries linked by pixi's toolchain (`pixi run release`) have an RPATH into the checkout's `.pixi` environment,
+added by conda-forge's gcc specs, so the loader first looks for each library there; it costs no measurable time. The
+release packages have it removed (`scripts/dist.sh`, below).
 
 Profiled with callgrind, the in-shell gap in the script benchmarks came from `$((...))` comparing the text with each
 of 35 operator strings, SipHash on every variable lookup, `${x#pat}` trying every prefix or suffix (and copying),
 `case` compiling literal patterns, and needless copies. Work inside the shell is now as fast as dash or faster; the
-fork-heavy scripts are within 4%, mostly startup. Most of the remaining in-shell time is `malloc` and `free`, since
+fork-heavy scripts are within 10%, mostly startup. Most of the remaining in-shell time is `malloc` and `free`, since
 expansion builds `Vec`s where dash uses its stack allocator.
 
-luish parses the warm startup cache about twice as slowly as dash parses the same file (the `-n` row of the startup
-cache table), which is worth profiling (and see lazy function parsing in `PLAN.md`).
+luish parses large files about three times as slowly as dash (`-n` of nvm's 144 KB `nvm.sh`: about 6 ms to dash's
+2 ms, after startup), and touches about 4 MB of memory doing it (1046 page faults to dash's 228), so the AST or the
+parser's buffers are large. This makes sourcing `nvm.sh` without the startup cache take 1.4 times as long as in dash,
+and slows the warm startup cache (the `-n` row of its table). It is worth profiling (and see lazy function parsing
+in `PLAN.md`).
 
 ## Releases
 
@@ -567,7 +578,10 @@ publishes the packages and `install.sh` as a GitHub release. `install.sh` downlo
 (`releases/latest/download/NAME`), so the packages' names must not change.
 
 - **gnu**: linked against glibc 2.17 with conda-forge's `sysroot_linux-64` (or `-aarch64`) and `gcc_linux-*` as the
-  linker, from the `dist` environment in `pixi.toml`. glibc is backward compatible: a binary runs on any glibc at
+  linker, from the `dist` environment in `pixi.toml`. conda-forge's gcc adds its environment's `lib` as an RPATH to
+  everything it links, which `dist.sh` removes with `patchelf` (a release binary would otherwise look for its
+  libraries in a directory of the CI runner first, which anyone who can create that directory could use), and it
+  checks that neither build has an RPATH or RUNPATH. glibc is backward compatible: a binary runs on any glibc at
   least as new as the one it was linked against, and luish needs nothing newer than 2.17 (Rust's own minimum), so
   it runs on any distribution from 2014 on. `dist.sh` checks that no symbol needs a newer version. It is as fast as a
   build linked against the system's glibc, and passes the same tests.
@@ -575,11 +589,15 @@ publishes the packages and `install.sh` as a GitHub release. `install.sh` downlo
   conda-forge has no musl Rust standard library, so `dist.sh` builds it with rustup's toolchain of the same Rust
   version as pixi's. It is a fallback, and its differences are listed in `docs/compatibility.md` (Known
   limitations). The only code it needed is the type of `getrlimit`'s argument (`builtins/misc.rs`). It passes the
-  test suite except `builtins/kill_trap_signals.sh` (its real-time signals start at 35). It starts in about 0.8 ms
-  (1.5 ms for the gnu build, whose time goes to the dynamic loader), but runs the in-shell benchmarks (arith,
-  functions, strings, textproc) 1.3 to 1.9 times as slowly as dash, as musl's `malloc` is slow. With mimalloc as
-  the global allocator it was within 5% to 20% of dash (and started in 1.2 ms), at the cost of C code in the build
-  and a musl C compiler to build it.
+  test suite except `builtins/kill_trap_signals.sh` (its real-time signals start at 35). It starts in about 0.7 ms
+  (2.0 ms for the gnu build, whose time goes to the dynamic loader, and 1.6 ms for dash), but runs the in-shell
+  benchmarks (arith, functions, strings, textproc) 1.2 to 1.7 times as slowly as dash, as musl's `malloc` is slow.
+  With mimalloc as the global allocator it was within 5% to 20% of dash (and started in 1.2 ms), at the cost of C
+  code in the build and a musl C compiler to build it.
+
+`rust-version` in `Cargo.toml` is the oldest Rust that builds luish, for those who build it with their own
+toolchain (1.95, checked with `rustup run 1.95 cargo check --all-targets`; 1.94 lacks `if let` guards). Raise it
+when the code needs something newer; CI doesn't check it.
 
 A static glibc build (`-C target-feature=+crt-static`) would be the fastest, but glibc loads the NSS modules that
 look users up (for `~user`) at run time, and they must come from the same glibc version it was linked against.

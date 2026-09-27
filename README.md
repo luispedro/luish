@@ -44,7 +44,7 @@ pixi run release                  # release build: target/release/luish
 pixi run luish -c 'echo hello'    # run a debug build
 ```
 
-Plain `cargo build --release` also works with a recent Rust toolchain (edition 2024).
+Plain `cargo build --release` also works, with Rust 1.95 or later.
 
 ## Usage
 

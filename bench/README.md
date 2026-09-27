@@ -29,7 +29,7 @@ one run.
 ## The scripts
 
 Each script takes a scale (default 1) as its first argument; the work grows linearly with it. At scale 1 each takes
-0.2 to 1.2 s under dash. They use only POSIX features plus `local`, keep arithmetic below 2^31 up to scale 50 (mksh has
+0.2 to 1.5 s under dash. They use only POSIX features plus `local`, keep arithmetic below 2^31 up to scale 50 (mksh has
 32-bit integers), and use `printf` rather than `echo`.
 
 | Script | What it does | Mostly exercises |

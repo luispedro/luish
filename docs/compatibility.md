@@ -106,9 +106,9 @@ Interactive use:
   patterns.
 - The startup cache doesn't see changes that don't show in a file's fingerprint (see
   [Cached startup files](usage.md#cached-startup-files)).
-- Extensions have only the `chpwd`, `prompt-vars` and `prompt-rewrite` hooks and completers: no built-ins of their
-  own, no `precmd`, `preexec` or `exit` hooks, and no time limit except for completers, so a slow prompt hook or
-  `prompt-vars.lsh` delays the prompt. Completers can't be interrupted with Ctrl-C, only by their time limit.
+- Extensions have only the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks and completers: no built-ins
+  of their own, no `precmd`, `preexec` or `exit` hooks, and no time limit except for completers, so a slow prompt
+  hook or `prompt-vars.lsh` delays the prompt. Completers can't be interrupted with Ctrl-C, only by their time limit.
 
 The static musl build (see [](installation.md)) differs from the usual build, which uses glibc as dash does:
 
