@@ -103,6 +103,14 @@ status 0
 status 0
 single
 This directory holds the plugins that luish, the shell, fetched with git:
+--- a second machine: the lock file, but nothing fetched (and no messages from git)
+Installing std at d0ea6cf
+Installing file://~/single at 036d918
+Installing coll at 14cfcbd
+3 git sources locked, 2 plugins enabled: rhai-only, single
+status 0
+rhai from std
+single v3
 --- a tag, and a commit
 Fetching file://~/single
 Fetching annotated

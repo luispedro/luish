@@ -75,6 +75,10 @@ cmd '__luish_internal plugin update --quiet single; echo "status $?"'
 cmd '__luish_internal plugin update -q single; echo "status $?"'
 ls .cache/luish/plugins/git | sed 's/-.*//'
 cat .local/share/luish/plugins/README | head -1
+echo '--- a second machine: the lock file, but nothing fetched (and no messages from git)'
+rm -rf .cache/luish/plugins .local/share/luish
+cmd '__luish_internal plugin sync; echo "status $?"'
+run 'true'
 echo '--- a tag, and a commit'
 first=$(cd single && git rev-list --max-parents=0 HEAD)
 (cd single && git tag v1 "$first" && git tag -a -m v1 v1a "$first")

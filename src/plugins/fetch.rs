@@ -164,7 +164,8 @@ pub fn extract(sh: &mut Shell, data: &[u8], url: &str, at: &GitRef, commit: &str
     }
     let dir = repository(sh, url)?;
     let object = format!("{commit}^{{commit}}");
-    let have = |sh: &mut Shell| git(sh, &dir, &["cat-file", "-e", &object]).is_ok();
+    // Not `cat-file -e`, which prints an error for a missing commit.
+    let have = |sh: &mut Shell| git(sh, &dir, &["rev-parse", "-q", "--verify", &object]).is_ok();
     if !have(sh) {
         let fetched = git(sh, &dir, &["fetch", "-q", "--no-tags", "--depth", "1", url, commit]);
         if fetched.is_err() || !have(sh) {
