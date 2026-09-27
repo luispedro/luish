@@ -873,8 +873,10 @@ notes how to rerun them):
   in the same command.
 - `command local x=1` keeps the variable in the function; in dash it is
   local to the `command` invocation and disappears.
-- Startup makes about 185 syscalls to dash's 85 (see the performance
-  section).
+- Starting luish costs about 0.35 ms more than dash, almost all in the
+  dynamic loader (see the performance section).
+- Deep function recursion overflows the stack (a segmentation fault);
+  dash stops at a depth of 1000.
 
 ## Performance baseline
 
@@ -891,14 +893,16 @@ for both shells, so compare only within a table.
 | Loop running `x=$(echo hi)` 3000 times | 0.92 s | 0.90 s |
 
 Per external command, luish now makes the same syscalls as dash (a cached
-command is no longer checked with `stat`). The largest remaining gap is
-startup (`-c true`): 185 syscalls to dash's 85. Most come from querying all
-64 signal dispositions at startup (dash looks one up only when it first
-changes it), the Rust runtime's initialisation (stdio poll, reading
-`/proc/self/maps` for the stack guard, `sigaltstack`, SIGPIPE; avoidable
-with `#![no_main]`), `libgcc_s` found through a `RUNPATH` into the pixi
-environment plus a `libpthread` stub, `readlink /proc/self/exe` (could be
-lazy) and HashMap seeding. Deferred for now by decision.
+command is no longer checked with `stat`). Since 2026-09-27 startup makes
+56 syscalls to dash's 49 (it made 140): `main` skips Rust's runtime
+set-up (`#![no_main]`), signal dispositions are looked up when first
+needed, and the executable's path only when a script without `#!` needs
+it. The remaining startup gap (about 1.5 ms to dash's 1.15 ms per `-c :`
+started from a loop) is the dynamic loader: relocating a 3 MB binary and
+loading `libm` (for Rhai) and `libgcc_s`. A build without the `plugins`
+feature takes 1.34 ms, and one linked statically
+(`-C target-feature=+crt-static`) 1.09 ms, as fast as dash, but static
+glibc looks users up (`~user`) through NSS modules loaded at run time.
 
 Before `posix_spawn`, the `/bin/true` loop took 2.42 s. The system dash
 (Debian) forks for the last command of `-c`; luish execs it, like upstream
@@ -908,22 +912,29 @@ dash.
 
 `bench/run.sh` (see `bench/README.md`) runs script-sized workloads under
 several shells, checks that their outputs agree, and times them with
-hyperfine. Release build, 2026-09-27, scale 1, mean of at least 5 runs on a
+hyperfine. Release build, 2026-09-27, scale 1, mean of 10 runs on a
 4-core machine; Ubuntu's dash 0.5.12, bash 5.2 (`--posix`), zsh 5.9
 (`--emulate sh`) and BusyBox 1.36 `sh`. Times in seconds, with the ratio to
 dash. All shells print the same output for every script.
 
+Mean time in seconds (ratio to dash), scale 1:
+
 | Benchmark | dash | luish | bash | zsh | busybox |
 |---|---|---|---|---|---|
-| arith | 0.332 (1.00) | 0.479 (1.44) | 0.937 (2.82) | 0.565 (1.70) | 0.552 (1.66) |
-| build | 1.008 (1.00) | 1.068 (1.06) | 1.208 (1.20) | 1.199 (1.19) | 1.055 (1.05) |
-| configure | 1.137 (1.00) | 1.211 (1.06) | 1.452 (1.28) | 1.435 (1.26) | 1.274 (1.12) |
-| functions | 0.208 (1.00) | 0.245 (1.18) | 0.945 (4.54) | 1.013 (4.86) | 0.280 (1.35) |
-| strings | 0.278 (1.00) | 0.375 (1.35) | 0.920 (3.31) | 0.753 (2.71) | 0.410 (1.48) |
-| textproc | 0.196 (1.00) | 0.261 (1.33) | 0.506 (2.58) | 0.696 (3.55) | 0.310 (1.58) |
+| arith | 0.320 (1.00) | 0.196 (0.61) | 0.929 (2.90) | 0.553 (1.72) | 0.549 (1.71) |
+| build | 1.039 (1.00) | 1.086 (1.04) | 1.228 (1.18) | 1.236 (1.19) | 1.050 (1.01) |
+| configure | 1.149 (1.00) | 1.162 (1.01) | 1.453 (1.27) | 1.375 (1.20) | 1.265 (1.10) |
+| functions | 0.205 (1.00) | 0.158 (0.77) | 0.919 (4.49) | 0.992 (4.84) | 0.271 (1.32) |
+| strings | 0.260 (1.00) | 0.254 (0.98) | 0.893 (3.43) | 0.747 (2.87) | 0.427 (1.64) |
+| textproc | 0.203 (1.00) | 0.207 (1.02) | 0.513 (2.52) | 0.728 (3.58) | 0.320 (1.57) |
 
-The fork-heavy scripts (`build`, `configure`) are within 6% of dash, but
-work done inside the shell (arithmetic, string expansion, `read` loops) is
-1.2 to 1.45 times slower, although a bare `$((i+1))` loop is not: the gap
-is in paths the loop benchmarks above don't reach. Not yet profiled.
+Profiled with callgrind, the in-shell gap came from `$((...))` finding its
+operators by comparing the text with each of 35 strings, SipHash on every
+variable lookup, `${x#pat}` trying every prefix or suffix (and copying the
+value and the result), `case` expanding and compiling literal patterns,
+and needless copies (IFS for every word, assignment names and values).
+Work done inside the shell is now as fast as dash or faster; the
+fork-heavy scripts are within 4% of dash, which is mostly startup (above).
+Most of the remaining in-shell time is `malloc` and `free`, since
+expansion builds `Vec`s where dash uses its stack allocator.
 
