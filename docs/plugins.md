@@ -294,26 +294,24 @@ do something else), but an extension can, for the programs it names:
 Save it as `~/.config/luish/plugins/cobra.rhai`, change the list of programs at the end, and load it with
 `plugin load cobra`.
 
-## Example: using bash's completions
+## Plugins in luish-std-plugins
 
-[bash-completion](https://github.com/scop/bash-completion) completes the arguments of about a thousand commands,
-and many programs install completion files for it. This plugin's extension is a default completer that runs, in
-bash, the function that bash-completion has for the command, and gives luish what it returns. The plugin is a
-directory with two files:
+The luish repository has a collection of plugins, in its `luish-std-plugins` directory, which is also an example of
+how a collection of plugins is laid out (see its `README.md`). luish doesn't load plugins from it by itself: load one
+by its path, or link it into `~/.config/luish/plugins/` and load it by name.
 
-```{literalinclude} examples/bash-completion/extension.rhai
-:language: rhai
-```
-
-```{literalinclude} examples/bash-completion/bridge.bash
-:language: bash
-```
-
-Copy the directory `docs/examples/bash-completion` to `~/.config/luish/plugins/` and load it with
-`plugin load bash-completion`. The commands that have completers of their own (such as those of the Cobra plugin)
-keep them. bash-completion is looked for in the usual places; set `BASH_COMPLETION_SCRIPT` to the path of its
-`bash_completion` script if it is elsewhere. Each Tab takes about 50 ms, as bash loads bash-completion again, and
-bash-completion gives no descriptions.
+- **`git-completion`** (`git-completion.rhai`) completes git's commands, with their descriptions, and aliases; the
+  options of each command, as git lists them; and each command's arguments: branches, tags, the end of a range
+  (`main..`), remotes, stashes, worktrees, and the files the command can act on (modified and untracked files for
+  `git add`, staged ones for `git restore --staged`, ...), one directory at a time. It runs git with the options of
+  the command line that choose the repository, so `alias g='git -C ~/src'` completes in `~/src`.
+- **`bash-completion`** (a directory) uses [bash-completion](https://github.com/scop/bash-completion), which
+  completes the arguments of about a thousand commands, and for which many programs install completion files. Its
+  extension is a default completer that runs, in bash (with `bridge.bash`), the function that bash-completion has for
+  the command, and gives luish what it returns. The commands that have completers of their own (such as git with
+  `git-completion`) keep them. bash-completion is looked for in the usual places; set `BASH_COMPLETION_SCRIPT` to the
+  path of its `bash_completion` script if it is elsewhere. Each Tab takes about 50 ms, as bash loads bash-completion
+  again, and bash-completion gives no descriptions.
 
 ## The `sh` module
 

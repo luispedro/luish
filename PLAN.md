@@ -28,7 +28,7 @@ second (nvm) are otherwise a daily cost.
 
 ### Next steps, in priority order
 
-1. **Phase 13, in its order**: `alias -g`; git and ssh-host completers, then a generic completion bridge (needs a
+1. **Phase 13, in its order**: `alias -g`; an ssh-host completer, then a generic completion bridge (needs a
    design note first) and typing to narrow the menu; shell-function `chpwd`/`precmd`/`preexec`; lazy function
    parsing of the startup cache.
 2. **Startup cost** (deferred by the user for now; see Performance in `DEVELOPING.md`): the dynamic loader's share,
@@ -214,14 +214,14 @@ Still to build, in this order:
    and completer expand them as they expand aliases now.
 2. **Completion content**, the biggest gap by volume (zsh gets git, ssh, make, man, cargo ... from `compinit` and
    zsh-completions):
-   - **git** first, as a Rhai completer shipped with luish (subcommands, branches and refs through `vcs`, files for
-     `add`/`restore`, remotes). This also tests whether the completer API is enough.
+   - **git**: done, as `git-completion` in `luish-std-plugins/`. Still missing: `REV:PATH`, `git config` keys, and
+     values for most `--option=` words.
    - **ssh/scp/rsync hosts** from `~/.ssh/config` (`Host` lines without wildcards, and `Include`).
      `~/.ssh/known_hosts` is hashed on this system, so it gives nothing, even in zsh.
    - **A generic bridge**, so that most programs get completion without a hand-written completer: programs that
      complete themselves (Cobra, as in `docs/examples/cobra.rhai`, clap's `COMPLETE=`, `argcomplete`),
-     bash-completion scripts (as in `docs/examples/bash-completion/`, but faster), and `--help` parsing for options
-     only (as fish does). This needs a design note before building.
+     bash-completion scripts (as in `luish-std-plugins/bash-completion/`, but faster), and `--help` parsing for
+     options only (as fish does). This needs a design note before building.
    - **Typing to narrow the menu** (zsh's `menu select interactive`): while the menu is open, printable keys filter
      the matches instead of closing the menu.
 3. **Shell-function hooks**: functions named `chpwd`, `precmd` and `preexec` run at the same points as the Rhai hooks

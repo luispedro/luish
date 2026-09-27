@@ -675,7 +675,7 @@ esac
     assert_eq!(sh.exit_status(), 0);
 }
 
-/// The bash-completion plugin of the documentation, with completion files
+/// The bash-completion plugin of luish-std-plugins, with completion files
 /// of its own (in `$HOME/.local/share/bash-completion/completions`, where
 /// bash-completion looks too). Skipped without bash-completion.
 #[cfg(feature = "plugins")]
@@ -686,7 +686,7 @@ fn bash_completion_bridge() {
         return;
     }
     let mut sh = Pty::spawn_term("bashcomp", "vt100");
-    let examples = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/examples/bash-completion");
+    let examples = concat!(env!("CARGO_MANIFEST_DIR"), "/luish-std-plugins/bash-completion");
     std::fs::create_dir(sh.path("bash-completion")).unwrap();
     for f in ["extension.rhai", "bridge.bash"] {
         std::fs::copy(format!("{examples}/{f}"), sh.path("bash-completion").join(f)).unwrap();
@@ -732,6 +732,93 @@ complete -F _frob frob
     sh.expect("$ ");
     sh.send("echo not\t\n");
     sh.expect("notes.txt\n");
+    sh.expect("$ ");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+/// The git-completion plugin of luish-std-plugins, in a repository with a
+/// modified file, an untracked one, a staged one and two branches. A
+/// function `git` prints its arguments (the completer runs `command git`).
+#[cfg(feature = "plugins")]
+#[test]
+fn git_completion() {
+    let mut sh = Pty::spawn_term("gitcomp", "vt100");
+    let repo = sh.path("repo");
+    let git = |args: &[&str]| {
+        let st = std::process::Command::new("git")
+            .args([
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "init.defaultBranch=main",
+            ])
+            .args(args)
+            .current_dir(&repo)
+            .env("HOME", sh.path(""))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .status()
+            .unwrap();
+        assert!(st.success(), "git {args:?}");
+    };
+    std::fs::create_dir_all(repo.join("src/deep")).unwrap();
+    git(&["init", "-q"]);
+    std::fs::write(repo.join("changed.txt"), "a\n").unwrap();
+    std::fs::write(repo.join("src/deep/staged.rs"), "a\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-qm", "first"]);
+    git(&["branch", "topic"]);
+    git(&["config", "alias.sw", "switch"]);
+    std::fs::write(repo.join("changed.txt"), "b\n").unwrap();
+    std::fs::write(repo.join("src/deep/staged.rs"), "b\n").unwrap();
+    git(&["add", "src"]);
+    std::fs::write(repo.join("untracked.txt"), "").unwrap();
+    let plugin = concat!(env!("CARGO_MANIFEST_DIR"), "/luish-std-plugins/git-completion.rhai");
+    sh.expect("$ ");
+    sh.send(&format!(
+        "plugin load {plugin}; git() {{ echo \"git:$*\"; }}; cd repo; echo \"loaded $?\"\n"
+    ));
+    sh.expect("loaded 0\n");
+    sh.expect("$ ");
+    // Commands, then branches.
+    sh.send("git swi\tto\t\n");
+    sh.expect("git:switch topic\n");
+    sh.expect("$ ");
+    // An alias completes as the command it stands for.
+    sh.send("git sw to\t\n");
+    sh.expect("git:sw topic\n");
+    sh.expect("$ ");
+    // `git add` offers modified and untracked files, but not staged ones.
+    sh.send("git add \t\t");
+    sh.expect("changed.txt");
+    sh.expect("untracked.txt");
+    sh.send("\x03");
+    sh.expect("\x1b[?2004h");
+    // One directory at a time, then the staged file.
+    sh.send("git restore --staged s\t\t\t\n");
+    sh.expect("git:restore --staged src/deep/staged.rs\n");
+    sh.expect("$ ");
+    // The end of a range.
+    sh.send("git log main..to\t\n");
+    sh.expect("git:log main..topic\n");
+    sh.expect("$ ");
+    // Options, as git lists them.
+    sh.send("git commit --ame\t\n");
+    sh.expect("git:commit --amend\n");
+    sh.expect("$ ");
+    // The descriptions of commands.
+    sh.send("git sta\t\t");
+    sh.expect("Show the working tree status");
+    sh.send("\x03");
+    sh.expect("\x1b[?2004h");
+    // `-C` chooses the repository, through an alias with `~`.
+    sh.send("cd; alias g='git -C ~/repo'; echo aliased\n");
+    sh.expect("aliased\n");
+    sh.expect("$ ");
+    sh.send("g switch to\t\n");
+    sh.expect("/repo switch topic\n");
     sh.expect("$ ");
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);

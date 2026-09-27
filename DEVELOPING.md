@@ -69,6 +69,7 @@ tests/
 └── interactive.rs      # pty tests
 bench/                  # script benchmarks (see bench/README.md)
 docs/                   # user documentation; docs/builtins/ is compiled into `help`; docs/examples/ has example plugins
+luish-std-plugins/      # a collection of plugins (git-completion, bash-completion), see its README.md
 ```
 
 ## Implementation notes by area
@@ -332,13 +333,16 @@ docs/                   # user documentation; docs/builtins/ is compiled into `h
 - `vcs.rs` reads `.git` without forking (`HEAD`, loose and packed refs, `commondir` for worktrees, `vcs_info`'s action
   names, the stash log), running git only for the reftable format and for `vcs::status` (`git --no-optional-locks
   status --porcelain=v2 --branch -z`). Not supported: bare repositories, `GIT_DIR`, `GIT_CEILING_DIRECTORIES`.
-- Examples: `docs/examples/cobra.rhai` (programs built with Cobra) and `docs/examples/bash-completion/` (a default
-  completer that runs bash-completion in bash through `bridge.bash`; about 50 ms per Tab, since bash sources
-  `bash_completion` each time).
+- Examples: `docs/examples/cobra.rhai` (programs built with Cobra). Plugins for use, in the collection
+  `luish-std-plugins/` (to become a repository of its own; nothing loads it by itself yet): `git-completion.rhai`
+  (lists commands from `LC_ALL=C git help -a` without the low-level and guide sections, options from
+  `git CMD --git-completion-helper`, files from `ls-files`/`diff --cached`, collapsed to the next directory) and
+  `bash-completion/` (a default completer that runs bash-completion in bash through `bridge.bash`; about 50 ms per
+  Tab, since bash sources `bash_completion` each time).
 - Tests: `tests/plugins/*`, `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit tests for the byte
   conversion, `git status` parsing and (with a stand-in completer) in `complete.rs`, and `plugin_builtin`,
-  `plugin_completer`, `cobra_completer` and `bash_completion_bridge` (skipped without bash-completion) in
-  `tests/interactive.rs`.
+  `plugin_completer`, `cobra_completer`, `git_completion` and `bash_completion_bridge` (skipped without
+  bash-completion) in `tests/interactive.rs`.
 
 ### Signals and startup
 
