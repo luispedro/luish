@@ -586,11 +586,22 @@ pass**.
   lines, so an open quote or here-document carries over. `$LUISH_HIGHLIGHT`
   sets the colours as `class=SGR` entries separated by `:` (as in
   `GREP_COLORS`), over the defaults
-  `keyword=1;34:command=32:unknown=1;31:string=33:var=36:subst=35:op=1:redir=1:comment=90:assign=34:select=7:desc=90`
-  (the last two are for the completion menu);
+  `keyword=1;34:command=32:unknown=1;31:string=33:var=36:subst=35:op=1:redir=1:comment=90:assign=34:select=7:desc=90:suggest=90`
+  (`select` and `desc` are for the completion menu, `suggest` for
+  autosuggestions);
   an empty SGR leaves a class uncoloured. `LUISH_HIGHLIGHT=none`, or a
   non-empty `$NO_COLOR`, turns it off. Both are read before each prompt.
   Command lookups are cached until the next prompt.
+- Autosuggestions (`setopt autosuggest`, off by default), as
+  zsh-autosuggestions: while the cursor is at the end of a non-blank
+  line (not a continuation line) and the menu isn't open, the hint is the
+  rest of the newest history entry that starts with the line, in the
+  `suggest` colour. `forward-char` and `end-of-line` (Right, End, Ctrl-F,
+  Ctrl-E) at the end of the line accept it (rustyline's `CompleteHint`),
+  and `forward-word` (Alt-F) inserts up to where it would move in the
+  line with the suggestion. The search goes from the newest entry and
+  stops at the first match. Test: `autosuggestions` in
+  `tests/interactive.rs`.
 - The completer and the highlighter never see `Shell`: before each prompt,
   the REPL gives them a snapshot of function, alias and variable names,
   `PATH` and `HOME`, the jobs, the plugins, the colours, and the text of an

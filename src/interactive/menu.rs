@@ -377,18 +377,22 @@ pub fn rows(text: &str, cols: usize) -> usize {
     row + 1 + usize::from(col == cols)
 }
 
-/// The menu, as rustyline's hint.
-pub struct Drawn(pub String);
+/// What is drawn after the line, as rustyline's hint: the menu, or an
+/// autosuggestion.
+pub struct Drawn {
+    pub display: String,
+    /// The text that accepting the hint inserts: none for the menu, so that
+    /// moving right at the end of the line doesn't insert it.
+    pub completion: Option<String>,
+}
 
 impl Hint for Drawn {
     fn display(&self) -> &str {
-        &self.0
+        &self.display
     }
 
-    /// Nothing: moving right at the end of the line doesn't insert the
-    /// menu.
     fn completion(&self) -> Option<&str> {
-        None
+        self.completion.as_deref()
     }
 }
 

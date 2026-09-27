@@ -30,6 +30,7 @@ pub enum Opt {
     HistSaveNoDups,
     IncAppendHistory,
     ShareHistory,
+    Autosuggest,
 }
 
 /// Option table: (option, letter, long name), in dash's order. `$-` lists
@@ -68,6 +69,7 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::HistSaveNoDups, "histsavenodups"),
     (Opt::IncAppendHistory, "incappendhistory"),
     (Opt::ShareHistory, "sharehistory"),
+    (Opt::Autosuggest, "autosuggest"),
 ];
 
 #[derive(Debug, Default, Clone)]

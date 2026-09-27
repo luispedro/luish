@@ -41,9 +41,11 @@ pub enum Class {
     Select,
     /// Not in the line: the descriptions in the completion menu.
     Desc,
+    /// Not in the line: an autosuggestion.
+    Suggest,
 }
 
-const CLASSES: usize = Class::Desc as usize + 1;
+const CLASSES: usize = Class::Suggest as usize + 1;
 
 /// Class names in `$LUISH_HIGHLIGHT`, with their default SGR parameters.
 const DEFAULTS: &[(&str, Class, &str)] = &[
@@ -59,6 +61,7 @@ const DEFAULTS: &[(&str, Class, &str)] = &[
     ("assign", Class::Assign, "34"),
     ("select", Class::Select, "7"),
     ("desc", Class::Desc, "90"),
+    ("suggest", Class::Suggest, "90"),
 ];
 
 /// The SGR parameters (without `ESC [` and `m`) of each class.
@@ -708,7 +711,7 @@ mod tests {
                 Class::Redir => 'r',
                 Class::Comment => '#',
                 Class::Assign => 'a',
-                Class::Select | Class::Desc => unreachable!(),
+                Class::Select | Class::Desc | Class::Suggest => unreachable!(),
             })
             .collect()
     }

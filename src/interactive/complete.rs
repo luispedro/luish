@@ -71,6 +71,8 @@ pub struct ShellHelper {
     pub menu: Arc<Mutex<Menu>>,
     /// Shared with the key bindings (see `keys.rs`).
     pub keys: Arc<Mutex<super::keys::State>>,
+    /// Show autosuggestions (`setopt autosuggest`).
+    pub suggest: bool,
     path_cache: RefCell<PathCache>,
 }
 
@@ -1276,32 +1278,57 @@ impl Completer for ShellHelper {
 impl Hinter for ShellHelper {
     type Hint = menu::Drawn;
 
-    /// Draws the menu, if it is open. Also notes the position in the history
-    /// for the key bindings.
+    /// Draws the menu, if it is open, or else the autosuggestion. Also notes
+    /// the position in the history for the key bindings.
     fn hint(&self, line: &str, pos: usize, ctx: &Context<'_>) -> Option<menu::Drawn> {
         if let Ok(mut keys) = self.keys.lock() {
             keys.history_index = ctx.history_index();
             keys.history_len = ctx.history().len();
         }
-        let mut m = self.menu.lock().ok()?;
-        if !m.is_open(line, pos) {
-            return None;
-        }
-        let (cols, rows) = sys::window_size(1).unwrap_or_default();
-        let cols = if cols == 0 { 80 } else { cols };
-        let rows = if rows == 0 { 24 } else { rows };
-        let used = menu::rows(&[&self.prompt[..], line].concat(), cols);
         let colors = self.highlight.colors.as_ref();
         let sgr = |class, default: &str| {
             colors.map_or(default.to_owned(), |c| {
                 String::from_utf8_lossy(c.sgr(class)).into_owned()
             })
         };
+        let mut m = self.menu.lock().ok()?;
+        if !m.is_open(line, pos) {
+            drop(m);
+            let rest = self.suggestion(line, pos, ctx.history())?;
+            let style = sgr(super::highlight::Class::Suggest, "90");
+            return Some(menu::Drawn {
+                display: format!("\x1b[{style}m{rest}\x1b[0m"),
+                completion: Some(rest),
+            });
+        }
+        let (cols, rows) = sys::window_size(1).unwrap_or_default();
+        let cols = if cols == 0 { 80 } else { cols };
+        let rows = if rows == 0 { 24 } else { rows };
+        let used = menu::rows(&[&self.prompt[..], line].concat(), cols);
         let style = menu::Style {
             select: sgr(super::highlight::Class::Select, "7"),
             desc: sgr(super::highlight::Class::Desc, ""),
         };
-        Some(menu::Drawn(m.draw(cols, rows.saturating_sub(used), &style)))
+        Some(menu::Drawn {
+            display: m.draw(cols, rows.saturating_sub(used), &style),
+            completion: None,
+        })
+    }
+}
+
+impl ShellHelper {
+    /// The autosuggestion, as zsh-autosuggestions makes it (with
+    /// `setopt autosuggest`): the rest of the newest history entry that
+    /// starts with the line, when the cursor is at its end.
+    fn suggestion(&self, line: &str, pos: usize, history: &dyn rustyline::history::History) -> Option<String> {
+        use rustyline::history::SearchDirection;
+        if !self.suggest || pos != line.len() || line.trim().is_empty() {
+            return None;
+        }
+        (0..history.len()).rev().find_map(|i| {
+            let e = history.get(i, SearchDirection::Reverse).ok()??.entry;
+            (e.len() > line.len() && e.starts_with(line)).then(|| e[line.len()..].to_owned())
+        })
     }
 }
 
@@ -1692,7 +1719,7 @@ mod tests {
 
     fn menu_shown(h: &ShellHelper, line: &str) -> Option<String> {
         let history = super::super::history::ShellHistory::default();
-        h.hint(line, line.len(), &Context::new(&history)).map(|d| d.0)
+        h.hint(line, line.len(), &Context::new(&history)).map(|d| d.display)
     }
 
     #[test]

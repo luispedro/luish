@@ -4,6 +4,7 @@ promptpercent
 ---
 allexport
 autocd
+autosuggest
 bareglobqual
 emacs
 errexit

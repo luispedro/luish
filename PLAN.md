@@ -694,7 +694,7 @@ once):
      history entry after it) and **`Esc-.`/`Alt-.`** (`insert-last-word`,
      cycling back through earlier lines when repeated). rustyline has
      neither, so both are custom handlers over `history.rs`.
-2. **Autosuggestions**, as zsh-autosuggestions: the newest history entry
+2. **Autosuggestions** (**done**, behind `setopt autosuggest`), as zsh-autosuggestions: the newest history entry
    that starts with the line is shown greyed after the cursor, and Right
    (or End) accepts it. rustyline's `Hinter` is the place, but the
    completion menu already draws itself as the hint, so a suggestion is

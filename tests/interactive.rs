@@ -900,6 +900,32 @@ fn line_editor_keys() {
 }
 
 #[test]
+fn autosuggestions() {
+    let mut sh = Pty::spawn_term("suggest", "vt100");
+    sh.expect("$ ");
+    let run = |sh: &mut Pty, keys: &str, want: &str| {
+        sh.send(keys);
+        sh.expect(want);
+        sh.expect("\x1b[?2004h");
+    };
+    run(&mut sh, "echo suggested-text more\n", "\nsuggested-text more\n");
+    // Off by default.
+    run(&mut sh, "echo sug\x1b[Cx\n", "\nsugx\n");
+    run(&mut sh, "setopt autosuggest\n", "\n");
+    // The rest of the newest entry that starts with the line, in grey;
+    // Right accepts it.
+    sh.send("echo sug");
+    sh.expect("\x1b[90mx\x1b[0m");
+    sh.send("g");
+    sh.expect("\x1b[90mested-text more\x1b[0m");
+    run(&mut sh, "\x1b[C\n", "\nsuggested-text more\n");
+    // Alt-F accepts a word of it.
+    run(&mut sh, "echo s\x1bfx\n", "\nsuggested-text x\n");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
 fn help_builtin() {
     let mut sh = Pty::spawn("help");
     sh.expect("$ ");

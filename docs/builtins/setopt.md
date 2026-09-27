@@ -40,6 +40,12 @@ luish's own options, all off by default:
   executable file of that name. A relative name not starting with `.` or
   `..` is looked for in the current directory, then in `CDPATH`.
 
+`autosuggest`
+: In an interactive shell, show the rest of the newest command in the
+  history that starts with the line typed, in grey after the cursor, as
+  zsh-autosuggestions does. Right, End, Ctrl-F or Ctrl-E accept it, and
+  Alt-F accepts its next word.
+
 The history options (see the user documentation on history):
 
 `histignorespace`

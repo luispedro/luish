@@ -608,6 +608,12 @@ impl State {
                 Cmd::CompleteHint
             }
             Action::AcceptHint(f) => f(n),
+            // zsh-autosuggestions accepts a word of the suggestion.
+            Action::Word(WordOp::Forward) if pos == line.len() && ctx.hint_text().is_some_and(|h| !h.is_empty()) => {
+                let full = [line, ctx.hint_text().unwrap_or_default()].concat();
+                let t = word_target(&full, pos, WordOp::Forward, &|c| self.is_word(c));
+                Cmd::Insert(1, full[pos..t].to_owned())
+            }
             Action::Word(op) => match word_cmd(line, pos, op, n, |c| self.is_word(c)) {
                 Ok(cmd) => cmd,
                 Err(edit) => {

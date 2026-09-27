@@ -88,6 +88,11 @@ As in zsh, words are made of letters, digits and the characters in `WORDCHARS`, 
 WORDCHARS='*?_-.[]~=&;!#$%^(){}<>'
 ```
 
+With `setopt autosuggest`, the line editor suggests the rest of the newest command in the history that starts
+with what has been typed, in grey after the cursor, as the zsh-autosuggestions plugin does. Right, End, Ctrl-F or
+Ctrl-E accept the suggestion, and Alt-F accepts its next word. Its colour is the `suggest` entry of
+`$LUISH_HIGHLIGHT` (described with the completion menu, below; by default grey, `90`).
+
 To bind Up and Down as zsh does by default:
 
 ```sh

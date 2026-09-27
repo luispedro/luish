@@ -228,6 +228,8 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
     // The line editor measures the prompt without its escape sequences.
     let plain = p.plain.map(|s| String::from_utf8_lossy(&s).into_owned());
     let vi = sh.opt(Opt::Vi);
+    // Not for the continuation lines of a command.
+    let suggest = sh.opt(Opt::Autosuggest) && !continuation;
     let names = names(sh);
     let colors = colors(sh);
     let wordchars = sh
@@ -259,6 +261,7 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
                 m.close();
             }
             h.highlight.colors = colors;
+            h.suggest = suggest;
             h.highlight.context.clear();
             h.highlight.context.extend_from_slice(pending);
             h.highlight.known.get_mut().clear();
