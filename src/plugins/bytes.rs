@@ -1,4 +1,4 @@
-//! Conversion between shell bytes and Rhai strings (PLAN.md §6.5).
+//! Conversion between shell bytes and Rhai strings (DEVELOPING.md).
 //!
 //! Rhai strings hold UTF-8 only. Valid UTF-8 passes through unchanged, and
 //! each byte `b` of an invalid sequence becomes the code point U+10FF00 + `b`

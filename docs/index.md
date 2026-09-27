@@ -14,4 +14,5 @@ globbing
 builtins
 plugins
 improvements
+compatibility
 ```

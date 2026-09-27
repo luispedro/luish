@@ -1,4 +1,4 @@
-//! `$XDG_CONFIG_HOME/luish/config.toml` (PLAN.md, Phase 13): luish's
+//! `$XDG_CONFIG_HOME/luish/config.toml` (DEVELOPING.md): luish's
 //! settings in TOML, read by interactive shells before `rc.d`. Each table
 //! under `options` is a group of settings, and each key in it means the
 //! same as `setopt -p GROUP KEY=VALUE`, with TOML's types:

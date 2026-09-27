@@ -1,4 +1,5 @@
-//! Cached startup files (a first version of PLAN.md §9.2).
+//! Cached startup files (a first version of the Stage 3 design in
+//! PLAN.md).
 //!
 //! Two directories in `$XDG_CONFIG_HOME/luish/` hold `*.lsh` files whose
 //! effects are cached, as zsh's `.zshrc` and `.zlogin`: `rc.d/`, for every

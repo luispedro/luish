@@ -9,8 +9,9 @@ driver, built on a core that is as fast as dash.
 - **Pay only for what you use.** Anything beyond POSIX is opt-in and costs nothing when it is not used.
 - **Usable interactively**: line editing, history (with `fc`), tab completion, and job control.
 
-luish is at an early stage. Most of POSIX is implemented, but expect rough edges. See [STATUS.md](STATUS.md) for
-what works, what is missing, and current benchmark numbers.
+luish is at an early stage. Most of POSIX is implemented, but expect rough edges. The user documentation is in
+[docs/](docs/index.md); [docs/compatibility.md](docs/compatibility.md) lists the known limitations, and
+[DEVELOPING.md](DEVELOPING.md) has what is implemented, how it is tested, and benchmark numbers.
 
 ## Building
 
@@ -42,7 +43,7 @@ starts a shell without reading any startup files.
 
 luish differs from dash in a few deliberate places, for example `$LINENO` is supported, and a script read from a
 pipe is never read past the current command, so commands in it can read the rest of stdin. The full list is in
-[DEVIATIONS.md](DEVIATIONS.md).
+[docs/compatibility.md](docs/compatibility.md).
 
 ## Testing
 
@@ -54,6 +55,8 @@ pseudo-terminal. dash must be installed from the system (`/usr/bin/dash`).
 pixi run check                    # rustfmt, clippy, and all tests
 LUISH_CASE=expand/ pixi run test  # only the differential cases whose path contains "expand/"
 ```
+
+[DEVELOPING.md](DEVELOPING.md) has more for developers: design decisions, implementation notes and their tests.
 
 ## Roadmap
 

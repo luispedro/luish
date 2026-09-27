@@ -1,4 +1,4 @@
-//! The plugin host and the Rhai side of extensions (PLAN.md §6.4): one
+//! The plugin host and the Rhai side of extensions (DEVELOPING.md): one
 //! engine, one AST per extension, and the `sh` module through which
 //! extensions reach the shell (and the `fs` and `vcs` modules, `fs.rs` and
 //! `vcs.rs`).

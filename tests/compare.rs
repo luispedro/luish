@@ -11,7 +11,7 @@
 //! - if `NAME.stdin` exists, it is fed to the script's standard input;
 //! - if the script contains the line `# reference: zsh`, it is compared
 //!   with `zsh --emulate sh` (from pixi) instead of dash, for behaviour
-//!   where luish follows zsh (see `DEVIATIONS.md`). Words after the shell's
+//!   where luish follows zsh (see `docs/compatibility.md`). Words after the shell's
 //!   name are further arguments for it, such as `-o noposixcd`.
 //!
 //! Plugin cases (`tests/plugins/*.sh`, only with the `plugins` feature)

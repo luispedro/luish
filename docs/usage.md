@@ -135,7 +135,7 @@ WORDCHARS='*?_-.[]~=&;!#$%^(){}<>'
 With `setopt editor.autosuggest`, the line editor suggests the rest of the newest command in the history that starts
 with what has been typed, in grey after the cursor, as the zsh-autosuggestions plugin does. Right, End, Ctrl-F or
 Ctrl-E accept the suggestion, and Alt-F accepts its next word. Its colour is the `suggest` entry of
-`$LUISH_HIGHLIGHT` (described with the completion menu, below; by default grey, `90`).
+`$LUISH_HIGHLIGHT` (see [Syntax highlighting](#syntax-highlighting); by default grey, `90`).
 
 To bind Up and Down as zsh does by default:
 
@@ -143,6 +143,25 @@ To bind Up and Down as zsh does by default:
 bindkey '^[[A' up-line-or-history
 bindkey '^[[B' down-line-or-history
 ```
+
+## Syntax highlighting
+
+The line editor colours the command line as it is typed: reserved words, command names (in another colour when no
+built-in, function, alias or program has that name, except while the cursor is on them, since they may be
+unfinished), quoted strings, parameter and arithmetic expansions, command substitutions (whose contents are
+highlighted as commands), operators, redirections, here-document bodies, comments and the `NAME=` of assignments. A
+continuation line is highlighted in the context of the lines before it, so an open quote or here-document carries
+over.
+
+`$LUISH_HIGHLIGHT` sets the colours, as a list of `class=SGR` entries separated by `:` (as in `GREP_COLORS`), where
+SGR is the parameters of a terminal escape sequence. Its entries replace these defaults:
+
+```text
+keyword=1;34:command=32:unknown=1;31:string=33:var=36:subst=35:op=1:redir=1:comment=90:assign=34:select=7:desc=90:suggest=90
+```
+
+`select` and `desc` are for the completion menu, and `suggest` for autosuggestions. An empty SGR leaves a class
+uncoloured. `LUISH_HIGHLIGHT=none`, or a non-empty `$NO_COLOR`, turns highlighting off.
 
 ## History
 

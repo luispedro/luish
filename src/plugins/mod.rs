@@ -1,4 +1,4 @@
-//! Plugins (PLAN.md §6): the `plugin` built-in, which loads plugins (a
+//! Plugins (DEVELOPING.md): the `plugin` built-in, which loads plugins (a
 //! `.rhai` file, or a directory of Rhai and shell files), and the hooks
 //! that their extensions (their Rhai code) register. Nothing here costs
 //! anything until the first `plugin load`, which creates the host

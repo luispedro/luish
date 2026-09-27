@@ -1,0 +1,105 @@
+# Compatibility
+
+luish treats [dash](http://gondor.apana.org.au/~herbert/dash/) as its reference: scripts should behave as they do
+under dash, including where POSIX leaves the behaviour open. This page lists where luish deliberately differs, and
+what isn't implemented yet. Where luish goes beyond dash, zsh is the preferred model, since luish is meant to replace
+it as an interactive shell; some older differences follow bash instead.
+
+The system dash on Debian and Ubuntu has patches of its own. Where they matter, luish follows upstream dash.
+
+## Differences from dash
+
+### Following zsh
+
+| Behaviour | dash | luish |
+|---|---|---|
+| `source` | Not a built-in (`not found`, status 127) | As in zsh: `.`, but a name without `/` is looked for in the current directory before `PATH`, and further arguments are the positional parameters while the file runs. Special, as in zsh's sh emulation. A file that can't be read is an error with status 2, as for `.` (zsh uses 1) |
+| `pushd`, `popd`, `dirs` | Not built-ins (`not found`, status 127) | As in zsh with its default options: `+n` and `-n` name entries of the stack (zsh's sh emulation sets `POSIX_CD`, which makes them directory names). `popd` with an argument other than `+n` or `-n` is an error with status 1 (zsh usually does nothing, with status 0) |
+| `setopt`, `unsetopt` | Not built-ins (`not found`, status 127) | As in zsh: set options by name (case and `_` don't matter, a `no` prefix inverts), dash's and luish's own (such as `prompt.percent`, whose zsh name `prompt_percent` also works). Without arguments they list the options that are on or off; zsh lists those that differ from their defaults |
+| `%` sequences in prompts | Not supported | With `setopt prompt.percent`, as in zsh (after parameter expansion, as with zsh's `PROMPT_SUBST`), with a subset of its sequences, and also long names (`%[hostname]`, `%[fg:red]`, `%([status].yes.no)`), which zsh doesn't have, where an unknown name is an error. The escape sequences for attributes and colours are ANSI SGR codes rather than the terminal's own (so turning bold off is `\e[22m`, where zsh writes `\e[0m` and restores the rest) |
+| `**/` | The same as `*/` | With `setopt glob.star` (off by default), matches any number of directories, as in zsh (where it is always on) |
+| Glob qualifiers, `*(/)` | A syntax error | With `setopt glob.bare_qualifiers` (zsh's `bareglobqual`, off by default), zsh's glob qualifiers. Subscripts count from 1, as in native zsh (its `sh` emulation sets `KSH_ARRAYS`, which makes them count from 0) |
+| A directory as a command | `not found` (status 127) | With `setopt cd.auto` (zsh's `autocd`, off by default), changes to it when read from standard input, as in zsh |
+| `bindkey` | Not a built-in (`not found`, status 127) | In interactive shells (and their subshells), as zsh's for its emacs keymap and the widgets luish has; `__luish_internal bindkey` anywhere. Unlike zsh: Up and Down are bound to `history-beginning-search-backward`/`-forward` by default (zsh: `up-line-or-history`), `-r` gives a key back to the line editor's own binding, and vi mode can't be changed |
+| History file | None (Debian's dash has no line editor; upstream dash with libedit keeps the history in memory only) | In zsh's format, so the two shells can share a file (see [History](usage.md#history)). Unlike zsh: without `HISTFILE` the file is `$XDG_STATE_HOME/luish/history` (zsh saves nothing), `SAVEHIST` defaults to `HISTSIZE` (zsh: 0), `HISTFILE` and `HISTSIZE` set in the startup files take effect, a command equal to the previous one is never added (zsh's `hist_ignore_dups`, off there by default), and the elapsed time is always written as 0 |
+| Last command of `sh -c` | Debian's dash forks it (a Debian patch; upstream dash execs it) | Replaces the shell with it unless a trap is set, as zsh, bash and upstream dash do |
+
+### Following POSIX where dash doesn't
+
+| Behaviour | dash | luish |
+|---|---|---|
+| Script read from a pipe | Reads ahead in blocks, so commands in the script that read stdin miss data | Never reads past the current command (POSIX requirement), as zsh |
+| `$LINENO` | Not supported (empty) | Current line number, as in POSIX and bash |
+| fd numbers in redirections | Only a single digit is an fd number: `exec 20>f` runs a command named `20`, and `echo hi 99>&1` prints `hi 99` | Any number of digits, as POSIX allows (and bash does; zsh is like dash) |
+| `exec -- cmd` | No `--` handling: tries to run a command named `--` (status 127) | `--` ends the options, as POSIX requires (and bash and zsh do) |
+| `cd -e` | Not supported (`Illegal option -e`, status 2) | The POSIX 2024 option: with `-P`, status 1 if the directory is changed but its name can't be found (as bash does) |
+| Options listed by `set -o` / `set +o` | The last one is `debug` (no option letter) | The last one is `hashall` (`-h`, which POSIX has and dash lacks); luish has no `debug` option |
+
+### Following bash
+
+| Behaviour | dash | luish |
+|---|---|---|
+| `set -x` output | Arguments printed unquoted | Arguments quoted so the trace can be re-read as input (as bash does) |
+| `kill %n` for a job started without job control | Signals the process group `-pid`, which doesn't exist, and fails with "No such process" | Signals each process of the job (as bash does) |
+| `fc` | Debian's dash has none (`fc: not found`, status 127). Upstream dash (with libedit) lists as `%5d cmd`, counts its own entry, and doesn't echo edited commands | The POSIX list format (`N\tcmd`, continuation lines indented by a tab). As in bash, its own entry is left out, and commands it re-runs replace that entry and are echoed to stderr. An event number outside the history is moved to the nearest end (dash moves a `first` that is too large to the oldest entry). Fails with status 2 in a non-interactive shell |
+| `$((` that is not arithmetic | Syntax error (dash always reads `$((` as arithmetic) | Read as `$( (...) )`, a command substitution of a subshell, as bash does (POSIX leaves it unspecified) |
+| `emacs` option in interactive shells | Off (Debian's dash has no line editor) | On unless `vi` is set, since it is the line editor's mode, so `$-` has `E` (as in bash) |
+
+### luish's own
+
+| Behaviour | dash | luish |
+|---|---|---|
+| Command cache (`hash`) in an interactive shell | Kept until `PATH` is assigned or `hash -r`, so a command installed earlier in `PATH` than a cached one is ignored | Also cleared when a `PATH` directory changes, checked after each line is read (see [Improvements](improvements.md)) |
+| Command-line options | `-o` takes only the names that `set -o` lists, and any `--name` other than `--` is an error (`Illegal option --`, status 2) | `-o` and `+o` also take any option named as for `setopt` (such as `-o ERR_EXIT` or `-o prompt_percent`), and there are long options such as `--login` and `--no-rcs` (see [Usage](usage.md)) |
+| `__luish_internal` | Not a built-in (`not found`, status 127) | luish's own built-in, with subcommands such as `savestate`, which prints commands that restore the shell's state, and `print-git-rev` |
+| Startup files | Login shells read `/etc/profile` and `~/.profile`; interactive shells read `$ENV` | Interactive shells first apply the settings in `config.toml`, if it exists; if `rc.d` exists, they then run its `*.lsh` files; if `login.d` exists, login shells then run its files instead of `/etc/profile` and `~/.profile`. Their effects are cached (see [Cached startup files](usage.md#cached-startup-files)). Without them, as dash |
+| Grouped option names, `setopt NAME=VALUE`, `setopt -p GROUP` | No `setopt` | luish's own options are named in groups (`history.share`, `glob.star`), with zsh's names as aliases, and a `no` prefix goes on the last part (`history.no_share`). `setopt NAME=VALUE` sets an option or a setting with a value, and such arguments are expanded as assignments, as for `export`. `setopt -p GROUP` puts the names that follow in `GROUP`. zsh has none of these (`setopt a=b` is an error there, and `setopt -p` sets `privileged`) |
+| `help` | Not a built-in (`not found`, status 127) | In interactive shells (and their subshells), a built-in that shows help for the built-ins. Not a built-in in scripts or `-c`, as in dash; there, `__luish_internal help` does the same |
+| `plugin` | Not a built-in (`not found`, status 127) | In interactive shells (and their subshells), a built-in that loads [plugins](plugins.md). Not a built-in in scripts or `-c`, as in dash; there, `__luish_internal plugin` does the same |
+
+## Known limitations
+
+Scripts:
+
+- `trap` with no arguments, run inside a subshell or `$(...)`, doesn't show the parent's traps.
+- `read` is not interrupted by trapped signals.
+- `${@#pat}` and `${*%pat}` operate on the joined string rather than on each parameter.
+- `set -v` output is approximate.
+- Glob results are sorted in byte order; locale collation is not implemented.
+- `command local x=1` keeps the variable in the function; in dash it is local to the `command` invocation and
+  disappears.
+- Deep function recursion overflows the stack (a segmentation fault); dash stops at a depth of 1000.
+
+Interactive use:
+
+- History entries are stored as UTF-8, so invalid bytes in a command are replaced when it is recorded. They have no
+  elapsed time (written as 0, as zsh does with `share_history`), nor other metadata such as the directory or exit
+  status, and `fc` can't show their times (zsh's `fc -d`, `-i`). Entries read from other shells are not marked as
+  such (zsh's `set-local-history`). zsh's `hist_ignore_dups`, `append_history`, `extended_history` and
+  `hist_fcntl_lock` are always on, and aren't options.
+- `fc -e` records the edited text as one history entry, rather than one entry per command. With
+  `history.inc_append` or `history.share`, the `fc` command has been written to the file before it replaces its own
+  entry (as in zsh).
+- `set -b` (immediate job notification) is accepted but does nothing: jobs are reported only before a prompt. Job
+  notifications are given only for input read a line at a time (interactive or stdin), not in scripts run with
+  `set -m`.
+- Syntax highlighting doesn't expand aliases, and a function or alias defined earlier on the same line is shown as
+  unknown until the next prompt.
+- Completion skips filenames that are not valid UTF-8. Matching has no fuzzy matching and no ranking, and isn't
+  configurable. The menu has no groups (such as zsh's headings for commands, files and so on), no colours by file
+  type (`LS_COLORS`), no narrowing by typing, and no mouse. After Ctrl-C it stays on the screen above the next
+  prompt. Completion doesn't know about `**/` or glob qualifiers.
+- Key bindings: only the emacs keymap can be changed (vi mode keeps the line editor's keys); there are no
+  user-defined widgets (`zle -N`), numeric arguments aren't given to luish's own widgets, and some word kills don't
+  go to the kill ring. After Ctrl-O the next line is filled with the entry, but the history position is the end of
+  the history (zsh's is the entry).
+- Prompt expansion lacks zsh's `%_`, `%e`, `%I`, `%N`, `%x`, `%v`, the `l`, `S`, `_`, `e` and `v` conditions, and
+  widths relative to the terminal's (negative truncation lengths). luish doesn't maintain `SHLVL`, so `%L` shows the
+  inherited value.
+- Glob qualifiers lack zsh's `e`, `+`, `f`, `F`, `Y` and `P`, `(#q...)`, most modifiers, and `EXTENDED_GLOB`
+  patterns.
+- The startup cache doesn't see changes that don't show in a file's fingerprint (see
+  [Cached startup files](usage.md#cached-startup-files)).
+- Extensions have only the `chpwd`, `prompt-vars` and `prompt-rewrite` hooks and completers: no built-ins of their
+  own, no `precmd`, `preexec` or `exit` hooks, and no time limit except for completers, so a slow prompt hook or
+  `prompt-vars.lsh` delays the prompt. Completers can't be interrupted with Ctrl-C, only by their time limit.

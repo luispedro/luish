@@ -12,11 +12,16 @@ features is fine, as long as the prompt and line editor stay fast.
 
 - `GOALS.md`: the goals, grouped into stages. When goals conflict, the earlier stage wins. Stage 1 (POSIX, dash speed,
   interactive daily driver) is the current focus.
-- `PLAN.md`: the implementation plan, by phase (the phase numbers are used throughout the other documents).
-- `STATUS.md`: what is implemented, how it is tested, and the known gaps. **Update it in the same commit as any
-  change in behaviour.**
-- `DEVIATIONS.md`: deliberate differences from dash, grouped by what luish follows instead (zsh is preferred
-  beyond POSIX). Each needs a test: a `# reference: zsh` case, or else a `.expected` one.
+- `PLAN.md`: what is still to be built, by phase (the phase numbers are used throughout the other documents),
+  starting with the next steps in priority order.
+- `DEVELOPING.md`: developer documentation: design decisions, implementation notes by area with the tests that cover
+  them, deviations and their tests, dash's quirks, conformance and performance results. **Update it (and the user
+  docs) in the same commit as any change in behaviour.**
+- `docs/compatibility.md`: deliberate differences from dash, grouped by what luish follows instead (zsh is preferred
+  beyond POSIX), and the known limitations. Each deviation needs a test (a `# reference: zsh` case, or else a
+  `.expected` one), listed in `DEVELOPING.md`.
+- `working-memory.md` (untracked): a scratch pad for handing work over between sessions. Anything durable belongs in
+  one of the documents above.
 - `docs/`: user-facing documentation (Sphinx with MyST Markdown), published on Read the Docs via
   `.readthedocs.yaml`. Its Python dependencies are in both `docs/requirements.txt` (for Read the Docs) and the
   `docs` feature in `pixi.toml`; keep them in step.
@@ -40,7 +45,7 @@ pixi run docs                     # build the user docs into docs/_build/html (w
 ```
 
 `rustfmt.toml` sets `max_width = 120`. Plugins (Phase 11, `src/plugins/`) use Rhai behind the default `plugins` cargo
-feature (PLAN.md §6); `cargo clippy --all-targets --no-default-features` must also stay clean. A **plugin** is what
+feature; `cargo clippy --all-targets --no-default-features` must also stay clean. A **plugin** is what
 `plugin load` loads (a directory of Rhai and shell files, a `.rhai` file or a `.lsh` file); its **extension** is its
 Rhai code (the directory's `extension.rhai`, or the `.rhai` file), which runs in the shell. Keep the two words apart, as
 zsh users read "plugin" as files to source.
@@ -55,14 +60,15 @@ Most coverage is differential (`tests/compare.rs`): each `tests/cases/**/*.sh` r
   deviation where luish follows zsh. Words after `zsh` are further arguments (e.g. `# reference: zsh -o noposixcd`).
   zsh comes from pixi (pinned in `pixi.toml`), so run such cases through pixi.
 - `NAME.expected` (with optional `NAME.status`) replaces the reference run, for deviations that no reference shell
-  matches. Record every deviation in `DEVIATIONS.md`. `NAME.stdin` is fed to standard input.
+  matches. Record every deviation in `docs/compatibility.md`, and its tests in `DEVELOPING.md`. `NAME.stdin` is fed
+  to standard input.
 - Each script runs in a fresh temporary directory that is also `$HOME`, with a cleared environment, `LC_ALL=C`, and
   `$SH` set to the shell under test.
-- When fixing a bug, add a case first. Every behaviour listed as done in `STATUS.md` must stay covered.
+- When fixing a bug, add a case first. Every behaviour listed in `DEVELOPING.md` must stay covered.
 - Jobs in cases must be deterministic: either finished (after `wait`) or long-running and killed. `kill $!` on a
   background pipeline only kills its last process, so use `: | sleep 10`, not `sleep 10 | sleep 10`.
 - The system dash is Debian's, which has patches (e.g. it forks the last command of `sh -c`). Upstream dash
-  source is the reference for intent; `DEVIATIONS.md` records where the two matter.
+  source is the reference for intent; `DEVELOPING.md` records where the two matter.
 - Plugin cases (`tests/plugins/*.sh`) can't run under dash: each needs `NAME.expected`, and stderr must be empty or
   match `NAME.stderr`.
 - Interactive behaviour (job control, Ctrl-C/Ctrl-Z, terminal modes) is tested on a pty in `tests/interactive.rs`.
@@ -121,3 +127,5 @@ state on the `Shell` struct in `shell.rs`.
 - Performance matters: hot paths (e.g. `[ ... ]` in loops) must avoid needless syscalls. Compare against dash with a
   release build when changing the executor or expansion (`bench/run.sh`).
 - Documentation commits are prefixed `DOC`.
+- Other sessions may work on this repository at the same time (in worktrees, or committing to `main`). Stage only
+  explicit paths (`git add src tests DEVELOPING.md ...`), never `git add -A` at the root.

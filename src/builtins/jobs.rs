@@ -145,7 +145,7 @@ pub fn wait(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 }
 
 /// A port of dash's `killcmd` (except for jobs started without job
-/// control: see DEVIATIONS.md).
+/// control: see docs/compatibility.md).
 pub fn kill(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let usage = |sh: &Shell| {
         sh.berr(
