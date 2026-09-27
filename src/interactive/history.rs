@@ -9,6 +9,7 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use rustyline::history::{History, SearchDirection, SearchResult};
 
@@ -34,6 +35,22 @@ pub struct ShellHistory {
     /// The event number of the first entry not in the file.
     saved: usize,
     file: FileState,
+    /// Shared with the key bindings, for the prefix searches (`starts_with`).
+    pub search: Arc<Mutex<Search>>,
+}
+
+/// The line being edited, for zsh's `history-beginning-search-backward`
+/// and `-forward` (see `keys.rs`), which rustyline's anchored search
+/// (`starts_with`) implements.
+#[derive(Default)]
+pub struct Search {
+    /// The line when the key was pressed: entries equal to it are skipped.
+    pub current: String,
+    /// The line as typed, before the searches: going forward past the
+    /// newest match brings it back.
+    pub original: String,
+    /// The entry the last search found.
+    pub shown: Option<String>,
 }
 
 impl Default for ShellHistory {
@@ -47,6 +64,7 @@ impl Default for ShellHistory {
             private: false,
             saved: 1,
             file: FileState::default(),
+            search: Arc::default(),
         }
     }
 }
@@ -99,6 +117,17 @@ impl ShellHistory {
     /// The event number the next entry will get.
     pub fn next_event(&self) -> usize {
         self.first + self.entries.len()
+    }
+
+    /// The event number of the entry at `index` (as rustyline counts them,
+    /// from the oldest kept).
+    pub fn event_at(&self, index: usize) -> usize {
+        self.first + index
+    }
+
+    /// The index of the entry with event number `n`.
+    pub fn index_of(&self, n: usize) -> Option<usize> {
+        n.checked_sub(self.first).filter(|&i| i < self.entries.len())
     }
 
     /// The entry with event number `n`.
@@ -370,16 +399,41 @@ impl History for ShellHistory {
         Ok(self.search_match(start, dir, |e| e.find(term)))
     }
 
+    /// The entries that start with `term` (all of them if it is empty),
+    /// other than the line being edited. Going forward past the newest
+    /// match gives back the line as it was typed, as zsh's
+    /// `history-beginning-search-forward` does.
     fn starts_with(
         &self,
         term: &str,
         start: usize,
         dir: SearchDirection,
     ) -> rustyline::Result<Option<SearchResult<'_>>> {
-        if term.is_empty() {
+        let Ok(mut search) = self.search.lock() else {
             return Ok(None);
+        };
+        let current = std::mem::take(&mut search.current);
+        let found = self.search_match(start, dir, |e| {
+            (e.starts_with(term) && e != current).then_some(term.len())
+        });
+        let found = match found {
+            None if dir == SearchDirection::Forward
+                && search.original != current
+                && search.original.starts_with(term) =>
+            {
+                Some(SearchResult {
+                    entry: Cow::Owned(search.original.clone()),
+                    idx: self.entries.len(),
+                    pos: term.len(),
+                })
+            }
+            found => found,
+        };
+        // When nothing is found, the line stays as it was.
+        if let Some(f) = &found {
+            search.shown = Some(f.entry.to_string());
         }
-        Ok(self.search_match(start, dir, |e| e.starts_with(term).then_some(term.len())))
+        Ok(found)
     }
 }
 
@@ -545,6 +599,66 @@ mod tests {
         assert_eq!(r.idx, 0);
         let r = h.search("two", 0, SearchDirection::Forward).unwrap().unwrap();
         assert_eq!((r.idx, r.pos), (2, 5));
+    }
+
+    #[test]
+    fn prefix_search() {
+        let mut h = ShellHistory::default();
+        for l in ["echo one", "ls", "echo two", "echo one"] {
+            h.add(l).unwrap();
+        }
+        let press = |h: &ShellHistory, line: &str| {
+            let mut s = h.search.lock().unwrap();
+            if s.shown.as_deref() != Some(line) {
+                s.original = line.to_owned();
+            }
+            s.current = line.to_owned();
+        };
+        let find = |h: &ShellHistory, term: &str, start: usize, dir| {
+            let r = h.starts_with(term, start, dir).unwrap()?;
+            Some((r.entry.into_owned(), r.idx, r.pos))
+        };
+        // Typed "echo", then Up: the newest match, the cursor after "echo".
+        press(&h, "echo");
+        assert_eq!(
+            find(&h, "echo", 3, SearchDirection::Reverse),
+            Some(("echo one".into(), 3, 4))
+        );
+        press(&h, "echo one");
+        assert_eq!(
+            find(&h, "echo", 2, SearchDirection::Reverse),
+            Some(("echo two".into(), 2, 4))
+        );
+        // Up again skips "echo one", which is what the line was.
+        press(&h, "echo two");
+        assert_eq!(
+            find(&h, "echo", 1, SearchDirection::Reverse),
+            Some(("echo one".into(), 0, 4))
+        );
+        press(&h, "echo one");
+        assert_eq!(find(&h, "echo", 0, SearchDirection::Reverse), None);
+        // Down past the newest match brings back the line as typed.
+        press(&h, "echo one");
+        assert_eq!(
+            find(&h, "echo", 1, SearchDirection::Forward),
+            Some(("echo two".into(), 2, 4))
+        );
+        press(&h, "echo two");
+        assert_eq!(
+            find(&h, "echo", 3, SearchDirection::Forward),
+            Some(("echo one".into(), 3, 4))
+        );
+        press(&h, "echo one");
+        assert_eq!(
+            find(&h, "echo", 4, SearchDirection::Forward),
+            Some(("echo".into(), 4, 4))
+        );
+        // An empty prefix matches every entry.
+        press(&h, "");
+        assert_eq!(
+            find(&h, "", 3, SearchDirection::Reverse),
+            Some(("echo one".into(), 3, 0))
+        );
     }
 
     #[test]

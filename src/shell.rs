@@ -76,6 +76,8 @@ pub struct Shell {
     /// The directory stack (`pushd`, `popd`, `dirs`), most recent first,
     /// without the current directory.
     pub dirstack: Vec<Vec<u8>>,
+    /// The line editor's key bindings that `bindkey` changed.
+    pub keymap: crate::interactive::keys::Keymap,
     /// `getopts`'s position (dash's `shellparam.optind` and `optoff`).
     pub optind: usize,
     pub optoff: Option<usize>,
@@ -157,6 +159,7 @@ impl Shell {
             optoff: None,
             curdir,
             dirstack: Vec::new(),
+            keymap: Default::default(),
             in_ps4: false,
             out_failed: std::cell::Cell::new(false),
             in_exit_trap: false,

@@ -8,6 +8,7 @@ type Subcommand = fn(&mut Shell, &[Vec<u8>]) -> ExecResult;
 
 /// (name, function); each gets the arguments from its own name on.
 const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
+    (b"bindkey", bindkey),
     (b"help", help),
     (b"plugin", plugin),
     (b"print-git-rev", print_git_rev),
@@ -39,6 +40,12 @@ pub fn internal(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             Ok(2)
         }
     }
+}
+
+/// `bindkey`: the `bindkey` built-in, which is also available here in
+/// shells that aren't interactive.
+fn bindkey(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    crate::interactive::keys::run(sh, b"__luish_internal bindkey", &argv[1..])
 }
 
 /// `help`: the `help` built-in, which is also available here in shells that

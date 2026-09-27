@@ -1,0 +1,22 @@
+"^W" backward-kill-word
+"^W" backward-kill-word
+"^[[A" history-beginning-search-backward
+"^[[A" history-beginning-search-backward
+bindkey "^[." insert-last-word
+"^X^E" undefined-key
+"^W" kill-whole-line
+bindkey "^X^E" undo
+"^[[A" undefined-key
+38
+unknown widget: 1
+unknown keymap: 1
+bad sequence: 1
+bad option: 1
+__luish_internal bindkey '^W' kill-whole-line
+__luish_internal bindkey '^X^E' undo
+__luish_internal bindkey -r '^[[A'
+"^W" kill-whole-line
+"^X^E" undo
+2
+vi
+emacs

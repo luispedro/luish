@@ -61,10 +61,44 @@ variable is expanded too; write `%%` for a literal `%`. The sequences are those 
 Other sequences expand to nothing. zsh's `%_`, `%e`, `%I`, `%N`, `%x`, `%v`, `%[...]`, and conditions and truncation
 widths relative to the terminal's width, aren't supported.
 
+## Line editing
+
+An interactive shell edits command lines with emacs keys, as zsh does, or with vi keys after `set -o vi` (or
+`bindkey -v`). The emacs keys are zsh's, and `bindkey` shows and changes them (see `help bindkey`). Some of the most
+useful:
+
+| Key | Action |
+|---|---|
+| Up, Down | The previous or next command that starts with the text before the cursor (all commands if the line is empty); Down past the newest brings back what was typed |
+| Ctrl-P, Ctrl-N | The previous or next command |
+| Ctrl-R | Search the history as you type |
+| Alt-. | Insert the last word of the previous command; again, that of the one before |
+| Ctrl-O | Run the line, and start the next one with the command after it in the history, to run a series of commands again |
+| Ctrl-W, Alt-Backspace | Delete the word before the cursor |
+| Alt-B, Alt-F, Alt-D | Move back a word, forward to the next word, or delete to the end of the word |
+| Ctrl-A, Ctrl-E | Go to the start or end of the line |
+| Ctrl-K, Ctrl-U | Delete to the end of the line, or the whole line |
+| Ctrl-Y, Alt-Y | Put back what was deleted, or instead what was deleted before it |
+| Ctrl-_ | Undo |
+
+As in zsh, words are made of letters, digits and the characters in `WORDCHARS`, by default
+`*?_-.[]~=/&;!#$%^(){}<>`. Many zsh users leave out `/`, so that Ctrl-W deletes one directory of a path:
+
+```sh
+WORDCHARS='*?_-.[]~=&;!#$%^(){}<>'
+```
+
+To bind Up and Down as zsh does by default:
+
+```sh
+bindkey '^[[A' up-line-or-history
+bindkey '^[[B' down-line-or-history
+```
+
 ## History
 
 An interactive shell keeps the last `HISTSIZE` commands (1000 by default) in its history, where the line editor
-(Up and Down, Ctrl-R) and `fc` find them. A command the same as the one before it is not added again. The history is
+(Up and Down, Ctrl-R, Alt-.) and `fc` find them. A command the same as the one before it is not added again. The history is
 saved to the file `HISTFILE`, by default `$XDG_STATE_HOME/luish/history` (`~/.local/state/luish/history` if
 `XDG_STATE_HOME` isn't set); set `HISTFILE` to an empty value to keep no file. The file is read after the startup
 files, so `HISTFILE` and `HISTSIZE` can be set there (or in `luishrc`).

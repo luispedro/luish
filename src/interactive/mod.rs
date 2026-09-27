@@ -4,6 +4,7 @@ mod complete;
 mod highlight;
 mod histfile;
 pub mod history;
+pub mod keys;
 mod menu;
 
 use std::cell::{Cell, RefCell};
@@ -32,6 +33,9 @@ thread_local! {
     /// Set when a completer exits the shell, which happens once the editor
     /// has given the terminal back.
     static EXIT: Cell<Option<i32>> = const { Cell::new(None) };
+    /// The event number of the history entry to start the next command
+    /// line with (after `accept-line-and-down-history`).
+    static NEXT: Cell<Option<usize>> = const { Cell::new(None) };
 }
 
 /// `$HISTFILE`, or by default `$XDG_STATE_HOME/luish/history` (or
@@ -79,7 +83,8 @@ pub fn init_editor() -> bool {
     };
     let mut helper = ShellHelper::default();
     helper.ask = Some(ask);
-    menu::bind(&mut ed, &helper.menu);
+    ed.history_mut().search = helper.keys.lock().map(|k| k.search.clone()).unwrap_or_default();
+    keys::bind(&mut ed, &helper.menu, &helper.keys);
     ed.set_helper(Some(helper));
     ed.set_completion_type(CompletionType::List);
     EDITOR.with(|e| *e.borrow_mut() = Some(ed));
@@ -225,12 +230,28 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
     let vi = sh.opt(Opt::Vi);
     let names = names(sh);
     let colors = colors(sh);
+    let wordchars = sh
+        .get_var(b"WORDCHARS")
+        .map(|w| String::from_utf8_lossy(&w).into_owned());
+    let keymap = sh.keymap.clone();
     SHELL.set(sh as *mut Shell);
     let line = EDITOR.with(|e| {
         let mut e = e.borrow_mut();
         let Some(ed) = e.as_mut() else {
             return Line::Eof;
         };
+        let Some((menu, keys)) = ed.helper().map(|h| (h.menu.clone(), h.keys.clone())) else {
+            return Line::Eof;
+        };
+        keys::update(ed, &menu, &keys, &keymap, wordchars);
+        // The history entry to start with, after `accept-line-and-down-history`.
+        let initial = (!continuation)
+            .then(|| NEXT.take())
+            .flatten()
+            .and_then(|n| Some((ed.history().index_of(n)?, ed.history().event(n)?.to_owned())));
+        if let (Some((i, _)), Ok(mut k)) = (&initial, keys.lock()) {
+            k.prefilled = Some(*i);
+        }
         if let Some(h) = ed.helper_mut() {
             h.names = names;
             h.prompt.clone_from(plain.as_ref().unwrap_or(&text));
@@ -253,10 +274,17 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
         // insert mode Esc then a key is the same as Meta and the key, so
         // the wait can be shorter.
         ed.set_keyseq_timeout(Some(if vi { 100 } else { 400 }));
+        let start = initial.as_ref().map_or("", |(_, t)| t.as_str());
         let r = match &plain {
-            Some(plain) => ed.readline(&(plain, &text)),
-            None => ed.readline(&text),
+            Some(plain) => ed.readline_with_initial(&(plain, &text), (start, "")),
+            None => ed.readline_with_initial(&text, (start, "")),
         };
+        let down = keys.lock().ok().and_then(|mut k| k.down.take());
+        if let (Ok(_), Some(i)) = (&r, down)
+            && i + 1 < ed.history().len()
+        {
+            NEXT.set(Some(ed.history().event_at(i + 1)));
+        }
         match r {
             Ok(mut l) => {
                 l.push('\n');

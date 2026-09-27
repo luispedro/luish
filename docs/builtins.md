@@ -23,6 +23,10 @@ and `help NAME` shows the same text as here in the terminal.
 :heading-offset: 1
 ```
 
+```{include} builtins/bindkey.md
+:heading-offset: 1
+```
+
 ```{include} builtins/break.md
 :heading-offset: 1
 ```

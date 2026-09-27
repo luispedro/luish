@@ -8,19 +8,16 @@
 //! selection. The menu is open only while the line and the cursor are the
 //! ones it left, so typing anything keeps the match and closes the menu.
 //!
-//! The key bindings (`bind`) only record a move and ask rustyline to
-//! complete (`Cmd::Complete`). The completer makes the move and gives
+//! The keys (`key`, called by the key bindings of `keys.rs`) only record
+//! a move and ask rustyline to complete (`Cmd::Complete`). The completer
+//! makes the move and gives
 //! rustyline the new text as the only candidate (`Menu::step`), so every
 //! change to the line goes through rustyline's completion and its undo.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use rustyline::hint::Hint;
-use rustyline::history::History;
-use rustyline::{
-    Cmd, ConditionalEventHandler, Editor, Event, EventContext, EventHandler, Helper, KeyCode, KeyEvent, Modifiers,
-    RepeatCount,
-};
+use rustyline::{Cmd, EventContext, KeyCode, KeyEvent, Modifiers};
 use unicode_width::UnicodeWidthChar;
 
 /// A match, as the menu shows it.
@@ -402,63 +399,66 @@ enum Action {
     Accept,
 }
 
-/// A key that acts on the menu while it is open (and otherwise does what
-/// it normally does). The arrow keys, other than Down, move only once a
-/// match is selected, so they go on moving in the line and the history
-/// while the menu only lists the matches.
-struct Key {
-    menu: Arc<Mutex<Menu>>,
-    action: Action,
-}
-
-impl ConditionalEventHandler for Key {
-    fn handle(&self, _: &Event, _: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
-        let mut menu = self.menu.lock().ok()?;
-        if !menu.is_open(ctx.line(), ctx.pos()) {
-            return None;
-        }
-        let selecting = menu.selected.is_some();
-        match self.action {
-            Action::Accept if selecting => {
-                menu.close();
-                Some(Cmd::Repaint)
-            }
-            Action::Move(Move::Cancel) if !selecting => {
-                menu.close();
-                Some(Cmd::Repaint)
-            }
-            Action::Move(m) if selecting || matches!(m, Move::Cancel | Move::Down | Move::Prev) => {
-                menu.pending = Some(m);
-                Some(Cmd::Complete)
-            }
-            _ => None,
-        }
-    }
-}
-
-/// Binds the keys that act on the menu.
-pub fn bind<H: Helper, I: History>(ed: &mut Editor<H, I>, menu: &Arc<Mutex<Menu>>) {
+/// The keys that act on the menu while it is open (and otherwise do what
+/// they normally do).
+const KEYS: &[(KeyEvent, Action)] = {
     use KeyCode as K;
-    let none = Modifiers::NONE;
-    let keys = [
-        (KeyEvent(K::BackTab, none), Action::Move(Move::Prev)),
-        (KeyEvent(K::Down, none), Action::Move(Move::Down)),
-        (KeyEvent(K::Up, none), Action::Move(Move::Up)),
-        (KeyEvent(K::Right, none), Action::Move(Move::Right)),
-        (KeyEvent(K::Left, none), Action::Move(Move::Left)),
-        (KeyEvent::ctrl('N'), Action::Move(Move::Down)),
-        (KeyEvent::ctrl('P'), Action::Move(Move::Up)),
-        (KeyEvent::ctrl('F'), Action::Move(Move::Right)),
-        (KeyEvent::ctrl('B'), Action::Move(Move::Left)),
-        (KeyEvent(K::PageDown, none), Action::Move(Move::PageDown)),
-        (KeyEvent(K::PageUp, none), Action::Move(Move::PageUp)),
-        (KeyEvent(K::Esc, none), Action::Move(Move::Cancel)),
-        (KeyEvent::ctrl('G'), Action::Move(Move::Cancel)),
-        (KeyEvent(K::Enter, none), Action::Accept),
-    ];
-    for (key, action) in keys {
-        let menu = Arc::clone(menu);
-        ed.bind_sequence(key, EventHandler::Conditional(Box::new(Key { menu, action })));
+    const fn key(k: KeyCode) -> KeyEvent {
+        KeyEvent(k, Modifiers::NONE)
+    }
+    const fn ctrl(c: char) -> KeyEvent {
+        KeyEvent(KeyCode::Char(c), Modifiers::CTRL)
+    }
+    &[
+        (key(K::BackTab), Action::Move(Move::Prev)),
+        (key(K::Down), Action::Move(Move::Down)),
+        (key(K::Up), Action::Move(Move::Up)),
+        (key(K::Right), Action::Move(Move::Right)),
+        (key(K::Left), Action::Move(Move::Left)),
+        (ctrl('N'), Action::Move(Move::Down)),
+        (ctrl('P'), Action::Move(Move::Up)),
+        (ctrl('F'), Action::Move(Move::Right)),
+        (ctrl('B'), Action::Move(Move::Left)),
+        (key(K::PageDown), Action::Move(Move::PageDown)),
+        (key(K::PageUp), Action::Move(Move::PageUp)),
+        (key(K::Esc), Action::Move(Move::Cancel)),
+        (ctrl('G'), Action::Move(Move::Cancel)),
+        (key(K::Enter), Action::Accept),
+    ]
+};
+
+/// The keys the menu uses, which the key bindings (`keys.rs`) give to
+/// [`key`] first.
+pub fn keys() -> Vec<KeyEvent> {
+    KEYS.iter().map(|k| k.0).collect()
+}
+
+/// Acts on the menu for `key`, if it is open and the key is one of its
+/// own; otherwise returns None, and the key does what it normally does.
+/// The arrow keys, other than Down, move only once a match is selected, so
+/// they go on moving in the line and the history while the menu only lists
+/// the matches.
+pub fn key(menu: &Mutex<Menu>, key: KeyEvent, ctx: &EventContext) -> Option<Cmd> {
+    let action = KEYS.iter().find(|k| k.0 == key)?.1;
+    let mut menu = menu.lock().ok()?;
+    if !menu.is_open(ctx.line(), ctx.pos()) {
+        return None;
+    }
+    let selecting = menu.selected.is_some();
+    match action {
+        Action::Accept if selecting => {
+            menu.close();
+            Some(Cmd::Repaint)
+        }
+        Action::Move(Move::Cancel) if !selecting => {
+            menu.close();
+            Some(Cmd::Repaint)
+        }
+        Action::Move(m) if selecting || matches!(m, Move::Cancel | Move::Down | Move::Prev) => {
+            menu.pending = Some(m);
+            Some(Cmd::Complete)
+        }
+        _ => None,
     }
 }
 

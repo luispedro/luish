@@ -483,6 +483,30 @@ pass**.
   time), so a newly installed command is found even if it shadows a cached
   one (see DEVIATIONS.md and `docs/improvements.md`).
 - Ctrl-C cancels the current input.
+- Key bindings (`src/interactive/keys.rs`): in emacs mode, luish's keymap
+  (zsh's widget names and default emacs bindings) comes before
+  rustyline's; `bindkey` (interactive only; `__luish_internal bindkey`
+  anywhere) lists (`-L` as commands), shows, binds and removes (`-r`)
+  bindings, and `-e`/`-v` select the mode. Keys are written as in zsh
+  (`^X`, `^[`, `\e`, `\C-x`, `\M-x`, octal and hex escapes) and decoded
+  as rustyline decodes xterm's sequences, so `^[OA` and `^[[A` are the same
+  key. Differences from zsh's defaults: Up and Down are
+  `history-beginning-search-backward`/`-forward` (with an empty line, every
+  entry matches; lines equal to the one shown are skipped; Down past the
+  newest match brings back the line as typed; the cursor stays after the
+  prefix). Word widgets (`^W`, `Alt-Backspace`, `Alt-B`, `Alt-F`, `Alt-D`)
+  stop at characters that are neither alphanumeric nor in `$WORDCHARS`
+  (zsh's default when unset); they are given to rustyline as a character
+  search, a buffer end or one of its own word motions when one lands on the
+  same place (so kills go to the kill ring and consecutive kills are
+  yanked together), and otherwise made through the completer's `update`
+  (without the kill ring). `Alt-.`/`Alt-_` (`insert-last-word`) and `^O`
+  (`accept-line-and-down-history`) are done through the completer and the
+  hinter, which can see the history; `^U` is `kill-whole-line`, as in zsh.
+  Bindings changed with `bindkey` are part of the saved state
+  (`savestate`, the startup cache). Tests: `line_editor_keys` in
+  `tests/interactive.rs`, `builtins/internal_bindkey.sh`,
+  `builtins/bindkey.sh`, unit tests in `keys.rs` and `history.rs`.
 - Tab completion (`src/interactive/complete.rs`): the first Tab completes
   the common prefix, and if there is nothing more to add opens the menu
   (see below). In
@@ -503,7 +527,8 @@ pass**.
   `setopt autocd`, which the highlighter then accepts), variable names for
   `export`, `local`, `readonly`, `unset` (function names after
   `unset -f`), `read` (not after `-p`), `getopts` (after the option
-  string) and `for` (then `in`), aliases for `alias` and `unalias`, command names for
+  string) and `for` (then `in`), aliases for `alias` and `unalias`, widget
+  names for `bindkey`, command names for
   `hash`, `type` and `which`, built-ins for `help`, job specs (described by
   their commands; after `%` and a letter, the command names that give one
   job, as `%vim`) for `fg`, `bg`, `jobs`, `wait` and `kill`, signal names
@@ -605,7 +630,7 @@ pass**.
   input and modes, completion and its menu, highlighting, `fc`, the
   history file and `share_history`, and the command cache),
   `builtins/fc_noninteractive.sh`, and unit tests in `complete.rs`,
-  `menu.rs`, `highlight.rs`, `history.rs` and `histfile.rs` (including
+  `menu.rs`, `keys.rs`, `highlight.rs`, `history.rs` and `histfile.rs` (including
   lines written by zsh). The pty tests use `TERM=dumb`, under which
   rustyline does no editing, except those of completion and highlighting,
   which use `TERM=vt100`.
@@ -766,6 +791,12 @@ notes how to rerun them):
   narrowing by typing, and no mouse. After Ctrl-C it stays on the screen
   above the next prompt. Completers can't be interrupted with Ctrl-C (the terminal is
   in raw mode) except by their time limit.
+- Key bindings: only the emacs keymap can be changed (vi mode keeps
+  rustyline's keys); no user-defined widgets (`zle -N`), numeric
+  arguments aren't given to luish's own widgets, and a word kill that none
+  of rustyline's motions can make doesn't go to the kill ring. After `^O`
+  the next line is filled with the entry, but the history position is the
+  end of the history (zsh's is the entry).
 - `set -b` (immediate job notification) is accepted but does nothing: jobs
   are reported only before a prompt. Job notifications are given only for
   input read a line at a time (interactive or stdin), not in scripts run

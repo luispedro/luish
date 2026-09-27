@@ -677,7 +677,9 @@ Items, in the order to build them (earlier items are small and noticed at
 once):
 
 1. **Line-editor keys.** These are rustyline-level changes in
-   `interactive/`, with pty tests.
+   `interactive/`, with pty tests. **Done** (`interactive/keys.rs`, with
+   `bindkey`; see STATUS.md for how each widget is made without patching
+   rustyline).
    - **Up and Down as prefix search** (zsh's
      `history-beginning-search-backward`/`-forward`, bound to `^[[A` and
      `^[OA`). rustyline has `Cmd::HistorySearchBackward`; luish binds it.

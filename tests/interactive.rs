@@ -860,6 +860,46 @@ fn path_cache() {
 }
 
 #[test]
+fn line_editor_keys() {
+    let mut sh = Pty::spawn_term("keys", "vt100");
+    sh.expect("$ ");
+    let run = |sh: &mut Pty, keys: &str, want: &str| {
+        sh.send(keys);
+        sh.expect(want);
+        // The next prompt: input sent before it may be discarded.
+        sh.expect("\x1b[?2004h");
+    };
+    run(&mut sh, "echo first\n", "\nfirst\n");
+    run(&mut sh, ": other\n", "\n");
+    run(&mut sh, "echo second\n", "\nsecond\n");
+    // Up searches for the text before the cursor, skipping lines equal to
+    // the one shown; Down past the newest match gives back what was typed.
+    run(&mut sh, "ec\x1b[A\x1b[A\n", "\nfirst\n");
+    run(&mut sh, "echo s\x1b[A\x1b[B\x1b[Bx\n", "\nsx\n");
+    // Ctrl-W stops at characters not in WORDCHARS (zsh's default has `/`).
+    run(&mut sh, "echo x /tmp/aa/bb\x17y\n", "\nx y\n");
+    run(&mut sh, "WORDCHARS=\n", "\n");
+    run(&mut sh, "echo /tmp/aa/bb\x17cc\n", "\n/tmp/aa/cc\n");
+    // Consecutive kills are yanked together; Alt-B moves back a word.
+    run(&mut sh, "echo /tmp/aa/bb\x17\x17-\x19\x1bb\x1bb+\n", "\n/tmp/-+aa/bb\n");
+    // Alt-. inserts the last word of the previous command, and again that
+    // of the one before.
+    run(&mut sh, ": lastword1\n", "\n");
+    run(&mut sh, ": lastword2\n", "\n");
+    run(&mut sh, "echo \x1b.\x1b.\n", "\nlastword1\n");
+    // Ctrl-O runs the line and starts the next one with the entry after it.
+    run(&mut sh, "echo o1\n", "\no1\n");
+    run(&mut sh, "echo o2\n", "\no2\n");
+    run(&mut sh, "echo o\x1b[A\x1b[A\x0f", "\no1\n");
+    run(&mut sh, "\n", "\no2\n");
+    // bindkey changes them.
+    run(&mut sh, "bindkey '^W' kill-whole-line\n", "\n");
+    run(&mut sh, "echo gone\x17echo kept\n", "\nkept\n");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
 fn help_builtin() {
     let mut sh = Pty::spawn("help");
     sh.expect("$ ");

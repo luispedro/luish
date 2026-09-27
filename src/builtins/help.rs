@@ -22,6 +22,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"__luish_internal", page!("luish_internal")),
     (b"alias", page!("alias")),
     (b"bg", page!("bg")),
+    (b"bindkey", page!("bindkey")),
     (b"break", page!("break")),
     (b"cd", page!("cd")),
     (b"chdir", page!("cd")),

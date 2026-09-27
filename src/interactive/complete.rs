@@ -22,11 +22,14 @@ use std::cell::RefCell;
 use std::os::unix::ffi::OsStrExt;
 use std::sync::{Arc, Mutex};
 
+use rustyline::Changeset;
 use rustyline::completion::{Completer, Pair};
 use rustyline::hint::Hinter;
+use rustyline::line_buffer::LineBuffer;
 use rustyline::validate::Validator;
 use rustyline::{Context, Helper};
 
+use super::keys::Pending;
 use super::menu::{self, Item, Menu};
 use crate::path::{DirStamp, dir_stamps};
 use crate::sys;
@@ -66,6 +69,8 @@ pub struct ShellHelper {
     /// The prompt, as the line editor measures it (for the menu's height).
     pub prompt: String,
     pub menu: Arc<Mutex<Menu>>,
+    /// Shared with the key bindings (see `keys.rs`).
+    pub keys: Arc<Mutex<super::keys::State>>,
     path_cache: RefCell<PathCache>,
 }
 
@@ -172,6 +177,8 @@ enum Args {
     Getopts,
     /// A variable name, then `in`.
     For,
+    /// Widget names after the key sequence.
+    Bindkey,
 }
 
 const ARGS: &[(&[u8], Args)] = &[
@@ -198,6 +205,7 @@ const ARGS: &[(&[u8], Args)] = &[
     (b"read", Args::Read),
     (b"getopts", Args::Getopts),
     (b"for", Args::For),
+    (b"bindkey", Args::Bindkey),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1027,6 +1035,26 @@ impl ShellHelper {
                         Some(b"unload") => words(&self.names.plugins, &mut out),
                         Some(_) => 0,
                     },
+                    Some(Args::Bindkey) => {
+                        let mut ops = 0;
+                        let mut remove = false;
+                        let mut it = args.iter();
+                        while let Some(a) = it.next() {
+                            match a.strip_prefix(b"-") {
+                                Some(o) if ops == 0 && !o.is_empty() => {
+                                    remove |= o.contains(&b'r');
+                                    if o.ends_with(b"M") {
+                                        it.next();
+                                    }
+                                }
+                                _ => ops += 1,
+                            }
+                        }
+                        if ops == 1 && !remove {
+                            out.extend(super::keys::widget_names().map(|w| Candidate::word(w.as_bytes())));
+                        }
+                        0
+                    }
                     Some(Args::Dirs) => files(Files::Dirs, &mut out),
                     Some(Args::Cd) if w.text[w.split..].starts_with(b"~") => files(Files::Dirs, &mut out),
                     Some(Args::Cd) => {
@@ -1186,12 +1214,28 @@ impl Completer for ShellHelper {
 
     /// Completes the word at the cursor, or moves in the menu if it is open.
     /// rustyline puts the one candidate returned in the line and redraws it
-    /// (with the menu, through `hint`).
-    fn complete(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> rustyline::Result<(usize, Vec<Pair>)> {
+    /// (with the menu, through `hint`). Also does `insert-last-word`, for the
+    /// key bindings, since it needs the history.
+    fn complete(&self, line: &str, pos: usize, ctx: &Context<'_>) -> rustyline::Result<(usize, Vec<Pair>)> {
         let pair = |replacement: &str| Pair {
             display: String::new(),
             replacement: replacement.to_owned(),
         };
+        if let Ok(mut keys) = self.keys.lock()
+            && let Some(p) = keys.pending.take()
+        {
+            return Ok(match p {
+                Pending::InsertLastWord => {
+                    let word = keys.insert_last_word(line, pos, ctx.history(), ctx.history_index());
+                    word.map_or((pos, Vec::new()), |(start, w)| (start, vec![pair(&w)]))
+                }
+                // Made by `update`.
+                Pending::Edit(e) => {
+                    keys.edit = Some(e);
+                    (pos, vec![pair("")])
+                }
+            });
+        }
         let Ok(mut menu) = self.menu.lock() else {
             return Ok((pos, Vec::new()));
         };
@@ -1216,13 +1260,29 @@ impl Completer for ShellHelper {
         }
         Ok((start, vec![typed]))
     }
+
+    /// Puts the candidate in the line, or makes the edit a key asked for.
+    fn update(&self, line: &mut LineBuffer, start: usize, elected: &str, cl: &mut Changeset) {
+        if let Some(e) = self.keys.lock().ok().and_then(|mut k| k.edit.take()) {
+            line.replace(e.range, "", cl);
+            line.set_pos(e.pos);
+            return;
+        }
+        let end = line.pos();
+        line.replace(start..end, elected, cl);
+    }
 }
 
 impl Hinter for ShellHelper {
     type Hint = menu::Drawn;
 
-    /// Draws the menu, if it is open.
-    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<menu::Drawn> {
+    /// Draws the menu, if it is open. Also notes the position in the history
+    /// for the key bindings.
+    fn hint(&self, line: &str, pos: usize, ctx: &Context<'_>) -> Option<menu::Drawn> {
+        if let Ok(mut keys) = self.keys.lock() {
+            keys.history_index = ctx.history_index();
+            keys.history_len = ctx.history().len();
+        }
         let mut m = self.menu.lock().ok()?;
         if !m.is_open(line, pos) {
             return None;

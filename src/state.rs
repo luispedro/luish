@@ -4,7 +4,7 @@
 //!
 //! The state is the working directory and the directory stack, the file
 //! mode mask, variables (with their export and readonly attributes), traps,
-//! functions, aliases, loaded plugins and options. It is written as shell
+//! functions, aliases, loaded plugins, key bindings and options. It is written as shell
 //! commands, so it is restored
 //! by running them with `.`. Restoring sets everything that was saved, but
 //! doesn't remove what wasn't (such as variables set since).
@@ -44,6 +44,7 @@ pub enum Kind {
     Function,
     Alias,
     Plugin,
+    Binding,
     Option,
 }
 
@@ -189,6 +190,10 @@ impl Shell {
             }
         }
 
+        for (seq, t) in self.keymap.state() {
+            add(Kind::Binding, &seq, t);
+        }
+
         for (o, _, name) in OPTIONS {
             if !MODE_OPTIONS.contains(o) {
                 add(Kind::Option, name.as_bytes(), option(o, name));
@@ -229,6 +234,10 @@ pub fn difference(before: &[Entry], after: &[Entry]) -> Vec<u8> {
             Kind::Trap => out.extend([b"trap - ".to_vec(), e.name.clone()].concat()),
             Kind::Plugin => out.extend([b"__luish_internal plugin unload ".to_vec(), quoted()].concat()),
             Kind::DirStack => out.extend_from_slice(b"command dirs -c"),
+            Kind::Binding => {
+                out.extend(crate::interactive::keys::restore_command(&e.name));
+                continue;
+            }
             Kind::Dir | Kind::Umask | Kind::Readonly | Kind::SyntaxOption | Kind::Option => continue,
         }
         out.push(b'\n');
