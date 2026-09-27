@@ -15,7 +15,9 @@ enum Cmp {
 }
 
 impl Cmp {
-    fn holds(self, v: u64, n: u64) -> bool {
+    // `v` is generic because `st_nlink` is u64 on x86_64 but u32 on aarch64.
+    fn holds(self, v: impl Into<u64>, n: u64) -> bool {
+        let v = v.into();
         match self {
             Cmp::Less => v < n,
             Cmp::Equal => v == n,
