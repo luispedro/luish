@@ -50,7 +50,7 @@ luish's own options, all off by default:
 
 `glob.bare_qualifiers` (`bareglobqual`)
 : Parentheses at the end of a pattern hold zsh's glob qualifiers, as in
-  `*(/)` (directories) or `*(.om[1])` (the newest file). See the
+  `*(/)` (directories) or `*(.om[0])` (the newest file). See the
   documentation on extended globbing.
 
 `cd.auto` (`autocd`)

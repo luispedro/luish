@@ -15,7 +15,7 @@ ls **/*.md              # Markdown files in this directory and below
 ls -d *(/)              # directories
 ls *(.)                 # regular files
 rm **/*.orig(.N)        # no error if there are none
-vi *(.om[1])            # the most recently modified file
+vi *(.om[0])            # the most recently modified file
 du -sh **/*(.Lm+100)    # files over 100 MiB
 ```
 
@@ -76,7 +76,7 @@ Other qualifiers change the result:
 | `D` | patterns match names starting with `.` (but never `.` and `..`), and `**/` enters hidden directories |
 | `n` | names that contain numbers sort numerically (`f9` before `f10`) |
 | `o`*key*, `O`*key* | sort in ascending or descending order: by name (`n`), size (`L`), number of links (`l`), time of access, modification or change (`a`, `m`, `c`, newest first), depth (`d`, files in subdirectories first) or not at all (`N`). Several keys can be given |
-| `[`*n*`]`, `[`*n*`,`*m*`]` | only the *n*-th match, or the *n*-th to the *m*-th, after sorting. They count from 1, and negative numbers count from the end |
+| `[`*n*`]`, `[`*n*`,`*m*`]` | only the *n*-th match, or the *n*-th to the *m*-th, after sorting. They count from 0, and negative numbers count from the end (`-1` is the last) |
 | `M` | add `/` after directories |
 | `T` | add a character after each name for its type, as `ls -F`: `/` directory, `@` symbolic link, `*` executable, `\|` named pipe, `=` socket, `#` block device, `%` character device, and a space for other files |
 | `:h`, `:t`, `:r`, `:e`, `:u`, `:l` | modifiers, at the end of the list: remove the last path component (head), keep only it (tail), remove the extension (root), keep only the extension, convert to upper or lower case |
@@ -88,7 +88,7 @@ A bad qualifier is an error, with status 1, as in zsh: `*(Z)` gives `unknown fil
 - `**/` needs `setopt glob.star`, and qualifiers need `setopt glob.bare_qualifiers` (zsh's `bareglobqual`; zsh has
   `**/` on by default, and qualifiers on outside its `sh` emulation).
 - If nothing matches, the pattern is left as it is, as with `setopt nonomatch` in zsh (and in other POSIX shells).
-- Subscripts count from 1, as in zsh's default mode (with `KSH_ARRAYS`, as in its `sh` emulation, they count from 0).
+- Subscripts count from 0, as in zsh's `sh` emulation (which sets `KSH_ARRAYS`); in its native mode they count from 1.
 - Not supported yet: the `e`, `+`, `f`, `F`, `Y` and `P` qualifiers, `(#q...)`, modifiers other than those above,
   and the extended patterns of zsh's `EXTENDED_GLOB` (`^`, `~`, `#`). Unknown sort keys and modifiers are errors
   (zsh ignores some of them).

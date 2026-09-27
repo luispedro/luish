@@ -130,8 +130,8 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   `expand/globstar_off.sh`, `expand/globstar_loop.sh`.
 - Glob qualifiers (`qual.rs`): kept as text and recognized when a field ends in an unquoted `(...)` at glob time, so
   that, as in zsh's `sh` emulation, they can come from an expansion. Supported: file type, permission, owner,
-  device, link count, size and time tests, `^ - , N D n`, `o`/`O` (`n L l a m c d N`), subscripts, `M`, `T`, and
-  `:h :t :r :e :u :l`. Errors have status 1. `savestate` sets the option before the functions, and wraps a function
+  device, link count, size and time tests, `^ - , N D n`, `o`/`O` (`n L l a m c d N`), subscripts (from 0), `M`,
+  `T`, and `:h :t :r :e :u :l`. Errors have status 1. `savestate` sets the option before the functions, and wraps a function
   with a qualifier in `set -o`/`+o` when it is off. Tests: `expand/glob_qualifiers.sh`,
   `expand/glob_qualifier_errors.sh`, `builtins/internal_savestate_globqual.sh`, unit tests in `qual.rs` and
   `parser.rs`.

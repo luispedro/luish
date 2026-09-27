@@ -1,8 +1,8 @@
 # setopt bareglobqual: zsh's glob qualifiers, `(...)` at the end of a
-# word. zsh is run without ksharrays, which in sh emulation makes its
-# subscripts start at 0. (In a directory of its own, since the test's own
-# files are in the current one.)
-# reference: zsh +o shglob -o bareglobqual +o ksharrays
+# word. Subscripts start at 0, as with zsh's ksharrays (set by its sh
+# emulation). (In a directory of its own, since the test's own files are
+# in the current one.)
+# reference: zsh +o shglob -o bareglobqual -o ksharrays
 [ -n "$ZSH_VERSION" ] || setopt bareglobqual
 umask 022
 mkdir t; cd t
@@ -27,8 +27,8 @@ echo owner: *(U) / *(^U)
 echo size: *(L10) / *(L+5) / *(L-1.) / *(Lk1.) / *(Lk2.) / *(Lk-1.)
 echo time: *(m+300) / *(^m+300) / *(Mm+3) / *(mh-1^@)
 echo sort: d/*(.) / d/*(.n) / d/*(.on) / d/*(.On) / d/*(.nOn)
-echo slices: d/*(n[1]) / d/*(n[-1]) / d/*(n[2,3]) / d/*(n[2,-1]) / d/*(n[5]) / d/*(n[-9,1])
-echo modifiers: d/*(:t) / d/*(n:t:u) / *.md(:r) / *.md(:e) / d/*(n[1]:h) / x.md(:h)
+echo slices: d/*(n[0]) / d/*(n[1]) / d/*(n[-1]) / d/*(n[1,2]) / d/*(n[1,-1]) / d/*(n[4]) / d/*(n[-9,0]) / d/*(n[2,1])
+echo modifiers: d/*(:t) / d/*(n:t:u) / *.md(:r) / *.md(:e) / d/*(n[0]:h) / x.md(:h)
 echo plain: x.md(N) nothing(N) x.md(/N) x.md(/) end
 x=d
 echo expansions: $x/*(/) "$x"/*(.n) ${x}(N/)
@@ -57,7 +57,7 @@ mkdir s; cd s
 printf 1 > a; printf 123 > b; printf 12 > c
 touch -m -d '2020-01-02' a; touch -m -d '2020-01-03' b; touch -m -d '2020-01-01' c
 ln b ../../b.l; ln c ../../c.l1; ln c ../../c.l2
-echo sort: *(oL) / *(OL) / *(om) / *(Om) / *(om[1]) / *(Ol) / *(ol)
+echo sort: *(oL) / *(OL) / *(om) / *(Om) / *(om[0]) / *(Ol) / *(ol)
 cd ..
 
 # With globstar.

@@ -390,7 +390,7 @@ impl Qualifiers {
         }
         if let Some((beg, end)) = self.range {
             let n = files.len() as i64;
-            let index = |i: i64| if i < 0 { n + i } else { i - 1 };
+            let index = |i: i64| if i < 0 { n + i } else { i };
             let (b, e) = (index(beg).max(0), index(end).min(n - 1));
             files = if b <= e {
                 files.drain(b as usize..=e as usize).collect()
