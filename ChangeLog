@@ -1,0 +1,14 @@
+Unreleased
+    * Don't print git's error for a locked plugin commit that isn't fetched yet
+
+Version 0.1.0 2026-09-27 by luispedro
+    * First release
+    * POSIX sh with dash's behaviour where POSIX is ambiguous, plus `local`
+    * As fast as dash on scripts (faster on arithmetic and function calls)
+    * Interactive use: zsh-style keys, syntax highlighting, autosuggestions,
+      completion menu, shared history in zsh's format, zsh prompts and glob
+      qualifiers, job control
+    * Plugins in shell and Rhai, fetched from git and pinned in a lock file
+    * Cached startup files for instant startup
+    * Configuration in config.toml
+    * Binaries for Linux on x86_64 and aarch64 (glibc and static musl)

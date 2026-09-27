@@ -20,6 +20,10 @@ features is fine, as long as the prompt and line editor stay fast.
 - `docs/compatibility.md`: deliberate differences from dash, grouped by what luish follows instead (zsh is preferred
   beyond POSIX), and the known limitations. Each deviation needs a test (a `# reference: zsh` case, or else a
   `.expected` one), listed in `DEVELOPING.md`.
+- `ChangeLog`: user-visible changes per release, newest first, with pending ones under `Unreleased` at the top.
+  Add a very short line (a few words, one per change) in the same commit as any improvement, new feature or bug fix
+  that users would notice; skip internal refactors, tests and documentation-only changes. On release, rename
+  `Unreleased` to `Version X.Y.Z YYYY-MM-DD by luispedro`.
 - `working-memory.md` (untracked): a scratch pad for handing work over between sessions. Anything durable belongs in
   one of the documents above.
 - `docs/`: user-facing documentation (Sphinx with MyST Markdown), published on Read the Docs via
