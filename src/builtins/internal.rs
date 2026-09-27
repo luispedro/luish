@@ -9,6 +9,7 @@ type Subcommand = fn(&mut Shell, &[Vec<u8>]) -> ExecResult;
 /// (name, function); each gets the arguments from its own name on.
 const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
     (b"bindkey", bindkey),
+    (b"complete", complete),
     (b"help", help),
     (b"plugin", plugin),
     (b"print-git-rev", print_git_rev),
@@ -46,6 +47,39 @@ pub fn internal(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 /// shells that aren't interactive.
 fn bindkey(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     crate::interactive::keys::run(sh, b"__luish_internal bindkey", &argv[1..])
+}
+
+/// `complete LINE`: prints the matches that Tab offers for the word at the
+/// end of `LINE`, one per line: the text that replaces the word (with the
+/// space or `/` that follows a single match), then a tab and the
+/// description, if there is one. Status 1 if there are none, or if a
+/// completer failed.
+fn complete(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    let Some(line) = argv.get(1) else {
+        sh.berr(b"__luish_internal complete", "missing line");
+        return Ok(2);
+    };
+    if let Some(a) = argv.get(2) {
+        let msg = format!("too many arguments: {}", String::from_utf8_lossy(a));
+        sh.berr(b"__luish_internal complete", msg);
+        return Ok(2);
+    }
+    let Some(matches) = crate::interactive::completions(sh, line)? else {
+        return Ok(1);
+    };
+    let mut out = Vec::new();
+    for (text, desc) in &matches {
+        out.extend_from_slice(text.as_bytes());
+        if let Some(d) = desc {
+            out.push(b'\t');
+            out.extend_from_slice(d.as_bytes());
+        }
+        out.push(b'\n');
+    }
+    match sh.out_status(&out) {
+        0 if matches.is_empty() => Ok(1),
+        n => Ok(n),
+    }
 }
 
 /// `help`: the `help` built-in, which is also available here in shells that

@@ -858,9 +858,8 @@ impl Host {
 
     /// Runs the completer for `words[0]`, or else the default completer, if
     /// there is one, with the words of the command and the index of the one
-    /// being completed. An error
-    /// is reported on a line of its own, below the command line. `$?` is
-    /// kept.
+    /// being completed. An error is reported on a line of its own, below
+    /// the command line in an interactive shell. `$?` is kept.
     pub fn complete(&self, sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Completion, Flow> {
         let cb = {
             let completers = self.completers.borrow();
@@ -881,7 +880,11 @@ impl Host {
             Ok(Some((prefix, c))) => Ok(Completion::Candidates(prefix, c)),
             Ok(None) => Ok(Completion::Default),
             Err(e) => {
-                sys::write_all(2, b"\n");
+                // Below the command line (not for `__luish_internal
+                // complete` in a script).
+                if sh.opt(crate::options::Opt::Interactive) {
+                    sys::write_all(2, b"\n");
+                }
                 Self::report(sh, &cb.path, &e);
                 Ok(Completion::Failed)
             }

@@ -937,23 +937,33 @@ impl ShellHelper {
     /// Completes the word that ends at the end of `line`. `after` is the
     /// text after the cursor.
     fn complete_bytes(&self, line: &[u8], after: &[u8]) -> (usize, Vec<Item>) {
+        self.matches(line, after).unwrap_or_else(|start| {
+            // The line is left as it is, but with one candidate rustyline
+            // redraws it, below the error message.
+            let typed = String::from_utf8_lossy(&line[start..]).into_owned();
+            let item = Item {
+                display: typed.clone(),
+                desc: None,
+                replacement: typed,
+            };
+            (start, vec![item])
+        })
+    }
+
+    /// The matches for the word that ends at the end of `line` (for
+    /// `__luish_internal complete`), or None if a completer failed.
+    pub fn completions(&self, line: &[u8]) -> Option<Vec<Item>> {
+        self.matches(line, b"").ok().map(|m| m.1)
+    }
+
+    /// Where the word that ends at the end of `line` starts, and its
+    /// matches; or, if a completer failed, where the word starts.
+    fn matches(&self, line: &[u8], after: &[u8]) -> Result<(usize, Vec<Item>), usize> {
         let w = analyze(line, &self.names.aliases);
         let (from, cands) = match self.ask_completer(&w, after) {
             Completion::Default => self.generate(&w),
             Completion::Candidates(from, c) => (from.min(w.text.len()), c),
-            Completion::Failed => {
-                // The line is left as it is, but with one candidate
-                // rustyline redraws it, below the error message.
-                let typed = String::from_utf8_lossy(&line[w.start..]).into_owned();
-                return (
-                    w.start,
-                    vec![Item {
-                        display: typed.clone(),
-                        desc: None,
-                        replacement: typed,
-                    }],
-                );
-            }
+            Completion::Failed => return Err(w.start),
         };
         let cands = best_matches(cands, |c| &c.value, &w.text[from..]);
         // A variable name needs no quoting, and a `}` after it ends the
@@ -969,7 +979,7 @@ impl ShellHelper {
             from,
             quote,
         };
-        (w.start, items(&cands, &t))
+        Ok((w.start, items(&cands, &t)))
     }
 
     /// What the completer of the word's command gives, if it has one, or

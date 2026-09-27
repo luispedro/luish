@@ -37,7 +37,7 @@ share = true
 ll = "ls -l"
 
 [plugins.enabled]
-std.git-completion = "*"
+std.completion = "*"         # completion for common commands, and git
 ```
 
 Settings come in layers: `config.toml` first, then the plugins it enables (which can bundle a set of options), then

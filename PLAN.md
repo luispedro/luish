@@ -28,9 +28,8 @@ second (nvm) are otherwise a daily cost.
 
 ### Next steps, in priority order
 
-1. **Phase 13, in its order**: an ssh-host completer, then a generic completion bridge (needs a
-   design note first) and typing to narrow the menu; shell-function `chpwd`/`precmd`/`preexec`; lazy function
-   parsing of the startup cache.
+1. **Phase 13, in its order**: a generic completion bridge (needs a design note first) and typing to narrow the
+   menu; shell-function `chpwd`/`precmd`/`preexec`; lazy function parsing of the startup cache.
 2. **Startup cost** (deferred by the user for now; see Performance in `DEVELOPING.md`): the dynamic loader's share,
    and parsing the rc cache about twice as slowly as dash.
 3. **More conformance**: larger `configure` scripts (coreutils), other Oils files that don't list dash, the smoosh
@@ -143,8 +142,11 @@ Still to build, in this order:
    zsh-completions):
    - **git**: done, as `git-completion` in `luish-std-plugins/`. Still missing: `REV:PATH`, `git config` keys, and
      values for most `--option=` words.
-   - **ssh/scp/rsync hosts** from `~/.ssh/config` (`Host` lines without wildcards, and `Include`).
-     `~/.ssh/known_hosts` is hashed on this system, so it gives nothing, even in zsh.
+   - **Common commands**: done, as `completion` in `luish-std-plugins/` (coreutils, grep, diffutils, tar, make,
+     rsync, man, ssh/scp/sftp, pkill), including **ssh/scp/rsync hosts** from `~/.ssh/config` (`Host` lines without
+     wildcards, and `Include`) and `/etc/hosts`. `~/.ssh/known_hosts` is hashed on this system, so it gives nothing,
+     even in zsh. Still missing: find, cargo, systemctl, apt, docker (Cobra, through the bridge below), paths on
+     remote hosts for scp and rsync.
    - **A generic bridge**, so that most programs get completion without a hand-written completer: programs that
      complete themselves (Cobra, as in `docs/examples/cobra.rhai`, clap's `COMPLETE=`, `argcomplete`),
      bash-completion scripts (as in `luish-std-plugins/bash-completion/`, but faster), and `--help` parsing for

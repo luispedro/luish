@@ -1,0 +1,41 @@
+--- frob 
+--mode=
+serve 	Start the server
+stop 
+status 0
+--- frob s
+serve 	Start the server
+stop 
+status 0
+--- frob --mode=f
+--mode=fast 
+status 0
+--- frob serve a
+a\ file 
+abc 
+status 0
+--- frob serve 'a
+'a file' 
+'abc' 
+status 0
+--- frob serve di
+dir/
+status 0
+--- frob serve zzz
+status 1
+--- frob boom
+status 1
+--- ech
+echo 
+status 0
+--- cd d
+dir/
+status 0
+--- echo $HO
+HOME
+status 0
+--- echo ~/a\ 
+~/a\ file 
+status 0
+status 2
+status 2

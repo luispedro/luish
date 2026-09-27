@@ -1,0 +1,4 @@
+description = "Completion for common commands, and git"
+
+[dependencies]
+git-completion = "*"

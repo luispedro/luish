@@ -535,6 +535,15 @@ A completer registered for a command replaces any earlier one. If a completer fa
 command line. A completer that runs for more than 2 seconds is stopped (while it runs a command, the time is only
 checked when the command has finished).
 
+To see what Tab offers for a command line without typing it, for example while writing a completer or in a test, use
+`__luish_internal complete LINE`, which prints each match on a line of its own (the text that replaces the word, then
+a tab and the description), in any shell:
+
+```sh
+$ __luish_internal complete 'git sw'
+switch 	Switch branches
+```
+
 Commands that a completer runs are not jobs: like those of `$(...)`, they can't be stopped with Ctrl-Z, and Ctrl-C
 does not reach them (the terminal is in the line editor's mode). Their output goes to the terminal, over the command
 line, so use `sh::capture` or redirect it.
@@ -561,10 +570,19 @@ how a collection of plugins is laid out (see its `README.md`). It is the source 
 
 ```toml
 [plugins.enabled]
-std.git-completion = "*"
+std.completion = "*"        # common commands, and git (git-completion)
 std.bash-completion = "*"
 ```
 
+- **`completion`** (a directory) completes the options of about 70 common commands, with their descriptions, the
+  values of the options (`ls --sort=`, `cp -t DIR`, `tar --format=`, `dd conv=`, ...) and their other arguments:
+  coreutils (`ls`, `cp`, `mv`, `rm`, `mkdir` (directories), `chmod` (modes), `chown` (users and groups), `sort`,
+  `tail`, `date`, `dd`, ...), grep, diff, cmp, tar (the files in the archive, for `tar -xf ARCHIVE`), make (the
+  targets of the makefile, also with `-C DIR` and `-f FILE`), rsync, man (the pages, in the section given), ssh, scp
+  and sftp (the hosts of `~/.ssh/config`, with the files it includes, and of `/etc/hosts`, also after `USER@`), and
+  pkill, pgrep and killall (the running processes). Short options can be combined: `ls -la` offers the options that
+  can follow. It loads `git-completion` too. Its modules are compiled on the first Tab (a few milliseconds), so
+  loading it costs little.
 - **`git-completion`** (`git-completion.rhai`) completes git's commands, with their descriptions, and aliases; the
   options of each command, as git lists them; and each command's arguments: branches, tags, the end of a range
   (`main..`), remotes, stashes, worktrees, and the files the command can act on (modified and untracked files for

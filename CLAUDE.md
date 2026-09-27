@@ -71,7 +71,8 @@ Most coverage is differential (`tests/compare.rs`): each `tests/cases/**/*.sh` r
 - The system dash is Debian's, which has patches (e.g. it forks the last command of `sh -c`). Upstream dash
   source is the reference for intent; `DEVELOPING.md` records where the two matter.
 - Plugin cases (`tests/plugins/*.sh`) can't run under dash: each needs `NAME.expected`, and stderr must be empty or
-  match `NAME.stderr`.
+  match `NAME.stderr`. They get `$STD_PLUGINS` (the path of `luish-std-plugins`), and test completers with
+  `__luish_internal complete LINE`, which prints what Tab offers.
 - Interactive behaviour (job control, Ctrl-C/Ctrl-Z, terminal modes) is tested on a pty in `tests/interactive.rs`.
   Steps wait for output or for named processes to be in the terminal's foreground group, never for fixed times.
 

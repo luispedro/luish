@@ -2,6 +2,7 @@
 
 ```text
 __luish_internal bindkey [arg...]
+__luish_internal complete line
 __luish_internal help [name...]
 __luish_internal plugin load|list-loaded|list-available|unload [arg...]
 __luish_internal print-git-rev
@@ -16,6 +17,14 @@ take names that scripts might use for something else.
 
 `bindkey`
 : Show or change the line editor's key bindings (see `help bindkey`).
+
+`complete`
+: Print what Tab offers for the last word of `line`, as the line editor
+  would complete it (with the completers of loaded plugins), one match per
+  line: the text that replaces the word, with the space or `/` that ends a
+  single match, then a tab and the match's description, if it has one. The
+  status is 1 if there are no matches, or if a completer failed. It works
+  in any shell, for example to test a completer from a script.
 
 `help`
 : Show help for built-in commands (see `help help`).

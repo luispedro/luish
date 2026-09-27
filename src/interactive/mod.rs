@@ -213,6 +213,26 @@ fn ask(words: &[Vec<u8>], index: usize) -> Completion {
     }
 }
 
+/// A match for the word under the cursor: the text that replaces the word
+/// in the line, and its description.
+pub type Match = (String, Option<String>);
+
+/// The matches Tab offers for the word at the end of `line`, as the line
+/// editor would complete it (for `__luish_internal complete`). None if a
+/// completer failed (it printed why).
+pub fn completions(sh: &mut Shell, line: &[u8]) -> Result<Option<Vec<Match>>, Flow> {
+    let mut helper = ShellHelper::default();
+    helper.names = names(sh);
+    helper.ask = Some(ask);
+    let outer = SHELL.replace(sh as *mut Shell);
+    let r = helper.completions(line);
+    SHELL.set(outer);
+    if let Some(n) = EXIT.take() {
+        return Err(Flow::Exit(n));
+    }
+    Ok(r.map(|items| items.into_iter().map(|i| (i.replacement, i.desc)).collect()))
+}
+
 /// The highlighting colours, or None if highlighting is off.
 fn colors(sh: &Shell) -> Option<highlight::Colors> {
     if sh.get_var(b"NO_COLOR").is_some_and(|v| !v.is_empty()) {

@@ -16,7 +16,8 @@
 //!
 //! Plugin cases (`tests/plugins/*.sh`, only with the `plugins` feature)
 //! can't run under dash, so each has a `NAME.expected`, and stderr must be
-//! empty or match `NAME.stderr`.
+//! empty or match `NAME.stderr`. They get `$STD_PLUGINS`, the path of
+//! `luish-std-plugins`, to test the plugins there.
 //!
 //! Scripts run in a fresh temporary directory (which is also `$HOME`),
 //! with `$SH` set to the shell under test. Set `LUISH_CASE` to a substring
@@ -65,8 +66,8 @@ struct Reference<'a> {
 }
 
 /// `id` names the directory, which must be the same for both shells (it
-/// can appear in the output).
-fn run(shell: &Path, args: &[&str], script: &Path, id: &str) -> Outcome {
+/// can appear in the output). A plugin case also gets `$STD_PLUGINS`.
+fn run(shell: &Path, args: &[&str], script: &Path, id: &str, plugin_case: bool) -> Outcome {
     let dir = std::env::temp_dir().join(format!("luish-test-{}-{}", std::process::id(), id));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -78,11 +79,13 @@ fn run(shell: &Path, args: &[&str], script: &Path, id: &str) -> Outcome {
     };
     let out_path = dir.join(".stdout");
     let err_path = dir.join(".stderr");
+    let std_plugins = Path::new(env!("CARGO_MANIFEST_DIR")).join("luish-std-plugins");
     let mut child = Command::new(shell)
         .args(args)
         .arg(name)
         .current_dir(&dir)
         .env_clear()
+        .envs(plugin_case.then_some(("STD_PLUGINS", std_plugins)))
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
         .env("HOME", &dir)
         .env("LC_ALL", "C")
@@ -140,7 +143,7 @@ fn check(luish: &Path, refs: &[Reference], script: &Path, id: &str, plugin_case:
         .unwrap_or("dash")
         .split_whitespace();
     let (reference, extra): (&str, Vec<&str>) = (reference.next().unwrap_or("dash"), reference.collect());
-    let got = run(luish, &[], script, id);
+    let got = run(luish, &[], script, id, plugin_case);
     let expected_file = script.with_extension("expected");
     let stderr_file = script.with_extension("stderr");
     let exact_stderr = exact_stderr || plugin_case;
@@ -166,7 +169,7 @@ fn check(luish: &Path, refs: &[Reference], script: &Path, id: &str, plugin_case:
                 "  {reference} is required for this case (run the tests through pixi)\n"
             ));
         };
-        run(path, &[r.args, &extra].concat(), script, id)
+        run(path, &[r.args, &extra].concat(), script, id, false)
     };
     let mut problems = String::new();
     if got.stdout != want.stdout {

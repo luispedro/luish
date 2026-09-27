@@ -7,6 +7,7 @@ and will become a repository of its own, as an example of how a plugin collectio
 
 | Plugin | What it does | Needs |
 |---|---|---|
+| `completion` | Tab completion for about 70 common commands: their options (with descriptions), the values of options, and their other arguments (directories for `mkdir`, modes for `chmod`, users and groups for `chown`, make's targets, ssh's hosts, man pages, the files in an archive for `tar -xf`, processes for `pkill` ...). Loads `git-completion` | |
 | `git-completion` | Tab completion for git: its commands (with descriptions) and aliases, the options of each command, and the arguments each command takes (branches, tags, ranges such as `main..`, remotes, stashes, worktrees, and the files it can act on: modified and untracked files for `git add`, staged ones for `git restore --staged`, ...) | git |
 | `bash-completion` | Completion from [bash-completion](https://github.com/scop/bash-completion), for the commands that have no completer of their own | bash, bash-completion |
 
@@ -15,6 +16,13 @@ and will become a repository of its own, as an example of how a plugin collectio
 itself lists the options of its commands (`git CMD --git-completion-helper`, which git's own bash completion uses),
 so they follow the installed version of git. Options that start with `--no-` are offered once the word starts with
 `--no`.
+
+`completion` covers coreutils (`ls`, `cp`, `mv`, `rm`, `mkdir`, `ln`, `chmod`, `chown`, `head`, `tail`, `sort`,
+`date`, `dd`, `install`, ...), grep, diffutils, tar, make, rsync, man, ssh, scp, sftp, pkill, pgrep and killall. Each
+command is a spec in `specs.rhai`: its options as a table written like `--help` output, what the values of options
+complete to, and what its arguments complete to (a kind from `kinds.rhai`, such as `dirs`, `users` or `hosts`).
+`lib.rhai` completes a command line from a spec. To add a command, add its spec and its name in `extension.rhai`.
+The modules are compiled on the first Tab, so loading the plugin costs little.
 
 `bash-completion` is a default completer (registered for `-default-`): it runs, in bash, the function that
 bash-completion has for the command, and gives luish what it returns. The commands that have completers of their
@@ -33,9 +41,15 @@ README, are ignored.
 luish-std-plugins/
 ├── README.md
 ├── git-completion.rhai        # a plugin in one Rhai file
-└── bash-completion/           # a plugin directory
-    ├── extension.rhai
-    └── bridge.bash            # run by extension.rhai, through sh::plugin_dir()
+├── bash-completion/           # a plugin directory
+│   ├── extension.rhai
+│   └── bridge.bash            # run by extension.rhai, through sh::plugin_dir()
+└── completion/
+    ├── plugin.toml            # depends on git-completion
+    ├── extension.rhai         # registers the completers
+    ├── lib.rhai               # modules that extension.rhai imports
+    ├── kinds.rhai
+    └── specs.rhai
 ```
 
 ## Using them
@@ -44,7 +58,7 @@ This collection is the source `std` of luish's plugin configuration. Enable its 
 
 ```toml
 [plugins.enabled]
-std.git-completion = "*"
+std.completion = "*"          # and git-completion, which it needs
 std.bash-completion = "*"
 ```
 
@@ -62,6 +76,9 @@ A plugin can also be loaded by its path, in one shell:
 ```sh
 plugin load ~/src/luish/luish-std-plugins/git-completion.rhai
 ```
+
+`__luish_internal complete LINE` prints what Tab offers for a command line, which helps when working on a
+completer (the tests in `tests/plugins/` use it).
 
 A directory plugin here can list the plugins it needs in a `plugin.toml` (see the plugins page of luish's
 documentation); a plain name there is another plugin of this collection.

@@ -79,7 +79,7 @@ scripts/                # dist.sh (release packages), test-install.sh (tests ins
 install.sh              # the `curl | sh` installer, which downloads a release
 flake.nix               # the Nix package and dev shell (see Releases)
 docs/                   # user documentation; docs/builtins/ is compiled into `help`; docs/examples/ has example plugins
-luish-std-plugins/      # a collection of plugins (git-completion, bash-completion), see its README.md
+luish-std-plugins/      # a collection of plugins (completion, git-completion, bash-completion), see its README.md
 ```
 
 ## Implementation notes by area
@@ -228,6 +228,11 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
 - `__luish_internal` (`internal.rs`) holds luish's own commands, so they don't take names from the command
   namespace; a missing or unknown subcommand is status 2. `print-git-rev` is set at compile time by `build.rs`
   (`-dirty` if `src/`, `build.rs`, `Cargo.toml` or `Cargo.lock` differ). Test: `builtins/internal_git_rev.sh`.
+- `complete LINE` (`interactive::completions`) builds a `ShellHelper` as `read_line` does (the `Names` snapshot, and
+  `ask` through the same `SHELL` pointer) and prints the matches Tab offers for the last word, one per line: the
+  replacement for the word (with the suffix of a single match), a tab and the description. It works in any shell,
+  so plugin cases can test completers. Status 1 if there are none or a completer failed. Test:
+  `tests/plugins/complete.sh`.
 - `savestate` (`state.rs`): not `PPID`, `LINENO`, or the options `-i -s -m -n`. Functions are printed by
   `unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`); words in function bodies that would be expanded as
   aliases (command names that are aliases of any kind, other words that are global aliases) are quoted, and a
@@ -355,8 +360,9 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
 - The `sh` functions reach `Shell` through a pointer set for the length of each call into Rhai. Calls are re-entrant
   (`sh::run`), so no `&mut Shell` borrow can be held across a call into Rhai or back into the shell.
 - Completers run with `Shell::jobctl` taken out (so their commands aren't jobs and don't save the editor's raw modes)
-  and `$?` kept; they are stopped after 2 s (checked every 1024 operations). An error is printed and the line redrawn
-  by returning the word itself as the only candidate. `fc` sees no history while a completer runs (the editor is
+  and `$?` kept; they are stopped after 2 s (checked every 1024 operations). An error is printed (after a newline,
+  in interactive shells, to leave the command line) and the line redrawn by returning the word itself as the only
+  candidate. `fc` sees no history while a completer runs (the editor is
   borrowed).
 - `prompt-vars`: the variables the step changed are found by comparing with a snapshot of all variables
   (`Vars::changes_since`) and put back after the prompt is built; no snapshot is taken if nothing has a
@@ -378,6 +384,18 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   Tab, since bash sources `bash_completion` each time). Outside bash's own completion, compgen doesn't undo
   the quoting bash-completion gives the word (`~` as `\~`), so the bridge replaces the quoting functions; its
   `-o` options are in `copts`, since completion functions have a local `opts`.
+- `luish-std-plugins/completion/` completes about 70 common commands (coreutils, grep, diffutils, tar, make, rsync, man,
+  ssh, pkill ...) from specs (`specs.rhai`): an option table written as in `--help` (`-a, --all  DESC`, `--name=ARG`,
+  `--name[=ARG]`, `-n ARG`), the values of options, and the kinds of the arguments that aren't options (`kinds.rhai`:
+  `dirs`, `users`, `mode`, `hosts` from `~/.ssh/config` with `Include` and `/etc/hosts`, `targets` from the makefile,
+  `members` from `tar -tf`, ...). `lib.rhai` scans the words before the cursor for options, values and `--`, and handles
+  `--opt=VALUE`, `-o VALUE`, `-oVALUE` and bundles (`-la` offers the flags that can follow). A word `-` offers each
+  option once (its short name if it has one), `--` the long names. The extension only registers the commands; the
+  completer imports the modules, so they are compiled on the first Tab (about 5 ms; later ones take about 1 ms) instead
+  of at every start (loading it takes about 0.3 ms more than git-completion alone, rather than 3.5 ms). Rhai details it
+  works around: a closure made in a `for` loop sees the loop variable's last value (the completer uses `words[0]`, which
+  is the name it was registered for); a module's constants aren't visible to its functions (shared tables are
+  functions); arrays are passed to functions by value. `plugin.toml` depends on `git-completion`.
 - **Packages** (`package.rs`, `fetch.rs`): `read_config` turns `[plugins]` into owned `Config` (sources in
   `plugins.available`, plus the built-in `std`; entries in `plugins.enabled`), and `manifest` a directory plugin's
   `plugin.toml` into entries of the same kind. `Resolver` resolves entries depth-first, dependencies before
@@ -414,7 +432,8 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
 - Not yet done (see `PLAN.md`): `plugin add`/`remove`/`gc`, version requirements other than `"*"`, `flock` for
   concurrent syncs, `login.lsh`.
 - Tests: `tests/plugins/*` (packages: `packages.sh` for local sources, `git_packages.sh` for git ones with
-  `file://` repositories, `post_rc.sh`, `manifest.sh`), `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit
+  `file://` repositories, `post_rc.sh`, `manifest.sh`; completers through `__luish_internal complete`:
+  `complete.sh`, and `std_completion.sh` for `luish-std-plugins/completion`, found through `$STD_PLUGINS`), `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit
   tests for the byte conversion, `git status` parsing and (with a stand-in completer) in `complete.rs`, and
   `plugin_builtin`, `plugin_completer`, `cobra_completer`, `git_completion` and `bash_completion_bridge` (skipped
   without bash-completion) in `tests/interactive.rs`.
@@ -458,7 +477,7 @@ file. When adding a deviation, add it to both.
 | `emacs` option | `options/interactive_c.sh` |
 | Command cache | `path_cache` in `tests/interactive.rs` |
 | Command-line options | `options/command_line.sh` |
-| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh` |
+| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `tests/plugins/complete.sh` |
 | Startup files | `misc/startup_cache.sh`, `misc/config_toml.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
@@ -486,6 +505,9 @@ file. When adding a deviation, add it to both.
   `capture-pane -p [-e]`), but run `tmux set -sg escape-time 0` first, or tmux holds Esc for 500 ms and glues it to
   the next key. Wait after Enter before typing: input sent before the next prompt is discarded.
 - pixi task `outputs` caching ignores paths under `.pixi/`.
+- Plugin cases (`tests/plugins/`) get `$STD_PLUGINS`, the path of `luish-std-plugins`, and test completers with
+  `__luish_internal complete LINE`, which needs no terminal. Its output has a space at the end of a match that ends
+  the word, before the tab of a description.
 
 ## Conformance
 

@@ -65,7 +65,7 @@ ll = "ls -l"
 Up = "up-line-or-history"
 
 [plugins.enabled]
-std.git-completion = "*"
+std.completion = "*"         # completion for common commands, and git
 ```
 
 luish's own options are hierarchical: they are named in groups (`history.share`, `glob.star`, `cd.auto`), which are

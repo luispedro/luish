@@ -1,0 +1,254 @@
+load 0
+git-completion
+completion
+=== options
+--- ls --colo
+--color	color the output
+status 0
+--- ls --color=
+--color=always 
+--color=auto 
+--color=never 
+status 0
+--- ls --color=al
+--color=always 
+status 0
+--- cat -
+--help 	display help and exit
+--version 	output version information and exit
+-A 	equivalent to -vET
+-E 	display $ at end of each line
+-T 	display TAB characters as ^I
+-b 	number nonempty output lines, overrides -n
+-e 	equivalent to -vE
+-n 	number all output lines
+-s 	suppress repeated empty output lines
+-t 	equivalent to -vT
+-u 	(ignored)
+-v 	use ^ and M- notation, except for LFD and TAB
+status 0
+--- cat --show-e
+--show-ends 	display $ at end of each line
+status 0
+--- cat -Anv
+-AnvE	display $ at end of each line
+-AnvT	display TAB characters as ^I
+-Anvb	number nonempty output lines, overrides -n
+-Anve	equivalent to -vE
+-Anvs	suppress repeated empty output lines
+-Anvt	equivalent to -vT
+-Anvu	(ignored)
+status 0
+--- rm -rf
+-rfI	prompt once before removing more than three files, or when removing recursively
+-rfd	remove empty directories
+-rfi	prompt before every removal
+-rfv	explain what is being done
+status 0
+--- cp --t
+--target-directory=	copy, move or link all SOURCE arguments into DIRECTORY
+status 0
+--- cp --no-
+--no-clobber 	do not overwrite an existing file
+--no-dereference 	never follow symbolic links in SOURCE
+--no-preserve=	don't preserve the specified attributes
+--no-target-directory 	treat DEST as a normal file
+status 0
+--- egrep --colo
+--color	use markers to highlight the matching strings
+--colour	use markers to highlight the matching strings
+status 0
+--- ls --nosuch=
+status 1
+=== values, as the next word, after = and in a word of options
+--- cp -t s
+src/
+status 0
+--- cp --target-directory=s
+--target-directory=src/
+status 0
+--- cp -vts
+-vtsrc/
+status 0
+--- sort --sort=n
+--sort=numeric 
+status 0
+--- tail --follow=
+--follow=descriptor 
+--follow=name 
+status 0
+--- mkdir -m 75
+755 	rwxr-xr-x
+status 0
+--- tar -xf n
+notes.txt 
+status 0
+--- tar -xfn
+-xfnotes.txt 
+status 0
+--- tar --format=p
+--format=pax 
+--format=posix 
+status 0
+--- wc --total=o
+--total=only 
+status 0
+=== the end of options
+--- cat -- -
+-dash 
+status 0
+=== arguments
+--- mkdir s
+src/
+status 0
+--- rmdir s
+src/
+status 0
+--- chmod 75
+755 	rwxr-xr-x
+status 0
+--- chmod +x n
+notes.txt 
+status 0
+--- chmod --reference=notes.txt n
+notes.txt 
+status 0
+--- chown roo
+root 
+status 0
+--- chown root:roo
+root:root 
+status 0
+--- chgrp roo
+root 
+status 0
+--- grep ma
+status 1
+--- grep -e ma n
+notes.txt 
+status 0
+--- grep --regexp=ma n
+notes.txt 
+status 0
+--- tr [:up
+[:upper:] 
+status 0
+--- uniq notes.txt out 
+status 1
+--- date +
+status 1
+=== dd
+--- dd st
+status=	the level of information to print to standard error
+status 0
+--- dd if=n
+if=notes.txt 
+status 0
+--- dd conv=notrunc,sy
+conv=notrunc,sync 
+status 0
+=== make
+--- make 
+all 
+build 
+install 
+test 
+status 0
+--- make te
+test 
+status 0
+--- make -C other 
+deploy 
+status 0
+--- make --directory=o
+--directory=other/
+status 0
+--- make -j
+-j 	allow N jobs at once; infinite jobs with no argument
+status 0
+=== man
+--- man ls
+ls 
+lsblk 
+status 0
+--- man pri
+printf 
+status 0
+--- man 3 pri
+printf 
+status 0
+--- man 3 ls
+status 1
+--- man -l n
+notes.txt 
+status 0
+=== ssh
+--- ssh al
+alpha 
+status 0
+--- ssh me@be
+me@beta 
+status 0
+--- ssh -J del
+delta 
+status 0
+--- ssh nop
+status 1
+--- ssh !
+status 1
+--- ssh -o Strict
+StrictHostKeyChecking=
+status 0
+--- ssh -l roo
+root 
+status 0
+--- scp n
+notes.txt 
+status 0
+--- scp de
+delta:
+status 0
+--- scp me@de
+me@delta:
+status 0
+--- scp delta:no
+status 1
+--- rsync -av --del
+--delay-updates 	put all updated files into place at end
+--delete 	delete extraneous files from destination dirs
+--delete-after 	receiver deletes after transfer, not during
+--delete-before 	receiver deletes before transfer, not during
+--delete-delay 	find deletions during, delete after
+--delete-during 	receiver deletes during the transfer
+--delete-excluded 	also delete excluded files from destination dirs
+status 0
+--- rsync -a de
+delta:
+status 0
+=== tar
+--- tar -xf a.tar 
+notes.txt 
+src/
+status 0
+--- tar -xf a.tar src/
+src/deep/
+src/main.c 
+status 0
+--- tar xf a.tar n
+notes.txt 
+status 0
+--- tar -cf b.tar s
+src/
+std_completion.sh 
+status 0
+=== processes
+--- pkill --signal=KI
+--signal=KILL 
+status 0
+--- killall -s TE
+TERM 
+status 0
+=== git, from git-completion
+--- git swi
+switch 	Switch branches
+status 0

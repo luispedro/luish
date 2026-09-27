@@ -1,0 +1,3 @@
+complete.sh: 29: ./frob.rhai: Runtime error: frob failed (line 4, position 9)
+complete.sh: 44: __luish_internal complete: missing line
+complete.sh: 46: __luish_internal complete: too many arguments: b
