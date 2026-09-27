@@ -1,0 +1,14 @@
+p extension.rhai
+p post-rc hook
+1
+status 0
+  variable p_var: changed
+  rebuilt
+p extension.rhai
+p post-rc hook
+2
+--- config.toml changed
+  file changed: ~/.config/luish/config.toml
+  option glob.star: changed
+  rebuilt
+status 0

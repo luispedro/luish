@@ -251,6 +251,9 @@ and many shells started at once (a desktop login can start 40) should not each r
 built (`rc.d`, `login.d` and `_uncached.lsh`, one cache per directory keyed on fingerprints; see `DEVELOPING.md`).
 The rest of the design is stale-while-revalidate: a shell starts from the cached state at once, reruns the scripts in
 the background, and applies any difference at a later prompt, so invalidation doesn't have to be perfect.
+`__luish_internal check-cache` is a first, manual form of the background run: it reruns the files in the environment
+the cache was built in (which the cache records), compares the result with what the cache restores, and rebuilds the
+cache or touches it, so that its modification time says when it was last validated.
 
 - **Per-file entries**, so editing one file reruns only it and the files that depend on it. An entry records the
   file's changes and its key: the fingerprints of the file and every file it sourced, the mtimes of directories it

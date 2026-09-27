@@ -374,7 +374,54 @@ restored. For example:
 The system is not perfect: luish can't see what a command does, so it can't
 know whether it changed the environment. In the future, luish may use more
 sophisticated ways to detect changes, but for now, it only checks the files it
-reads.
+reads, unless you check the caches yourself.
+
+### Checking the caches
+
+`__luish_internal check-cache` finds the changes that luish can't see: it
+runs the startup files again, as a new shell would without the cache, and
+compares the result with what the cache restores. It checks the caches of
+this host that exist, or those named (`rc`, `login`):
+
+```text
+$ __luish_internal check-cache
+rc: /home/me/.cache/luish/rc-myhost
+  generated Mon 28 Sep 2026 09:12:03 CEST (2 hours ago)
+  up to date
+login: /home/me/.cache/luish/login-myhost
+  generated Fri 25 Sep 2026 18:40:51 CEST (2 days ago)
+  last checked Mon 28 Sep 2026 08:00:02 CEST (3 hours ago)
+  file changed: /home/me/.config/luish/login.d/10-env.lsh
+  variable NVM_BIN: changed
+  alias ll: added
+  rebuilt
+```
+
+For each cache, it shows when it was generated and, if it was checked since,
+when it was last found up to date (in local time, in the format of the
+locale), then what differs: files changed, added or removed, a different
+build of luish, and the variables, functions, aliases, options and so on
+that the cache restores differently. A cache that is up to date is kept and
+touched (its modification time is when it was last checked); one that
+differs is rebuilt, so that the next shell uses the new one. Shells already
+running keep what they started with.
+
+The files run in a new shell, started as the one that built the cache: with
+the same options (interactive, login) and the environment it started with,
+which the cache records for this. So a check gives the same result wherever
+it runs (another directory, a shell whose `PATH` the files already changed,
+or `cron`). Their output is discarded, and `_uncached.lsh` doesn't run.
+
+With `-q` (or `--quiet`), it prints only the reports of the caches it
+rebuilt. The exit status is 0 if every cache was up to date, 1 if any was
+rebuilt, and 2 on errors, so it can run from `cron` or a systemd timer:
+
+```sh
+__luish_internal check-cache -q || echo 'startup cache rebuilt'
+```
+
+The cache files hold the environment of the shell that built them (mode
+0600, as they already hold the variables the files export).
 
 
 ## Internals

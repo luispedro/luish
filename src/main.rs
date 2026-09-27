@@ -104,6 +104,13 @@ impl Invocation {
 
     /// Handles luish's long options.
     fn long_option(&mut self, sh: &mut Shell, arg: &[u8]) {
+        // For `__luish_internal check-cache` (`startcache.rs`).
+        if let Some(v) = arg.strip_prefix(b"--internal-check-cache=")
+            && let Some(colon) = v.iter().position(|&c| c == b':')
+        {
+            sh.check_cache = Some((v[..colon].to_vec(), v[colon + 1..].to_vec()));
+            return;
+        }
         match arg {
             b"--help" => {
                 sys::write_all(1, USAGE.as_bytes());
@@ -265,6 +272,9 @@ fn run(args: Vec<Vec<u8>>) -> ! {
         }
         if login {
             interactive::login_profiles(&mut sh);
+        }
+        if sh.check_cache.is_some() {
+            startcache::check_not_reached(&mut sh);
         }
         if interactive {
             interactive::startup(&mut sh);

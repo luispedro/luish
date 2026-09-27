@@ -52,6 +52,26 @@ pub enum Kind {
     Option,
 }
 
+impl Kind {
+    /// What the kind is called in reports (`__luish_internal check-cache`).
+    pub fn label(self) -> &'static str {
+        match self {
+            Kind::Dir => "directory",
+            Kind::DirStack => "directory stack",
+            Kind::Umask => "umask",
+            Kind::Var => "variable",
+            Kind::Readonly => "readonly",
+            Kind::Trap => "trap",
+            Kind::SyntaxOption | Kind::Option => "option",
+            Kind::Function => "function",
+            Kind::Alias => "alias",
+            Kind::SuffixAlias => "suffix alias",
+            Kind::Plugin => "plugin",
+            Kind::Binding => "key binding",
+        }
+    }
+}
+
 /// One piece of state: its kind and name, and the commands that restore it.
 pub struct Entry {
     pub kind: Kind,

@@ -2,6 +2,7 @@
 
 ```text
 __luish_internal bindkey [arg...]
+__luish_internal check-cache [-q] [rc|login]...
 __luish_internal complete line
 __luish_internal help [name...]
 __luish_internal plugin subcommand [arg...]
@@ -17,6 +18,16 @@ take names that scripts might use for something else.
 
 `bindkey`
 : Show or change the line editor's key bindings (see `help bindkey`).
+
+`check-cache`
+: Check the startup caches (all of this host's, or those named): run the
+  startup files again, in a new shell started as the one that built the
+  cache, and compare the result with what the cache restores. Show when
+  each cache was generated and last checked (in local time), and what
+  differs. A cache that is up to date is touched; one that differs is
+  rebuilt. With `-q` (`--quiet`), show only the caches that were rebuilt.
+  The status is 0 if all were up to date, 1 if any was rebuilt, 2 on
+  errors.
 
 `complete`
 : Print what Tab offers for the last word of `line`, as the line editor

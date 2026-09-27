@@ -375,10 +375,25 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   `config.toml`, even when it doesn't exist. Written with a rename, mode 0600; the directory gets a `CACHEDIR.TAG`
   and a `README`. On the warm path: a stat per file, a directory read and one file read per directory. Test:
   `misc/startup_cache.sh`.
+- Besides the key, the cache records when it was built (`t`, seconds since the epoch), the options of the shell
+  that built it (`m`: `-i`, `-l` or `-il`) and the environment it started with (`e LEN` lines, each followed by
+  one `NAME=VALUE`; the shell never changes its own environment, so `std::env::vars_os` is the inherited one). They
+  are for `__luish_internal check-cache` (`startcache::check`), which runs `luish MODE +m
+  --internal-check-cache=NAME:TMP` in that environment, with `/dev/null` for 0 to 2, after writing the cached state
+  to `TMP` (next to the cache, mode 0600). When that shell reaches the cache `NAME` (`check_child`), it forks a copy
+  that restores the state from `TMP`, then runs the files itself; each writes its `state_entries` (with
+  `Kind::label`) to `TMP`, and the shell adds the new cache. `check` compares the key's files and build, then the
+  entries by kind and name; if nothing differs it touches the cache (`sys::touch`), otherwise it writes the new
+  one. Recording the environment is what keeps `PATH=$HOME/bin:$PATH` from differing when the check runs in a
+  shell whose `PATH` has it already. `+m` keeps the shell off the terminal. `_uncached.lsh` doesn't run in it (the
+  `post-rc` hooks do), and a shell that doesn't reach the cache (its directory is gone) reports so from `main`
+  (`check_not_reached`) before `$ENV` and `luishrc`. Times are shown with `strftime("%c")` in local time, in the
+  `LC_TIME` locale of the shell's variables (`sys::format_time`, which sets and restores the C library's locale
+  around the call). Tests: `misc/startup_cache_check.sh`, `tests/plugins/startup_cache_check.sh`.
 - Not yet done (see `PLAN.md`, Stage 3): keying on the inherited values the files read (so `PATH=$HOME/bin:$PATH`
   keeps the rest of `PATH` from when the cache was built, and an `rc.d` cache built in a login shell, before
-  `login.d` ran, is used in shells started from it), changes a fingerprint can't show, per-file entries, background
-  revalidation, `flock` for many shells at once, and merging into running shells.
+  `login.d` ran, is used in shells started from it), changes a fingerprint can't show (other than by `check-cache`),
+  per-file entries, background revalidation, `flock` for many shells at once, and merging into running shells.
 - `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. A key directly
   under `[options]` is a setting by its `setopt` name. The `alias` table defines regular aliases, and its `global` and
   `suffix` tables the other kinds (so a string named `global` or `suffix` is a regular alias, and TOML won't have both
@@ -537,7 +552,7 @@ truncates when it relocates the package.
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |
 | `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `builtins/internal_complete_expand.sh`, `tests/plugins/complete.sh` |
-| Startup files | `misc/startup_cache.sh`, `misc/config_toml.sh` |
+| Startup files | `misc/startup_cache.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `tests/plugins/startup_cache_check.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
 | `plugin` | `builtins/internal_plugin.sh`, `builtins/plugin.sh` (same as dash), `plugin_builtin` in `tests/interactive.rs` |

@@ -9,6 +9,7 @@ type Subcommand = fn(&mut Shell, &[Vec<u8>]) -> ExecResult;
 /// (name, function); each gets the arguments from its own name on.
 const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
     (b"bindkey", bindkey),
+    (b"check-cache", crate::startcache::check),
     (b"complete", complete),
     (b"help", help),
     (b"plugin", plugin),

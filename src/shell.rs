@@ -91,6 +91,10 @@ pub struct Shell {
     /// `config.toml` enables: plugins then wait for the end of `rc.d` to run
     /// their `post-rc.lsh` and `post-rc` hooks (`plugins/mod.rs`).
     pub in_rc: bool,
+    /// `--internal-check-cache=NAME:PATH`, in the shell that
+    /// `__luish_internal check-cache` starts: rebuild the startup cache
+    /// `NAME` into `PATH` and exit (`startcache::check_child`).
+    pub check_cache: Option<(Vec<u8>, Vec<u8>)>,
 }
 
 impl Shell {
@@ -160,6 +164,7 @@ impl Shell {
             plugins: None,
             no_plugins: false,
             in_rc: false,
+            check_cache: None,
         }
     }
 

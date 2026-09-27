@@ -592,3 +592,37 @@ pub fn set_signal_mask(mask: &libc::sigset_t) {
         libc::sigprocmask(libc::SIG_SETMASK, mask, std::ptr::null_mut());
     }
 }
+
+/// Sets a file's access and modification times to now.
+pub fn touch(path: &[u8]) -> Result<(), i32> {
+    let c = cstr(path);
+    // SAFETY: valid path; null times mean now.
+    if unsafe { libc::utimensat(libc::AT_FDCWD, c.as_ptr(), std::ptr::null(), 0) } < 0 {
+        Err(errno())
+    } else {
+        Ok(())
+    }
+}
+
+/// Formats `t` (seconds since the epoch) as local time with `strftime`, in
+/// the locale `locale` for `LC_TIME` (the shell otherwise stays in the C
+/// locale).
+pub fn format_time(t: i64, fmt: &[u8], locale: &[u8]) -> Vec<u8> {
+    let loc = cstr(locale);
+    // SAFETY: `localtime_r` fills the `tm` it is given; the shell is
+    // single-threaded, so switching the locale around `strftime` is safe,
+    // and the name `setlocale` returns is copied before the next call.
+    unsafe {
+        let t = t as libc::time_t;
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&t, &mut tm);
+        let old = libc::setlocale(libc::LC_TIME, std::ptr::null());
+        let old = (!old.is_null()).then(|| std::ffi::CStr::from_ptr(old).to_owned());
+        libc::setlocale(libc::LC_TIME, loc.as_ptr());
+        let out = strftime(fmt, &tm);
+        if let Some(old) = old {
+            libc::setlocale(libc::LC_TIME, old.as_ptr());
+        }
+        out
+    }
+}
