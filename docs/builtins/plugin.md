@@ -24,9 +24,9 @@ argument that contains a `/` is a path. A directory plugin runs its
 Loading a plugin again reloads it. The exit status is 1 if a plugin can't
 be loaded. `plugin list-loaded` prints the names of the loaded plugins, and
 `plugin list-available` the names of the plugins that `plugin load` can
-load by name: those in the plugin directory, and those of the sources in
-`config.toml` that are installed. `plugin unload` removes plugins and their
-hooks.
+load by name and that aren't loaded: those in the plugin directory, and
+those of the sources in `config.toml` that are installed. `plugin unload`
+removes plugins and their hooks.
 
 `plugin sync` fetches, with git, the sources of the plugins in
 `config.toml`'s `plugins.enabled` (and of their dependencies) and of its

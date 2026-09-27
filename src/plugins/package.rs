@@ -1264,8 +1264,8 @@ pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>) -> ExecResul
 
 /// The plugins of the available sources that are installed, for `plugin
 /// list-available`: `SOURCE` for a source that is one plugin, and
-/// `SOURCE/NAME` for each plugin of a collection.
-pub fn available(sh: &mut Shell) -> Vec<Vec<u8>> {
+/// `SOURCE/NAME` for each plugin of a collection, with the plugin's path.
+pub fn available(sh: &mut Shell) -> Vec<(Vec<u8>, Vec<u8>)> {
     let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
     let pins = read_lock(&lock_path(sh).unwrap_or_default()).unwrap_or_default();
     let mut names: Vec<String> = config.available.iter().map(|(n, _)| n.clone()).collect();
@@ -1281,10 +1281,12 @@ pub fn available(sh: &mut Shell) -> Vec<Vec<u8>> {
         };
         if super::is_dir(&root) && !super::is_plugin_dir(&root) {
             for p in super::available_names(&root) {
-                out.push([name.as_bytes(), b"/", &p].concat());
+                if let Some(found) = super::find_in(&root, &p) {
+                    out.push((found.path, [name.as_bytes(), b"/", &p].concat()));
+                }
             }
         } else {
-            out.push(name.into_bytes());
+            out.push((root, name.into_bytes()));
         }
     }
     out

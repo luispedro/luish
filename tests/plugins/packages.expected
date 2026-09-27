@@ -40,6 +40,10 @@ helper
 lib
 one
 tool
+--- plugin list-available leaves out the loaded plugins, SOURCE/NAME too
+greet
+coll/cyc1
+coll/cyc2
 --- plugin load: a path, whose plain dependencies are next to it
 lib
 one

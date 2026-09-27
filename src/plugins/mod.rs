@@ -150,11 +150,7 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
         Some(sub @ (b"list-loaded" | b"list-available")) if args.is_empty() => {
             let names = match sub {
                 b"list-loaded" => loaded_names(sh),
-                _ => {
-                    let mut names = plugin_dir(sh).map_or_else(Vec::new, |dir| available_names(&dir));
-                    names.extend(from_sources(sh));
-                    names
-                }
+                _ => not_loaded(sh),
             };
             let mut out = Vec::new();
             for name in names {
@@ -572,14 +568,31 @@ fn capture(sh: &mut Shell, script: &[u8]) -> Result<(i32, Vec<u8>), &'static str
 }
 
 /// The plugins of the sources in `config.toml` that are installed.
+/// For `plugin list-available`: the plugins in the plugin directory and
+/// those of the sources that are installed, less those loaded (by path, as
+/// `std/NAME` loads as `NAME`).
 #[cfg(feature = "plugins")]
-fn from_sources(sh: &mut Shell) -> Vec<Vec<u8>> {
-    package::available(sh)
+fn not_loaded(sh: &mut Shell) -> Vec<Vec<u8>> {
+    let mut found: Vec<_> = match plugin_dir(sh) {
+        Some(dir) => (available_names(&dir).into_iter())
+            .filter_map(|n| Some((find_in(&dir, &n)?.path, n)))
+            .collect(),
+        None => Vec::new(),
+    };
+    found.extend(package::available(sh));
+    let loaded: Vec<_> = sh.plugins.as_ref().map_or_else(Vec::new, |host| host.loaded());
+    (found.into_iter())
+        .filter(|(path, _)| {
+            let abs = absolute(sh, path);
+            !loaded.iter().any(|(_, p)| *p == abs)
+        })
+        .map(|(_, name)| name)
+        .collect()
 }
 
 #[cfg(not(feature = "plugins"))]
-fn from_sources(_: &mut Shell) -> Vec<Vec<u8>> {
-    Vec::new()
+fn not_loaded(sh: &mut Shell) -> Vec<Vec<u8>> {
+    plugin_dir(sh).map_or_else(Vec::new, |dir| available_names(&dir))
 }
 
 /// `plugin sync` and `plugin update`.
