@@ -33,7 +33,8 @@ curl -fsSL https://raw.githubusercontent.com/luispedro/luish/main/install.sh | s
 ```
 
 [docs/installation.md](docs/installation.md) has its options, such as the static musl build (`sh -s -- --musl`), and
-how to install luish with Nix (`nix profile install github:luispedro/luish`).
+how to install luish with Nix (`nix profile install github:luispedro/luish`). Then
+[docs/getting-started.md](docs/getting-started.md) sets up a first configuration.
 
 ## Building
 

@@ -55,7 +55,8 @@ luish                             # an interactive shell
 luish script.sh                   # run a script, as sh script.sh does
 ```
 
-Then read [](usage.md) for the command line, the prompt, line editing, history, completion and startup files, and
+[](getting-started.md) then sets up a first configuration, with the standard plugins, a few aliases and good
+options. Read [](usage.md) for the command line, the prompt, line editing, history, completion and startup files, and
 [](plugins.md) to extend it. In the shell, `help` lists the built-in commands and `help NAME` explains one; the same
 text is in [](builtins.md).
 
@@ -64,6 +65,7 @@ text is in [](builtins.md).
 :maxdepth: 2
 
 installation
+getting-started
 usage
 globbing
 builtins
