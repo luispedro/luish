@@ -131,9 +131,9 @@ there is no `rc.d`. The cache is used as long as `config.toml`, `plugins.lock` a
 unchanged. Plugins that need to see your settings can do that part in `post-rc.lsh` or a `post-rc` hook (see
 [below](#after-the-startup-files-post-rc)).
 
-### Dependencies: `plugin.toml`
+### Dependencies, options, aliases and key bindings: `plugin.toml`
 
-A directory plugin can list the plugins it needs in a file `plugin.toml`, which luish loads first:
+A directory plugin can have a file `plugin.toml`, which lists the plugins it needs (which luish loads first):
 
 ```toml
 # ~/src/work-plugins/proxy/plugin.toml
@@ -147,7 +147,35 @@ fzf = { gh = "bob/luish-fzf" }        # a source of its own
 
 The entries are as in `plugins.enabled`, but `NAME` alone is a plugin of the same collection. Dependencies can have
 dependencies of their own; a plugin that ends up depending on itself is an error, as are two different plugins with
-the same name. Other keys in `plugin.toml`, such as `description`, are ignored for now.
+the same name.
+
+`plugin.toml` can also set options and define aliases and key bindings, in `[options]`, `[alias]` and `[bindkey]`
+tables as in `config.toml` (see [Settings in config.toml](usage.md#settings-in-configtoml)). A plugin can so package a
+set of options that go together; they override those in `config.toml`, which is read first.
+
+```toml
+[options]
+autosuggest = true
+[options.history]
+share = true
+ignore_space = true
+
+[alias]
+gs = "git status"
+[alias.global]
+G = "| grep"
+[alias.suffix]
+pdf = "evince"
+
+[bindkey]
+"Ctrl-X Ctrl-G" = "undo"
+```
+
+As `rc.lsh`, these are only for interactive shells, and they are defined just before `rc.lsh` runs (after
+`extension.rhai`, and not if it fails), so `rc.lsh` can change them, as can the files in `rc.d` for plugins that
+`config.toml` enables. An unknown setting, a value of the wrong type, or a key or widget that `bindkey` doesn't take
+is reported with its line and skipped. Other keys in `plugin.toml`, such as `description`,
+are ignored for now.
 
 `plugin load` runs the plugin's files, in the order below. The top level of its extension runs once, and registers
 its hooks and completers. If the extension has an error, it is reported with its file and line, nothing from the
@@ -161,15 +189,15 @@ A plugin directory holds files in shell and in Rhai. luish runs these files in i
 |---|---|
 | `init.lsh` | First, when the plugin is loaded, in the current shell (as with `.`). A `NAME.lsh` plugin is this file |
 | `extension.rhai` | Next: the plugin's extension. A `NAME.rhai` plugin is this file |
-| `rc.lsh` | Next, as with `.`, but only in interactive shells (and their subshells), and not if `extension.rhai` fails |
+| `rc.lsh` | Next, as with `.`, but only in interactive shells (and their subshells), and not if `extension.rhai` fails. The options, aliases and key bindings in `plugin.toml` come just before it, in the same shells |
 | `post-rc.lsh` | Last, as `rc.lsh`, but after the startup files in `rc.d` (see [below](#after-the-startup-files-post-rc)) |
 | `prompt-vars.lsh` | Before each prompt, to set variables for `PS1` (see [below](#variables-for-the-prompt-prompt-vars)) |
 
 A directory needs at least one of them (or a `login.lsh`, which luish will run in login shells in a later version).
-Put what scripts need too, such as functions, in `init.lsh`, and what is only for typing commands, such as aliases,
-in `rc.lsh`. `extension.rhai` runs after `init.lsh`, so it can use what `init.lsh` set, and before `rc.lsh`, so that
-`rc.lsh` can use what the extension set. Put what depends on your own settings in `post-rc.lsh`, which runs after
-them.
+Put what scripts need too, such as functions, in `init.lsh`, and what is only for typing commands, such as aliases, in
+`rc.lsh` (or, for options, aliases and key bindings, in `plugin.toml`). `extension.rhai` runs after `init.lsh`, so it
+can use what `init.lsh` set, and before `rc.lsh`, so that `rc.lsh` can use what the extension set. Put what depends on
+your own settings in `post-rc.lsh`, which runs after them.
 
 Other files in the directory are read only when these files ask for them. In Rhai, `import "util" as u;` loads
 `util.rhai` from the plugin's directory, and loading the plugin again reads it again. In shell, use
@@ -226,7 +254,8 @@ itself runs `cd` does not trigger `chpwd` again.
 An interactive shell starts in this order:
 
 1. the settings in `config.toml`;
-2. the plugins that `config.toml` enables (each plugin's `init.lsh`, `extension.rhai` and `rc.lsh`);
+2. the plugins that `config.toml` enables (each plugin's `init.lsh`, `extension.rhai`, the options, aliases and key
+   bindings in its `plugin.toml`, and `rc.lsh`);
 3. the files in `rc.d`, which can load more plugins;
 4. the `post-rc.lsh` of each plugin loaded so far, in the order they were loaded;
 5. the `post-rc` hooks of their extensions, in the same order;

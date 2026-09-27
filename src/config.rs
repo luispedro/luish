@@ -37,6 +37,9 @@
 //! "^X^E" = "undo"
 //! ```
 //!
+//! A directory plugin's `plugin.toml` can have `options`, `alias` and
+//! `bindkey` tables too (`load_plugin_manifest`).
+//!
 //! An unknown key, or a value of the wrong type, is reported with its line
 //! and skipped; a file that isn't valid TOML is reported and ignored. The
 //! rc cache (`startcache.rs`) records the file, so a warm start doesn't
@@ -57,18 +60,78 @@ pub fn path(sh: &Shell) -> Option<Vec<u8>> {
 
 /// Reads the file at `path`, if there is one, and applies its settings.
 pub fn load(sh: &mut Shell, path: &[u8]) {
+    read(sh, path, true, |sh, key, value, err| match &*key.name {
+        "plugins" => {}
+        name => {
+            if !shared_table(sh, &key, value, err) {
+                err(sh, key.span.start, &format!("unknown key: {name}"));
+            }
+        }
+    });
+}
+
+/// Applies the `options`, `alias` and `bindkey` tables of a plugin's
+/// `plugin.toml`, as in `config.toml` (so a plugin can package a set of
+/// options, which override the user's). Its other keys are for `plugins/package.rs`, which
+/// also reports a file that isn't TOML (so it isn't reported again here).
+#[cfg(feature = "plugins")]
+pub fn load_plugin_manifest(sh: &mut Shell, path: &[u8]) {
+    read(sh, path, false, |sh, key, value, err| {
+        shared_table(sh, &key, value, err);
+    });
+}
+
+/// The tables that `config.toml` and `plugin.toml` share: `options`,
+/// `alias` and `bindkey`. False for another key.
+fn shared_table(
+    sh: &mut Shell,
+    key: &toml_span::value::Key<'_>,
+    value: Value<'_>,
+    err: &dyn Fn(&Shell, usize, &str),
+) -> bool {
+    match &*key.name {
+        "options" => match value.as_table() {
+            Some(_) => options(sh, value, err),
+            None => err(sh, value.span.start, "options: not a table"),
+        },
+        "alias" => match value.as_table() {
+            Some(_) => aliases(sh, value, err),
+            None => err(sh, value.span.start, "alias: not a table"),
+        },
+        "bindkey" => match value.as_table() {
+            Some(_) => bindkeys(sh, value, err),
+            None => err(sh, value.span.start, "bindkey: not a table"),
+        },
+        _ => return false,
+    }
+    true
+}
+
+/// Reads the TOML file at `path`, if there is one, and calls `f` with each
+/// top-level key, in the file's order, and a function that reports errors.
+/// A file that isn't TOML is reported if `syntax`.
+fn read(
+    sh: &mut Shell,
+    path: &[u8],
+    syntax: bool,
+    mut f: impl FnMut(&mut Shell, toml_span::value::Key<'_>, Value<'_>, &dyn Fn(&Shell, usize, &str)),
+) {
     let Ok(bytes) = std::fs::read(crate::interactive::to_path(path)) else {
         return;
     };
     let err = |sh: &Shell, offset: usize, msg: &str| report(sh, path, line_of(&bytes, offset), msg);
     let Ok(text) = std::str::from_utf8(&bytes) else {
-        err(sh, 0, "not valid UTF-8");
+        if syntax {
+            err(sh, 0, "not valid UTF-8");
+        }
         return;
     };
     let mut root = match toml_span::parse(text) {
         Ok(root) => root,
         Err(e) => {
-            err(sh, e.span.start, &e.to_string());
+            if syntax {
+                err(sh, e.span.start, &e.to_string());
+            }
             return;
         }
     };
@@ -76,22 +139,7 @@ pub fn load(sh: &mut Shell, path: &[u8]) {
         return;
     };
     for (key, value) in in_order(root) {
-        match &*key.name {
-            "options" => match value.as_table() {
-                Some(_) => options(sh, value, &err),
-                None => err(sh, value.span.start, "options: not a table"),
-            },
-            "plugins" => {}
-            "alias" => match value.as_table() {
-                Some(_) => aliases(sh, value, &err),
-                None => err(sh, value.span.start, "alias: not a table"),
-            },
-            "bindkey" => match value.as_table() {
-                Some(_) => bindkeys(sh, value, &err),
-                None => err(sh, value.span.start, "bindkey: not a table"),
-            },
-            name => err(sh, key.span.start, &format!("unknown key: {name}")),
-        }
+        f(sh, key, value, &err);
     }
 }
 

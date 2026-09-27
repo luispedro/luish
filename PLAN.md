@@ -96,11 +96,12 @@ module, and the `fs` and `vcs` modules. Still to do:
 ### Plugin packages
 
 Done (see `DEVELOPING.md` and the plugins page of the user docs): the `[plugins]` table of `config.toml`, with
-`plugins.available` (named sources: `gh`, `git` or `path`, with `branch`/`tag`/`rev` and `subdir`; `std` built in)
-and `plugins.enabled` (`NAME`, `SOURCE.NAME` or `"SOURCE/NAME"`, and inline sources, all `= "*"`); dependencies in a
-directory plugin's `plugin.toml`, resolved recursively; `plugins.lock` (pins and the resolved plugins); `plugin sync`
-and `plugin update`, which run git into `$XDG_DATA_HOME/luish/plugins/`; `plugin load SOURCE/NAME` with dependencies;
-enabled plugins loaded at startup before `rc.d`, cached with it; `post-rc.lsh` and the `post-rc` hook. Still to do:
+`plugins.available` (named sources: `gh`, `git` or `path`, with `branch`/`tag`/`rev` and `subdir`; `std` built in) and
+`plugins.enabled` (`NAME`, `SOURCE.NAME` or `"SOURCE/NAME"`, and inline sources, all `= "*"`); dependencies in a
+directory plugin's `plugin.toml`, resolved recursively, and its `[options]`, `[alias]` and `[bindkey]` tables;
+`plugins.lock` (pins and the resolved plugins); `plugin sync` and `plugin update`, which run git into
+`$XDG_DATA_HOME/luish/plugins/`; `plugin load SOURCE/NAME` with dependencies; enabled plugins loaded at startup before
+`rc.d`, cached with it; `post-rc.lsh` and the `post-rc` hook. Still to do:
 
 1. `plugin add SPEC [NAME]` and `plugin remove NAME...`, editing `config.toml` as text (keeping comments, as
    `cargo add` does), and `plugin gc` for the repositories and checkouts the lock doesn't use (`sync` and `update`

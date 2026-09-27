@@ -323,8 +323,9 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
 - `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. A key directly
   under `[options]` is a setting by its `setopt` name. The `alias` table defines regular aliases, and its `global` and
   `suffix` tables the other kinds (so a string named `global` or `suffix` is a regular alias, and TOML won't have both
-  in one file). The `bindkey` table goes through `keys::bind_widget`, as `bindkey KEY WIDGET` does. Test:
-  `misc/config_toml.sh`.
+  in one file). The `bindkey` table goes through `keys::bind_widget`, as `bindkey KEY WIDGET` does. A directory
+  plugin's `plugin.toml` shares the `options`, `alias` and `bindkey` tables (`config::load_plugin_manifest`, see
+  Plugins). Test: `misc/config_toml.sh`.
 - The rc stage (`interactive::rc_d`, `startcache::run` with `config`) is: `config.toml`'s options, the plugins it
   enables (`plugins::load_enabled`), `rc.d`'s files, then every loaded plugin's `post-rc.lsh` (`post_rc_files`), all
   inside the cache; then, outside it and so in every shell, the `post-rc` hooks (`post_rc_hooks`), then
@@ -384,6 +385,11 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   don't stop the lock being written, while problems with enabled plugins do. The lock is written only if its text
   changed (so the rc cache, which fingerprints it, stays valid). Messages about manifests of git plugins show
   `SOURCE:PATH/plugin.toml` rather than the data directory.
+- `plugin.toml`'s `options`, `alias` and `bindkey` tables are applied by `load_found` (with `config.rs`'s code), in
+  interactive shells, after the extension loads and before `rc.lsh`; its options override `config.toml`'s, by design
+  (a plugin can package a set of options). The file is parsed again there (the resolver only keeps the
+  dependencies), and syntax errors are left to the resolver, so they are reported once. `load_found` records the
+  file for the rc cache, also for plugins that `rc.d` loads with `plugin load`. Test: `tests/plugins/manifest.sh`.
 - `fetch.rs` runs git through the shell (`command git`, in a forked child, with `GIT_TERMINAL_PROMPT=0`), with
   `-C` a bare repository per URL in `$XDG_DATA_HOME/luish/plugins/git/REPO-HASH` (FNV-1a of the URL). A ref is
   fetched with `--depth 1` and read from `FETCH_HEAD^{commit}`; a locked commit that is missing is fetched by hash,
@@ -393,10 +399,10 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
 - Not yet done (see `PLAN.md`): `plugin add`/`remove`/`gc`, version requirements other than `"*"`, `flock` for
   concurrent syncs, `login.lsh`.
 - Tests: `tests/plugins/*` (packages: `packages.sh` for local sources, `git_packages.sh` for git ones with
-  `file://` repositories, `post_rc.sh`), `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit tests for the byte
-  conversion, `git status` parsing and (with a stand-in completer) in `complete.rs`, and `plugin_builtin`,
-  `plugin_completer`, `cobra_completer`, `git_completion` and `bash_completion_bridge` (skipped without
-  bash-completion) in `tests/interactive.rs`.
+  `file://` repositories, `post_rc.sh`, `manifest.sh`), `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit
+  tests for the byte conversion, `git status` parsing and (with a stand-in completer) in `complete.rs`, and
+  `plugin_builtin`, `plugin_completer`, `cobra_completer`, `git_completion` and `bash_completion_bridge` (skipped
+  without bash-completion) in `tests/interactive.rs`.
 
 ### Signals and startup
 

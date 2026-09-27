@@ -464,13 +464,27 @@ fn load_found(sh: &mut Shell, cmd: &[u8], found: &Found, name: Option<Vec<u8>>, 
     // (`post_rc_files`, `post_rc_hooks`).
     let post_rc = interactive && !sh.in_rc;
     let is_dir = found.kind == Kind::Dir;
+    // `plugin.toml`'s options, aliases and key bindings are for interactive
+    // shells, as `rc.lsh`, and come just before it.
+    let manifest = is_dir.then(|| [dir.as_slice(), b"/plugin.toml"].concat());
+    if let (Some(rec), Some(file), true) = (&mut sh.sourced_files, &manifest, fresh)
+        && !rec.contains(file)
+    {
+        rec.push(file.clone());
+    }
+    let manifest = manifest.filter(|_| interactive);
     with_plugin_vars(sh, &dir, &name, |sh| {
         if let Some(init) = init.filter(|_| fresh) {
             dot(sh, init)?;
         }
-        let r = match (host.load(sh, cmd, loading), rc) {
-            (Ok(0), Some(rc)) => dot(sh, rc),
-            (r, _) => r,
+        let r = match host.load(sh, cmd, loading) {
+            Ok(0) => {
+                if let Some(manifest) = manifest {
+                    crate::config::load_plugin_manifest(sh, &manifest);
+                }
+                rc.map_or(Ok(0), |rc| dot(sh, rc))
+            }
+            r => r,
         };
         match r {
             Ok(0) if post_rc => {
