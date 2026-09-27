@@ -81,6 +81,7 @@ builtins! {
     (b"hash", misc::hash, false),
     (b"jobs", jobs::jobs, false),
     (b"kill", jobs::kill, false),
+    (b"let", misc::let_, false),
     (b"popd", dirstack::popd, false),
     (b"printf", printf::printf, false),
     (b"pushd", dirstack::pushd, false),

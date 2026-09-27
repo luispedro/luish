@@ -443,6 +443,31 @@ pub fn builtin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     }
 }
 
+/// `let`, as in zsh: evaluates each argument as `$((...))` does. The status
+/// is 0 if the last value is non-zero, 1 if it is zero or on an error, which
+/// stops at that argument.
+pub fn let_(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    let args = match argv.get(1) {
+        Some(a) if a == b"--" => &argv[2..],
+        _ => &argv[1..],
+    };
+    if args.is_empty() {
+        sh.berr(&argv[0], "not enough arguments");
+        return Ok(1);
+    }
+    let mut v = 0;
+    for a in args {
+        match crate::expand::arith::eval(sh, a) {
+            Ok(n) => v = n,
+            Err(msg) => {
+                sh.berr(&argv[0], msg);
+                return Ok(1);
+            }
+        }
+    }
+    Ok((v == 0) as i32)
+}
+
 pub fn type_(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let mut status = 0;
     for name in &argv[1..] {

@@ -1,4 +1,5 @@
 Unreleased
+    * `let` built-in, as in zsh
     * `shopt` (not found) suggests the matching `setopt`
     * `builtin` built-in, as in zsh and bash
     * Tab expands globs, variables and substitutions, as in zsh

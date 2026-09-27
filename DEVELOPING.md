@@ -252,6 +252,9 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   one's errors still exit (as in zsh), but assignments before it are temporary (as in bash). Its arguments aren't
   expanded as assignments (`declaration_command` doesn't skip it), as in zsh and bash. Test: `builtins/builtin.sh`
   (zsh).
+- `let` (`misc::let_`) evaluates each argument with `arith::eval`, as zsh does: status 1 if the last value is zero,
+  or on an error, which stops at that argument (with the `$((...))` message, but no exit). No arguments is an error
+  (status 1) and a leading `--` is skipped, as in zsh. Test: `builtins/let.sh` (zsh).
 - `__luish_internal` (`internal.rs`) holds luish's own commands, so they don't take names from the command
   namespace; a missing or unknown subcommand is status 2. `print-git-rev` is set at compile time by `build.rs`
   (`-dirty` if `src/`, `build.rs`, `Cargo.toml` or `Cargo.lock` differ). Test: `builtins/internal_git_rev.sh`.

@@ -43,6 +43,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"help", page!("help")),
     (b"jobs", page!("jobs")),
     (b"kill", page!("kill")),
+    (b"let", page!("let")),
     (b"local", page!("local")),
     (b"plugin", page!("plugin")),
     (b"popd", page!("dirs")),
