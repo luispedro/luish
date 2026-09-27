@@ -1,0 +1,3 @@
+status 0
+ps1 > ps1 1> [0]ps1 1> [1]ps1 1> (base ran)base %~ (base ran)base ~ [0]ps1 1> <[0]ps1 1> >[0]ps1 1> <[0]ps1 1> >1:<[0]ps1 1> >luish: 11: ./broken.rhai: Runtime error: no prompt (line 1, position 37)
+2:<[0]ps1 1> >[0]ps1 1> plain> [0]ps1 1> (base ran)1:base ~ 

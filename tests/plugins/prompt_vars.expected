@@ -1,0 +1,11 @@
+status 3
+[ outer   here  ] [rhai inner 42 true unset  ] [rhai inner 42 false unset  ] after: 1  outer  here
+[rhai inner 42 true unset  ] [rhai+lsh(shell:shell) inner 42 true unset 0 ] after: unset unset unset
+[rhai+lsh(shell:shell) inner 42 true unset 0 ] luish: 6: ./broken.rhai: prompt-vars hook returned i64, not a map
+luish: 6: ./broken.rhai: arr: a prompt variable can't be array
+luish: 6: ./broken.rhai: bad name: bad variable name
+luish: 6: ./broken.rhai: nul: string contains a NUL byte
+luish: 6: ./broken.rhai: ro2: is read only
+luish: 6: ./broken.rhai: Runtime error: no vars (line 3, position 30)
+[rhai+lsh(shell:shell) inner 42 true unset 0 yes] [rhai+lsh(shell:shell) inner 42 true unset 0 ] {[rhai+lsh(shell:shell) inner 42 true unset 0 ] }seen: rhai+lsh(shell:shell)
+{[rhai+lsh(shell:shell) inner 42 true unset 0 ] }[+lsh(shell:shell) outer   here 0 ] [rhai inner 42 true unset 0 ] 

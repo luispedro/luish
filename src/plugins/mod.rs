@@ -15,6 +15,7 @@ mod vcs;
 pub use rhai::Host;
 
 use crate::interactive::Completion;
+use crate::prompt::Prompt;
 use crate::shell::{ExecResult, Flow, Shell};
 
 /// Without plugin support there is never a host.
@@ -39,7 +40,7 @@ impl Host {
         match *self {}
     }
 
-    fn prompt(&self, _: &mut Shell) -> Result<Option<Vec<u8>>, Flow> {
+    fn prompt(&self, _: &mut Shell) -> Result<Option<Prompt>, Flow> {
         match *self {}
     }
 
@@ -58,9 +59,14 @@ pub enum HookKind {
     /// The current directory changed (`cd`); called with the old and the
     /// new directory.
     Chpwd,
-    /// Before each prompt: returns the prompt, used instead of `PS1`.
+    /// Before each prompt: returns variables to set while `PS1` is
+    /// expanded.
     #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
-    Prompt,
+    PromptVars,
+    /// Before each prompt, after `PromptVars`: returns the prompt, used
+    /// instead of `PS1`.
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    PromptRewrite,
 }
 
 /// Runs the `chpwd` hooks after `cd` changed the directory.
@@ -71,8 +77,10 @@ pub fn chpwd(sh: &mut Shell, old: &[u8], new: &[u8]) -> Result<(), Flow> {
     }
 }
 
-/// The prompt from the `prompt` hooks, if a plugin gives one.
-pub fn prompt(sh: &mut Shell) -> Result<Option<Vec<u8>>, Flow> {
+/// The `PS1` prompt, built with the plugins' `prompt-vars` and
+/// `prompt-rewrite` hooks and `prompt-vars.lsh` files, or `None` if no
+/// plugin has any.
+pub fn prompt(sh: &mut Shell) -> Result<Option<Prompt>, Flow> {
     match sh.plugins.clone() {
         None => Ok(None),
         Some(host) => host.prompt(sh),
@@ -238,11 +246,32 @@ pub struct Loading {
     pub dir: Vec<u8>,
     /// The Rhai file to run, as given (for messages) and absolute.
     pub rhai: Option<(Vec<u8>, Vec<u8>)>,
+    /// The plugin's `prompt-vars.lsh` (absolute), if it has one.
+    pub prompt_vars: Option<Vec<u8>>,
 }
 
 #[cfg(feature = "plugins")]
 /// The variables set while a plugin's entry points run.
 const PLUGIN_VARS: [&[u8]; 2] = [b"LUISH_PLUGIN_DIR", b"LUISH_PLUGIN_NAME"];
+
+#[cfg(feature = "plugins")]
+/// Runs `f` with `LUISH_PLUGIN_DIR` and `LUISH_PLUGIN_NAME` set to `dir`
+/// and `name`, and puts them back afterwards.
+pub(super) fn with_plugin_vars<R>(sh: &mut Shell, dir: &[u8], name: &[u8], f: impl FnOnce(&mut Shell) -> R) -> R {
+    let saved = PLUGIN_VARS.map(|v| sh.vars.take(v));
+    for (v, value) in PLUGIN_VARS.iter().zip([dir, name]) {
+        let var = crate::vars::Var {
+            value: Some(value.to_vec()),
+            ..Default::default()
+        };
+        sh.vars.restore(v, Some(var));
+    }
+    let r = f(sh);
+    for (v, var) in PLUGIN_VARS.iter().zip(saved) {
+        sh.vars.restore(v, var);
+    }
+    r
+}
 
 #[cfg(feature = "plugins")]
 fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], restore: Option<Vec<u8>>) -> ExecResult {
@@ -264,44 +293,48 @@ fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], restore: Option<Vec<u8>>) -> Exe
                 .then(|| (p, [abs.as_slice(), b"/", f].concat()))
         };
         let (rhai, rc) = (entry(b"plugin.rhai"), entry(b"rc.lsh"));
-        if rhai.is_none() && rc.is_none() && entry(b"login.lsh").is_none() {
+        let prompt_vars = entry(b"prompt-vars.lsh").map(|(_, abs)| abs);
+        if rhai.is_none() && rc.is_none() && prompt_vars.is_none() && entry(b"login.lsh").is_none() {
             sh.berr(
                 cmd,
                 format!(
-                    "{}: not a plugin (no plugin.rhai, rc.lsh or login.lsh)",
+                    "{}: not a plugin (no plugin.rhai, rc.lsh, prompt-vars.lsh or login.lsh)",
                     String::from_utf8_lossy(&path)
                 ),
             );
             return Ok(1);
         }
         let dir = abs.clone();
-        (Loading { name, abs, dir, rhai }, rc.map(|(_, abs)| abs))
+        let loading = Loading {
+            name,
+            abs,
+            dir,
+            rhai,
+            prompt_vars,
+        };
+        (loading, rc.map(|(_, abs)| abs))
     } else {
         let dir = abs[..abs.iter().rposition(|&c| c == b'/').unwrap_or(0).max(1)].to_vec();
         let rhai = Some((path, abs.clone()));
-        (Loading { name, abs, dir, rhai }, None)
+        let loading = Loading {
+            name,
+            abs,
+            dir,
+            rhai,
+            prompt_vars: None,
+        };
+        (loading, None)
     };
     // A changed plugin must invalidate the startup cache (`startcache.rs`).
     if let (Some(rec), Some((_, abs))) = (&mut sh.sourced_files, &loading.rhai) {
         rec.push(abs.clone());
     }
-    let saved = PLUGIN_VARS.map(|v| sh.vars.take(v));
-    for (v, value) in PLUGIN_VARS.iter().zip([&loading.dir, &loading.name]) {
-        let var = crate::vars::Var {
-            value: Some(value.clone()),
-            ..Default::default()
-        };
-        sh.vars.restore(v, Some(var));
-    }
     let host = sh.plugins.get_or_insert_with(|| std::rc::Rc::new(Host::new())).clone();
-    let r = match (host.load(sh, cmd, loading), rc) {
+    let (dir, name) = (loading.dir.clone(), loading.name.clone());
+    with_plugin_vars(sh, &dir, &name, |sh| match (host.load(sh, cmd, loading), rc) {
         (Ok(0), Some(rc)) if restore.is_none() => crate::builtins::misc::dot(sh, &[b".".to_vec(), rc]).map(|_| 0),
         (r, _) => r,
-    };
-    for (v, var) in PLUGIN_VARS.iter().zip(saved) {
-        sh.vars.restore(v, var);
-    }
-    r
+    })
 }
 
 #[cfg(not(feature = "plugins"))]

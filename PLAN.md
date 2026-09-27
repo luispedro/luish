@@ -25,8 +25,9 @@ design.
   the remaining gap (`-c true` in 1.2 ms against 0.9 ms; deferred for now).
 - **Phase 11 (plugins) has started**, ahead of the plan, because the daily
   driver needs it for the prompt and completion: the `plugin` built-in,
-  directory plugins, the `chpwd` and `prompt` hooks, completers, and the
-  `fs` and `vcs` modules.
+  directory plugins, the `chpwd`, `prompt-vars` and `prompt-rewrite`
+  hooks (and `prompt-vars.lsh` files), completers, and the `fs` and `vcs`
+  modules.
 - **The first version of the startup cache (§9.2)** is done, also ahead of
   the plan, since startup files that take a second (nvm) are otherwise a
   daily cost.
@@ -604,8 +605,8 @@ usable (M4), but started earlier: the prompt and completion of the daily
 driver are built on it.
 
 **Status:** step 2 is done (`load`, `list`, `unload`, plus `restore` for
-the startup cache); step 3 is done; step 4 is partly done (the `chpwd` and
-`prompt` hooks, completers, and part of the `sh` module, plus the `fs` and
+the startup cache); step 3 is done; step 4 is partly done (the `chpwd`,
+`prompt-vars` and `prompt-rewrite` hooks, completers, and part of the `sh` module, plus the `fs` and
 `vcs` modules); step 7 is at its first step (directory plugins). Not done:
 the `Builtin` trait (step 1), plugin built-ins, the other hooks (`precmd`,
 `preexec`, `exit`), time budgets for hooks other than completers,
@@ -863,7 +864,7 @@ pub trait Builtin {
     fn run(&self, sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult;
 }
 
-pub enum HookKind { Precmd, Preexec, Prompt, Chpwd, Complete, Exit }
+pub enum HookKind { Precmd, Preexec, PromptVars, PromptRewrite, Chpwd, Complete, Exit }
 
 pub trait Hook {
     fn kind(&self) -> HookKind;
@@ -890,10 +891,9 @@ fn greet(argv) {
     0
 }
 
-fn prompt() {
+fn prompt_vars() {
     let r = sh::capture("git symbolic-ref --short HEAD 2>/dev/null");
-    let branch = if r.status == 0 { ` (${r.out})` } else { "" };
-    `${sh::cwd()}${branch} $ `
+    #{ branch: if r.status == 0 { ` (${r.out})` } else { "" } }   // PS1='$PWD$branch $ '
 }
 
 fn complete_git(words, index) {
@@ -901,7 +901,7 @@ fn complete_git(words, index) {
 }
 
 sh::builtin("greet", Fn("greet"));
-sh::hook("prompt", Fn("prompt"));
+sh::hook("prompt-vars", Fn("prompt_vars"));
 sh::completer("git", Fn("complete_git"));
 
 // Rhai functions can't see the script's variables, but closures can, and
@@ -919,7 +919,8 @@ error thrown by a built-in gives status 1.
 
 | Hook | Arguments | Result | Built |
 |---|---|---|---|
-| `prompt` | None, or (if the function takes one) the previous prompt: the earlier hooks', else `PS1` | The prompt string, used instead of `PS1` (with `%` expansion under `promptpercent`); `()` leaves it to earlier hooks, then `PS1` | Yes |
+| `prompt-vars` | None | A map of variables, set (in plugin load order, as are directory plugins' `prompt-vars.lsh` files) while `PS1` is expanded and the `prompt-rewrite` hooks run, then put back | Yes |
+| `prompt-rewrite` | None, or (if the function takes one) the previous prompt: the earlier hooks', else `PS1` | The prompt string, used instead of `PS1` (with `%` expansion under `promptpercent`); `()` leaves it to earlier hooks, then `PS1` | Yes |
 | `precmd` | Last exit status | Ignored | No |
 | `preexec` | Command line | Ignored | No |
 | `chpwd` | Old and new directory | Ignored | Yes |

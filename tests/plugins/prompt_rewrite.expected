@@ -1,0 +1,6 @@
+status 7
+ps1> [0 $x %~] [1 $x %~] [0 $x ~] [0 $x ~] maybe> [0 $x ~] luish: 7: ./broken.rhai: prompt-rewrite hook returned i64, not a string
+luish: 7: ./broken.rhai: Runtime error: no prompt (line 1, position 33)
+[0 $x ~] [0 $x ~] > two
+lines
+[0 $x ~] ps1> 

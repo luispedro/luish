@@ -62,7 +62,7 @@ pass**.
 | 8 Signals and traps | Mostly done (see the gaps below) |
 | 9 Options and `set -e` | Done |
 | 10 Interactive / job control | Done (prompt loop, history and `fc`, job control, completion), with the gaps listed below |
-| 11 Plugins | Started: the `plugin` built-in, the Rhai host with a small `sh` module, the `chpwd` and `prompt` hooks and completers (see Plugins below) |
+| 11 Plugins | Started: the `plugin` built-in, the Rhai host with a small `sh` module, the `chpwd`, `prompt-vars` and `prompt-rewrite` hooks, `prompt-vars.lsh` files and completers (see Plugins below) |
 | 12 Conformance / performance | Started: autoconf `configure` scripts and the Oils spec tests (see Conformance below), benchmark baseline, script benchmarks in `bench/` |
 
 ## Implemented behaviour
@@ -746,7 +746,18 @@ pass**.
   `pushd` the stack), also in subshells.
   `$?` is kept; a failing hook is reported with the plugin's file and the
   others still run; a `chpwd` hook running `cd` doesn't re-trigger `chpwd`.
-  `prompt`, called before each `PS1` prompt (not `PS2`):
+  `prompt-vars`, called before each `PS1` prompt (not `PS2`), plugin by
+  plugin in load order, each plugin's hooks then its directory's
+  `prompt-vars.lsh` (recorded when it is loaded, run as with `.` with
+  `LUISH_PLUGIN_DIR`/`NAME` set): a hook returns a map of variables
+  (strings, numbers, booleans, or `()` to unset) or `()`; bad entries and
+  failing hooks are reported and the rest still run. The variables that
+  this step changed (found by comparing with a snapshot of all variables,
+  `Vars::changes_since`) are put back once the prompt is built, after
+  `PS1` is expanded or the `prompt-rewrite` hooks ran; functions, aliases
+  and the like are not. No snapshot is taken if no plugin has a
+  `prompt-vars` hook or file.
+  `prompt-rewrite`, called after `prompt-vars` (it sees the variables):
   the hooks are called from the most recently registered one until one
   returns a string, which is used instead of `PS1`, without parameter
   expansion but with `%` expansion under `promptpercent`. A hook that
@@ -756,13 +767,13 @@ pass**.
   the plugin's AST when it is registered) is given the previous prompt:
   the earlier hooks' prompt, or else `PS1` parameter-expanded, which its
   `()` or failure keeps; one without doesn't run the earlier hooks. Each
-  hook sees the `$?` of the last command, which is kept afterwards; `exit`
-  in `sh::run` exits the shell.
+  hook and `prompt-vars.lsh` sees the `$?` of the last command, which is
+  kept afterwards; `exit` in `sh::run` or `prompt-vars.lsh` exits the shell.
 - `plugins/bytes.rs`: non-UTF-8 bytes map to U+10FF80–U+10FFFF and back
   (PLAN.md §6.5); strings with NUL can't be set as variables.
 - Tests: `tests/plugins/` (`chpwd`, `errors`, `exit`, `floats`, `fs`, `vcs`, `reload`,
-  `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`, `prompt`,
-  `prompt_prev`, `capture`, `quote`), unit tests for the byte conversion, `git status`
+  `recursion`, `interrupt`, `bytes`, `no-plugins`, `savestate`,
+  `prompt_rewrite`, `prompt_rewrite_prev`, `prompt_vars`, `capture`, `quote`), unit tests for the byte conversion, `git status`
   parsing and (with a stand-in completer) in `complete.rs`, `builtins/plugin.sh`,
   `builtins/internal_plugin.sh`, and `plugin_builtin` and
   `plugin_completer`, `cobra_completer` (the example plugin, with a
@@ -824,10 +835,10 @@ notes how to rerun them):
   are reported only before a prompt. Job notifications are given only for
   input read a line at a time (interactive or stdin), not in scripts run
   with `set -m`.
-- Plugins (Phase 11) support only the `chpwd` and `prompt` hooks,
+- Plugins (Phase 11) support only the `chpwd`, `prompt-vars` and `prompt-rewrite` hooks,
   completers, part of the `sh` module and the `fs` and `vcs` modules: no
   plugin built-ins, other hooks, time budgets except for completers (so a
-  slow `prompt` hook delays the prompt), or `parse_json`. The native built-ins have not
+  slow prompt hook or `prompt-vars.lsh` delays the prompt), or `parse_json`. The native built-ins have not
   been moved onto a `Builtin` trait (PLAN.md Phase 11, step 1). `import`
   in a plugin is not resolved relative to the plugin's directory.
 - With the `plugins` feature, `-c true` starts about 250 µs slower than

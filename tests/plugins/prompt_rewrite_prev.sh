@@ -1,27 +1,27 @@
-# A prompt hook that takes an argument is given the previous prompt: the
+# A prompt-rewrite hook that takes an argument is given the previous prompt: the
 # one the hooks registered before it give, or else PS1 (parameter-expanded,
 # but not yet %-expanded). What it returns replaces that prompt, and `()`
 # (or an error) keeps it. A hook without a parameter doesn't run the hooks
 # before it.
 cat > base.rhai <<'P'
-sh::hook("prompt", || { sh::write(2, "(base ran)"); "base %~ " });
+sh::hook("prompt-rewrite", || { sh::write(2, "(base ran)"); "base %~ " });
 P
 cat > wrap.rhai <<'P'
-sh::hook("prompt", |prev| `[${sh::last_status()}]` + prev);
+sh::hook("prompt-rewrite", |prev| `[${sh::last_status()}]` + prev);
 P
 cat > named.rhai <<'P'
 fn prompt(prev) { if sh::getvar("KEEP") == () { "<" + prev + ">" } }
-sh::hook("prompt", prompt);
+sh::hook("prompt-rewrite", prompt);
 P
 cat > closure.rhai <<'P'
 let n = 0;
-sh::hook("prompt", |prev| { n += 1; `${n}:${prev}` });
+sh::hook("prompt-rewrite", |prev| { n += 1; `${n}:${prev}` });
 P
 cat > plain.rhai <<'P'
-sh::hook("prompt", || "plain> ");
+sh::hook("prompt-rewrite", || "plain> ");
 P
 cat > broken.rhai <<'P'
-sh::hook("prompt", |prev| { throw "no prompt"; });
+sh::hook("prompt-rewrite", |prev| { throw "no prompt"; });
 P
 PS1='ps1 $x> ' $SH -i +m <<'EOF2' > out 2>&1
 x=1

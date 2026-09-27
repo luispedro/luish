@@ -5,8 +5,9 @@ embedding. Plugins are opt-in: nothing is loaded unless you ask for it, and a sh
 for them.
 
 Plugin support is new. For now, a plugin can run code whenever the current directory changes (the `chpwd` hook),
-give the prompt (the `prompt` hook), provide Tab completion for the arguments of commands, query files (the `fs`
-module), and ask about git repositories (the `vcs` module).
+provide variables for the prompt (the `prompt-vars` hook and `prompt-vars.lsh` files) or rewrite it entirely (the
+`prompt-rewrite` hook), provide Tab completion for the arguments of commands, query files (the `fs` module), and ask
+about git repositories (the `vcs` module).
 
 ## Loading plugins
 
@@ -41,6 +42,7 @@ exist:
 |---|---|
 | `plugin.rhai` | When the plugin is loaded, like a single-file plugin |
 | `rc.lsh` | When the plugin is loaded, after `plugin.rhai`, in the current shell (as with `.`) |
+| `prompt-vars.lsh` | Before each prompt, to set variables for `PS1` (see [below](#variables-for-the-prompt-prompt-vars)) |
 
 A directory needs at least one of them (or a `login.lsh`, which luish will run in login shells in a later version).
 If `plugin.rhai` fails, `rc.lsh` doesn't run.
@@ -56,7 +58,7 @@ alias gs='git status'
 work_dir=$LUISH_PLUGIN_DIR   # for functions that need it later
 ```
 
-While `plugin.rhai` and `rc.lsh` run, `LUISH_PLUGIN_DIR` is the plugin's directory (an absolute path) and
+While `plugin.rhai`, `rc.lsh` and `prompt-vars.lsh` run, `LUISH_PLUGIN_DIR` is the plugin's directory (an absolute path) and
 `LUISH_PLUGIN_NAME` its name. Afterwards they get back the values they had before. In Rhai, `sh::plugin_dir()`
 gives the directory at any time, also in hooks. For a single-file plugin it is the directory of the file.
 
@@ -90,47 +92,121 @@ sh::hook("chpwd", |from, to| {
 the hooks as before them. If a hook fails, the error is printed and the other hooks still run. A `chpwd` hook that
 itself runs `cd` does not trigger `chpwd` again.
 
-## Example: the prompt
+## Customizing the prompt
+
+Plugins can change the prompt (`PS1`; `PS2`, for the continuation lines of a command, is unchanged) in two ways:
+
+- **`prompt-vars`** (start here): a plugin computes values, such as the git branch, and gives them to `PS1` as
+  variables. You keep writing the prompt in `PS1`, and the variables exist only while the prompt is built.
+- **`prompt-rewrite`** (advanced): a plugin writes the whole prompt itself, and `PS1` is ignored or passed to it.
+
+### Variables for the prompt: `prompt-vars`
+
+A `prompt-vars` hook returns a map of variables, which `PS1` can then use:
+
+```rhai
+// ~/.config/luish/plugins/branch.rhai
+sh::hook("prompt-vars", || {
+    let i = vcs::info();
+    #{
+        git_branch: if i == () { "" } else { ` (${i.branch ?? "detached"})` },
+        last_failed: sh::last_status() != 0,
+    }
+});
+```
+
+```sh
+# ~/.config/luish/luishrc
+plugin load branch
+PS1='$PWD$git_branch\$ '
+```
+
+The same can be written in shell, in a directory plugin's `prompt-vars.lsh`. Every variable it sets is available to
+`PS1`:
+
+```sh
+# ~/.config/luish/plugins/branch/prompt-vars.lsh
+git_branch=$(git branch --show-current 2>/dev/null)
+[ -n "$git_branch" ] && git_branch=" ($git_branch)"
+```
+
+Before each prompt, luish:
+
+1. runs the `prompt-vars` hooks and `prompt-vars.lsh` files, plugin by plugin in the order the plugins were loaded
+   (a plugin's hooks before its file), each setting its variables;
+2. expands `PS1` with those variables (parameter expansion, then `%` expansion under `promptpercent`);
+3. puts every variable they changed back as it was (or unsets it).
+
+So the variables don't leak into the shell: after the prompt, `echo $git_branch` prints what it printed before, and
+the commands you run don't see them. A plugin loaded later sees the variables of the ones loaded before it, and can
+change them. Each hook and file sees `$?` of the last command (read it first thing in `prompt-vars.lsh`, before
+another command changes it), and `$?` is the same after the prompt as before.
+
+A hook's map gives each variable a string, a number or a boolean (which become text, such as `42` or `true`), or
+`()` to unset the variable while the prompt is built. A hook can also return `()` to set nothing. A bad entry (not a
+valid name, a readonly variable, another type of value) is reported and skipped, and a hook that fails is reported;
+the other hooks and files still run.
+
+`prompt-vars.lsh` runs in the current shell, as with `.`, so it can use the shell's functions and variables. Only
+variables are put back afterwards: don't `cd`, define functions or aliases, or change options in it. Its commands run
+before every prompt, so keep them fast; prefer the `vcs` and `fs` modules in a `prompt-vars` hook to running `git` in
+shell, when you can.
+
+### Rewriting the prompt: `prompt-rewrite`
+
+```{warning}
+`prompt-rewrite` is an advanced feature, and easy to get wrong: the hooks run in a fixed order, each one can replace
+what the others did, and none of it goes through `PS1` unless a hook asks for it. For most prompts, set `PS1` and
+give it variables with `prompt-vars` instead.
+```
+
+A `prompt-rewrite` hook returns the whole prompt, which is used instead of `PS1`:
 
 ```rhai
 // ~/.config/luish/plugins/prompt.rhai
 
-sh::hook("prompt", || {
-    // Read $? first: sh::run changes it (the shell's own $? is kept).
+sh::hook("prompt-rewrite", || {
     let status = sh::last_status();
     let mark = if status == 0 { "" } else { "%F{red}[" + status + "]%f " };
-    sh::run("__prompt_branch=$(git branch --show-current 2>/dev/null)");
-    let branch = sh::getvar("__prompt_branch");
-    let branch = if branch == () || branch == "" { "" } else { " %F{yellow}(" + branch + ")%f" };
+    let branch = vcs::info()?.branch;
+    let branch = if branch == () { "" } else { " %F{yellow}(" + branch + ")%f" };
     "%F{blue}%~%f" + branch + " " + mark + "%# "
 });
 ```
 
-A `prompt` hook is called before each prompt, with no arguments (but see below), and returns the prompt, which is used instead of
-`PS1` (`PS2`, for the continuation lines of a command, is unchanged). The prompt doesn't go through parameter
-expansion, but it does go through `%` expansion if the `promptpercent` option is on (`setopt prompt_percent`, see
-[](usage.md)), as in the example.
+The order of operations matters:
 
-If several hooks are registered, the one registered last is called first, and the first string returned is the
-prompt. A hook that returns `()` leaves the prompt to the hooks before it, and then to `PS1`, so a plugin can give
-the prompt only in some directories, for example. A hook that fails is reported, and the next one is tried. `$?` is
-the same after the hooks as before them.
+1. The `prompt-vars` hooks and files run first (see above), so a `prompt-rewrite` hook sees their variables, with
+   `sh::getvar`.
+2. The `prompt-rewrite` hooks run, from the one registered **last**, until one returns a string: that is the prompt.
+   A hook that returns `()` leaves the prompt to the hooks registered before it, and then to `PS1`, so a plugin can
+   give the prompt only in some directories, for example. A hook that fails (or returns something other than a
+   string or `()`) is reported, and the next one is tried.
+3. The prompt a hook returns doesn't go through parameter expansion, so `$x` in it stays as it is. It does go through
+   `%` expansion if the `promptpercent` option is on (`setopt prompt_percent`, see [](usage.md)), as in the example.
+4. The variables set by `prompt-vars` are put back. What a `prompt-rewrite` hook itself changes, with `sh::setvar` or
+   `sh::run`, stays.
+
+`$?` is the same after the hooks as before them, and each hook sees that of the last command (but `sh::run` changes
+it for the rest of the hook, so read `sh::last_status()` first).
 
 A hook that takes a parameter is given the previous prompt: the one the hooks registered before it give, or else
-`PS1` (after parameter expansion, but before `%` expansion, which is done on the prompt the hook returns). So a plugin
-can add to the prompt of another plugin, or to `PS1`, instead of replacing it:
+`PS1` (after parameter expansion, with the `prompt-vars` variables, but before `%` expansion, which is done on the
+prompt the hook returns). So a plugin can add to the prompt of another plugin, or to `PS1`, instead of replacing it:
 
 ```rhai
 // ~/.config/luish/plugins/status.rhai
-sh::hook("prompt", |prev| {
+sh::hook("prompt-rewrite", |prev| {
     let status = sh::last_status();
     if status == 0 { prev } else { `%F{red}[${status}]%f ${prev}` }
 });
 ```
 
 Returning `()` from such a hook, or failing, keeps the previous prompt. A hook without a parameter doesn't run the
-hooks before it at all, so it costs nothing to have them loaded. The hook must be defined in the plugin's own file
-(not in a module it imports), as a closure or a named function (`fn prompt(prev) { ... }`).
+hooks before it at all, so it costs nothing to have them loaded, but it also discards them: loading a plugin with a
+`prompt-rewrite` hook that takes no parameter hides the prompt of every plugin loaded before it, and `PS1`. The hook
+must be defined in the plugin's own file (not in a module it imports), as a closure or a named function
+(`fn prompt(prev) { ... }`).
 
 ## Example: completing a command's arguments
 
@@ -225,7 +301,7 @@ bash-completion gives no descriptions.
 
 | Function | Description |
 |---|---|
-| `sh::hook(kind, fn)` | Register a hook: `"chpwd"` or `"prompt"` |
+| `sh::hook(kind, fn)` | Register a hook: `"chpwd"`, `"prompt-vars"` or `"prompt-rewrite"` |
 | `sh::completer(command, fn)` | Register a completer for a command's arguments (`-default-` for the others) |
 | `sh::getvar(name)` | The variable's value, or `()` if it is unset |
 | `sh::setvar(name, value)` | Set a shell variable. Throws an error if it is readonly |
@@ -315,16 +391,20 @@ time.
 
 ```rhai
 // ~/.config/luish/plugins/vcs.rhai
-sh::hook("prompt", || {
+sh::hook("prompt-vars", || {
     let i = vcs::info();
     if i == () {
-        return;     // outside a repository: PS1 (or an earlier prompt hook)
+        return #{vcs_info: ""};     // outside a repository
     }
     let branch = i.branch ?? i.head?.sub_string(0, 7) ?? "?";
     let action = if i.action == () { "" } else { `|${i.action}` };
     let dirty = if vcs::status()?.clean ?? true { "" } else { "*" };
-    `(${i.vcs})-[${branch}${action}${dirty}] ${i.name}/${i.subdir} $ `
+    #{vcs_info: `(${i.vcs})-[${branch}${action}${dirty}] `}
 });
+```
+
+```sh
+PS1='$vcs_info$PWD\$ '
 ```
 
 `vcs::info` is cheap enough to call before every prompt; `vcs::status` runs git, which can be slow in a large

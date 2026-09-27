@@ -18,6 +18,7 @@ use rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, P
 use super::bytes::{to_bytes, to_str};
 use super::{HookKind, Loading};
 use crate::interactive::{Candidate, Completion, DEFAULT_COMPLETER, Suffix};
+use crate::prompt::Prompt;
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::{signals, sys};
 
@@ -34,8 +35,10 @@ struct Plugin {
     /// The plugin's directory (absolute), for `import` and `plugin_dir`.
     dir: Vec<u8>,
     /// `None` for a plugin without Rhai code (a directory with only
-    /// `rc.lsh` or `login.lsh`).
+    /// shell files).
     ast: Option<Rc<AST>>,
+    /// The plugin's `prompt-vars.lsh` (absolute), run before each prompt.
+    prompt_vars: Option<Vec<u8>>,
 }
 
 /// A function registered by a plugin.
@@ -46,7 +49,7 @@ struct Callback {
     ast: Rc<AST>,
     path: Rc<[u8]>,
     /// Whether the function takes an argument beyond its curried ones:
-    /// a `prompt` hook that does is given the previous prompt.
+    /// a `prompt-rewrite` hook that does is given the previous prompt.
     takes_arg: bool,
 }
 
@@ -202,7 +205,8 @@ pub(super) fn to_shell(s: &str) -> RhaiResult<Vec<u8>> {
 fn hook_kind(name: &str) -> Option<HookKind> {
     match name {
         "chpwd" => Some(HookKind::Chpwd),
-        "prompt" => Some(HookKind::Prompt),
+        "prompt-vars" => Some(HookKind::PromptVars),
+        "prompt-rewrite" => Some(HookKind::PromptRewrite),
         _ => None,
     }
 }
@@ -434,6 +438,47 @@ fn sh_module() -> Module {
     m
 }
 
+/// Sets the variables that a `prompt-vars` hook (from the file `path`)
+/// returned: a map of names to strings, numbers or booleans, or to `()` to
+/// unset one; or `()` for none. A bad value or variable is reported and
+/// skipped.
+fn set_prompt_vars(sh: &mut Shell, path: &[u8], v: Dynamic) {
+    if v.is_unit() {
+        return;
+    }
+    let fail = |sh: &Shell, msg: String| sh.error(format!("{}: {msg}", String::from_utf8_lossy(path)));
+    let map = match v.try_cast_result::<rhai::Map>() {
+        Ok(map) => map,
+        Err(v) => return fail(sh, format!("prompt-vars hook returned {}, not a map", v.type_name())),
+    };
+    for (name, value) in map {
+        let value = match value {
+            v if v.is_unit() => None,
+            v if v.is_string() => Some(to_bytes(&v.into_immutable_string().unwrap_or_default())),
+            v if v.is_int() || v.is_float() || v.is_bool() || v.is_char() => Some(v.to_string().into_bytes()),
+            v => {
+                fail(sh, format!("{name}: a prompt variable can't be {}", v.type_name()));
+                continue;
+            }
+        };
+        let r = match value {
+            _ if !crate::lexer::is_valid_name(name.as_bytes()) => Err(format!("{name}: bad variable name")),
+            Some(value) if value.contains(&0) => Err(format!("{name}: string contains a NUL byte")),
+            Some(value) => sh.try_set_var(name.as_bytes(), value),
+            None => match sh.vars.unset(name.as_bytes()) {
+                Ok(()) => {
+                    sh.var_changed(name.as_bytes());
+                    Ok(())
+                }
+                Err(_) => Err(format!("{name}: is read only")),
+            },
+        };
+        if let Err(msg) = r {
+            fail(sh, msg);
+        }
+    }
+}
+
 fn write_line(fd: i32, s: &str) {
     let mut b = to_bytes(s);
     b.push(b'\n');
@@ -528,7 +573,13 @@ impl Host {
     /// any, and runs its top level, which registers its hooks.
     /// `cmd` is the command, for error messages.
     pub fn load(self: &Rc<Self>, sh: &mut Shell, cmd: &[u8], plugin: Loading) -> ExecResult {
-        let Loading { name, abs, dir, rhai } = plugin;
+        let Loading {
+            name,
+            abs,
+            dir,
+            rhai,
+            prompt_vars,
+        } = plugin;
         let Some((path, rhai_abs)) = rhai else {
             self.unload(&name);
             let id = self.next_id.get();
@@ -540,6 +591,7 @@ impl Host {
                 abs,
                 dir,
                 ast: None,
+                prompt_vars,
             });
             return Ok(0);
         };
@@ -579,6 +631,7 @@ impl Host {
             abs,
             dir,
             ast: Some(ast.clone()),
+            prompt_vars,
         });
         let r = enter(sh, id, || self.engine().run_ast(&ast));
         match r {
@@ -654,36 +707,110 @@ impl Host {
         result
     }
 
-    /// Runs the `prompt` hooks, from the most recently registered, until
-    /// one returns a string, which is the prompt. A hook that returns `()`
-    /// or fails (which is reported) leaves it to the ones before it. A hook
-    /// that takes an argument is given the prompt of the ones before it (or
-    /// `PS1`, parameter-expanded). `$?` is kept.
-    pub fn prompt(&self, sh: &mut Shell) -> Result<Option<Vec<u8>>, Flow> {
-        let kind = HookKind::Prompt;
-        if self.running.borrow().contains(&kind) {
-            return Ok(None);
-        }
-        let hooks: Vec<Callback> = self
-            .hooks
-            .borrow()
-            .iter()
+    /// The hooks of one kind, in the order they were registered.
+    fn hooks_of(&self, kind: HookKind) -> Vec<Callback> {
+        (self.hooks.borrow().iter())
             .filter(|h| h.0 == kind)
             .map(|h| h.1.clone())
-            .collect();
-        if hooks.is_empty() {
+            .collect()
+    }
+
+    /// Builds the `PS1` prompt, or returns `None` if no plugin has a
+    /// `prompt-vars` or `prompt-rewrite` hook or a `prompt-vars.lsh`.
+    ///
+    /// In this order: the `prompt-vars` hooks and files set variables
+    /// (`prompt_vars`); the `prompt-rewrite` hooks, which see them, give
+    /// the prompt (`prompt_from`), or else `PS1` is expanded with them;
+    /// then the variables that the first step changed are put back. Each
+    /// hook and file sees the `$?` of the last command, which is kept.
+    pub fn prompt(&self, sh: &mut Shell) -> Result<Option<Prompt>, Flow> {
+        let kinds = [HookKind::PromptVars, HookKind::PromptRewrite];
+        if self.running.borrow().iter().any(|k| kinds.contains(k)) {
             return Ok(None);
         }
-        self.running.borrow_mut().push(kind);
+        let rewrite = self.hooks_of(HookKind::PromptRewrite);
+        let vars = self.hooks.borrow().iter().any(|h| h.0 == HookKind::PromptVars)
+            || self.plugins.borrow().iter().any(|p| p.prompt_vars.is_some());
+        if rewrite.is_empty() && !vars {
+            return Ok(None);
+        }
+        self.running.borrow_mut().extend(kinds);
         let saved = sh.last_status;
-        let result = self.prompt_from(sh, &hooks, saved);
+        let saved_lineno = sh.lineno;
+        // Only the changes made by `prompt-vars` are undone: what a
+        // `prompt-rewrite` hook sets stays, as it did before there were
+        // prompt variables.
+        let (result, changed) = match vars {
+            false => (Ok(()), Vec::new()),
+            true => {
+                let snapshot = sh.vars.snapshot();
+                let r = self.prompt_vars(sh, saved);
+                (r, sh.vars.changes_since(&snapshot))
+            }
+        };
+        let result = result.and_then(|()| {
+            let text = self.prompt_from(sh, &rewrite, saved)?;
+            sh.last_status = saved;
+            Ok(Some(match text {
+                Some(text) => sh.percent_expand_prompt(text),
+                None => sh.prompt(b"PS1"),
+            }))
+        });
+        for (name, var) in changed {
+            sh.vars.restore(&name, var);
+            sh.var_changed(&name);
+        }
         sh.last_status = saved;
-        self.running.borrow_mut().retain(|&k| k != kind);
+        sh.lineno = saved_lineno;
+        self.running.borrow_mut().retain(|k| !kinds.contains(k));
         result
     }
 
-    /// The prompt that `hooks` give, trying the last first, or `None` for
-    /// `PS1`. `saved` is `$?`, which each hook sees.
+    /// Runs the `prompt-vars` hooks and `prompt-vars.lsh` files, plugin by
+    /// plugin in the order they were loaded (a plugin's hooks before its
+    /// file), so that each sees and can override the variables of the
+    /// ones before it. A hook returns a map of variables to set (`()` as a
+    /// value unsets one), or `()`. Errors are reported and the rest still
+    /// run. `saved` is `$?`, which each sees.
+    fn prompt_vars(&self, sh: &mut Shell, saved: i32) -> Result<(), Flow> {
+        let plugins: Vec<_> = (self.plugins.borrow().iter())
+            .map(|p| (p.id, p.dir.clone(), p.name.clone(), p.prompt_vars.clone()))
+            .collect();
+        let hooks = self.hooks_of(HookKind::PromptVars);
+        for (id, dir, name, file) in plugins {
+            for h in hooks.iter().filter(|h| h.plugin == id) {
+                sh.last_status = saved;
+                let r = enter(sh, h.plugin, || h.f.call::<Dynamic>(self.engine(), &h.ast, ()))?;
+                match r {
+                    Ok(v) => set_prompt_vars(sh, &h.path, v),
+                    Err(e) => {
+                        if Self::report(sh, &h.path, &e) != 1 {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            if let Some(file) = file {
+                sh.last_status = saved;
+                let r = super::with_plugin_vars(sh, &dir, &name, |sh| {
+                    crate::builtins::misc::dot(sh, &[b".".to_vec(), file])
+                });
+                match r {
+                    Err(Flow::Exit(n)) => return Err(Flow::Exit(n)),
+                    // Ctrl-C stops the rest, as it would a list of commands.
+                    _ if signals::is_pending(libc::SIGINT) => return Ok(()),
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The prompt that the `prompt-rewrite` hooks `hooks` give, trying the
+    /// last first, or `None` for `PS1`. A hook that returns `()` or fails
+    /// (which is reported) leaves it to the ones before it. A hook that
+    /// takes an argument is given the prompt of the ones before it (or
+    /// `PS1`, parameter-expanded). `saved` is `$?`, which each hook sees.
     fn prompt_from(&self, sh: &mut Shell, hooks: &[Callback], saved: i32) -> Result<Option<Vec<u8>>, Flow> {
         for (i, h) in hooks.iter().enumerate().rev() {
             // What this hook returns replaces the earlier hooks' prompt,
@@ -707,7 +834,7 @@ impl Host {
                 }
                 Ok(v) if v.is_unit() => {}
                 Ok(v) => {
-                    let msg = format!("prompt hook returned {}, not a string", v.type_name());
+                    let msg = format!("prompt-rewrite hook returned {}, not a string", v.type_name());
                     sh.error(format!("{}: {msg}", String::from_utf8_lossy(&h.path)));
                 }
                 Err(e) => {

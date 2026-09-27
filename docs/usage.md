@@ -77,6 +77,9 @@ variable is expanded too; write `%%` for a literal `%`. The sequences are those 
 Other sequences expand to nothing. zsh's `%_`, `%e`, `%I`, `%N`, `%x`, `%v`, `%[...]`, and conditions and truncation
 widths relative to the terminal's width, aren't supported.
 
+For what `PS1` can't compute by itself, such as the git branch, a plugin can provide variables for it to use, which
+are set only while the prompt is built (see [Customizing the prompt](plugins.md#customizing-the-prompt)).
+
 ## Line editing
 
 An interactive shell edits command lines with emacs keys, as zsh does, or with vi keys after `set -o vi` (or

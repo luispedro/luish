@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::ffi::CString;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Var {
     /// `None` for a variable that has attributes (export, readonly) but no
     /// value.
@@ -93,6 +93,28 @@ impl Vars {
 
     pub fn take(&self, name: &[u8]) -> Option<Var> {
         self.map.get(name).cloned()
+    }
+
+    /// A copy of all the variables, for `changes_since`.
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    pub fn snapshot(&self) -> Vars {
+        Vars { map: self.map.clone() }
+    }
+
+    /// The variables that differ from `snapshot`, with what they were
+    /// there (`None` for those that didn't exist), for `restore`.
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    pub fn changes_since(&self, snapshot: &Vars) -> Vec<(Vec<u8>, Option<Var>)> {
+        let mut changed: Vec<_> = (self.map.iter())
+            .filter(|(k, v)| snapshot.map.get(*k) != Some(*v))
+            .map(|(k, _)| (k.clone(), snapshot.map.get(k).cloned()))
+            .collect();
+        changed.extend(
+            (snapshot.map.iter())
+                .filter(|(k, _)| !self.map.contains_key(*k))
+                .map(|(k, v)| (k.clone(), Some(v.clone()))),
+        );
+        changed
     }
 
     /// The names of the variables that are set.
