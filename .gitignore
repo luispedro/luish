@@ -5,3 +5,6 @@
 /target
 
 /docs/_build
+
+# nix build
+/result

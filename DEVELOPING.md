@@ -77,6 +77,7 @@ tests/
 bench/                  # script benchmarks (see bench/README.md)
 scripts/                # dist.sh (release packages), test-install.sh (tests install.sh with them)
 install.sh              # the `curl | sh` installer, which downloads a release
+flake.nix               # the Nix package and dev shell (see Releases)
 docs/                   # user documentation; docs/builtins/ is compiled into `help`; docs/examples/ has example plugins
 luish-std-plugins/      # a collection of plugins (git-completion, bash-completion), see its README.md
 ```
@@ -556,6 +557,15 @@ publishes the packages and `install.sh` as a GitHub release. `install.sh` downlo
 
 A static glibc build (`-C target-feature=+crt-static`) would be the fastest, but glibc loads the NSS modules that
 look users up (for `~user`) at run time, and they must come from the same glibc version it was linked against.
+
+Nix users build from `flake.nix` instead (`docs/installation.md`). Its package uses nixpkgs's Rust, so that the
+toolchain comes from the binary cache, and builds only from `Cargo.*`, `build.rs`, `src` and `docs/builtins` (without
+`.git`, so `--version` shows the revision as `unknown`); it skips the tests, which need dash, zsh and a pty. The dev
+shell (`nix develop`) instead has the Rust of `pixi.toml` from rust-overlay (keep `rustVersion` in step), with dash,
+zsh and bash. nixpkgs's dash is upstream's, not Debian's, so about ten differential cases fail there (e.g.
+`builtins/test_parse.sh`, `builtins/getopts_dash.sh`). `nix build` leaves a `result` symlink in the repository,
+which the completion unit test (`interactive::complete::tests::candidates`) sees: delete it, or use `--no-link`.
+`flake.lock` pins nixpkgs and rust-overlay; `nix flake update` updates them.
 
 ## Known gaps for developers
 

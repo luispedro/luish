@@ -27,7 +27,8 @@ Releases have binaries for Linux on x86_64 and aarch64. This installs the right 
 curl -fsSL https://raw.githubusercontent.com/luispedro/luish/main/install.sh | sh
 ```
 
-[docs/installation.md](docs/installation.md) has its options, such as the static musl build (`sh -s -- --musl`).
+[docs/installation.md](docs/installation.md) has its options, such as the static musl build (`sh -s -- --musl`), and
+how to install luish with Nix (`nix profile install github:luispedro/luish`).
 
 ## Building
 

@@ -36,6 +36,34 @@ echo ~/.local/bin/luish | sudo tee -a /etc/shells
 chsh -s ~/.local/bin/luish
 ```
 
+## With Nix
+
+The repository is a Nix flake (`flake.nix`), for x86_64 and aarch64 Linux. Nix builds luish from source, which takes
+a couple of minutes:
+
+```sh
+nix run github:luispedro/luish                  # run it without installing
+nix profile install github:luispedro/luish      # install it in your profile
+```
+
+On NixOS, add the flake to your system's inputs (`inputs.luish.url = "github:luispedro/luish";`) and use its package,
+here as a login shell:
+
+```nix
+{ pkgs, inputs, ... }:
+let
+  luish = inputs.luish.packages.${pkgs.stdenv.hostPlatform.system}.default;
+in
+{
+  environment.systemPackages = [ luish ];
+  environment.shells = [ luish ];
+  users.users.alice.shell = luish;
+}
+```
+
+With Home Manager, add the same package to `home.packages`. `nix develop` gives a shell with the Rust toolchain and
+the tests' reference shells (see `DEVELOPING.md`).
+
 ## From source
 
 luish uses [pixi](https://pixi.sh) to provide the Rust toolchain:
