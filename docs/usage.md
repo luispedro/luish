@@ -52,30 +52,52 @@ This shows the current directory (with `~` for `$HOME`) in blue, then the exit s
 it failed, then `#` for root and `%` for other users. Parameter expansion comes first, so a `%` in the value of a
 variable is expanded too; write `%%` for a literal `%`. The sequences are those of zsh:
 
-| Sequence | Expands to |
-|---|---|
-| `%%`, `%)` | `%`, `)` |
-| `%~`, `%d` or `%/` | The current directory, with or without `~` for `$HOME`. With a number, `%N~` gives only its last `N` components, and `%-N~` its first `N` |
-| `%c` or `%.`, `%C` | The last component of the current directory, with or without `~` (`%Nc` for more) |
-| `%n`, `%m`, `%M` | The user name, the host name up to the first `.` (`%Nm`: `N` components), the full host name |
-| `%#` | `#` for root, `%` otherwise |
-| `%?` | The exit status of the last command |
-| `%h` or `%!` | The number of the next history event |
-| `%j` | The number of jobs |
-| `%L`, `%i` | `$SHLVL`, the line number (for `PS4`) |
-| `%l`, `%y` | The terminal, without `/dev/` (and, for `%l`, without `tty`) |
-| `%D`, `%T`, `%*`, `%t` or `%@`, `%w`, `%W` | The date as `yy-mm-dd`, the time as `HH:MM` or `HH:MM:SS`, or in 12-hour format, the weekday and day, the date as `mm/dd/yy` |
-| `%D{format}` | The time in a `strftime` format (and zsh's `%f`, `%K` and `%L`, the day and hours without padding) |
-| `%B` `%b`, `%U` `%u`, `%S` `%s` | Start and stop bold, underline and standout (reverse video) |
-| `%F{colour}` `%f`, `%K{colour}` `%k` | Start and stop a foreground and a background colour: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, a number from 0 to 255, or `#rrggbb`. `%NF` is `%F{N}` |
-| `%E` | Clear to the end of the line |
-| `%{...%}` | Text written as it is, taking no room on the screen: for other escape sequences, such as a terminal title |
-| `%NG` | Within `%{...%}`: the escape sequence takes `N` columns |
-| `%(x.yes.no)` | `yes` if the condition `x` holds, otherwise `no` (any character can replace the `.`s). The conditions take a number `N`, as in `%(N?.yes.no)` or `%N(?.yes.no)`: `?` the exit status is `N` (0 by default), `#` the user id is `N` (0: root), `!` the shell runs as root, `g` the group id is `N`, `j` there are at least `N` jobs, `L` `$SHLVL` is at least `N`, `/` or `C` the current directory has at least `N` components, `~`, `.` or `c` the same, with `~` for `$HOME` counting as one; `T`, `t`, `d`, `D` and `w`: the hour, minute, day of the month, month (from 0 for January) or day of the week (from 0 for Sunday) is `N` |
-| `%N<text<`, `%N>text>` | Shorten what follows (up to the end of the enclosing `%(...)`, or to the next `%<<`) to `N` characters, replacing what is cut on the left or the right by `text` |
+| Sequence | Expands to | Long name |
+|---|---|---|
+| `%%`, `%)` | `%`, `)` | `%[percent]` |
+| `%~`, `%d` or `%/` | The current directory, with or without `~` for `$HOME`. With a number, `%N~` gives only its last `N` components, and `%-N~` its first `N` | `%[dir]`, `%[pwd]` |
+| `%c` or `%.`, `%C` | The last component of the current directory, with or without `~` (`%Nc` for more) | `%[dir_tail]`, `%[pwd_tail]` |
+| `%n`, `%m`, `%M` | The user name, the host name up to the first `.` (`%Nm`: `N` components), the full host name | `%[user]`, `%[host]`, `%[hostname]` |
+| `%#` | `#` for root, `%` otherwise | `%[prompt_char]` |
+| `%?` | The exit status of the last command | `%[status]` |
+| `%h` or `%!` | The number of the next history event | `%[history]` |
+| `%j` | The number of jobs | `%[jobs]` |
+| `%L`, `%i` | `$SHLVL`, the line number (for `PS4`) | `%[shlvl]`, `%[lineno]` |
+| `%l`, `%y` | The terminal, without `/dev/` (and, for `%l`, without `tty`) | `%[tty_short]`, `%[tty]` |
+| `%D`, `%T`, `%*`, `%t` or `%@`, `%w`, `%W` | The date as `yy-mm-dd`, the time as `HH:MM` or `HH:MM:SS`, or in 12-hour format, the weekday and day, the date as `mm/dd/yy` | `%[date]`, `%[time]`, `%[time_seconds]`, `%[time_12h]`, `%[date_weekday]`, `%[date_us]` |
+| `%D{format}` | The time in a `strftime` format (and zsh's `%f`, `%K` and `%L`, the day and hours without padding) | `%[date:format]` |
+| `%B` `%b`, `%U` `%u`, `%S` `%s` | Start and stop bold, underline and standout (reverse video) | `%[bold]` `%[bold_off]`, `%[underline]` `%[underline_off]`, `%[standout]` `%[standout_off]` |
+| `%F{colour}` `%f`, `%K{colour}` `%k` | Start and stop a foreground and a background colour: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, a number from 0 to 255, or `#rrggbb`. `%NF` is `%F{N}` | `%[fg:colour]` `%[fg_off]`, `%[bg:colour]` `%[bg_off]` |
+| `%E` | Clear to the end of the line | `%[clear_eol]` |
+| `%{...%}` | Text written as it is, taking no room on the screen: for other escape sequences, such as a terminal title | |
+| `%NG` | Within `%{...%}`: the escape sequence takes `N` columns | |
+| `%(x.yes.no)` | `yes` if the condition `x` holds, otherwise `no` (any character can replace the `.`s). The conditions take a number `N`, as in `%(N?.yes.no)` or `%N(?.yes.no)`: `?` the exit status is `N` (0 by default), `#` the user id is `N` (0: root), `!` the shell runs as root, `g` the group id is `N`, `j` there are at least `N` jobs, `L` `$SHLVL` is at least `N`, `/` or `C` the current directory has at least `N` components, `~`, `.` or `c` the same, with `~` for `$HOME` counting as one; `T`, `t`, `d`, `D` and `w`: the hour, minute, day of the month, month (from 0 for January) or day of the week (from 0 for Sunday) is `N` | `%([name].yes.no)` |
+| `%N<text<`, `%N>text>` | Shorten what follows (up to the end of the enclosing `%(...)`, or to the next `%<<`) to `N` characters, replacing what is cut on the left or the right by `text` | |
 
-Other sequences expand to nothing. zsh's `%_`, `%e`, `%I`, `%N`, `%x`, `%v`, `%[...]`, and conditions and truncation
-widths relative to the terminal's width, aren't supported.
+Other sequences expand to nothing. zsh's `%_`, `%e`, `%I`, `%N`, `%x`, `%v`, and conditions and truncation widths
+relative to the terminal's width, aren't supported.
+
+The long names are luish's own (zsh has none): `%[name]` is the same as the short sequence, easier to read in a long
+prompt. The argument of a sequence goes after a `:`, as a number or as the text in braces: `%[dir:2]` is `%2~`,
+`%[fg:red]` is `%F{red}` and `%[date:%H:%M]` is `%D{%H:%M}` (a `\` quotes a `]`). The number can also come first, as
+in `%2[dir]`. Case, `_` and `-` don't matter, so `%[HostName]` is `%[hostname]`. The example above becomes:
+
+```sh
+PS1='%[fg:blue]%[dir]%[fg_off] %([status]..%[fg:red][%[status]]%[fg_off] )%[prompt_char] '
+```
+
+The conditions of `%(...)` have long names too, in brackets, with their number after a `:`: `%([status:1].yes.no)`
+is `%(1?.yes.no)`. They are `status` (`?`), `root` (`!`), `uid` (`#`), `gid` (`g`), `jobs` (`j`), `shlvl` (`L`),
+`pwd` (`/`), `dir` (`~`), `hour` (`T`), `minute` (`t`), `day` (`d`), `month` (`D`) and `weekday` (`w`).
+
+Unlike an unknown short sequence, an unknown long name is an error, written to stderr each time the prompt is
+expanded (it then expands to nothing). It suggests the closest name, or else lists them:
+
+```text
+luish: unknown prompt sequence %[hostnam]; did you mean %[hostname]?
+```
+
+zsh's deprecated form of truncation, `%[N<text]` (a `[` followed by a number or by `<` or `>`), is `%N<text<`.
 
 For what `PS1` can't compute by itself, such as the git branch, a plugin can provide variables for it to use, which
 are set only while the prompt is built (see [Customizing the prompt](plugins.md#customizing-the-prompt)).

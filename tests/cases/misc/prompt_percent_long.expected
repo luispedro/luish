@@ -1,0 +1,26 @@
+[~/a/b/c|b/c|b/c|c|b/c|0|%] false
+[~/a/b/c|b/c|b/c|c|b/c|1|%] : x
+[^[[31mr^[[39m^[[104mk^[[49m^[[1m^[[4m^[[7m^[[27m^[[24m^[[22m^[[K] PS4='[%[fg:red]r%[fg_off]%[bg:12]k%[bg_off]%[bold]%[underline]%[standout]%[standout_off]%[underline_off]%[bold_off]%[clear_eol]] '
+[^[[31mr^[[39m^[[104mk^[[49m^[[1m^[[4m^[[7m^[[27m^[[24m^[[22m^[[K] : colours
+[ok|not1|not2|deep|nojobs] PS4='[%([status].ok.bad)|%([status:1].one.not1)|%2([status].two.not2)|%([dir:3].deep.shallow)|%([jobs:1].jobs.nojobs)] '
+[ok|not1|not2|deep|nojobs] : conditions
+[ok|not1|not2|deep|nojobs] exit 1
+[bad|one|not2|deep|nojobs] : after
+[../a/b/c|abcde>PS4='[%[8<..]%[pwd]%[<]|%6[>>]abcdefgh] '
+[../a/b/c|abcde>: zsh truncation
+[YEAR|0] PS4='[%[date:%Y]|%[jobs]] '
+[YEAR|0] : date
+[YEAR|0] set +x
+host and user
+--- errors
+sh: 3: unknown prompt sequence %[hostnam]; did you mean %[hostname]?
+sh: 3: unknown prompt sequence %[Usr]; did you mean %[user]?
+sh: 3: unknown prompt sequence %[branch]; the names are dir, pwd, dir_tail, pwd_tail, user, host, hostname, prompt_char, status, history, jobs, shlvl, lineno, tty, tty_short, date, date_weekday, date_us, time, time_seconds, time_12h, bold, bold_off, underline, underline_off, standout, standout_off, fg, fg_off, bg, bg_off, clear_eol, percent
+sh: 3: Illegal number in prompt sequence %[dir:x]
+sh: 3: unknown prompt condition %([stauts]; did you mean %([status]?
+sh: 3: unknown prompt condition %([bogus]; the names are status, root, uid, gid, jobs, shlvl, pwd, dir, hour, minute, day, month, weekday
+[|||||] : one
+sh: 4: missing ] in prompt sequence %[host
+[PS4='[%[host'
+sh: 5: missing ] in prompt sequence %[host
+[: two

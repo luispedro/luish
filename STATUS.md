@@ -481,15 +481,22 @@ pass**.
   (`%F`, `%K`: names, 0 to 255, `#rrggbb`), `%E`, `%{...%}` and `%G`,
   conditionals `%(x.yes.no)` (conditions `? # ! g j L / C ~ . c T t d D
   w`) and truncation (`%N<...<`, `%N>...>`, up to the end of the
-  enclosing group). Unknown sequences expand to nothing. Colours are
+  enclosing group, also zsh's deprecated `%[N<...]`). Unknown sequences
+  expand to nothing. luish's own long names, `%[name]` or `%[name:arg]`
+  (`%[hostname]`, `%[dir:2]`, `%[fg:red]`), and `%([name].yes.no)` for
+  conditions, are the same as the short sequences; their case, `_` and
+  `-` don't matter. An unknown long name, a missing `]` or a bad number
+  is reported on stderr (with the closest name, or else the list) each
+  time the prompt is expanded, and expands to nothing. Colours are
   written as ANSI SGR sequences, whatever the terminal. The expansion keeps
   escape sequences apart from the text, and the line editor is given both
   (rustyline's `(raw, styled)` prompt), so the cursor position doesn't
   count them. Nothing is done unless the option is on and the prompt has a
   `%`. Tests: `misc/prompt_percent.sh` (checked against zsh while
   written; zsh can't be the reference because its interactive mode writes
-  more than the prompts), `prompt_percent` in `tests/interactive.rs`, and
-  unit tests in `prompt.rs`.
+  more than the prompts), `misc/prompt_percent_long.sh` (long names),
+  `prompt_percent` in `tests/interactive.rs`, and unit tests in
+  `prompt.rs`.
 - After each line is read, the shell `stat`s the `PATH` directories and
   clears the command cache if one changed (device, inode or modification
   time), so a newly installed command is found even if it shadows a cached
@@ -853,8 +860,7 @@ notes how to rerun them):
 - `${@#pat}` and `${*%pat}` operate on the joined string rather than on each
   parameter.
 - `set -v` output is approximate.
-- Prompt expansion lacks zsh's `%_`, `%e`, `%I`, `%N`, `%x`, `%v`,
-  `%[...]`, the `l`, `S`, `_`, `e` and `v` conditions, and widths relative
+- Prompt expansion lacks zsh's `%_`, `%e`, `%I`, `%N`, `%x`, `%v`, the `l`, `S`, `_`, `e` and `v` conditions, and widths relative
   to the terminal's (negative truncation lengths). luish doesn't maintain
   `SHLVL`, so `%L` shows the inherited value.
 - Glob results are sorted in byte order; locale collation is not

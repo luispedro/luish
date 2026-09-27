@@ -126,11 +126,18 @@ impl Expander<'_> {
                 self.push(&mut parts, &self.s[start..self.pos]);
                 continue;
             }
-            let arg = self.number();
-            let Some(c) = self.next() else { break };
+            let mut arg = self.number();
+            let Some(mut c) = self.next() else { break };
+            // zsh's deprecated `%[N<str]`, the same as `%N<str<`.
+            let mut end = c;
+            if c == b'[' && self.old_trunc() {
+                arg = self.number().or(arg);
+                c = self.next().unwrap_or(b'<');
+                end = b']';
+            }
             match c {
                 b'<' | b'>' => {
-                    let marker = self.delimited(c);
+                    let marker = self.delimited(end);
                     if let Some(t) = trunc.take() {
                         truncate(&mut parts, t);
                     }
@@ -145,14 +152,31 @@ impl Expander<'_> {
                     }
                 }
                 b'(' => {
-                    let arg = arg.or_else(|| self.number());
-                    let Some(cond) = self.next() else { break };
+                    let mut arg = arg.or_else(|| self.number());
+                    let Some(mut cond) = self.next() else { break };
+                    if cond == b'[' {
+                        match self.long_name(CONDITIONS, "condition", b"%(") {
+                            Some((c, n, _)) => (cond, arg) = (c, n.or(arg)),
+                            None => cond = 0,
+                        }
+                    }
                     let sep = self.next();
                     let yes = self.group(sep);
                     let no = self.group(Some(b')'));
-                    parts.extend(if self.test(cond, arg.unwrap_or(0)) { yes } else { no });
+                    // An unknown condition expands to nothing.
+                    if cond != 0 {
+                        parts.extend(if self.test(cond, arg.unwrap_or(0)) { yes } else { no });
+                    }
                 }
-                _ => self.escape(c, arg, &mut parts),
+                b'[' => {
+                    if let Some((c, n, brace)) = self.long_name(SEQUENCES, "sequence", b"%") {
+                        self.escape(c, n.or(arg), brace, &mut parts);
+                    }
+                }
+                _ => {
+                    let brace = if takes_brace(c) { self.braced() } else { None };
+                    self.escape(c, arg, brace, &mut parts);
+                }
             }
         }
         if let Some(t) = trunc {
@@ -180,15 +204,83 @@ impl Expander<'_> {
     /// The text up to `end` (consumed), where a backslash quotes the next
     /// character.
     fn delimited(&mut self, end: u8) -> Vec<u8> {
+        self.delimited_closed(end).0
+    }
+
+    /// The same, and whether `end` was found.
+    fn delimited_closed(&mut self, end: u8) -> (Vec<u8>, bool) {
         let mut out = Vec::new();
         while let Some(c) = self.next() {
             match c {
                 b'\\' => out.extend(self.next()),
-                c if c == end => break,
+                c if c == end => return (out, true),
                 c => out.push(c),
             }
         }
-        out
+        (out, false)
+    }
+
+    /// After `%[`: whether this is zsh's `%[N<str]` (digits, then `<` or
+    /// `>`) rather than a long name.
+    fn old_trunc(&self) -> bool {
+        let rest = &self.s[self.pos..];
+        let digits = rest.iter().take_while(|c| c.is_ascii_digit()).count();
+        matches!(rest.get(digits), Some(b'<' | b'>'))
+    }
+
+    /// After `[`: a long name, `name]` or `name:arg]`, looked up in `table`.
+    /// Returns its letter and its argument: a number, or the text of a
+    /// `{...}` argument for the sequences that take one. Otherwise reports
+    /// an error (`what` and `intro` say what was being read, for the
+    /// message) and returns `None`.
+    fn long_name(
+        &mut self,
+        table: &[(&str, u8)],
+        what: &str,
+        intro: &[u8],
+    ) -> Option<(u8, Option<i64>, Option<Vec<u8>>)> {
+        let (inner, closed) = self.delimited_closed(b']');
+        let seq = |name: &[u8]| [intro, b"[", name, b"]"].concat();
+        if !closed {
+            let seq = [intro, b"[", &inner].concat();
+            self.sh
+                .error([b"missing ] in prompt ", what.as_bytes(), b" ", &seq].concat());
+            return None;
+        }
+        let (name, sub) = match inner.iter().position(|&c| c == b':') {
+            Some(i) => (&inner[..i], Some(&inner[i + 1..])),
+            None => (&inner[..], None),
+        };
+        let key = name_key(name);
+        if let Some(&(_, c)) = table.iter().find(|(n, _)| name_key(n.as_bytes()) == key) {
+            return match sub {
+                None => Some((c, None, None)),
+                Some(sub) if what == "sequence" && takes_brace(c) => Some((c, None, Some(sub.to_vec()))),
+                Some(sub) => match std::str::from_utf8(sub).ok().and_then(|s| s.parse().ok()) {
+                    Some(n) => Some((c, Some(n), None)),
+                    None => {
+                        let msg = [b"Illegal number in prompt ", what.as_bytes(), b" ", &seq(&inner)].concat();
+                        self.sh.error(msg);
+                        None
+                    }
+                },
+            };
+        }
+        let mut msg = [b"unknown prompt ", what.as_bytes(), b" ", &seq(name)].concat();
+        match suggest(table, &key) {
+            Some(n) => {
+                msg.extend_from_slice(b"; did you mean ");
+                msg.extend_from_slice(&seq(n.as_bytes()));
+                msg.push(b'?');
+            }
+            None => {
+                msg.extend_from_slice(b"; the names are ");
+                let names: Vec<&str> = table.iter().map(|(n, _)| *n).collect();
+                msg.extend_from_slice(names.join(", ").as_bytes());
+            }
+        }
+        self.sh.error(msg);
+        None
     }
 
     /// The text of a `{...}` argument, if there is one.
@@ -223,8 +315,9 @@ impl Expander<'_> {
         sys::strftime(&f, self.time())
     }
 
-    /// `%c` for a character `c` other than `(`, `<` and `>`.
-    fn escape(&mut self, c: u8, arg: Option<i64>, parts: &mut Vec<Part>) {
+    /// `%c` for a character `c` other than `(`, `<` and `>`, with its
+    /// numeric argument and, for those that take one, its `{...}` argument.
+    fn escape(&mut self, c: u8, arg: Option<i64>, brace: Option<Vec<u8>>, parts: &mut Vec<Part>) {
         let sh = self.sh;
         let text: Vec<u8> = match c {
             b'%' | b')' => vec![c],
@@ -253,7 +346,7 @@ impl Expander<'_> {
                 }
                 None => b"()".to_vec(),
             },
-            b'D' => match self.braced() {
+            b'D' => match brace {
                 Some(fmt) => self.strftime(&fmt),
                 None => self.strftime(b"%y-%m-%d"),
             },
@@ -274,9 +367,7 @@ impl Expander<'_> {
                     b'f' => b"\x1b[39m".to_vec(),
                     b'k' => b"\x1b[49m".to_vec(),
                     _ => {
-                        let spec = self
-                            .braced()
-                            .unwrap_or_else(|| arg.unwrap_or(0).to_string().into_bytes());
+                        let spec = brace.unwrap_or_else(|| arg.unwrap_or(0).to_string().into_bytes());
                         color(&spec, c == b'K')
                     }
                 };
@@ -321,6 +412,108 @@ impl Expander<'_> {
             _ => false,
         }
     }
+}
+
+/// The long names of the sequences, `%[name]`, and their letters.
+const SEQUENCES: &[(&str, u8)] = &[
+    ("dir", b'~'),
+    ("pwd", b'/'),
+    ("dir_tail", b'c'),
+    ("pwd_tail", b'C'),
+    ("user", b'n'),
+    ("host", b'm'),
+    ("hostname", b'M'),
+    ("prompt_char", b'#'),
+    ("status", b'?'),
+    ("history", b'h'),
+    ("jobs", b'j'),
+    ("shlvl", b'L'),
+    ("lineno", b'i'),
+    ("tty", b'y'),
+    ("tty_short", b'l'),
+    ("date", b'D'),
+    ("date_weekday", b'w'),
+    ("date_us", b'W'),
+    ("time", b'T'),
+    ("time_seconds", b'*'),
+    ("time_12h", b't'),
+    ("bold", b'B'),
+    ("bold_off", b'b'),
+    ("underline", b'U'),
+    ("underline_off", b'u'),
+    ("standout", b'S'),
+    ("standout_off", b's'),
+    ("fg", b'F'),
+    ("fg_off", b'f'),
+    ("bg", b'K'),
+    ("bg_off", b'k'),
+    ("clear_eol", b'E'),
+    ("percent", b'%'),
+];
+
+/// The long names of the conditions, `%([name].yes.no)`.
+const CONDITIONS: &[(&str, u8)] = &[
+    ("status", b'?'),
+    ("root", b'!'),
+    ("uid", b'#'),
+    ("gid", b'g'),
+    ("jobs", b'j'),
+    ("shlvl", b'L'),
+    ("pwd", b'/'),
+    ("dir", b'~'),
+    ("hour", b'T'),
+    ("minute", b't'),
+    ("day", b'd'),
+    ("month", b'D'),
+    ("weekday", b'w'),
+];
+
+/// Whether `%c` takes a `{...}` argument.
+fn takes_brace(c: u8) -> bool {
+    matches!(c, b'D' | b'F' | b'K')
+}
+
+/// A long name as it is compared: case, `_` and `-` don't matter.
+fn name_key(name: &[u8]) -> Vec<u8> {
+    name.iter()
+        .filter(|&&c| c != b'_' && c != b'-')
+        .map(u8::to_ascii_lowercase)
+        .collect()
+}
+
+/// The name in `table` closest to `key` (as `name_key` gives it), if one
+/// is close enough to be a likely typo: one that starts with it, or within
+/// an edit distance of 2 (1 for short names).
+fn suggest<'a>(table: &[(&'a str, u8)], key: &[u8]) -> Option<&'a str> {
+    if key.is_empty() {
+        return None;
+    }
+    let max = if key.len() <= 3 { 1 } else { 2 };
+    table
+        .iter()
+        .map(|&(n, _)| {
+            let k = name_key(n.as_bytes());
+            let d = if k.starts_with(key) { 0 } else { distance(key, &k) };
+            (d, n)
+        })
+        .filter(|&(d, _)| d <= max)
+        .min_by_key(|&(d, _)| d)
+        .map(|(_, n)| n)
+}
+
+/// The Levenshtein distance between two strings.
+fn distance(a: &[u8], b: &[u8]) -> usize {
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, &ca) in a.iter().enumerate() {
+        let mut diag = row[0];
+        row[0] = i + 1;
+        for (j, &cb) in b.iter().enumerate() {
+            let next = (row[j + 1] + 1).min(row[j] + 1).min(diag + usize::from(ca != cb));
+            diag = row[j + 1];
+            row[j + 1] = next;
+        }
+    }
+    row[b.len()]
 }
 
 /// Applies a truncation to the parts from its start: if their text is
@@ -554,6 +747,25 @@ mod tests {
         assert_eq!(color(b"#f08", false), b"\x1b[38;2;255;0;136m");
         assert_eq!(color(b"bogus", false), b"\x1b[39m");
         assert_eq!(color(b"256", true), b"\x1b[49m");
+    }
+
+    #[test]
+    fn long_names() {
+        // The names are distinct as they are compared.
+        for table in [SEQUENCES, CONDITIONS] {
+            let mut keys: Vec<Vec<u8>> = table.iter().map(|(n, _)| name_key(n.as_bytes())).collect();
+            keys.sort();
+            keys.dedup();
+            assert_eq!(keys.len(), table.len());
+        }
+        assert_eq!(suggest(SEQUENCES, &name_key(b"hostnme")), Some("hostname"));
+        assert_eq!(suggest(SEQUENCES, &name_key(b"Host-Nam")), Some("hostname"));
+        assert_eq!(suggest(SEQUENCES, &name_key(b"usr")), Some("user"));
+        assert_eq!(suggest(SEQUENCES, &name_key(b"und")), Some("underline"));
+        assert_eq!(suggest(SEQUENCES, &name_key(b"branch")), None);
+        assert_eq!(suggest(CONDITIONS, &name_key(b"stauts")), Some("status"));
+        assert_eq!(distance(b"kitten", b"sitting"), 3);
+        assert_eq!(distance(b"", b"ab"), 2);
     }
 
     #[test]
