@@ -18,7 +18,7 @@ html_theme = "furo"
 html_title = "luish"
 
 
-# The plugin examples are Rhai, which Pygments doesn't know. Rust's lexer is
+# The extension examples are Rhai, which Pygments doesn't know. Rust's lexer is
 # close, but fails on Rhai's backtick strings (with `${...}` interpolation).
 def setup(app):
     from pygments.lexer import include, inherit

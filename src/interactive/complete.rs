@@ -7,9 +7,9 @@
 //!    command name, an argument, a redirection target, a variable name), the
 //!    quoting in effect, and the words of its command.
 //! 2. A generator lists `Candidate`s for it: command names, filenames,
-//!    variable names, or what a command's arguments complete to: a plugin's
-//!    completer (through `ShellHelper::ask`, the only call back into the
-//!    shell) or `ARGS`.
+//!    variable names, or what a command's arguments complete to: an
+//!    extension's completer (through `ShellHelper::ask`, the only call back
+//!    into the shell) or `ARGS`.
 //! 3. The candidates are matched against the text typed (`matches`).
 //! 4. Each match becomes a replacement for the line: the text already typed
 //!    is kept, and what is added is quoted for the quoting at the cursor.
@@ -43,7 +43,7 @@ pub struct Names {
     pub vars: Vec<Vec<u8>>,
     pub path: Vec<u8>,
     pub home: Option<Vec<u8>>,
-    /// The commands with a plugin's completer.
+    /// The commands with an extension's completer.
     pub completers: Vec<Vec<u8>>,
     /// The jobs' numbers and commands, from the current job on.
     pub jobs: Vec<(usize, Vec<u8>)>,
@@ -149,8 +149,8 @@ pub(super) const PRECOMMANDS: &[&[u8]] = &[
 ];
 
 /// Commands whose arguments can be assignments.
-/// The name under which a plugin registers the completer for commands that
-/// have none (as in zsh's `compdef -default-`).
+/// The name under which an extension registers the completer for commands
+/// that have none (as in zsh's `compdef -default-`).
 pub const DEFAULT_COMPLETER: &[u8] = b"-default-";
 
 const DECLARATIONS: &[&[u8]] = &[b"export", b"readonly", b"local"];
@@ -1333,7 +1333,7 @@ impl Completer for ShellHelper {
         if let Some((start, text)) = menu.step(line, pos) {
             return Ok((start, vec![pair(&text)]));
         }
-        // (Not held while a plugin's completer runs.)
+        // (Not held while an extension's completer runs.)
         drop(menu);
         let (before, after) = line.as_bytes().split_at(pos);
         let (start, items) = self.complete_bytes(before, after);
@@ -1552,7 +1552,7 @@ mod tests {
         assert_eq!(after("$(x)y z", Quote::None), ["z"]);
     }
 
-    /// A completer for `git`, as a plugin could provide, and a default
+    /// A completer for `git`, as an extension could provide, and a default
     /// completer that knows `frob`.
     fn fake_git(words: &[Vec<u8>], i: usize) -> Completion {
         if words[0] != b"git" {
@@ -1766,7 +1766,7 @@ mod tests {
             .map(|c| c.replacen(&format!("~{me}"), &home, 1))
             .collect();
         assert_eq!(by_user, by_path);
-        // A plugin's completer.
+        // An extension's completer.
         assert_eq!(complete(&h, "git "), ["--color=", "add ", "commit "]);
         assert_eq!(complete(&h, "sudo git 'a"), ["'add' "]);
         assert_eq!(complete(&h, "git --c"), ["--color="]);

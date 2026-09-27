@@ -1,13 +1,13 @@
-# A plugin can be a directory with plugin.rhai (run first) and rc.lsh (run
+# A plugin can be a directory with extension.rhai (run first) and rc.lsh (run
 # next, as with `.`). LUISH_PLUGIN_DIR and LUISH_PLUGIN_NAME are set while
 # they run; `import` and sh::plugin_dir() use the plugin's directory.
 P=$HOME/.config/luish/plugins
 mkdir -p "$P/greet" "$P/shonly" "$P/both" d empty
 cd "$P/greet"
-cat > plugin.rhai <<'X'
+cat > extension.rhai <<'X'
 import "util" as u;
 print(`rhai: ${u::hello()} ${sh::getvar("LUISH_PLUGIN_NAME")}`);
-sh::setvar("FROM_RHAI", "set by plugin.rhai");
+sh::setvar("FROM_RHAI", "set by extension.rhai");
 let dir = sh::plugin_dir();
 sh::hook("chpwd", |a, b| print(`hook: dir ${dir == sh::plugin_dir()}`));
 X
@@ -20,7 +20,7 @@ X
 echo 'greet() { echo "greet from lib"; }' > lib.lsh
 echo 'alias sh_only="echo shell only"' > "$P/shonly/rc.lsh"
 echo 'print("both: the file wins");' > "$P/both.rhai"
-echo 'print("both: the directory");' > "$P/both/plugin.rhai"
+echo 'print("both: the directory");' > "$P/both/extension.rhai"
 touch "$P/.hidden.rhai" "$P/README"
 cd
 main() {
@@ -41,15 +41,15 @@ __luish_internal plugin list-loaded
 echo "--- a directory without an entry point"
 __luish_internal plugin load ./empty
 echo "status $?"
-echo "--- a failing plugin.rhai: rc.lsh doesn't run"
+echo "--- a failing extension.rhai: rc.lsh doesn't run"
 mkdir bad
-echo 'throw "no";' > bad/plugin.rhai
+echo 'throw "no";' > bad/extension.rhai
 echo 'echo "not reached"' > bad/rc.lsh
 __luish_internal plugin load ./bad
 echo "status $?"
 echo "--- a missing module"
 mkdir nomod
-echo 'import "nosuch" as n;' > nomod/plugin.rhai
+echo 'import "nosuch" as n;' > nomod/extension.rhai
 __luish_internal plugin load ./nomod
 echo "status $?"
 echo "--- loading again reads the modules again"

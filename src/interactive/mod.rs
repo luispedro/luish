@@ -154,7 +154,7 @@ pub fn with_history<R>(f: impl FnOnce(&mut ShellHistory) -> R) -> Option<R> {
 }
 
 /// The prompt: `PS2` for a continuation line, otherwise `PS1`, built with
-/// the plugins' prompt hooks and files if there are any.
+/// the extensions' prompt hooks and the plugins' files if there are any.
 pub fn prompt(sh: &mut Shell, continuation: bool) -> crate::prompt::Prompt {
     if continuation {
         return sh.prompt(b"PS2");
@@ -189,7 +189,7 @@ fn names(sh: &Shell) -> Names {
     }
 }
 
-/// Runs a plugin's completer for the editor. The terminal is in raw mode
+/// Runs an extension's completer for the editor. The terminal is in raw mode
 /// and belongs to the editor, so the commands the completer runs are not
 /// jobs: like those of `$(...)`, they don't save or restore its modes.
 fn ask(words: &[Vec<u8>], index: usize) -> Completion {

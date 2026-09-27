@@ -1,5 +1,5 @@
-# Completes a command's arguments with bash-completion, for the plugin in
-# plugin.rhai:
+# Completes a command's arguments with bash-completion, for the extension
+# in extension.rhai:
 #
 #   bash bridge.bash INDEX WORD...
 #

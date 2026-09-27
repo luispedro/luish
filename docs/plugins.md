@@ -1,13 +1,15 @@
 # Plugins
 
-luish can be extended with plugins written in [Rhai](https://rhai.rs), a small scripting language designed for
-embedding. Plugins are opt-in: nothing is loaded unless you ask for it, and a shell that loads no plugins pays nothing
-for them.
+A **plugin** adds to luish: it is a directory of shell and Rhai files, or a single Rhai file. The Rhai part of a
+plugin is its **extension**: code in [Rhai](https://rhai.rs), a small scripting language designed for embedding, that
+runs inside the shell and registers hooks and completers. A plugin written only in shell, as zsh plugins are, has no
+extension, and a single `.rhai` file is a plugin that is just an extension. Plugins are opt-in: nothing is loaded
+unless you ask for it, and a shell that loads no plugins pays nothing for them.
 
-Plugin support is new. For now, a plugin can run code whenever the current directory changes (the `chpwd` hook),
-provide variables for the prompt (the `prompt-vars` hook and `prompt-vars.lsh` files) or rewrite it entirely (the
-`prompt-rewrite` hook), provide Tab completion for the arguments of commands, query files (the `fs` module), and ask
-about git repositories (the `vcs` module).
+Plugin support is new. For now, an extension can run code whenever the current directory changes (the `chpwd` hook),
+provide variables for the prompt (the `prompt-vars` hook, as a plugin's `prompt-vars.lsh` file can) or rewrite it
+entirely (the `prompt-rewrite` hook), provide Tab completion for the arguments of commands, query files (the `fs`
+module), and ask about git repositories (the `vcs` module).
 
 ## Loading plugins
 
@@ -27,11 +29,12 @@ script, use `__luish_internal plugin` instead.
 
 Plugins are usually loaded from `~/.config/luish/luishrc`, which interactive shells read at startup. They can also
 be loaded from the cached startup files in `rc.d/`: the cache records which plugins were loaded and loads them again
-(but what a plugin's top level changed in the shell is cached with the rest). Start luish with
+(but what the plugin changed in the shell is cached with the rest). Start luish with
 `--no-plugins` to make `plugin load` do nothing, for example to check whether a problem comes from a plugin.
 
-`plugin load` runs the plugin's top level once, which registers its hooks and completers. If the plugin has an error, it is
-reported with the plugin's file and line, nothing from the plugin stays loaded, and the status is 1.
+`plugin load` runs the top level of the plugin's extension once, which registers its hooks and completers. If the
+extension has an error, it is reported with its file and line, nothing from the plugin stays loaded, and the status
+is 1.
 
 ## Plugins with several files
 
@@ -40,12 +43,12 @@ exist:
 
 | File | When it runs |
 |---|---|
-| `plugin.rhai` | When the plugin is loaded, like a single-file plugin |
-| `rc.lsh` | When the plugin is loaded, after `plugin.rhai`, in the current shell (as with `.`) |
+| `extension.rhai` | When the plugin is loaded. It is the plugin's extension, like the file of a single-file plugin |
+| `rc.lsh` | When the plugin is loaded, after `extension.rhai`, in the current shell (as with `.`) |
 | `prompt-vars.lsh` | Before each prompt, to set variables for `PS1` (see [below](#variables-for-the-prompt-prompt-vars)) |
 
 A directory needs at least one of them (or a `login.lsh`, which luish will run in login shells in a later version).
-If `plugin.rhai` fails, `rc.lsh` doesn't run.
+If `extension.rhai` fails, `rc.lsh` doesn't run.
 
 Other files in the directory are read only when these files ask for them. In Rhai, `import "util" as u;` loads
 `util.rhai` from the plugin's directory, and loading the plugin again reads it again. In shell, use
@@ -58,16 +61,16 @@ alias gs='git status'
 work_dir=$LUISH_PLUGIN_DIR   # for functions that need it later
 ```
 
-While `plugin.rhai`, `rc.lsh` and `prompt-vars.lsh` run, `LUISH_PLUGIN_DIR` is the plugin's directory (an absolute path) and
+While `extension.rhai`, `rc.lsh` and `prompt-vars.lsh` run, `LUISH_PLUGIN_DIR` is the plugin's directory (an absolute path) and
 `LUISH_PLUGIN_NAME` its name. Afterwards they get back the values they had before. In Rhai, `sh::plugin_dir()`
 gives the directory at any time, also in hooks. For a single-file plugin it is the directory of the file.
 
 A plugin written only in shell doesn't start Rhai at all. When it is loaded from the cached startup files in
 `rc.d`, what its `rc.lsh` did is cached with the rest, so it costs no more than the same lines in `rc.d`: a later
-shell loads the plugin's `plugin.rhai` again but doesn't rerun `rc.lsh`. Changing either file makes the next shell
+shell loads the plugin's `extension.rhai` again but doesn't rerun `rc.lsh`. Changing either file makes the next shell
 run `rc.d` again.
 
-`plugin unload` removes what `plugin.rhai` registered (hooks), but it can't undo what `rc.lsh` did (aliases,
+`plugin unload` removes what `extension.rhai` registered (hooks), but it can't undo what `rc.lsh` did (aliases,
 functions, variables).
 
 ## Example: running code when the directory changes
@@ -75,7 +78,7 @@ functions, variables).
 ```rhai
 // ~/.config/luish/plugins/dirs.rhai
 
-// Named functions can't see the plugin's variables, but closures can.
+// Named functions can't see the extension's variables, but closures can.
 let visits = 0;
 
 sh::hook("chpwd", |from, to| {
@@ -98,7 +101,7 @@ Plugins can change the prompt (`PS1`; `PS2`, for the continuation lines of a com
 
 - **`prompt-vars`** (start here): a plugin computes values, such as the git branch, and gives them to `PS1` as
   variables. You keep writing the prompt in `PS1`, and the variables exist only while the prompt is built.
-- **`prompt-rewrite`** (advanced): a plugin writes the whole prompt itself, and `PS1` is ignored or passed to it.
+- **`prompt-rewrite`** (advanced): an extension writes the whole prompt itself, and `PS1` is ignored or passed to it.
 
 ### Variables for the prompt: `prompt-vars`
 
@@ -179,8 +182,8 @@ The order of operations matters:
 1. The `prompt-vars` hooks and files run first (see above), so a `prompt-rewrite` hook sees their variables, with
    `sh::getvar`.
 2. The `prompt-rewrite` hooks run, from the one registered **last**, until one returns a string: that is the prompt.
-   A hook that returns `()` leaves the prompt to the hooks registered before it, and then to `PS1`, so a plugin can
-   give the prompt only in some directories, for example. A hook that fails (or returns something other than a
+   A hook that returns `()` leaves the prompt to the hooks registered before it, and then to `PS1`, so an extension
+   can give the prompt only in some directories, for example. A hook that fails (or returns something other than a
    string or `()`) is reported, and the next one is tried.
 3. The prompt a hook returns doesn't go through parameter expansion, so `$x` in it stays as it is. It does go through
    `%` expansion if the `prompt.percent` option is on (`setopt prompt.percent`, see [](usage.md)), as in the example.
@@ -192,7 +195,7 @@ it for the rest of the hook, so read `sh::last_status()` first).
 
 A hook that takes a parameter is given the previous prompt: the one the hooks registered before it give, or else
 `PS1` (after parameter expansion, with the `prompt-vars` variables, but before `%` expansion, which is done on the
-prompt the hook returns). So a plugin can add to the prompt of another plugin, or to `PS1`, instead of replacing it:
+prompt the hook returns). So an extension can add to the prompt of another one, or to `PS1`, instead of replacing it:
 
 ```rhai
 // ~/.config/luish/plugins/status.rhai
@@ -205,7 +208,7 @@ sh::hook("prompt-rewrite", |prev| {
 Returning `()` from such a hook, or failing, keeps the previous prompt. A hook without a parameter doesn't run the
 hooks before it at all, so it costs nothing to have them loaded, but it also discards them: loading a plugin with a
 `prompt-rewrite` hook that takes no parameter hides the prompt of every plugin loaded before it, and `PS1`. The hook
-must be defined in the plugin's own file (not in a module it imports), as a closure or a named function
+must be defined in the extension's own file (not in a module it imports), as a closure or a named function
 (`fn prompt(prev) { ... }`).
 
 ## Example: completing a command's arguments
@@ -268,7 +271,7 @@ line, so use `sh::capture` or redirect it.
 Many programs can list the completions of their own arguments. Those built with the Go library
 [Cobra](https://cobra.dev), such as `gh`, `docker`, `kubectl` and `helm`, do it when run as
 `prog __complete ARGS...`. luish doesn't run programs to ask them (a program that doesn't know the convention might
-do something else), but a plugin can, for the programs it names:
+do something else), but an extension can, for the programs it names:
 
 ```{literalinclude} examples/cobra.rhai
 :language: rhai
@@ -280,10 +283,11 @@ Save it as `~/.config/luish/plugins/cobra.rhai`, change the list of programs at 
 ## Example: using bash's completions
 
 [bash-completion](https://github.com/scop/bash-completion) completes the arguments of about a thousand commands,
-and many programs install completion files for it. This plugin is a default completer that runs, in bash, the
-function that bash-completion has for the command, and gives luish what it returns. It is a directory with two files:
+and many programs install completion files for it. This plugin's extension is a default completer that runs, in
+bash, the function that bash-completion has for the command, and gives luish what it returns. The plugin is a
+directory with two files:
 
-```{literalinclude} examples/bash-completion/plugin.rhai
+```{literalinclude} examples/bash-completion/extension.rhai
 :language: rhai
 ```
 
@@ -299,6 +303,8 @@ bash-completion gives no descriptions.
 
 ## The `sh` module
 
+Extensions reach the shell through the `sh` module:
+
 | Function | Description |
 |---|---|
 | `sh::hook(kind, fn)` | Register a hook: `"chpwd"`, `"prompt-vars"` or `"prompt-rewrite"` |
@@ -310,7 +316,7 @@ bash-completion gives no descriptions.
 | `sh::plugin_dir()` | The plugin's directory |
 | `sh::last_status()` | `$?` |
 | `sh::interactive()` | Whether the shell is interactive |
-| `sh::run(script)` | Run shell code in the current shell, as `eval` does, and return its status. If it runs `exit`, the plugin stops and the shell exits |
+| `sh::run(script)` | Run shell code in the current shell, as `eval` does, and return its status. If it runs `exit`, the extension stops and the shell exits |
 | `sh::capture(script)` | Run shell code in a subshell, as `$(...)` does, and return `#{status, out}`, with trailing newlines removed from `out` |
 | `sh::quote(text)` | `text` quoted for the shell (in single quotes). Given an array, its strings quoted and separated by spaces |
 | `sh::write(fd, text)` | Write text, unbuffered, to fd 1 or 2 |
@@ -350,7 +356,7 @@ things with `timestamp()` and `.elapsed`.
 
 ## The `vcs` module
 
-The `vcs` module tells a plugin about the version-control repository around a directory, as zsh's `vcs_info` does.
+The `vcs` module tells an extension about the version-control repository around a directory, as zsh's `vcs_info` does.
 Only git is supported for now.
 
 `vcs::info()` (or `vcs::info(dir)`) finds the repository from the current directory (or `dir`) by reading the
@@ -415,8 +421,9 @@ repository.
 Shell data (variables, paths) are bytes, while Rhai strings hold UTF-8 text. Text that is valid UTF-8 is passed
 unchanged. Each byte that is not part of valid UTF-8 becomes one of the characters U+10FF80 to U+10FFFF, and turns
 back into that byte when the string goes back to the shell. So a directory name that isn't valid UTF-8 survives a
-round trip through a plugin. A string containing a NUL character can't be stored in a shell variable.
+round trip through an extension. A string containing a NUL character can't be stored in a shell variable.
 
-## Interrupting plugins
+## Interrupting extensions
 
-Ctrl-C stops plugin code that is running, just as it stops a command. A plugin stopped this way gives status 130.
+Ctrl-C stops extension code that is running, just as it stops a command. An extension stopped this way gives status
+130.

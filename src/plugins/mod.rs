@@ -1,6 +1,8 @@
-//! Plugins (PLAN.md §6): the `plugin` built-in and the hooks that plugins
-//! register. Nothing here costs anything until the first `plugin load`,
-//! which creates the Rhai engine (`Shell::plugins`).
+//! Plugins (PLAN.md §6): the `plugin` built-in, which loads plugins (a
+//! `.rhai` file, or a directory of Rhai and shell files), and the hooks
+//! that their extensions (their Rhai code) register. Nothing here costs
+//! anything until the first `plugin load`, which creates the host
+//! (`Shell::plugins`); the Rhai engine waits for the first extension.
 
 #[cfg(feature = "plugins")]
 mod bytes;
@@ -53,7 +55,7 @@ impl Host {
     }
 }
 
-/// The events that plugins can hook.
+/// The events that extensions can hook.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum HookKind {
     /// The current directory changed (`cd`); called with the old and the
@@ -77,9 +79,9 @@ pub fn chpwd(sh: &mut Shell, old: &[u8], new: &[u8]) -> Result<(), Flow> {
     }
 }
 
-/// The `PS1` prompt, built with the plugins' `prompt-vars` and
-/// `prompt-rewrite` hooks and `prompt-vars.lsh` files, or `None` if no
-/// plugin has any.
+/// The `PS1` prompt, built with the extensions' `prompt-vars` and
+/// `prompt-rewrite` hooks and the plugins' `prompt-vars.lsh` files, or
+/// `None` if there are none.
 pub fn prompt(sh: &mut Shell) -> Result<Option<Prompt>, Flow> {
     match sh.plugins.clone() {
         None => Ok(None),
@@ -87,7 +89,7 @@ pub fn prompt(sh: &mut Shell) -> Result<Option<Prompt>, Flow> {
     }
 }
 
-/// The commands for which plugins provide completers.
+/// The commands for which extensions provide completers.
 pub fn completer_names(sh: &Shell) -> Vec<Vec<u8>> {
     sh.plugins.as_ref().map_or_else(Vec::new, |host| host.completer_names())
 }
@@ -194,7 +196,7 @@ pub fn available_names(dir: &[u8]) -> Vec<Vec<u8>> {
 }
 
 #[cfg(feature = "plugins")]
-/// A plugin found on disk: a `.rhai` file or a directory.
+/// A plugin found on disk: a `.rhai` file (an extension) or a directory.
 struct Found {
     path: Vec<u8>,
     dir: bool,
@@ -244,7 +246,8 @@ pub struct Loading {
     pub abs: Vec<u8>,
     /// The plugin's directory (absolute): the directory of a file plugin.
     pub dir: Vec<u8>,
-    /// The Rhai file to run, as given (for messages) and absolute.
+    /// The extension to run (its Rhai file), as given (for messages) and
+    /// absolute.
     pub rhai: Option<(Vec<u8>, Vec<u8>)>,
     /// The plugin's `prompt-vars.lsh` (absolute), if it has one.
     pub prompt_vars: Option<Vec<u8>>,
@@ -292,13 +295,13 @@ fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], restore: Option<Vec<u8>>) -> Exe
                 .is_some()
                 .then(|| (p, [abs.as_slice(), b"/", f].concat()))
         };
-        let (rhai, rc) = (entry(b"plugin.rhai"), entry(b"rc.lsh"));
+        let (rhai, rc) = (entry(b"extension.rhai"), entry(b"rc.lsh"));
         let prompt_vars = entry(b"prompt-vars.lsh").map(|(_, abs)| abs);
         if rhai.is_none() && rc.is_none() && prompt_vars.is_none() && entry(b"login.lsh").is_none() {
             sh.berr(
                 cmd,
                 format!(
-                    "{}: not a plugin (no plugin.rhai, rc.lsh, prompt-vars.lsh or login.lsh)",
+                    "{}: not a plugin (no extension.rhai, rc.lsh, prompt-vars.lsh or login.lsh)",
                     String::from_utf8_lossy(&path)
                 ),
             );

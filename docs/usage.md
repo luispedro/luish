@@ -205,7 +205,7 @@ options) completes as a command name. With `setopt cd.auto`, a command name also
   completes filenames after `history.file=`;
 - `plugin load` completes the plugins in the plugin directory, and `plugin unload` the loaded ones.
 
-Plugins can provide completion for other commands (see [Plugins](plugins.md)). Aliases are followed: if `g` is an
+Plugins, through their extensions, can provide completion for other commands (see [Plugins](plugins.md)). Aliases are followed: if `g` is an
 alias for `git`, then `g ` completes as `git ` does.
 
 The first Tab completes as much as is common to all the matches. When there is nothing more to add, it opens a menu

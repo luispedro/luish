@@ -1,7 +1,7 @@
 # luish — Implementation Plan
 
 `luish` is a POSIX-compliant shell for Linux, written in Rust, with optional
-support for plugins written in Rhai. The long-term aim is to replace zsh as
+support for plugins, extended in Rhai. The long-term aim is to replace zsh as
 a daily-driver shell.
 
 `GOALS.md` groups the goals into three stages. This plan covers Stage 1
@@ -59,7 +59,7 @@ design.
 These are planned, but none of them is built during Stage 1 (see §9).
 Stage 1 design must not rule them out.
 
-- **Stage 2:** Rhai plugins (Phase 11 and §6). Opt-in bash/zsh extensions
+- **Stage 2:** plugins and their Rhai extensions (Phase 11 and §6). Opt-in bash/zsh extensions
   such as arrays, associative arrays, process substitution, `[[ ]]`, and
   `{a,b}` brace expansion. Modern terminal features. Better scripting
   and debugging support. Richer completion and history.
@@ -159,7 +159,7 @@ luish/
 │       ├── rhai.rs         # #[cfg(feature = "plugins")] Rhai engine and the `sh` module
 │       ├── fs.rs           # the `fs` module (file tests without forking)
 │       ├── vcs.rs          # the `vcs` module (git repository information, like zsh's vcs_info)
-│       ├── bytes.rs        # byte <-> string conversion at the plugin boundary (§6.5)
+│       ├── bytes.rs        # byte <-> string conversion at the extension boundary (§6.5)
 │       ├── package.rs      # (planned) plugin layouts and collections (§6.6)
 │       ├── config.rs       # (planned) plugins.toml and plugins.lock (§6.6)
 │       └── fetch.rs        # (planned) git plugins and their cache (§6.6)
@@ -167,7 +167,7 @@ luish/
 │   ├── cases/              # *.sh test scripts plus expected output
 │   ├── compare.rs          # differential harness (luish vs dash, or zsh)
 │   ├── interactive.rs      # pty tests
-│   └── plugins/            # Rhai plugin tests
+│   └── plugins/            # plugin and extension tests
 ├── fuzz/                   # (planned) cargo-fuzz targets (lexer, parser, arith, pattern)
 ├── bench/                  # benchmark scripts and their runner (hyperfine)
 ```
@@ -175,7 +175,7 @@ luish/
 There is no separate `LineEditor` trait: the separation is kept by giving
 the completer and highlighter a plain-data snapshot of the names they need
 before each prompt, and by keeping rustyline inside `interactive/`. Example
-plugins live in `docs/examples/` (the Cobra completer).
+extensions live in `docs/examples/` (the Cobra completer).
 
 ---
 
@@ -277,7 +277,7 @@ pub struct Shell {
     pub traps: Traps,
     pub jobs: JobTable,
     pub hash: PathHash,
-    pub builtins: BuiltinRegistry,     // Rust built-ins + plugin built-ins
+    pub builtins: BuiltinRegistry,     // Rust built-ins + extension built-ins
     pub plugins: PluginManager,
     pub interactive: bool,
     pub in_subshell: bool,
@@ -386,7 +386,7 @@ runs without panics, and syntax errors report the line number.
   2. If there is no command name, apply the assignments to the shell and run
      the redirections in a subshell-like guard.
   3. Otherwise look the command up in this order: special built-in, function,
-     regular built-in (including plugin built-ins), then `PATH`.
+     regular built-in (including extension built-ins), then `PATH`.
   4. Assignment scope: for special built-ins the assignments persist. For
      functions and regular built-ins they are temporary. For external commands
      they are exported only to that child.
@@ -558,7 +558,7 @@ subshells and command substitutions, and `kill -TERM $$` running a trap.
 - **Prompts**: expand `PS1` with parameter expansion (and, optionally,
   command substitution). Plugins can override the prompt (§6).
 - **Completion**: command names from built-ins, functions, aliases and `PATH`,
-  and filenames for other words. Plugins can provide completers (§6).
+  and filenames for other words. Extensions can provide completers (§6).
 - **Job control** (`jobs.rs`, active under `set -m`, which is on by default in
   interactive mode):
   - On startup, loop until the shell is the foreground process group, then
@@ -609,20 +609,20 @@ driver are built on it.
 the startup cache); step 3 is done; step 4 is partly done (the `chpwd`,
 `prompt-vars` and `prompt-rewrite` hooks, completers, and part of the `sh` module, plus the `fs` and
 `vcs` modules); step 7 is at its first step (directory plugins). Not done:
-the `Builtin` trait (step 1), plugin built-ins, the other hooks (`precmd`,
+the `Builtin` trait (step 1), extension built-ins, the other hooks (`precmd`,
 `preexec`, `exit`), time budgets for hooks other than completers,
 `parse_json`, and `plugins.toml`.
 
 1. Add a plugin-agnostic `plugins/mod.rs` with the `Builtin` and `Hook` traits.
-   Move the Rust built-ins onto the `Builtin` trait so that plugins and native
-   built-ins go through the same code path.
+   Move the Rust built-ins onto the `Builtin` trait so that extension and
+   native built-ins go through the same code path.
 2. Add the `plugin` built-in: `plugin load <path|module>`, `plugin list`, and
    `plugin unload <name>`.
 3. Add the byte conversion (`plugins/bytes.rs`, §6.5), with unit tests for the
    round trip.
 4. Add the Rhai bridge (`plugins/rhai.rs`) behind `#[cfg(feature = "plugins")]`:
    the engine, the `sh` module, and the limits and interrupts of §6.4.
-5. Write the API reference and the example plugins (`plugins/`).
+5. Write the API reference and the example extensions (`plugins/`).
 6. Add plugin tests: `tests/plugins/*.rhai` run through the harness. CI also
    builds with `--no-default-features`, and compares `luish -c true` with and
    without the `plugins` feature.
@@ -722,7 +722,7 @@ once):
    aliases now.
 5. **Completion content**, the biggest gap by volume. zsh's setup gets
    completion for git, ssh, make, man, cargo and so on from `compinit` and
-   zsh-completions; luish knows only its built-ins and plugin completers.
+   zsh-completions; luish knows only its built-ins and extensions' completers.
    - **git** first, as a Rhai completer shipped with luish (subcommands,
      branches and refs through the `vcs` module, files for `add`/`restore`,
      remotes). This also tests whether the completer API is enough.
@@ -884,7 +884,16 @@ file sets too. Three steps:
 
 ## 6. Plugin system design
 
-Plugins are written in [Rhai](https://rhai.rs), a scripting language
+Two words, kept apart because zsh users read "plugin" as a bundle of files
+to source:
+
+- A **plugin** is what `plugin load` loads and what `plugins.toml` lists: a
+  directory of shell and Rhai files, or a single `.rhai` file (§6.6).
+- An **extension** is a plugin's Rhai code, which runs inside the shell and
+  registers built-ins, hooks and completers: a directory's `extension.rhai`,
+  or the single file. A plugin written only in shell has none.
+
+Extensions are written in [Rhai](https://rhai.rs), a scripting language
 implemented in Rust and designed for embedding. The first plan used Python
 (through PyO3), which was dropped because:
 
@@ -892,13 +901,13 @@ implemented in Rust and designed for embedding. The first plan used Python
   when no plugin is loaded, and makes the login shell depend on the system
   Python;
 - an initialized Python interpreter complicates forking without exec (the GIL,
-  at-fork hooks, threads started by plugins) and luish's signal handling;
-- a runaway or crashing Python plugin can hang or kill the shell.
+  at-fork hooks, threads started by extensions) and luish's signal handling;
+- a runaway or crashing Python extension can hang or kill the shell.
 
 Rhai is pure Rust, has no threads, global state or signal handlers, and can be
 interrupted and resource-limited. Its costs are strings that can only hold
 UTF-8 (§6.5), no library ecosystem (the `sh` module has to provide what
-plugins need), and a language few people know. Lua (through `mlua`) was the
+extensions need), and a language few people know. Lua (through `mlua`) was the
 main alternative: its strings are 8-bit clean and it is faster, but it brings
 C code into the build and fits less naturally with Rust.
 
@@ -906,23 +915,24 @@ C code into the build and fits less naturally with Rust.
 
 - **Opt-in and lazy.** Plugins are loaded only by explicit `plugin load`
   commands, usually from `luishrc`, or by being listed in `plugins.toml`
-  (§6.6). The Rhai engine is created when the first Rhai plugin is loaded.
+  (§6.6). The Rhai engine is created when the first extension is loaded.
   Until then plugin support costs only binary size. `luish`
   built without the `plugins` feature prints a clear error for `plugin load`.
-- **No semantic changes to POSIX.** Plugins can add built-ins and hooks but
-  cannot change the parser or expansion. `luish --no-plugins` and scripts run
-  with `luish script.sh` load nothing unless the script loads plugins itself.
-- **Plugins can't crash or hang the shell.** A Rhai error is caught and
-  reported on stderr with the plugin's file and line, and the command gets
-  status 1. A failing hook is reported and then skipped. Ctrl-C interrupts
-  plugin code (§6.4).
+- **No semantic changes to POSIX.** Extensions can add built-ins and hooks
+  but cannot change the parser or expansion. `luish --no-plugins` and
+  scripts run with `luish script.sh` load nothing unless the script loads
+  plugins itself.
+- **Extensions can't crash or hang the shell.** A Rhai error is caught and
+  reported on stderr with the extension's file and line, and the command
+  gets status 1. A failing hook is reported and then skipped. Ctrl-C
+  interrupts extension code (§6.4).
 
 ### 6.2 Rust-side traits
 
 ```rust
 pub trait Builtin {
     fn name(&self) -> &[u8];
-    fn special(&self) -> bool { false }   // plugins can never register special built-ins
+    fn special(&self) -> bool { false }   // extensions can never register special built-ins
     fn run(&self, sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult;
 }
 
@@ -934,13 +944,14 @@ pub trait Hook {
 }
 ```
 
-Plugin built-ins rank as **regular** built-ins in command lookup, so a shell
-function with the same name overrides them. A plugin can't replace a special
-built-in.
+Extension built-ins rank as **regular** built-ins in command lookup, so a
+shell function with the same name overrides them. An extension can't replace
+a special built-in.
 
 ### 6.3 Rhai API (the `sh` module)
 
-A plugin is a Rhai script. `plugin load` runs its top level once, which
+An extension is a Rhai script: a plugin's `extension.rhai`, or a plugin
+that is a single `.rhai` file. `plugin load` runs its top level once, which
 registers built-ins, hooks and completers with functions from the `sh`
 module. The shell then calls the registered functions.
 
@@ -1027,32 +1038,32 @@ Rhai's own `print` and `debug` write a line to the current fd 1 and fd 2,
 unbuffered, the same way as `write`.
 
 The `sh` functions reach the `Shell` through a pointer that is set for the
-length of each call into Rhai. Calls are re-entrant (`sh::run` can run a
-plugin built-in), so no `&mut Shell` borrow can be held across a call into
+length of each call into Rhai. Calls are re-entrant (`sh::run` can run an
+extension built-in), so no `&mut Shell` borrow can be held across a call into
 Rhai or back into the shell.
 
 ### 6.4 Embedding (`plugins/rhai.rs`)
 
-1. **One engine, one AST per plugin.** A single `Engine`, with `sh`
-   registered as a static module, is created on the first `plugin load`. Each
-   plugin is compiled once into its own AST, so helper functions with the same
-   name in different plugins don't clash. `import` in a plugin resolves
-   relative to the plugin's directory.
+1. **One engine, one AST per extension.** A single `Engine`, with `sh`
+   registered as a static module, is created when the first extension is
+   loaded. Each extension is compiled once into its own AST, so helper
+   functions with the same name in different extensions don't clash.
+   `import` in an extension resolves relative to its plugin's directory.
 2. **Interrupts and time limits.** Rhai installs no signal handlers, so luish
    keeps full control of SIGINT and the job-control signals. The engine's
    `on_progress` callback polls luish's pending-SIGINT flag and stops the
-   script, so Ctrl-C interrupts plugin code as it would a command (status
+   script, so Ctrl-C interrupts extension code as it would a command (status
    130). Hooks and completers that run while the user waits (`prompt`,
    `precmd`, completion) also have a time budget, checked in `on_progress`
    every few thousand operations. A hook that goes over its budget is
    reported and skipped.
 3. **Resource limits.** Set limits on call depth, expression depth, and
-   string, array and map sizes, so that a buggy plugin gets an error instead
-   of overflowing the stack or exhausting memory.
+   string, array and map sizes, so that a buggy extension gets an error
+   instead of overflowing the stack or exhausting memory.
 4. **Fork.** Rhai has no threads, global state or buffered output, so nothing
-   needs to happen around `fork`. A plugin built-in in a pipeline or subshell
-   runs in the child, on the child's copy of the engine. Build Rhai without
-   its `sync` feature.
+   needs to happen around `fork`. An extension built-in in a pipeline or
+   subshell runs in the child, on the child's copy of the engine. Build Rhai
+   without its `sync` feature.
 5. **Panics.** Rhai promises not to panic on any script. Release builds use
    `panic = "abort"`, so a panic inside Rhai would still end the shell. Treat
    one as a Rhai bug and report it upstream, rather than adding
@@ -1074,7 +1085,7 @@ Rhai or back into the shell.
 ### 6.5 Strings and bytes (`plugins/bytes.rs`)
 
 The shell core stays on bytes (§1). Rhai strings can only hold UTF-8, so
-luish converts at the plugin boundary, as Python's `surrogateescape` does
+luish converts at the extension boundary, as Python's `surrogateescape` does
 (PEP 383). Rust strings can't hold the lone surrogates Python uses, so the
 escapes are the last private-use code points of Unicode instead:
 
@@ -1115,16 +1126,16 @@ a warm startup must not get slower.
 
 #### Layout of a plugin
 
-A plugin is either a **file**, `NAME.rhai` (as now), or a **directory**,
-`NAME/`, with one or more of these entry points:
+A plugin is either a **file**, `NAME.rhai` (an extension on its own, as
+now), or a **directory**, `NAME/`, with one or more of these entry points:
 
 | File | Language | When it runs |
 |---|---|---|
-| `plugin.rhai` | Rhai | When the plugin is loaded: registers built-ins, hooks and completers |
-| `rc.lsh` | shell | When the plugin is loaded, after `plugin.rhai`, as with `.` |
+| `extension.rhai` | Rhai | When the plugin is loaded: the plugin's extension, which registers built-ins, hooks and completers |
+| `rc.lsh` | shell | When the plugin is loaded, after `extension.rhai`, as with `.` |
 | `login.lsh` | shell | In login shells, with `login.d` (below) |
 
-`plugin.rhai` runs first so that `rc.lsh` can call the built-ins it defines.
+`extension.rhai` runs first so that `rc.lsh` can call the built-ins it defines.
 (Rhai code calls shell functions only when it runs, later, so the other
 order isn't needed.) A directory without any entry point is an error.
 
@@ -1144,7 +1155,7 @@ fork).
 
 `plugin load NAME` looks for `NAME.rhai`, then `NAME/`, in the plugin
 directory; a path can name either kind. A directory plugin's name is its
-base name. `plugin unload` removes what the Rhai part registered, but can't
+base name. `plugin unload` removes what the extension registered, but can't
 undo what `rc.lsh` did (aliases, functions, variables). (It doesn't warn:
 the startup cache's replay unloads plugins too.)
 
@@ -1154,7 +1165,7 @@ A **collection** is a directory laid out like `~/.config/luish/plugins/`:
 each `NAME.rhai` and `NAME/` in it is a plugin. The local plugin directory is
 therefore itself a collection. A git repository (or its `path`, below) is:
 
-- **one plugin** if its top directory holds an entry point (`plugin.rhai`,
+- **one plugin** if its top directory holds an entry point (`extension.rhai`,
   `rc.lsh` or `login.lsh`);
 - otherwise **a collection**: of its `plugins/` directory if it has one,
   else of its top directory.
@@ -1314,19 +1325,19 @@ plugins/
 - Only interactive shells read `plugins.toml`, and `--no-plugins` skips it.
 - Plugins load right after `rc.d`, as part of its cached state: the rc
   cache (`rc-HOST`) covers the `rc.d` files and then each enabled plugin in
-  order (`plugin.rhai`, then `rc.lsh`). So files in `rc.d` can set variables
+  order (`extension.rhai`, then `rc.lsh`). So files in `rc.d` can set variables
   that a plugin reads when it loads, and `rc.d/_uncached.lsh`, `$ENV` and
   `luishrc` come later and can override what plugins define. This applies
   whether or not `rc.d` exists. The `login.lsh` files run after `login.d`,
   in its cache; a login shell without `login.d` runs them, uncached, after
   `~/.profile`.
-- The cached state replays `plugin.rhai` but not `rc.lsh`, whose effects
+- The cached state replays `extension.rhai` but not `rc.lsh`, whose effects
   are in the state: `savestate` prints `plugin restore NAME PATH` (done in
   step 1).
 - The cache key adds the fingerprints of `plugins.toml`, `plugins.lock` and
   the entry points of local plugins. Files of git plugins need none (their
   directory names the commit). On the warm path, plugins therefore cost two
-  more `stat` calls, no TOML parsing, and then what Rhai plugins cost now.
+  more `stat` calls, no TOML parsing, and then what extensions cost now.
 - On a cold start luish reads both files. An entry that isn't locked, whose
   lock `source` differs from `plugins.toml`, or whose commit isn't in the
   cache is skipped, with one line for all such entries:
@@ -1380,7 +1391,7 @@ plugins/
 | Conformance | Ported suites (Phase 12) | Coverage of the spec |
 | Interactive | pty harness in `tests/interactive.rs` | Prompts, line editing, job control, Ctrl-C and Ctrl-Z |
 | Fuzzing | `cargo-fuzz` | No panics in the lexer, parser, arithmetic, or pattern matcher; a round-trip property that pretty-printing then re-parsing an AST gives the same AST |
-| Plugins | `tests/plugins/*.rhai` under `cargo test` | API behaviour, redirection of plugin output, plugins in pipelines and subshells, error reporting, Ctrl-C and time limits, the byte round trip |
+| Plugins | `tests/plugins/*.rhai` under `cargo test` | API behaviour, redirection of extension output, extension built-ins in pipelines and subshells, error reporting, Ctrl-C and time limits, the byte round trip |
 | Performance | `hyperfine` in CI (non-blocking) | Catch startup and loop regressions |
 
 Every bug fix comes with a test case in `tests/cases/`.
@@ -1395,7 +1406,7 @@ Every bug fix comes with a test case in `tests/cases/`.
 | **M2: POSIX script engine** | 1 | 5–9 | All expansions, built-ins, functions, traps and `set -e`. Passes the differential suite | Done |
 | **M3: Real-world scripts** | 1 | 12 (partly) | Runs autoconf `configure` scripts correctly. Performance is within ~1.5× of dash | Done |
 | **M4: Daily-driver interactive shell** | 1 | 10, 13 | Line editing, history, completion and job control, with the editor kept separate from the executor; replaces the author's zsh setup (Phase 13) | Phase 10 done, Phase 13 in progress |
-| **M5: Rhai plugins** | 2 | 11 | Plugin built-ins and hooks work. Example plugins ship: a git-aware prompt, a `json` query built-in, and a command-timing preexec/precmd pair | Started |
+| **M5: Plugins** | 2 | 11 | Extension built-ins and hooks work. Example plugins ship: a git-aware prompt, a `json` query built-in, and a command-timing preexec/precmd pair | Started |
 
 Stage 1 is complete at M4, plus performance that matches dash (Phase 12).
 Milestones for the rest of Stage 2 and for Stage 3 will be planned once
@@ -1652,9 +1663,9 @@ run on the remote host.
 | POSIX ambiguities and differences between shells | Treat dash as the reference. Record deliberate differences in `tests/cases/**/*.expected` and in `DEVIATIONS.md` |
 | Getting `set -e` wrong | Implement it with a single suppression counter (§5 Phase 9), backed by a dedicated test file |
 | Terminal and process-group races in job control | Call `setpgid` in both parent and child. Block signals across `fork` until the child has reset its dispositions. Do all terminal handover through `jobs.rs` |
-| A plugin hanging or slowing the prompt | Ctrl-C interrupts plugin code, and hooks that run before the prompt have a time budget (§6.4) |
-| Few people know Rhai, and it has no library ecosystem | Keep the API small, ship example plugins, and provide what plugins need (commands, files, JSON) in the `sh` module |
-| Non-UTF-8 data | Use `Vec<u8>` everywhere in the core. Convert only at the plugin boundary, escaping invalid bytes as private-use code points (§6.5) |
+| An extension hanging or slowing the prompt | Ctrl-C interrupts extension code, and hooks that run before the prompt have a time budget (§6.4) |
+| Few people know Rhai, and it has no library ecosystem | Keep the API small, ship example extensions, and provide what extensions need (commands, files, JSON) in the `sh` module |
+| Non-UTF-8 data | Use `Vec<u8>` everywhere in the core. Convert only at the extension boundary, escaping invalid bytes as private-use code points (§6.5) |
 | Scope creep into later stages | Build no Stage 2 or 3 features until Stage 1 is usable (M4). Keep extensions behind a `set -o luish-extensions` (or similar) option |
 | Stage 1 design ruling out later stages | Follow the constraints in §9: keep the `LineEditor` interface narrow, keep all state in `Shell`, and record call frames |
 | Plugin support adding startup cost | Create the Rhai engine on the first `plugin load`, keep it behind a feature flag, and benchmark `-c true` with and without it in CI |

@@ -12,7 +12,7 @@ Load and unload plugins.
 `plugin load` loads each plugin: `name` is the file `name.rhai`, or else
 the directory `name`, in `$XDG_CONFIG_HOME/luish/plugins` (by default
 `~/.config/luish/plugins`), and an argument that contains a `/` is a path.
-A directory plugin runs its `plugin.rhai` and then its `rc.lsh`. Loading a
+A directory plugin runs its `extension.rhai` and then its `rc.lsh`. Loading a
 plugin again reloads it. The exit status is 1 if a plugin can't be loaded.
 `plugin list-loaded` prints the names of the loaded plugins, and
 `plugin list-available` the names of the plugins in the plugin directory,

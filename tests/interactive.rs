@@ -688,7 +688,7 @@ fn bash_completion_bridge() {
     let mut sh = Pty::spawn_term("bashcomp", "vt100");
     let examples = concat!(env!("CARGO_MANIFEST_DIR"), "/docs/examples/bash-completion");
     std::fs::create_dir(sh.path("bash-completion")).unwrap();
-    for f in ["plugin.rhai", "bridge.bash"] {
+    for f in ["extension.rhai", "bridge.bash"] {
         std::fs::copy(format!("{examples}/{f}"), sh.path("bash-completion").join(f)).unwrap();
     }
     let completions = sh.path(".local/share/bash-completion/completions");

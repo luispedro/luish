@@ -1,6 +1,7 @@
-//! The Rhai plugin host (PLAN.md §6.4): one engine, one AST per plugin, and
-//! the `sh` module through which plugins reach the shell (and the `fs` and
-//! `vcs` modules, `fs.rs` and `vcs.rs`).
+//! The plugin host and the Rhai side of extensions (PLAN.md §6.4): one
+//! engine, one AST per extension, and the `sh` module through which
+//! extensions reach the shell (and the `fs` and `vcs` modules, `fs.rs` and
+//! `vcs.rs`).
 //!
 //! The `sh` functions reach the `Shell` through a pointer that is set for
 //! the length of each call into Rhai (`enter`). Calls are re-entrant: a hook
@@ -34,14 +35,14 @@ struct Plugin {
     abs: Vec<u8>,
     /// The plugin's directory (absolute), for `import` and `plugin_dir`.
     dir: Vec<u8>,
-    /// `None` for a plugin without Rhai code (a directory with only
-    /// shell files).
+    /// The plugin's extension. `None` for a plugin without one (a
+    /// directory with only shell files).
     ast: Option<Rc<AST>>,
     /// The plugin's `prompt-vars.lsh` (absolute), run before each prompt.
     prompt_vars: Option<Vec<u8>>,
 }
 
-/// A function registered by a plugin.
+/// A function registered by an extension.
 #[derive(Clone)]
 struct Callback {
     plugin: u32,
@@ -67,20 +68,21 @@ pub struct Host {
     /// The hook kinds whose hooks are running, so that a hook doesn't
     /// trigger itself (a `chpwd` hook that runs `cd`).
     running: RefCell<Vec<HookKind>>,
-    /// The modules that plugins imported, by absolute path. Emptied when a
-    /// plugin is loaded, so that loading one again reads its modules again.
+    /// The modules that extensions imported, by absolute path. Emptied when
+    /// a plugin is loaded, so that loading one again reads its modules
+    /// again.
     modules: RefCell<HashMap<Vec<u8>, Shared<Module>>>,
 }
 
 thread_local! {
-    /// The shell, while plugin code runs.
+    /// The shell, while extension code runs.
     static SHELL: Cell<*mut Shell> = const { Cell::new(std::ptr::null_mut()) };
-    /// The plugin whose code is running (0 for none).
+    /// The plugin whose extension is running (0 for none).
     static CURRENT: Cell<u32> = const { Cell::new(0) };
-    /// Set when shell code run by a plugin exits the shell: plugin code
-    /// stops, and the exit happens once it has.
+    /// Set when shell code run by an extension exits the shell: the
+    /// extension stops, and the exit happens once it has.
     static EXIT: Cell<Option<i32>> = const { Cell::new(None) };
-    /// When plugin code that the user is waiting for must stop.
+    /// When extension code that the user is waiting for must stop.
     static DEADLINE: Cell<Option<Instant>> = const { Cell::new(None) };
 }
 
@@ -493,7 +495,7 @@ fn new_engine() -> Engine {
     engine.set_module_resolver(Resolver);
     engine.on_print(|s| write_line(1, s));
     engine.on_debug(|s, _, _| write_line(2, s));
-    // Ctrl-C (or a trapped SIGINT) stops plugin code, as it would a
+    // Ctrl-C (or a trapped SIGINT) stops extension code, as it would a
     // command. The pending signal is handled when the shell regains
     // control.
     // Code that the user waits for, such as a completer, also stops
@@ -507,7 +509,7 @@ fn new_engine() -> Engine {
             None
         }
     });
-    // A buggy plugin gets an error rather than exhausting the stack or
+    // A buggy extension gets an error rather than exhausting the stack or
     // memory.
     engine
         .set_max_call_levels(64)
@@ -550,7 +552,7 @@ impl Host {
             .collect()
     }
 
-    /// Reports an error from plugin code, unless luish stopped it, and
+    /// Reports an error from extension code, unless luish stopped it, and
     /// returns the status for it.
     fn report(sh: &Shell, path: &[u8], e: &EvalAltResult) -> i32 {
         match stopped(e).as_deref() {
@@ -569,8 +571,8 @@ impl Host {
         }
     }
 
-    /// Loads (or reloads) a plugin: compiles its Rhai code, if it has
-    /// any, and runs its top level, which registers its hooks.
+    /// Loads (or reloads) a plugin: compiles its extension, if it has
+    /// one, and runs its top level, which registers its hooks.
     /// `cmd` is the command, for error messages.
     pub fn load(self: &Rc<Self>, sh: &mut Shell, cmd: &[u8], plugin: Loading) -> ExecResult {
         let Loading {
@@ -715,8 +717,9 @@ impl Host {
             .collect()
     }
 
-    /// Builds the `PS1` prompt, or returns `None` if no plugin has a
-    /// `prompt-vars` or `prompt-rewrite` hook or a `prompt-vars.lsh`.
+    /// Builds the `PS1` prompt, or returns `None` if no extension has a
+    /// `prompt-vars` or `prompt-rewrite` hook and no plugin a
+    /// `prompt-vars.lsh`.
     ///
     /// In this order: the `prompt-vars` hooks and files set variables
     /// (`prompt_vars`); the `prompt-rewrite` hooks, which see them, give

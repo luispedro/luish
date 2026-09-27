@@ -40,7 +40,10 @@ pixi run docs                     # build the user docs into docs/_build/html (w
 ```
 
 `rustfmt.toml` sets `max_width = 120`. Plugins (Phase 11, `src/plugins/`) use Rhai behind the default `plugins`
-cargo feature (PLAN.md §6); `cargo clippy --all-targets --no-default-features` must also stay clean.
+cargo feature (PLAN.md §6); `cargo clippy --all-targets --no-default-features` must also stay clean. A **plugin** is
+what `plugin load` loads (a `.rhai` file, or a directory of Rhai and shell files); its **extension** is its Rhai code
+(the file, or the directory's `extension.rhai`), which runs in the shell. Keep the two words apart, as zsh users read
+"plugin" as files to source.
 
 ## Tests
 

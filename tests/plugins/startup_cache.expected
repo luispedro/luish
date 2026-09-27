@@ -19,7 +19,7 @@ rhai runs (p)
 p
 f v2
 hook v1
---- plugin.rhai changed
+--- extension.rhai changed
 rhai runs (p)
 rc.lsh runs
 p

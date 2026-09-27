@@ -43,8 +43,9 @@ pass**.
 - pixi provides `rust`. dash and bash come from the system,
   because conda-forge has no dash *shell* package (its `dash` package is
   Plotly Dash).
-- Plugins are written in Rhai (PLAN.md §6), an optional dependency behind
-  the `plugins` cargo feature (on by default). `cargo build
+- Plugins (PLAN.md §6) are a Rhai file (an extension) or a directory of
+  Rhai and shell files. Rhai is an optional dependency behind the
+  `plugins` cargo feature (on by default). `cargo build
   --no-default-features` builds a shell without it.
 
 ## Phase status
@@ -62,7 +63,7 @@ pass**.
 | 8 Signals and traps | Mostly done (see the gaps below) |
 | 9 Options and `set -e` | Done |
 | 10 Interactive / job control | Done (prompt loop, history and `fc`, job control, completion), with the gaps listed below |
-| 11 Plugins | Started: the `plugin` built-in, the Rhai host with a small `sh` module, the `chpwd`, `prompt-vars` and `prompt-rewrite` hooks, `prompt-vars.lsh` files and completers (see Plugins below) |
+| 11 Plugins | Started: the `plugin` built-in, the extension host with a small `sh` module, the `chpwd`, `prompt-vars` and `prompt-rewrite` hooks, `prompt-vars.lsh` files and completers (see Plugins below) |
 | 12 Conformance / performance | Started: autoconf `configure` scripts and the Oils spec tests (see Conformance below), benchmark baseline, script benchmarks in `bench/` |
 
 ## Implemented behaviour
@@ -582,7 +583,7 @@ pass**.
   job, as `%vim`) for `fg`, `bg`, `jobs`, `wait` and `kill`, signal names
   after `kill -`, `kill -s` and `trap`'s action, and for `plugin` its
   subcommands, the plugins in the plugin directory and the loaded plugins;
-  a plugin's completer (see Plugins) comes first, and the default
+  an extension's completer (see Plugins) comes first, and the default
   completer (`-default-`) comes before filenames for the commands not
   listed here. The completer
   analyses the line (the word, its kind, the quoting and the words of its
@@ -709,6 +710,10 @@ pass**.
   which use `TERM=vt100`.
 
 ### Plugins (`src/plugins/`)
+- Terms (PLAN.md §6): a **plugin** is what `plugin load` loads, a `.rhai`
+  file or a directory; its **extension** is its Rhai code (the file, or a
+  directory's `extension.rhai`), which runs in the shell and registers
+  hooks and completers.
 - Everything is behind the `plugins` cargo feature. Until the first
   `plugin load`, the only state is `Shell::plugins` (`None`) and the only
   cost is the `None` check in `cd`. Without the feature, `plugin load`
@@ -719,15 +724,15 @@ pass**.
   or else the directory `NAME/` there (default `~/.config/luish/plugins`),
   or a path if the argument contains a `/`; loading a plugin again replaces
   it (its hooks move to the end).
-- Directory plugins (PLAN.md §6.6): `plugin.rhai`, then `rc.lsh` (with
-  `.`; not run if `plugin.rhai` fails; its status is ignored), and at least
+- Directory plugins (PLAN.md §6.6): `extension.rhai`, then `rc.lsh` (with
+  `.`; not run if `extension.rhai` fails; its status is ignored), and at least
   one of those or `login.lsh` (not run yet). `LUISH_PLUGIN_DIR` (absolute)
   and `LUISH_PLUGIN_NAME` are set while they run and restored after.
   `import` in Rhai loads `NAME.rhai` from the plugin's directory (the file's
-  directory for a file plugin), for every module of the plugin; imported
-  modules are cached until a plugin is loaded again. A plugin without
-  `plugin.rhai` doesn't create the Rhai engine (the engine is created with
-  the first Rhai code). `plugin unload` can't undo `rc.lsh`. Tests:
+  directory for a file plugin), for every module of the extension; imported
+  modules are cached until a plugin is loaded again. A plugin without an
+  extension doesn't create the Rhai engine (the engine is created with
+  the first extension). `plugin unload` can't undo `rc.lsh`. Tests:
   `plugins/directory.sh`, `plugins/startup_cache.sh`.
   `plugin list-loaded` prints the names, `plugin list-available` those of
   the plugins in the plugin directory (`.rhai` files and directories, not
@@ -736,17 +741,17 @@ pass**.
 - `savestate` prints `__luish_internal plugin restore NAME PATH` (absolute)
   for each loaded plugin, after aliases and before options, so the startup
   cache loads the plugins from `rc.d` again: `restore` loads a plugin under
-  a name and runs its Rhai code, but not its `rc.lsh`. What a plugin's top
-  level and `rc.lsh` changed is cached with the rest of the state, and the
-  plugin's Rhai file and the files `rc.lsh` sources are fingerprinted.
+  a name and runs its extension, but not its `rc.lsh`. What an extension's
+  top level and `rc.lsh` changed is cached with the rest of the state, and
+  the extension's file and the files `rc.lsh` sources are fingerprinted.
 - `plugins/rhai.rs`: one `Engine` (created on first load, with call-depth,
-  expression-depth and size limits), one AST per plugin. Rhai's `print`
-  and `debug` write lines to fds 1 and 2. SIGINT stops plugin code (checked
+  expression-depth and size limits), one AST per extension. Rhai's `print`
+  and `debug` write lines to fds 1 and 2. SIGINT stops extension code (checked
   in `on_progress`), leaving the signal pending for the shell. Rhai is
   built with `only_i64` (see PLAN.md §6.4); floats are available.
 - `sh` module: `hook`, `completer`, `getvar`, `setvar`, `export`,
   `unsetvar`, `cwd`, `plugin_dir`, `last_status`, `interactive`, `run`
-  (shell code in the current shell; `exit` in it stops the plugin and exits
+  (shell code in the current shell; `exit` in it stops the extension and exits
   the shell), `capture` (a subshell's status and output, as `$(...)`),
   `quote` (a string, or an array's strings, quoted for the shell), `write`
   (fds 1 and 2). `docs/examples/cobra.rhai`, included in the documentation,
@@ -794,7 +799,7 @@ pass**.
 - Hooks: `chpwd`, called with the old and new directory after each
   successful `cd`, `pushd` or `popd` (after `cd -` prints the directory, or
   `pushd` the stack), also in subshells.
-  `$?` is kept; a failing hook is reported with the plugin's file and the
+  `$?` is kept; a failing hook is reported with the extension's file and the
   others still run; a `chpwd` hook running `cd` doesn't re-trigger `chpwd`.
   `prompt-vars`, called before each `PS1` prompt (not `PS2`), plugin by
   plugin in load order, each plugin's hooks then its directory's
@@ -805,8 +810,8 @@ pass**.
   this step changed (found by comparing with a snapshot of all variables,
   `Vars::changes_since`) are put back once the prompt is built, after
   `PS1` is expanded or the `prompt-rewrite` hooks ran; functions, aliases
-  and the like are not. No snapshot is taken if no plugin has a
-  `prompt-vars` hook or file.
+  and the like are not. No snapshot is taken if no extension has a
+  `prompt-vars` hook and no plugin a `prompt-vars.lsh`.
   `prompt-rewrite`, called after `prompt-vars` (it sees the variables):
   the hooks are called from the most recently registered one until one
   returns a string, which is used instead of `PS1`, without parameter
@@ -814,7 +819,7 @@ pass**.
   returns `()` leaves it to the earlier hooks, then `PS1`; one that fails
   or returns something else is reported and skipped. A hook whose
   function takes a parameter (beyond its captured variables; looked up in
-  the plugin's AST when it is registered) is given the previous prompt:
+  the extension's AST when it is registered) is given the previous prompt:
   the earlier hooks' prompt, or else `PS1` parameter-expanded, which its
   `()` or failure keeps; one without doesn't run the earlier hooks. Each
   hook and `prompt-vars.lsh` sees the `$?` of the last command, which is
@@ -826,7 +831,7 @@ pass**.
   `prompt_rewrite`, `prompt_rewrite_prev`, `prompt_vars`, `capture`, `quote`), unit tests for the byte conversion, `git status`
   parsing and (with a stand-in completer) in `complete.rs`, `builtins/plugin.sh`,
   `builtins/internal_plugin.sh`, and `plugin_builtin` and
-  `plugin_completer`, `cobra_completer` (the example plugin, with a
+  `plugin_completer`, `cobra_completer` (the example extension, with a
   stand-in program) and `bash_completion_bridge` (the example plugin, with
   completion files of its own; skipped without bash-completion) in
   `tests/interactive.rs`. CI also runs clippy and the tests
@@ -885,12 +890,11 @@ notes how to rerun them):
   are reported only before a prompt. Job notifications are given only for
   input read a line at a time (interactive or stdin), not in scripts run
   with `set -m`.
-- Plugins (Phase 11) support only the `chpwd`, `prompt-vars` and `prompt-rewrite` hooks,
+- Extensions (Phase 11) support only the `chpwd`, `prompt-vars` and `prompt-rewrite` hooks,
   completers, part of the `sh` module and the `fs` and `vcs` modules: no
-  plugin built-ins, other hooks, time budgets except for completers (so a
+  extension built-ins, other hooks, time budgets except for completers (so a
   slow prompt hook or `prompt-vars.lsh` delays the prompt), or `parse_json`. The native built-ins have not
-  been moved onto a `Builtin` trait (PLAN.md Phase 11, step 1). `import`
-  in a plugin is not resolved relative to the plugin's directory.
+  been moved onto a `Builtin` trait (PLAN.md Phase 11, step 1).
 - With the `plugins` feature, `-c true` starts about 250 µs slower than
   without it: loading `libm` (for Rhai's floats) and load-time relocations
   of Rhai's static data in the PIE executable. This is accepted while it
