@@ -17,6 +17,8 @@ mod vcs;
 pub use rhai::Host;
 
 use crate::interactive::Completion;
+#[cfg(feature = "plugins")]
+use crate::options::Opt;
 use crate::prompt::Prompt;
 use crate::shell::{ExecResult, Flow, Shell};
 
@@ -115,8 +117,8 @@ pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 /// error messages.
 ///
 /// `plugin restore NAME PATH`, which `savestate` prints, loads a plugin
-/// under a name without running its `rc.lsh`, whose effects are in the
-/// saved state.
+/// under a name without running its shell files (`init.lsh`, `rc.lsh`),
+/// whose effects are in the saved state.
 pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
     let args = argv.get(1..).unwrap_or_default();
     match argv.first().map(|a| a.as_slice()) {
@@ -177,12 +179,12 @@ pub fn plugin_dir(sh: &Shell) -> Option<Vec<u8>> {
 }
 
 /// The names of the plugins in `dir` (the plugin directory), sorted: its
-/// `.rhai` files without the suffix, and its directories.
+/// `.rhai` and `.lsh` files without the suffix, and its directories.
 pub fn available_names(dir: &[u8]) -> Vec<Vec<u8>> {
     let mut names: Vec<_> = crate::sys::read_dir(dir)
         .unwrap_or_default()
         .into_iter()
-        .filter_map(|n| match n.strip_suffix(b".rhai") {
+        .filter_map(|n| match n.strip_suffix(b".rhai").or_else(|| n.strip_suffix(b".lsh")) {
             Some(base) => Some(base.to_vec()),
             None => crate::sys::stat(&[dir, b"/", &n].concat())
                 .is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR)
@@ -196,10 +198,22 @@ pub fn available_names(dir: &[u8]) -> Vec<Vec<u8>> {
 }
 
 #[cfg(feature = "plugins")]
-/// A plugin found on disk: a `.rhai` file (an extension) or a directory.
+/// The kinds of plugin.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Kind {
+    /// A directory of entry points (`init.lsh`, `extension.rhai`, ...).
+    Dir,
+    /// `NAME.rhai`: a directory with only `extension.rhai`.
+    Rhai,
+    /// `NAME.lsh`: a directory with only `init.lsh`.
+    Lsh,
+}
+
+#[cfg(feature = "plugins")]
+/// A plugin found on disk.
 struct Found {
     path: Vec<u8>,
-    dir: bool,
+    kind: Kind,
 }
 
 #[cfg(feature = "plugins")]
@@ -208,34 +222,61 @@ fn is_dir(path: &[u8]) -> bool {
 }
 
 #[cfg(feature = "plugins")]
-/// The plugin for `plugin load ARG`: ARG itself if it contains a `/`,
-/// otherwise `ARG.rhai` or else `ARG/` in the plugin directory.
+/// The plugin for `plugin load ARG`: ARG itself if it contains a `/` (a
+/// file ending in `.lsh` is shell, any other file Rhai), otherwise the
+/// first of `ARG.rhai`, `ARG.lsh` and `ARG/` in the plugin directory.
 fn find(sh: &Shell, arg: &[u8]) -> Option<Found> {
     if arg.contains(&b'/') {
+        let kind = match is_dir(arg) {
+            true => Kind::Dir,
+            false if arg.ends_with(b".lsh") => Kind::Lsh,
+            false => Kind::Rhai,
+        };
         return Some(Found {
             path: arg.to_vec(),
-            dir: is_dir(arg),
+            kind,
         });
     }
     let mut p = plugin_dir(sh)?;
     p.push(b'/');
     p.extend_from_slice(arg);
-    if is_dir(&p) && crate::sys::stat(&[p.as_slice(), b".rhai"].concat()).is_none() {
-        return Some(Found { path: p, dir: true });
-    }
-    p.extend_from_slice(b".rhai");
-    Some(Found { path: p, dir: false })
+    let lsh = [p.as_slice(), b".lsh"].concat();
+    let rhai = [p.as_slice(), b".rhai"].concat();
+    Some(if crate::sys::stat(&rhai).is_some() {
+        Found {
+            path: rhai,
+            kind: Kind::Rhai,
+        }
+    } else if crate::sys::stat(&lsh).is_some() {
+        Found {
+            path: lsh,
+            kind: Kind::Lsh,
+        }
+    } else if is_dir(&p) {
+        Found {
+            path: p,
+            kind: Kind::Dir,
+        }
+    } else {
+        Found {
+            path: rhai,
+            kind: Kind::Rhai,
+        }
+    })
 }
 
 #[cfg(feature = "plugins")]
-/// A plugin's name: its file name without `.rhai`, or its directory's name.
-fn plugin_name(path: &[u8], dir: bool) -> Vec<u8> {
+/// A plugin's name: its file name without `.rhai` or `.lsh`, or its
+/// directory's name.
+fn plugin_name(path: &[u8], kind: Kind) -> Vec<u8> {
     let path = path.strip_suffix(b"/").unwrap_or(path);
     let base = path.rsplit(|&c| c == b'/').next().unwrap_or(path);
-    match dir {
-        true => base.to_vec(),
-        false => base.strip_suffix(b".rhai").unwrap_or(base).to_vec(),
-    }
+    let suffix: &[u8] = match kind {
+        Kind::Dir => b"",
+        Kind::Rhai => b".rhai",
+        Kind::Lsh => b".lsh",
+    };
+    base.strip_suffix(suffix).unwrap_or(base).to_vec()
 }
 
 /// A plugin being loaded, for `Host::load`.
@@ -287,21 +328,21 @@ fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], restore: Option<Vec<u8>>) -> Exe
         (Some(b'/'), _) | (_, None) => path.clone(),
         (_, Some(dir)) => crate::builtins::cd::canonicalize(&[dir.as_slice(), b"/", path.as_slice()].concat()),
     };
-    let name = restore.clone().unwrap_or_else(|| plugin_name(&path, found.dir));
-    let (loading, rc) = if found.dir {
+    let name = restore.clone().unwrap_or_else(|| plugin_name(&path, found.kind));
+    let (loading, init, rc) = if found.kind == Kind::Dir {
         let entry = |f: &[u8]| {
             let p = [path.as_slice(), b"/", f].concat();
             crate::sys::stat(&p)
                 .is_some()
                 .then(|| (p, [abs.as_slice(), b"/", f].concat()))
         };
-        let (rhai, rc) = (entry(b"extension.rhai"), entry(b"rc.lsh"));
+        let (init, rhai, rc) = (entry(b"init.lsh"), entry(b"extension.rhai"), entry(b"rc.lsh"));
         let prompt_vars = entry(b"prompt-vars.lsh").map(|(_, abs)| abs);
-        if rhai.is_none() && rc.is_none() && prompt_vars.is_none() && entry(b"login.lsh").is_none() {
+        if init.is_none() && rhai.is_none() && rc.is_none() && prompt_vars.is_none() && entry(b"login.lsh").is_none() {
             sh.berr(
                 cmd,
                 format!(
-                    "{}: not a plugin (no extension.rhai, rc.lsh, prompt-vars.lsh or login.lsh)",
+                    "{}: not a plugin (no init.lsh, extension.rhai, rc.lsh, prompt-vars.lsh or login.lsh)",
                     String::from_utf8_lossy(&path)
                 ),
             );
@@ -315,10 +356,20 @@ fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], restore: Option<Vec<u8>>) -> Exe
             rhai,
             prompt_vars,
         };
-        (loading, rc.map(|(_, abs)| abs))
+        (loading, init.map(|(_, abs)| abs), rc.map(|(_, abs)| abs))
     } else {
+        if found.kind == Kind::Lsh && crate::sys::stat(&path).is_none() {
+            sh.berr(
+                cmd,
+                format!("cannot open {}: No such file", String::from_utf8_lossy(&path)),
+            );
+            return Ok(1);
+        }
         let dir = abs[..abs.iter().rposition(|&c| c == b'/').unwrap_or(0).max(1)].to_vec();
-        let rhai = Some((path, abs.clone()));
+        let (rhai, init) = match found.kind {
+            Kind::Lsh => (None, Some(abs.clone())),
+            _ => (Some((path, abs.clone())), None),
+        };
         let loading = Loading {
             name,
             abs,
@@ -326,17 +377,28 @@ fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], restore: Option<Vec<u8>>) -> Exe
             rhai,
             prompt_vars: None,
         };
-        (loading, None)
+        (loading, init, None)
     };
     // A changed plugin must invalidate the startup cache (`startcache.rs`).
+    // (`.` records the shell files it runs.)
     if let (Some(rec), Some((_, abs))) = (&mut sh.sourced_files, &loading.rhai) {
         rec.push(abs.clone());
     }
     let host = sh.plugins.get_or_insert_with(|| std::rc::Rc::new(Host::new())).clone();
     let (dir, name) = (loading.dir.clone(), loading.name.clone());
-    with_plugin_vars(sh, &dir, &name, |sh| match (host.load(sh, cmd, loading), rc) {
-        (Ok(0), Some(rc)) if restore.is_none() => crate::builtins::misc::dot(sh, &[b".".to_vec(), rc]).map(|_| 0),
-        (r, _) => r,
+    // The shell files' effects are in the saved state when restoring, and
+    // `rc.lsh` is only for interactive shells (and their subshells).
+    let fresh = restore.is_none();
+    let rc = rc.filter(|_| fresh && sh.opt(Opt::Interactive));
+    let dot = |sh: &mut Shell, file: Vec<u8>| crate::builtins::misc::dot(sh, &[b".".to_vec(), file]).map(|_| 0);
+    with_plugin_vars(sh, &dir, &name, |sh| {
+        if let Some(init) = init.filter(|_| fresh) {
+            dot(sh, init)?;
+        }
+        match (host.load(sh, cmd, loading), rc) {
+            (Ok(0), Some(rc)) => dot(sh, rc),
+            (r, _) => r,
+        }
     })
 }
 
@@ -358,14 +420,16 @@ fn unload(sh: &mut Shell, name: &[u8]) -> bool {
 
 #[cfg(all(test, feature = "plugins"))]
 mod tests {
-    use super::plugin_name;
+    use super::{Kind, plugin_name};
 
     #[test]
     fn names() {
-        assert_eq!(plugin_name(b"/a/b/greet.rhai", false), b"greet");
-        assert_eq!(plugin_name(b"./x", false), b"x");
-        assert_eq!(plugin_name(b"greet.rhai", false), b"greet");
-        assert_eq!(plugin_name(b"/a/b/greet/", true), b"greet");
-        assert_eq!(plugin_name(b"dir.rhai", true), b"dir.rhai");
+        assert_eq!(plugin_name(b"/a/b/greet.rhai", Kind::Rhai), b"greet");
+        assert_eq!(plugin_name(b"./x", Kind::Rhai), b"x");
+        assert_eq!(plugin_name(b"greet.rhai", Kind::Rhai), b"greet");
+        assert_eq!(plugin_name(b"/a/b/greet.lsh", Kind::Lsh), b"greet");
+        assert_eq!(plugin_name(b"greet.lsh", Kind::Rhai), b"greet.lsh");
+        assert_eq!(plugin_name(b"/a/b/greet/", Kind::Dir), b"greet");
+        assert_eq!(plugin_name(b"dir.rhai", Kind::Dir), b"dir.rhai");
     }
 }

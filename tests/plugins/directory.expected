@@ -1,33 +1,53 @@
 --- the plugins in the plugin directory
 both
 greet
+lshdir
 shonly
-rhai: hello from util greet
-rc: set by extension.rhai, name greet
-both: the file wins
+single
+init: name greet
+rhai: hello from util greet, set by init.lsh
+both: the .rhai file wins
+single: single in HOME/.config/luish/plugins
+lshdir: the .lsh file wins
 load: 0
 after: DIR=unset NAME=before
 LUISH_PLUGIN_DIR is absolute
 greet from lib
 shell only
+single from single.lsh
 greet
 shonly
 both
+single
+lshdir
 hook: dir true
 hook: dir true
 --- a path to a directory, with a trailing slash
 greet
 both
+single
+lshdir
 shonly
+--- a path to a .lsh file
+other: other
+status 1
 --- a directory without an entry point
 status 1
---- a failing extension.rhai: rc.lsh doesn't run
+--- a failing extension.rhai, after init.lsh
+init runs
 status 1
 --- a missing module
 status 1
 --- loading again reads the modules again
-rhai: hello again greet
-rc: set by extension.rhai, name greet
---- unloading a shell-only plugin
+init: name greet
+rhai: hello again greet, set by init.lsh
+--- unloading shell-only plugins
 both
+lshdir
+other
 greet
+--- an interactive shell runs rc.lsh, unless extension.rhai fails
+init: name greet
+rhai: hello again greet, set by init.lsh
+rc: set by extension.rhai
+init runs

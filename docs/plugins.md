@@ -1,10 +1,16 @@
 # Plugins
 
-A **plugin** adds to luish: it is a directory of shell and Rhai files, or a single Rhai file. The Rhai part of a
-plugin is its **extension**: code in [Rhai](https://rhai.rs), a small scripting language designed for embedding, that
-runs inside the shell and registers hooks and completers. A plugin written only in shell, as zsh plugins are, has no
-extension, and a single `.rhai` file is a plugin that is just an extension. Plugins are opt-in: nothing is loaded
-unless you ask for it, and a shell that loads no plugins pays nothing for them.
+A **plugin** adds to luish. It is one of:
+
+1. a directory of files with special names, in shell and Rhai (see [below](#plugin-directories)), not all of which
+   need to be there;
+2. a single Rhai file, `NAME.rhai`, which is the same as a directory that holds only that file, as `extension.rhai`;
+3. a single shell file, `NAME.lsh`, which is the same as a directory that holds only that file, as `init.lsh`.
+
+The Rhai part of a plugin is its **extension**: code in [Rhai](https://rhai.rs), a small scripting language designed
+for embedding, that runs inside the shell and registers hooks and completers. A plugin written only in shell, as zsh
+plugins are, has no extension. Plugins are opt-in: nothing is loaded unless you ask for it, and a shell that loads no
+plugins pays nothing for them.
 
 Plugin support is new. For now, an extension can run code whenever the current directory changes (the `chpwd` hook),
 provide variables for the prompt (the `prompt-vars` hook, as a plugin's `prompt-vars.lsh` file can) or rewrite it
@@ -23,54 +29,62 @@ plugin unload NAME...      # remove plugins and their hooks
 `plugin` is a built-in only in interactive shells, so that scripts find the same commands as in other shells. In a
 script, use `__luish_internal plugin` instead.
 
-`plugin load greet` loads `~/.config/luish/plugins/greet.rhai` (or `$XDG_CONFIG_HOME/luish/plugins/greet.rhai` if
-`XDG_CONFIG_HOME` is set), or else the directory `greet/` there (see below). An argument that contains a `/`, such as
-`./greet.rhai` or `./greet/`, is a path. A plugin's name is its file name without `.rhai`, or its directory's name.
+`plugin load greet` loads the first of `greet.rhai`, `greet.lsh` and the directory `greet/` in
+`~/.config/luish/plugins` (or `$XDG_CONFIG_HOME/luish/plugins` if `XDG_CONFIG_HOME` is set). An argument that contains
+a `/`, such as `./greet.lsh` or `./greet/`, is a path: a file whose name ends in `.lsh` is shell, and any other file
+is Rhai. A plugin's name is its file name without `.rhai` or `.lsh`, or its directory's name.
 
 Plugins are usually loaded from `~/.config/luish/luishrc`, which interactive shells read at startup. They can also
 be loaded from the cached startup files in `rc.d/`: the cache records which plugins were loaded and loads them again
 (but what the plugin changed in the shell is cached with the rest). Start luish with
 `--no-plugins` to make `plugin load` do nothing, for example to check whether a problem comes from a plugin.
 
-`plugin load` runs the top level of the plugin's extension once, which registers its hooks and completers. If the
-extension has an error, it is reported with its file and line, nothing from the plugin stays loaded, and the status
-is 1.
+`plugin load` runs the plugin's files, in the order below. The top level of its extension runs once, and registers
+its hooks and completers. If the extension has an error, it is reported with its file and line, nothing from the
+plugin stays loaded, and the status is 1.
 
-## Plugins with several files
+## Plugin directories
 
-A plugin can also be a directory, which holds files in Rhai and in shell. luish runs these files in it, if they
-exist:
+A plugin directory holds files in shell and in Rhai. luish runs these files in it, if they exist:
 
 | File | When it runs |
 |---|---|
-| `extension.rhai` | When the plugin is loaded. It is the plugin's extension, like the file of a single-file plugin |
-| `rc.lsh` | When the plugin is loaded, after `extension.rhai`, in the current shell (as with `.`) |
+| `init.lsh` | First, when the plugin is loaded, in the current shell (as with `.`). A `NAME.lsh` plugin is this file |
+| `extension.rhai` | Next: the plugin's extension. A `NAME.rhai` plugin is this file |
+| `rc.lsh` | Last, as with `.`, but only in interactive shells (and their subshells), and not if `extension.rhai` fails |
 | `prompt-vars.lsh` | Before each prompt, to set variables for `PS1` (see [below](#variables-for-the-prompt-prompt-vars)) |
 
 A directory needs at least one of them (or a `login.lsh`, which luish will run in login shells in a later version).
-If `extension.rhai` fails, `rc.lsh` doesn't run.
+Put what scripts need too, such as functions, in `init.lsh`, and what is only for typing commands, such as aliases,
+in `rc.lsh`. `extension.rhai` runs after `init.lsh`, so it can use what `init.lsh` set, and before `rc.lsh`, so that
+`rc.lsh` can use what the extension set.
 
 Other files in the directory are read only when these files ask for them. In Rhai, `import "util" as u;` loads
 `util.rhai` from the plugin's directory, and loading the plugin again reads it again. In shell, use
 `$LUISH_PLUGIN_DIR`:
 
 ```sh
-# ~/.config/luish/plugins/work/rc.lsh
+# ~/.config/luish/plugins/work/init.lsh
 . "$LUISH_PLUGIN_DIR/functions.lsh"
-alias gs='git status'
 work_dir=$LUISH_PLUGIN_DIR   # for functions that need it later
 ```
 
-While `extension.rhai`, `rc.lsh` and `prompt-vars.lsh` run, `LUISH_PLUGIN_DIR` is the plugin's directory (an absolute path) and
-`LUISH_PLUGIN_NAME` its name. Afterwards they get back the values they had before. In Rhai, `sh::plugin_dir()`
-gives the directory at any time, also in hooks. For a single-file plugin it is the directory of the file.
+```sh
+# ~/.config/luish/plugins/work/rc.lsh
+alias gs='git status'
+```
+
+While `init.lsh`, `extension.rhai`, `rc.lsh` and `prompt-vars.lsh` run, `LUISH_PLUGIN_DIR` is the plugin's directory
+(an absolute path) and `LUISH_PLUGIN_NAME` its name. Afterwards they get back the values they had before. In Rhai,
+`sh::plugin_dir()` gives the directory at any time, also in hooks. For a single-file plugin it is the directory of the
+file.
 
 A plugin written only in shell doesn't start Rhai at all. When it is loaded from the cached startup files in
-`rc.d`, what its `rc.lsh` did is cached with the rest, so it costs no more than the same lines in `rc.d`: a later
-shell loads the plugin's `extension.rhai` again but doesn't rerun `rc.lsh`. Changing either file makes the next shell
-run `rc.d` again.
+`rc.d`, what its shell files did is cached with the rest, so it costs no more than the same lines in `rc.d`: a later
+shell loads the plugin's extension again but doesn't rerun `init.lsh` or `rc.lsh` (or a `NAME.lsh` plugin's file).
+Changing any of these files makes the next shell run `rc.d` again.
 
-`plugin unload` removes what `extension.rhai` registered (hooks), but it can't undo what `rc.lsh` did (aliases,
+`plugin unload` removes what the extension registered (hooks), but it can't undo what the shell files did (aliases,
 functions, variables).
 
 ## Example: running code when the directory changes

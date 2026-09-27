@@ -888,10 +888,11 @@ Two words, kept apart because zsh users read "plugin" as a bundle of files
 to source:
 
 - A **plugin** is what `plugin load` loads and what `plugins.toml` lists: a
-  directory of shell and Rhai files, or a single `.rhai` file (§6.6).
+  directory of shell and Rhai files, or a single `.rhai` or `.lsh` file
+  (§6.6).
 - An **extension** is a plugin's Rhai code, which runs inside the shell and
   registers built-ins, hooks and completers: a directory's `extension.rhai`,
-  or the single file. A plugin written only in shell has none.
+  or a single `.rhai` file. A plugin written only in shell has none.
 
 Extensions are written in [Rhai](https://rhai.rs), a scripting language
 implemented in Rust and designed for embedding. The first plan used Python
@@ -1126,47 +1127,59 @@ a warm startup must not get slower.
 
 #### Layout of a plugin
 
-A plugin is either a **file**, `NAME.rhai` (an extension on its own, as
-now), or a **directory**, `NAME/`, with one or more of these entry points:
+A plugin is one of:
+
+1. a **directory**, `NAME/`, with one or more of the entry points below;
+2. a **Rhai file**, `NAME.rhai`: the same as a directory holding only that
+   file, as `extension.rhai` (an extension on its own);
+3. a **shell file**, `NAME.lsh`: the same as a directory holding only that
+   file, as `init.lsh`.
 
 | File | Language | When it runs |
 |---|---|---|
-| `extension.rhai` | Rhai | When the plugin is loaded: the plugin's extension, which registers built-ins, hooks and completers |
-| `rc.lsh` | shell | When the plugin is loaded, after `extension.rhai`, as with `.` |
+| `init.lsh` | shell | First, when the plugin is loaded, as with `.` |
+| `extension.rhai` | Rhai | Next: the plugin's extension, which registers built-ins, hooks and completers |
+| `rc.lsh` | shell | Last, as with `.`, only in interactive shells (started with `-i`, and their subshells), and not if `extension.rhai` failed |
+| `prompt-vars.lsh` | shell | Before each prompt (§6.3) |
 | `login.lsh` | shell | In login shells, with `login.d` (below) |
 
-`extension.rhai` runs first so that `rc.lsh` can call the built-ins it defines.
-(Rhai code calls shell functions only when it runs, later, so the other
-order isn't needed.) A directory without any entry point is an error.
+`init.lsh` holds what scripts that load the plugin need too (functions,
+variables), and `rc.lsh` what only interactive use needs (aliases, key
+bindings). `init.lsh` runs first so that the extension can read what it set,
+and `extension.rhai` before `rc.lsh` so that `rc.lsh` can call the built-ins
+it defines. (Rhai code calls shell functions only when it runs, later.) A
+directory without any entry point is an error.
 
 Other files are read only through the entry points: `import` in Rhai
-resolves relative to the plugin's directory (§6.4), and `rc.lsh` sources its
-own files with `. "$LUISH_PLUGIN_DIR/lib.lsh"`. While a plugin's entry
+resolves relative to the plugin's directory (§6.4), and the shell files
+source their own with `. "$LUISH_PLUGIN_DIR/lib.lsh"`. While a plugin's entry
 points run, `LUISH_PLUGIN_DIR` (absolute) and `LUISH_PLUGIN_NAME` are set,
 and afterwards they get back their previous values, so they don't end up in
 the cached state. Rhai has `sh::plugin_dir()`. A shell function that needs
-the directory later saves it in a variable of its own when `rc.lsh` runs.
+the directory later saves it in a variable of its own when `init.lsh` runs.
 
-A plugin written only in shell (`rc.lsh`, `login.lsh`) never creates the
+A plugin written only in shell (`NAME.lsh`, or a directory with only shell
+files) never creates the
 Rhai engine: with a warm startup cache it costs what the same lines in
 `rc.d` cost, which is nothing beyond reading the cache. Rhai is then only
 needed for what shell can't do (hooks, completers, prompt code that must not
 fork).
 
-`plugin load NAME` looks for `NAME.rhai`, then `NAME/`, in the plugin
-directory; a path can name either kind. A directory plugin's name is its
-base name. `plugin unload` removes what the extension registered, but can't
-undo what `rc.lsh` did (aliases, functions, variables). (It doesn't warn:
+`plugin load NAME` looks for `NAME.rhai`, then `NAME.lsh`, then `NAME/`, in
+the plugin directory; a path can name any kind (a file ending in `.lsh` is
+shell, any other file Rhai). A plugin's name is its base name, without
+`.rhai` or `.lsh`. `plugin unload` removes what the extension registered, but
+can't undo what the shell files did (aliases, functions, variables). (It doesn't warn:
 the startup cache's replay unloads plugins too.)
 
 #### Collections
 
 A **collection** is a directory laid out like `~/.config/luish/plugins/`:
-each `NAME.rhai` and `NAME/` in it is a plugin. The local plugin directory is
+each `NAME.rhai`, `NAME.lsh` and `NAME/` in it is a plugin. The local plugin directory is
 therefore itself a collection. A git repository (or its `path`, below) is:
 
-- **one plugin** if its top directory holds an entry point (`extension.rhai`,
-  `rc.lsh` or `login.lsh`);
+- **one plugin** if its top directory holds an entry point (`init.lsh`,
+  `extension.rhai`, `rc.lsh`, `prompt-vars.lsh` or `login.lsh`);
 - otherwise **a collection**: of its `plugins/` directory if it has one,
   else of its top directory.
 
@@ -1325,14 +1338,14 @@ plugins/
 - Only interactive shells read `plugins.toml`, and `--no-plugins` skips it.
 - Plugins load right after `rc.d`, as part of its cached state: the rc
   cache (`rc-HOST`) covers the `rc.d` files and then each enabled plugin in
-  order (`extension.rhai`, then `rc.lsh`). So files in `rc.d` can set variables
+  order (`init.lsh`, `extension.rhai`, then `rc.lsh`). So files in `rc.d` can set variables
   that a plugin reads when it loads, and `rc.d/_uncached.lsh`, `$ENV` and
   `luishrc` come later and can override what plugins define. This applies
   whether or not `rc.d` exists. The `login.lsh` files run after `login.d`,
   in its cache; a login shell without `login.d` runs them, uncached, after
   `~/.profile`.
-- The cached state replays `extension.rhai` but not `rc.lsh`, whose effects
-  are in the state: `savestate` prints `plugin restore NAME PATH` (done in
+- The cached state replays `extension.rhai` but not the shell files
+  (`init.lsh`, `rc.lsh`, a `NAME.lsh`), whose effects are in the state: `savestate` prints `plugin restore NAME PATH` (done in
   step 1).
 - The cache key adds the fingerprints of `plugins.toml`, `plugins.lock` and
   the entry points of local plugins. Files of git plugins need none (their

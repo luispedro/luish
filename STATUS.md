@@ -710,9 +710,10 @@ pass**.
   which use `TERM=vt100`.
 
 ### Plugins (`src/plugins/`)
-- Terms (PLAN.md §6): a **plugin** is what `plugin load` loads, a `.rhai`
-  file or a directory; its **extension** is its Rhai code (the file, or a
-  directory's `extension.rhai`), which runs in the shell and registers
+- Terms (PLAN.md §6): a **plugin** is what `plugin load` loads: a
+  directory, a `NAME.rhai` file (as a directory with only `extension.rhai`)
+  or a `NAME.lsh` file (as a directory with only `init.lsh`); its
+  **extension** is its Rhai code, which runs in the shell and registers
   hooks and completers.
 - Everything is behind the `plugins` cargo feature. Until the first
   `plugin load`, the only state is `Shell::plugins` (`None`) and the only
@@ -720,30 +721,34 @@ pass**.
   fails with "luish was built without plugin support".
 - `plugin` is a built-in only in interactive shells (and their
   subshells), like `help`; `__luish_internal plugin` is the same anywhere.
-- `plugin load NAME|PATH...` loads `$XDG_CONFIG_HOME/luish/plugins/NAME.rhai`,
-  or else the directory `NAME/` there (default `~/.config/luish/plugins`),
-  or a path if the argument contains a `/`; loading a plugin again replaces
-  it (its hooks move to the end).
-- Directory plugins (PLAN.md §6.6): `extension.rhai`, then `rc.lsh` (with
-  `.`; not run if `extension.rhai` fails; its status is ignored), and at least
-  one of those or `login.lsh` (not run yet). `LUISH_PLUGIN_DIR` (absolute)
+- `plugin load NAME|PATH...` loads the first of `NAME.rhai`, `NAME.lsh` and
+  the directory `NAME/` in `$XDG_CONFIG_HOME/luish/plugins` (default
+  `~/.config/luish/plugins`), or a path if the argument contains a `/` (a
+  file ending in `.lsh` is shell, any other Rhai); loading a plugin again
+  replaces it (its hooks move to the end).
+- Directory plugins (PLAN.md §6.6): `init.lsh` (with `.`; its status is
+  ignored), then `extension.rhai`, then `rc.lsh` (with `.`; only if the
+  shell was started interactive, as for the `plugin` built-in; not run if
+  `extension.rhai` fails; its status is ignored), and at least one of those,
+  `prompt-vars.lsh` or `login.lsh` (not run yet). `LUISH_PLUGIN_DIR` (absolute)
   and `LUISH_PLUGIN_NAME` are set while they run and restored after.
   `import` in Rhai loads `NAME.rhai` from the plugin's directory (the file's
   directory for a file plugin), for every module of the extension; imported
   modules are cached until a plugin is loaded again. A plugin without an
   extension doesn't create the Rhai engine (the engine is created with
-  the first extension). `plugin unload` can't undo `rc.lsh`. Tests:
+  the first extension). `plugin unload` can't undo the shell files. Tests:
   `plugins/directory.sh`, `plugins/startup_cache.sh`.
   `plugin list-loaded` prints the names, `plugin list-available` those of
-  the plugins in the plugin directory (`.rhai` files and directories, not
+  the plugins in the plugin directory (`.rhai` and `.lsh` files and directories, not
   hidden; test: `plugins/directory.sh`), `plugin unload NAME...` removes a
   plugin's hooks. Errors: status 1 (130 if interrupted); usage errors: 2.
 - `savestate` prints `__luish_internal plugin restore NAME PATH` (absolute)
   for each loaded plugin, after aliases and before options, so the startup
   cache loads the plugins from `rc.d` again: `restore` loads a plugin under
-  a name and runs its extension, but not its `rc.lsh`. What an extension's
-  top level and `rc.lsh` changed is cached with the rest of the state, and
-  the extension's file and the files `rc.lsh` sources are fingerprinted.
+  a name and runs its extension, but not its shell files (`init.lsh`,
+  `rc.lsh`, a `NAME.lsh`). What they and the extension's top level changed
+  is cached with the rest of the state, and the extension's file, the
+  shell files and the files they source are fingerprinted.
 - `plugins/rhai.rs`: one `Engine` (created on first load, with call-depth,
   expression-depth and size limits), one AST per extension. Rhai's `print`
   and `debug` write lines to fds 1 and 2. SIGINT stops extension code (checked

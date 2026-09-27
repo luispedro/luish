@@ -1197,8 +1197,8 @@ impl ShellHelper {
         }
     }
 
-    /// The names of the plugins in the plugin directory: `.rhai` files and
-    /// directories.
+    /// The names of the plugins in the plugin directory: `.rhai` and `.lsh`
+    /// files, and directories.
     fn plugin_files(&self) -> Vec<Vec<u8>> {
         (self.names.plugin_dir.as_deref()).map_or_else(Vec::new, crate::plugins::available_names)
     }
@@ -1744,12 +1744,12 @@ mod tests {
         );
         // Plugins.
         std::fs::create_dir(dir.join("plugins")).unwrap();
-        for f in ["prompt.rhai", "git.rhai", "README"] {
+        for f in ["prompt.rhai", "git.rhai", "zsh-like.lsh", "README"] {
             std::fs::write(dir.join("plugins").join(f), "").unwrap();
         }
         std::fs::create_dir(dir.join("plugins/work")).unwrap();
         assert_eq!(complete(&h, "plugin l"), ["list-available ", "list-loaded ", "load "]);
-        assert_eq!(complete(&h, "plugin load "), ["git ", "prompt ", "work "]);
+        assert_eq!(complete(&h, "plugin load "), ["git ", "prompt ", "work ", "zsh-like "]);
         assert_eq!(complete(&h, "plugin load ~/plugins/p"), ["~/plugins/prompt.rhai "]);
         assert_eq!(complete(&h, "plugin unload "), ["greet "]);
         assert_eq!(complete(&h, "plugin list-loaded "), Vec::<String>::new());

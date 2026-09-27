@@ -39,11 +39,11 @@ pixi run bench                    # release build, then the script benchmarks in
 pixi run docs                     # build the user docs into docs/_build/html (warnings are errors)
 ```
 
-`rustfmt.toml` sets `max_width = 120`. Plugins (Phase 11, `src/plugins/`) use Rhai behind the default `plugins`
-cargo feature (PLAN.md §6); `cargo clippy --all-targets --no-default-features` must also stay clean. A **plugin** is
-what `plugin load` loads (a `.rhai` file, or a directory of Rhai and shell files); its **extension** is its Rhai code
-(the file, or the directory's `extension.rhai`), which runs in the shell. Keep the two words apart, as zsh users read
-"plugin" as files to source.
+`rustfmt.toml` sets `max_width = 120`. Plugins (Phase 11, `src/plugins/`) use Rhai behind the default `plugins` cargo
+feature (PLAN.md §6); `cargo clippy --all-targets --no-default-features` must also stay clean. A **plugin** is what
+`plugin load` loads (a directory of Rhai and shell files, a `.rhai` file or a `.lsh` file); its **extension** is its
+Rhai code (the directory's `extension.rhai`, or the `.rhai` file), which runs in the shell. Keep the two words apart, as
+zsh users read "plugin" as files to source.
 
 ## Tests
 

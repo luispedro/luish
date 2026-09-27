@@ -1,3 +1,4 @@
-directory.sh: 42: __luish_internal plugin: ./empty: not a plugin (no extension.rhai, rc.lsh, prompt-vars.lsh or login.lsh)
-directory.sh: 48: ./bad/extension.rhai: Runtime error: no (line 1, position 1)
-directory.sh: 53: ./nomod/extension.rhai: Module not found: nosuch (line 1, position 8)
+directory.sh: 56: __luish_internal plugin: cannot open ./missing.lsh: No such file
+directory.sh: 59: __luish_internal plugin: ./empty: not a plugin (no init.lsh, extension.rhai, rc.lsh, prompt-vars.lsh or login.lsh)
+directory.sh: 66: ./bad/extension.rhai: Runtime error: no (line 1, position 1)
+directory.sh: 71: ./nomod/extension.rhai: Module not found: nosuch (line 1, position 8)

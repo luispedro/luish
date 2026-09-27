@@ -1,31 +1,65 @@
 --- builds the cache
+init.lsh runs
 rhai runs (p)
 rc.lsh runs
+q.lsh runs
 p
+q
 f v1
+g v1
 hook v1
 --- uses it
 rhai runs (p)
 p
+q
 f v1
+g v1
 hook v1
 --- rc.lsh changed
+init.lsh runs
 rhai runs (p)
 rc.lsh runs
+q.lsh runs
 p
+q
 f v2
+g v1
 hook v1
 rhai runs (p)
 p
+q
 f v2
+g v1
 hook v1
 --- extension.rhai changed
+init.lsh runs
 rhai runs (p)
 rc.lsh runs
+q.lsh runs
 p
+q
 f v2
+g v1
 hook v2
 rhai runs (p)
 p
+q
 f v2
+g v1
+hook v2
+--- q.lsh changed
+init.lsh runs
+rhai runs (p)
+rc.lsh runs
+q.lsh runs
+p
+q
+f v2
+g v2
+hook v2
+rhai runs (p)
+p
+q
+f v2
+g v2
 hook v2
