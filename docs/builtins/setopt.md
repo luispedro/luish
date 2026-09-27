@@ -112,6 +112,10 @@ back. They aren't listed by `setopt` or `unsetopt` without arguments.
 : How many commands the history file keeps, by default as many as
   `history.size`.
 
+Interactive shells also read these settings from
+`~/.config/luish/config.toml`, where each table under `options` is a
+group, as in `[options.history]` (see the user documentation).
+
 The exit status is 1 if an option doesn't exist or can't be changed
 (`interactive` and `stdin`), if a value is wrong or missing, if
 `unsetopt` is given a value, or if the variable of a setting is

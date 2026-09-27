@@ -1,0 +1,77 @@
+--- an interactive shell reads it
+setopt history.file='~/hist'
+unsetopt history.ignore_space
+unsetopt history.inc_append
+unsetopt history.reduce_blanks
+unsetopt history.save_no_dups
+setopt history.share
+setopt history.size='50'
+unsetopt glob.bare_qualifiers
+setopt glob.star
+HISTFILE=~/hist
+--- a script and -c do not
+unsetopt history.ignore_space
+unsetopt history.inc_append
+unsetopt history.reduce_blanks
+unsetopt history.save_no_dups
+unsetopt history.share
+unsetopt glob.bare_qualifiers
+unsetopt glob.star
+HISTFILE=
+--- nor --no-rcs
+unsetopt glob.bare_qualifiers
+unsetopt glob.star
+--- errors
+luish: ~/.config/luish/config.toml: line 1: unknown key: top
+luish: ~/.config/luish/config.toml: line 3: history.share: expected a boolean, found integer
+luish: ~/.config/luish/config.toml: line 4: history.size: bad value: -3
+luish: ~/.config/luish/config.toml: line 5: history.file: expected a string, found integer
+luish: ~/.config/luish/config.toml: line 6: no such option: history.bogus
+luish: ~/.config/luish/config.toml: line 8: history.reduce_blanks: expected a boolean, found string
+luish: ~/.config/luish/config.toml: line 9: no such group: nosuch
+luish: ~/.config/luish/config.toml: line 14: options.cd: not a table
+unsetopt history.ignore_space
+unsetopt history.inc_append
+unsetopt history.reduce_blanks
+unsetopt history.save_no_dups
+setopt history.save_size='20'
+unsetopt history.share
+unsetopt glob.bare_qualifiers
+setopt glob.star
+--- not TOML
+luish: ~/.config/luish/config.toml: line 3: duplicate key: `star`
+unsetopt glob.bare_qualifiers
+unsetopt glob.star
+luish: ~/.config/luish/config.toml: line 1: expected a right bracket, found a newline
+unsetopt glob.bare_qualifiers
+unsetopt glob.star
+luish: ~/.config/luish/config.toml: line 2: options.history: not a table
+luish: ~/.config/luish/config.toml: line 3: unknown key: x
+unsetopt glob.bare_qualifiers
+unsetopt glob.star
+--- with rc.d: before it, and cached with it
+luish: ~/.config/luish/config.toml: line 3: no such option: glob.bogus
+rc.d sees star=1 HISTSIZE=50
+unsetopt glob.bare_qualifiers
+setopt glob.star
+HISTSIZE=5
+unsetopt glob.bare_qualifiers
+setopt glob.star
+HISTSIZE=5
+--- a changed file is read again
+rc.d sees star=0 HISTSIZE=
+setopt glob.bare_qualifiers
+unsetopt glob.star
+HISTSIZE=5
+setopt glob.bare_qualifiers
+unsetopt glob.star
+HISTSIZE=5
+--- and so is a removed one
+rc.d sees star=0 HISTSIZE=
+unsetopt glob.bare_qualifiers
+unsetopt glob.star
+HISTSIZE=5
+--- or a new one
+rc.d sees star=0 HISTSIZE=
+setopt cd.auto
+setopt cd.auto

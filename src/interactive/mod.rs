@@ -332,7 +332,7 @@ pub fn run_file(sh: &mut Shell, text: &[u8]) {
 /// and `~/.profile`.
 pub fn login_profiles(sh: &mut Shell) {
     if let Some(dir) = crate::startcache::config_dir(sh, b"login.d") {
-        crate::startcache::run(sh, &dir, b"login");
+        crate::startcache::run(sh, &dir, b"login", None);
         return;
     }
     source_file(sh, b"/etc/profile");
@@ -345,8 +345,14 @@ pub fn login_profiles(sh: &mut Shell) {
 /// Runs the cached files of `luish/rc.d`, if it exists, for an interactive
 /// shell, before the login files (see `startcache.rs`).
 pub fn rc_d(sh: &mut Shell) {
-    if let Some(dir) = crate::startcache::config_dir(sh, b"rc.d") {
-        crate::startcache::run(sh, &dir, b"rc");
+    let config = crate::config::path(sh);
+    match crate::startcache::config_dir(sh, b"rc.d") {
+        Some(dir) => crate::startcache::run(sh, &dir, b"rc", config.as_deref()),
+        None => {
+            if let Some(c) = config {
+                crate::config::load(sh, &c);
+            }
+        }
     }
 }
 

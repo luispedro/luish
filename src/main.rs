@@ -12,6 +12,7 @@
 mod ast;
 mod builtins;
 mod cmdtext;
+mod config;
 mod exec;
 mod expand;
 mod hash;

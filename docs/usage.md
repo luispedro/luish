@@ -25,7 +25,7 @@ matter, and a `no` prefix inverts it (`-o err_exit`, `-o no_glob`, `-o prompt_pe
 | `--login` | The same as `-l`: a login shell, which reads `/etc/profile` and `~/.profile` (or `login.d`, see below) |
 | `--interactive` | The same as `-i`: an interactive shell, even when standard input is not a terminal |
 | `--stdin` | The same as `-s`: read commands from standard input; the operands are the positional parameters |
-| `--no-rcs` | Don't read any startup files: `rc.d`, `$ENV`, `luishrc`, and for a login shell `login.d` or `/etc/profile` and `~/.profile`. As zsh's `--no-rcs` |
+| `--no-rcs` | Don't read any startup files: `config.toml`, `rc.d`, `$ENV`, `luishrc`, and for a login shell `login.d` or `/etc/profile` and `~/.profile`. As zsh's `--no-rcs` |
 | `--no-plugins` | Make `plugin load` do nothing, for example to check whether a problem comes from a plugin |
 | `--help` | Show a summary of the options and exit |
 | `--version` | Show the version of luish and the git revision it was built from, and exit |
@@ -262,14 +262,41 @@ In `eval "$(__luish_internal savestate)"`, traps are lost, because a command sub
 print-git-rev-short` the same with the abbreviated hash. A build from sources with uncommitted changes adds `-dirty`,
 and a build outside a git checkout prints `unknown`.
 
+## Settings in `config.toml`
+
+luish's own settings can also be set in `~/.config/luish/config.toml` (or `$XDG_CONFIG_HOME/luish/config.toml`), a
+[TOML](https://toml.io) file. Each table under `options` is a group of settings, and each key in it means the same as
+`setopt -p GROUP KEY=VALUE` (see `help setopt` for the settings):
+
+```toml
+[options.history]
+file = "~/.histfile"
+save_size = 10000
+share = true
+ignore_space = true
+
+[options.glob]
+star = true
+```
+
+The values have TOML's types: `true` or `false` for an option, an integer for a number, and a string for text, where
+a leading `~` is expanded to the home directory (nothing else in it is expanded). A key that isn't a setting, or a
+value of the wrong type, is reported with its line and skipped; a file that isn't valid TOML is reported and
+ignored.
+
+Only interactive shells read it (not scripts or `luish -c`), first, before `rc.d` (see below), so that a file in
+`rc.d` can change what it sets. When `rc.d` exists, its effects are cached with those of `rc.d`, so a new shell
+doesn't read it again until it changes.
+
 ## Cached startup files
 
 luish can cache the effects of your startup files, so that a new shell restores their result instead of running
 them, which is much faster when they run slow commands. The files go in two directories, each used only if it exists
 (they work like zsh's `.zshrc` and `.zlogin`):
 
-- `~/.config/luish/rc.d/` (or `$XDG_CONFIG_HOME/luish/rc.d/`): for every interactive shell. This is the place for
-  what isn't inherited by the shells you start: aliases, functions and options. Scripts and `luish -c` don't read it.
+- `~/.config/luish/rc.d/` (or `$XDG_CONFIG_HOME/luish/rc.d/`): for every interactive shell, after `config.toml`.
+  This is the place for what isn't inherited by the shells you start: aliases, functions and options. Scripts and
+  `luish -c` don't read it.
 - `~/.config/luish/login.d/`: for login shells, after `rc.d`. Its files replace `/etc/profile` and `~/.profile`. This
   is the place for the environment: exported variables such as `PATH`, which the programs and shells you start
   inherit.
@@ -286,7 +313,7 @@ echo "alias ll='ls -l'" > ~/.config/luish/rc.d/aliases.lsh
 ```
 
 The caches are `~/.cache/luish/rc-HOST` and `~/.cache/luish/login-HOST` (or under `$XDG_CACHE_HOME`). A cache is
-used as long as the `.lsh` files and the files they read with `.` are unchanged, and luish itself is the same build.
+used as long as the `.lsh` files, the files they read with `.` and (for `rc.d`) `config.toml` are unchanged, and luish itself is the same build.
 When one of them changes (luish compares their size and modification time), or after luish is upgraded, the next
 shell reruns the files and updates the cache.
 

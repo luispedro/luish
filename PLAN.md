@@ -122,6 +122,7 @@ luish/
 │   ├── prompt.rs           # zsh's % sequences (setopt prompt.percent)
 │   ├── state.rs            # the shell's state as commands (savestate)
 │   ├── startcache.rs       # cached rc.d / login.d (§9.2)
+│   ├── config.rs           # config.toml: settings in TOML (Phase 13)
 │   ├── expand/
 │   │   ├── mod.rs          # expansion pipeline driver
 │   │   ├── param.rs        # ${...} parameter expansion
@@ -852,7 +853,7 @@ file sets too. Three steps:
    Plain `setopt` still lists only the options that are on, as zsh does. Plugins will be able to declare
    settings in a group of their own (`bashcomp.*`), with a type and a
    default, which is where grouped names pay off most.
-3. **`config.toml`**: `$XDG_CONFIG_HOME/luish/config.toml`, where each
+3. **Done: `config.toml`**: `$XDG_CONFIG_HOME/luish/config.toml`, where each
    table under `options` is a group:
 
    ```toml
@@ -872,9 +873,14 @@ file sets too. Three steps:
    were the first file of `rc.d`: only by interactive shells (never by
    scripts or `-c`), before `rc.d`, so that shell files can override it,
    and it is covered by the rc cache's fingerprints, so a warm start
-   doesn't parse it. The `[plugins]` table of §6.6 will live in this file
-   too, rather than in `plugins.toml` (`plugins.lock` stays separate). The
-   TOML parser is then shared by both.
+   doesn't parse it (without `rc.d`, every interactive shell reads it).
+   The `[plugins]` table of §6.6 will live in this file too, rather than
+   in `plugins.toml` (`plugins.lock` stays separate). The TOML parser is
+   then shared by both: `toml-span`, chosen because it is small (no serde;
+   its only dependency is `smallvec`) and keeps the positions of keys and
+   values, which give the lines for errors and the order of the keys (its
+   tables are sorted maps, so `config.rs` sorts entries by position; the
+   order matters for `[plugins]`).
 
 ## 6. Plugin system design
 
@@ -1095,6 +1101,10 @@ There are no byte-exact variants of the API. If one is ever needed, Rhai's
 `Blob` type can carry raw bytes.
 
 ### 6.6 Plugin packages, `plugins.toml` and `plugins.lock`
+
+(`plugins.toml` will be the `[plugins]` table of `config.toml` instead, as
+planned in Phase 13's grouped settings; below, read `plugins.toml` as that
+table.)
 
 The first version loads one `.rhai` file per `plugin load`. This section adds
 plugins made of several files, in Rhai and in shell; a list of plugins that

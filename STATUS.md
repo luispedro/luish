@@ -669,7 +669,9 @@ pass**.
   `CACHEDIR.TAG` and a `README` saying it can be removed): the difference
   between the state (`state.rs`) before and after, as commands
   (assignments, `unset`, function definitions, ...), so inherited
-  variables that the files don't touch aren't saved. The key is the build
+  variables that the files don't touch aren't saved. `rc.d`'s cache also
+  covers `config.toml`, which is applied first and fingerprinted even
+  when it doesn't exist. The key is the build
   of luish (the git revision, plus a hash of the sources for a dirty build;
   see `build.rs`), the directory, the list of files, and the fingerprint (device, inode, size,
   modification time) of each file and of every file they read with `.`. A
@@ -685,6 +687,18 @@ pass**.
   which have the `login.d` variables), changes a fingerprint can't show
   (command output, files tested with `[`, a sourced file that didn't
   exist), background revalidation, and merging into running shells.
+- `$XDG_CONFIG_HOME/luish/config.toml` (`src/config.rs`, parsed with the
+  `toml-span` crate): luish's settings, read by interactive shells only,
+  before `rc.d` (and not with `--no-rcs`). Each table under `options` is a
+  group (found as by `setopt -p`), and each key a setting in it: options
+  take booleans (a `no_` prefix inverts, as for `setopt`), numbers
+  non-negative integers, and text strings, with a leading `~` or `~user`
+  expanded. Other top-level keys, unknown groups and settings, and values
+  of the wrong type are reported (`luish: PATH: line N: ...`), in the
+  file's order, and skipped; invalid TOML (or UTF-8) is reported and the
+  file ignored. With `rc.d` it is cached with it (see above), so a warm
+  start doesn't read it; without `rc.d` it is read by every interactive
+  shell. Test: `misc/config_toml.sh`.
 - Tests: `tests/interactive.rs` (job control, Ctrl-C and Ctrl-Z, terminal
   input and modes, completion and its menu, highlighting, `fc`, the
   history file and `share_history`, and the command cache),

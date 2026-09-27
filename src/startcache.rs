@@ -8,9 +8,13 @@
 //! traps, `umask` and the directory) is saved as commands in
 //! `$XDG_CACHE_HOME/luish/NAME-HOST` (`rc-HOST`, `login-HOST`), with the
 //! fingerprints of the files and of every file they sourced with `.`, and
-//! the build of luish that wrote it. Later shells check the fingerprints and
-//! the build and run the saved commands instead of the files; when either
-//! differs, they rerun the files and rewrite the cache. A directory's `_uncached.lsh` runs every time, after the rest.
+//! the build of luish that wrote it. `rc.d`'s cache also covers
+//! `config.toml` (see `config.rs`), applied before its files and
+//! fingerprinted even when it doesn't exist, so that creating it is
+//! noticed. Later shells check the fingerprints and the build and run the
+//! saved commands instead of the files; when either differs, they rerun
+//! the files and rewrite the cache. A directory's `_uncached.lsh` runs
+//! every time, after the rest.
 //!
 //! Not yet done (see the plan): keying the cache on the variables the files
 //! read, so the saved values are those of the environment the cache was
@@ -184,8 +188,9 @@ fn is_current(cache: &Cache, dir: &[u8], files: &[Dep]) -> bool {
 }
 
 /// Runs the startup files in `dir`, from the cache `luish/NAME-HOST` when it
-/// is current.
-pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8]) {
+/// is current. `config` is `config.toml`, applied first and cached with
+/// the files (whether it exists or not, so that creating it is noticed).
+pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8], config: Option<&[u8]>) {
     let files = cached_files(dir);
     let cache_path = xdg_dir(sh, b"XDG_CACHE_HOME", b"/.cache").map(|mut c| {
         c.extend_from_slice(b"/luish/");
@@ -201,7 +206,7 @@ pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8]) {
         .filter(|c| is_current(c, dir, &files));
     match cache {
         Some(c) => run_file(sh, &c.state),
-        None => build(sh, dir, files, cache_path.as_deref()),
+        None => build(sh, dir, files, config, cache_path.as_deref()),
     }
     let uncached = join(dir, b"_uncached.lsh");
     if sys::stat(&uncached).is_some() {
@@ -210,9 +215,12 @@ pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8]) {
 }
 
 /// Runs the files, and saves what they changed.
-fn build(sh: &mut Shell, dir: &[u8], files: Vec<Dep>, cache_path: Option<&[u8]>) {
+fn build(sh: &mut Shell, dir: &[u8], files: Vec<Dep>, config: Option<&[u8]>, cache_path: Option<&[u8]>) {
     let before = sh.state_entries();
-    sh.sourced_files = Some(Vec::new());
+    if let Some(c) = config {
+        crate::config::load(sh, c);
+    }
+    sh.sourced_files = Some(config.into_iter().map(<[u8]>::to_vec).collect());
     for f in &files {
         source_file(sh, &join(dir, &f.path));
     }
