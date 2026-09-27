@@ -114,7 +114,7 @@ pub fn complete(sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Compl
 }
 
 const USAGE: &str = "usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available, plugin unload NAME..., \
-                     plugin sync, plugin update [SOURCE...]";
+                     plugin sync [-q], plugin update [-q] [SOURCE...], plugin check";
 
 /// The `plugin` built-in (interactive shells only, like `help`).
 pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
@@ -122,9 +122,9 @@ pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 }
 
 /// `plugin load NAME|PATH...`, `plugin list-loaded`, `plugin list-available`,
-/// `plugin unload NAME...`, `plugin sync` and `plugin update [SOURCE...]`,
-/// also available as `__luish_internal plugin`. `name` is the command, for
-/// error messages.
+/// `plugin unload NAME...`, `plugin sync [-q]`, `plugin update [-q]
+/// [SOURCE...]` and `plugin check`, also available as `__luish_internal
+/// plugin`. `name` is the command, for error messages.
 ///
 /// `plugin restore NAME PATH`, which `savestate` prints, loads a plugin
 /// under a name without running its shell files (`init.lsh`, `rc.lsh`),
@@ -159,8 +159,21 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
             }
             Ok(sh.out_status(&out))
         }
-        Some(b"sync") if args.is_empty() => sync(sh, name, None),
-        Some(b"update") => sync(sh, name, Some(args)),
+        Some(sub @ (b"sync" | b"update")) => {
+            let quiet = args
+                .iter()
+                .take_while(|a| matches!(a.as_slice(), b"-q" | b"--quiet"))
+                .count();
+            match (sub, &args[quiet..]) {
+                (b"sync", []) => sync(sh, name, None, quiet > 0),
+                (b"update", names) => sync(sh, name, Some(names), quiet > 0),
+                _ => {
+                    sh.berr(name, USAGE);
+                    Ok(2)
+                }
+            }
+        }
+        Some(b"check") if args.is_empty() => check(sh, name),
         Some(b"unload") if !args.is_empty() => {
             let mut status = 0;
             for a in args {
@@ -597,15 +610,30 @@ fn not_loaded(sh: &mut Shell) -> Vec<Vec<u8>> {
 
 /// `plugin sync` and `plugin update`.
 #[cfg(feature = "plugins")]
-fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>) -> ExecResult {
+fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>, quiet: bool) -> ExecResult {
     if sh.no_plugins {
         return Ok(0);
     }
-    package::sync(sh, cmd, update)
+    package::sync(sh, cmd, update, quiet)
 }
 
 #[cfg(not(feature = "plugins"))]
-fn sync(sh: &mut Shell, cmd: &[u8], _: Option<&[Vec<u8>]>) -> ExecResult {
+fn sync(sh: &mut Shell, cmd: &[u8], _: Option<&[Vec<u8>]>, _: bool) -> ExecResult {
+    sh.berr(cmd, "luish was built without plugin support");
+    Ok(1)
+}
+
+/// `plugin check`.
+#[cfg(feature = "plugins")]
+fn check(sh: &mut Shell, cmd: &[u8]) -> ExecResult {
+    if sh.no_plugins {
+        return Ok(0);
+    }
+    package::check(sh, cmd)
+}
+
+#[cfg(not(feature = "plugins"))]
+fn check(sh: &mut Shell, cmd: &[u8]) -> ExecResult {
     sh.berr(cmd, "luish was built without plugin support");
     Ok(1)
 }

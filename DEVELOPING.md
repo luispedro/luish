@@ -36,7 +36,7 @@ order). TOML's bare keys can't contain `/`, so `plugins.enabled` takes `SOURCE.N
 an inline source by having none of `gh`, `git` and `path`) as well as the quoted `"SOURCE/NAME" = "*"`.
 
 **Why git plugins are fetched by running `git`**, not with libgit2 or gitoxide: no dependency, and git's own
-configuration applies (credentials, SSH keys, proxies, `insteadOf`). Only `plugin sync` and `plugin update` run it;
+configuration applies (credentials, SSH keys, proxies, `insteadOf`). Only `plugin sync`, `plugin update` and `plugin check` run it;
 startup reads `plugins.lock` and looks for the extracted commits, so it never touches the network.
 
 **Grouped settings.** luish's own options are bits in `Options` (so nothing on a hot path changes), named
@@ -383,8 +383,12 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   manifest is looked for in the collection the plugin came from (`Scope::Collection`). Git sources resolve through
   pins (URL and ref to commit): pins already used in this run, then (unless updating) `plugins.lock`, then (only for
   `sync`/`update`) `fetch::resolve`. `plugin sync` also resolves every plugin of each `plugins.available` source (each
-  separately, so unrelated name clashes don't matter), so their pins are locked too; problems there are reported but
-  don't stop the lock being written, while problems with enabled plugins do. The lock is written only if its text
+  separately, so unrelated name clashes don't matter, `resolve_all`), so their pins are locked too; problems there
+  are reported but don't stop the lock being written, while problems with enabled plugins do. Unless `-q`, the
+  resolver prints `Fetching`/`Installing` as it goes (`Resolver::verbose`), and `sync` a summary after the lock is
+  written. `plugin check` resolves the same way without fetching (`Fetching::No`), then asks for each pin's ref with
+  `git ls-remote` (`fetch::remote_commit`, preferring the peeled `^{}` line of an annotated tag, since pins hold
+  commits), so it touches neither the cache nor the data directory. The lock is written only if its text
   changed (so the rc cache, which fingerprints it, stays valid). Messages about manifests of git plugins show
   `SOURCE:PATH/plugin.toml` rather than the data directory.
 - A loaded plugin is named after its file or directory (`std/git-completion` loads as `git-completion`), so

@@ -1,10 +1,17 @@
 --- not installed: reported by every shell
 luish: plugin sources not installed: file://~/single, std (run plugin sync)
 luish: plugin sources not installed: file://~/single, std (run plugin sync)
+Not installed: coll, file://~/single, std (run plugin sync)
+No git sources to check
+status 0
 --- plugin sync
+Fetching std
+Fetching file://~/single
+Fetching coll
 Locking std at d0ea6cf
 Locking file://~/single at b2201bb
 Locking coll at 14cfcbd
+3 git sources locked, 2 plugins enabled: rhai-only, single
 status 0
 # Written by luish (plugin sync, plugin update). Don't edit.
 version = 1
@@ -49,40 +56,83 @@ hello from std
 x (needs hello)
 hello
 x
---- plugin sync does not move a pinned source
+--- plugin check
+3 git sources up to date
 status 0
+Update available: file://~/single b2201bb..d602781
+1 of 3 git sources can be updated (run plugin update)
+status 0
+luish: 1: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available, plugin unload NAME..., plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+status 2
+--- plugin sync does not move a pinned source
+3 git sources locked, 2 plugins enabled: rhai-only, single
+status 0
+status 0
+luish: 1: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available, plugin unload NAME..., plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+status 2
 rhai from std
 --- plugin update does
+Fetching file://~/single
 Updating file://~/single b2201bb..d602781
+3 git sources locked, 2 plugins enabled: rhai-only, single
 status 0
 rhai from std
 single v2
+Fetching std
+Fetching file://~/single
+Fetching coll
+No updates
+3 git sources locked, 2 plugins enabled: rhai-only, single
+status 0
+3 git sources up to date
 status 0
 luish: 1: __luish_internal plugin: nosuch: no such git source
 status 1
 --- a removed data directory: not installed, and synced again at the same commit
 luish: plugin sources not installed: file://~/single, std (run plugin sync)
+Installing std at d0ea6cf
+Installing file://~/single at d602781
+Installing coll at 14cfcbd
+3 git sources locked, 2 plugins enabled: rhai-only, single
 status 0
 rhai from std
 single v2
 --- a removed cache: fetched again, loading is unaffected
 rhai from std
-Updating file://~/single d602781..036d918
+status 0
 status 0
 single
 This directory holds the plugins that luish, the shell, fetched with git:
 --- a tag, and a commit
+Fetching file://~/single
+Fetching annotated
 Locking file://~/single at b2201bb
+Locking annotated at b2201bb
+2 git sources locked, 1 plugin enabled: tagged
 status 0
 single v1
+2 git sources up to date
+status 0
+Update available: annotated b2201bb..036d918
+1 of 2 git sources can be updated (run plugin update)
+status 0
+Fetching file://~/single
 Locking file://~/single at b2201bb
+1 git source locked, 1 plugin enabled: pinned
 status 0
 single v1
+1 git source up to date
+status 0
 1
 --- a repository that cannot be fetched
 luish: ~/.config/luish/config.toml: line 2: file://~/nosuch: git fetch failed (status 128)
 status 1
+status 0
 --- nothing to lock: no lock file
+No plugins enabled and no git sources
+status 0
+status 0
+No git sources to check
 status 0
 --- a lock from a newer luish is left alone
 luish: 1: __luish_internal plugin: ~/.config/luish/plugins.lock: written by a newer luish (version 2)

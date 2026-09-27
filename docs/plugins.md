@@ -25,8 +25,9 @@ plugin load NAME|PATH...   # load plugins (loading one again reloads it)
 plugin list-loaded         # print the names of the loaded plugins
 plugin list-available      # print the names of the plugins that plugin load finds by name, less the loaded ones
 plugin unload NAME...      # remove plugins and their hooks (NAME as listed, or as loaded)
-plugin sync                # fetch the plugins that config.toml lists, and write plugins.lock
-plugin update [SOURCE...]  # the same, with the newest commits of git sources
+plugin sync [-q]                # fetch the plugins that config.toml lists, and write plugins.lock
+plugin update [-q] [SOURCE...]  # the same, with the newest commits of git sources
+plugin check                    # say which git sources have newer commits, changing nothing
 ```
 
 `plugin` is a built-in only in interactive shells, so that scripts find the same commands as in other shells. In a
@@ -98,9 +99,15 @@ their dependencies, at any time), and records in `~/.config/luish/plugins.lock` 
 
 ```console
 $ plugin sync
+Fetching std
+Fetching luispedro/smarty-prompt
 Locking std at 15e39bb
 Locking luispedro/smarty-prompt at 8a1c0de
+2 git sources locked, 2 plugins enabled: git-completion, smarty-prompt
 ```
+
+It says what it fetches, the sources it locks or moves to another commit, and what the lock then holds; with `-q`
+(or `--quiet`) it prints only errors.
 
 After that, shells use the commits in `plugins.lock`: `plugin sync` fetches only what is missing (new entries, an
 entry whose `branch`, `tag` or `rev` changed, or files that were removed), and never moves a source to a newer
@@ -109,8 +116,21 @@ an entry's name for a source of its own):
 
 ```console
 $ plugin update std
+Fetching std
 Updating std 15e39bb..3f00c2d
+2 git sources locked, 2 plugins enabled: git-completion, smarty-prompt
 ```
+
+`plugin check` asks each git source (with `git ls-remote`) for its newest commit, and says which ones `plugin update`
+would move, and which sources `plugin sync` still has to fetch. It changes nothing, and fetches nothing:
+
+```console
+$ plugin check
+Update available: std 3f00c2d..9b41e7a
+1 of 2 git sources can be updated (run plugin update)
+```
+
+A source pinned with `rev` never has anything newer. The exit status is 0 unless a source couldn't be checked.
 
 Keep `config.toml` and `plugins.lock` together (in version control, for example): another machine then gets the
 same plugins at the same commits with `plugin sync`. luish writes `plugins.lock` itself; don't edit it. A shell that

@@ -724,6 +724,9 @@ struct Resolver<'a> {
     /// cache.
     manifests: Vec<Vec<u8>>,
     interrupted: bool,
+    /// Whether to say what is fetched (`plugin sync` and `plugin update`
+    /// without `-q`).
+    verbose: bool,
 }
 
 impl<'a> Resolver<'a> {
@@ -743,6 +746,14 @@ impl<'a> Resolver<'a> {
             missing: Vec::new(),
             manifests: Vec::new(),
             interrupted: false,
+            verbose: false,
+        }
+    }
+
+    /// Prints a progress message, if verbose.
+    fn say(&self, msg: String) {
+        if self.verbose {
+            self.sh.out(msg.as_bytes());
         }
     }
 
@@ -777,6 +788,7 @@ impl<'a> Resolver<'a> {
                     None if fresh => None,
                     None => self.locked.iter().find(|p| same(p)).map(|p| p.commit.clone()),
                 };
+                let mut fetched = false;
                 let commit = match pinned {
                     Some(c) => c,
                     None if self.fetching == Fetching::No => {
@@ -784,14 +796,20 @@ impl<'a> Resolver<'a> {
                         return Err(());
                     }
                     None if self.interrupted => return Err(()),
-                    None => match fetch::resolve(self.sh, url, at) {
-                        Ok(c) => c,
-                        Err(e) => {
-                            self.interrupted |= e == "interrupted";
-                            self.problem(loc, format!("{}: {e}", source.label));
-                            return Err(());
+                    None => {
+                        self.say(format!("Fetching {}\n", source.label));
+                        match fetch::resolve(self.sh, url, at) {
+                            Ok(c) => {
+                                fetched = true;
+                                c
+                            }
+                            Err(e) => {
+                                self.interrupted |= e == "interrupted";
+                                self.problem(loc, format!("{}: {e}", source.label));
+                                return Err(());
+                            }
                         }
-                    },
+                    }
                 };
                 if !self.used.iter().any(|(p, _)| same(p)) {
                     let pin = Pin {
@@ -809,6 +827,9 @@ impl<'a> Resolver<'a> {
                     }
                     if self.interrupted {
                         return Err(());
+                    }
+                    if !fetched {
+                        self.say(format!("Installing {} at {}\n", source.label, short(&commit)));
                     }
                     if let Err(e) = fetch::extract(self.sh, &data, url, at, &commit) {
                         self.interrupted |= e == "interrupted";
@@ -1150,51 +1171,63 @@ pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8]) -> ExecResult {
     Ok(status)
 }
 
-/// `plugin sync` (`update` is `None`) and `plugin update [NAME...]`: resolves
-/// the enabled plugins and the plugins of the available sources, fetching
-/// what is missing (and, for `update`, the newest commits), and writes
-/// `plugins.lock`.
-pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>) -> ExecResult {
+/// The first 7 characters of a commit hash, as messages show it.
+fn short(commit: &str) -> &str {
+    commit.get(..7).unwrap_or(commit)
+}
+
+/// `N thing` or `N things`.
+fn count(n: usize, thing: &str) -> String {
+    match n {
+        1 => format!("1 {thing}"),
+        _ => format!("{n} {thing}s"),
+    }
+}
+
+/// Reads `config.toml` and `plugins.lock` for `plugin sync`, `plugin update`
+/// and `plugin check`: the configuration, the lock's path and its pins, or
+/// the status once the problems are reported. A broken lock is reported and
+/// gives no pins.
+fn read_state(sh: &mut Shell, cmd: &[u8]) -> Result<(Config, Vec<u8>, Vec<Pin>), i32> {
     let mut problems = Vec::new();
     let config = match read_config(sh, &mut problems) {
         Ok(c) => c,
         Err(p) => {
             print_problems(sh, Some(cmd), &[p]);
-            return Ok(1);
+            return Err(1);
         }
     };
     if !problems.is_empty() {
         print_problems(sh, Some(cmd), &problems);
-        return Ok(1);
+        return Err(1);
     }
     let Some(lock) = lock_path(sh) else {
         sh.berr(cmd, "no configuration directory (HOME is not set)");
-        return Ok(1);
+        return Err(1);
     };
-    let old = match locked_pins(sh, &mut problems) {
+    let pins = match locked_pins(sh, &mut problems) {
         Ok(pins) => pins,
         Err(e) if e.newer => {
             print_problems(sh, Some(cmd), &problems);
-            return Ok(1);
+            return Err(1);
         }
-        // A broken lock is written again.
         Err(_) => {
-            print_problems(sh, Some(cmd), &std::mem::take(&mut problems));
+            print_problems(sh, Some(cmd), &problems);
             Vec::new()
         }
     };
-    let fetching = match update {
-        None => Fetching::Missing,
-        Some(names) => Fetching::Update(names.iter().map(|n| String::from_utf8_lossy(n).into_owned()).collect()),
-    };
-    let mut r = Resolver::new(sh, &config, old.clone(), fetching);
+    Ok((config, lock, pins))
+}
+
+/// Resolves the enabled plugins, then the plugins of the available sources
+/// (so that `plugin load` finds them and their dependencies). Gives the
+/// enabled plugins, and whether resolving them had problems.
+fn resolve_all(r: &mut Resolver, config: &Config) -> (Vec<Resolved>, bool) {
     for e in &config.enabled {
         let _ = r.resolve(e, &Scope::Config);
     }
     let enabled = std::mem::take(&mut r.done);
-    let mut failed = !r.problems.is_empty();
-    // The plugins of the available sources, so that `plugin load` finds
-    // them and their dependencies.
+    let failed = !r.problems.is_empty();
     for (name, source) in &config.available {
         if r.interrupted {
             break;
@@ -1219,6 +1252,26 @@ pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>) -> ExecResul
             r.done.clear();
         }
     }
+    (enabled, failed)
+}
+
+/// `plugin sync` (`update` is `None`) and `plugin update [NAME...]`: resolves
+/// the enabled plugins and the plugins of the available sources, fetching
+/// what is missing (and, for `update`, the newest commits), and writes
+/// `plugins.lock`. Unless `quiet`, says what it fetches, the sources whose
+/// commits changed, and what the lock holds.
+pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>, quiet: bool) -> ExecResult {
+    let (config, lock, old) = match read_state(sh, cmd) {
+        Ok(state) => state,
+        Err(status) => return Ok(status),
+    };
+    let fetching = match update {
+        None => Fetching::Missing,
+        Some(names) => Fetching::Update(names.iter().map(|n| String::from_utf8_lossy(n).into_owned()).collect()),
+    };
+    let mut r = Resolver::new(sh, &config, old.clone(), fetching);
+    r.verbose = !quiet;
+    let (enabled, mut failed) = resolve_all(&mut r, &config);
     if let Fetching::Update(names) = &r.fetching {
         for n in names {
             if !r.updated.contains(n) {
@@ -1237,29 +1290,109 @@ pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>) -> ExecResul
         return Ok(1);
     }
     let mut out = String::new();
+    let mut moved = false;
     for (pin, label) in &used {
-        let short = |c: &str| c[..7].to_string();
         match old.iter().find(|p| p.url == pin.url && p.at == pin.at) {
             None => out.push_str(&format!("Locking {label} at {}\n", short(&pin.commit))),
-            Some(p) if p.commit != pin.commit => out.push_str(&format!(
-                "Updating {label} {}..{}\n",
-                short(&p.commit),
-                short(&pin.commit)
-            )),
+            Some(p) if p.commit != pin.commit => {
+                moved = true;
+                out.push_str(&format!(
+                    "Updating {label} {}..{}\n",
+                    short(&p.commit),
+                    short(&pin.commit)
+                ));
+            }
             Some(_) => {}
         }
+    }
+    if update.is_some() && !moved {
+        out.push_str("No updates\n");
     }
     let pins: Vec<Pin> = used.into_iter().map(|(p, _)| p).collect();
     let empty = pins.is_empty() && enabled.is_empty();
     if empty && crate::sys::stat(&lock).is_none() {
+        if !quiet {
+            sh.out(b"No plugins enabled and no git sources\n");
+        }
         return Ok(0);
     }
     if let Err(e) = write_file(&lock, &lock_text(&pins, &enabled)) {
         sh.berr(cmd, e);
         return Ok(1);
     }
-    let status = sh.out_status(out.as_bytes());
+    let status = match quiet {
+        true => 0,
+        false => {
+            let names: Vec<&str> = enabled.iter().map(|p| p.name.as_str()).collect();
+            out.push_str(&format!("{} locked", count(pins.len(), "git source")));
+            match names.is_empty() {
+                true => out.push_str(", no plugins enabled\n"),
+                false => out.push_str(&format!(
+                    ", {} enabled: {}\n",
+                    count(names.len(), "plugin"),
+                    names.join(", ")
+                )),
+            }
+            sh.out_status(out.as_bytes())
+        }
+    };
     Ok(status.max(if problems.is_empty() { 0 } else { 1 }))
+}
+
+/// `plugin check`: says which git sources have newer commits than those in
+/// `plugins.lock` (asking with `git ls-remote`), and which aren't installed,
+/// without fetching or changing anything. The status is 0 unless something
+/// couldn't be checked.
+pub fn check(sh: &mut Shell, cmd: &[u8]) -> ExecResult {
+    let (config, _, pins) = match read_state(sh, cmd) {
+        Ok(state) => state,
+        Err(status) => return Ok(status),
+    };
+    let mut r = Resolver::new(sh, &config, pins, Fetching::No);
+    let _ = resolve_all(&mut r, &config);
+    let (used, problems, mut missing) = (r.used, r.problems, r.missing);
+    print_problems(sh, Some(cmd), &problems);
+    let mut status = if problems.is_empty() { 0 } else { 1 };
+    let (mut checked, mut newer) = (0, 0);
+    for (pin, label) in &used {
+        // A commit given with `rev` has nothing newer.
+        if matches!(pin.at, GitRef::Rev(_)) {
+            checked += 1;
+            continue;
+        }
+        match fetch::remote_commit(sh, &pin.url, &pin.at) {
+            Ok(c) if c == pin.commit => checked += 1,
+            Ok(c) => {
+                checked += 1;
+                newer += 1;
+                sh.out(format!("Update available: {label} {}..{}\n", short(&pin.commit), short(&c)).as_bytes());
+            }
+            Err(e) => {
+                sh.berr(cmd, format!("{label}: {e}"));
+                status = 1;
+                if e == "interrupted" {
+                    return Ok(status);
+                }
+            }
+        }
+    }
+    missing.sort();
+    missing.dedup();
+    if !missing.is_empty() {
+        let msg = format!("Not installed: {} (run plugin sync)\n", missing.join(", "));
+        sh.out(msg.as_bytes());
+    }
+    let msg = match newer {
+        0 if checked == 0 => "No git sources to check\n".to_string(),
+        0 => format!("{} up to date\n", count(checked, "git source")),
+        _ => format!(
+            "{} of {} can be updated (run plugin update)\n",
+            newer,
+            count(checked, "git source")
+        ),
+    };
+    sh.out(msg.as_bytes());
+    Ok(status)
 }
 
 /// The path of the plugin that `plugin load ARG` loads from a source (`ARG`

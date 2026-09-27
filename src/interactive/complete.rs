@@ -1089,10 +1089,13 @@ impl ShellHelper {
                     Some(Args::Plugin) => match args.first().map(|a| &a[..]) {
                         None => words(
                             &[
+                                b"check".to_vec(),
                                 b"list-available".to_vec(),
                                 b"list-loaded".to_vec(),
                                 b"load".to_vec(),
+                                b"sync".to_vec(),
                                 b"unload".to_vec(),
+                                b"update".to_vec(),
                             ],
                             &mut out,
                         ),
@@ -1785,6 +1788,8 @@ mod tests {
         }
         std::fs::create_dir(dir.join("plugins/work")).unwrap();
         assert_eq!(complete(&h, "plugin l"), ["list-available ", "list-loaded ", "load "]);
+        assert_eq!(complete(&h, "plugin u"), ["unload ", "update "]);
+        assert_eq!(complete(&h, "plugin c"), ["check "]);
         assert_eq!(complete(&h, "plugin load "), ["git ", "prompt ", "work ", "zsh-like "]);
         assert_eq!(complete(&h, "plugin load ~/plugins/p"), ["~/plugins/prompt.rhai "]);
         assert_eq!(complete(&h, "plugin unload "), ["greet "]);

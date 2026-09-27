@@ -2,7 +2,8 @@
 # commit in plugins.lock; startup and `plugin load` use the pinned commits,
 # never git. `plugin sync` doesn't move a pinned source; `plugin update`
 # does. Plugins that aren't installed are reported, and the startup cache
-# isn't written until they are.
+# isn't written until they are. `plugin check` says which sources have newer
+# commits, without changing anything. `-q` makes `sync` and `update` quiet.
 export GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=a GIT_AUTHOR_EMAIL=a@b GIT_COMMITTER_NAME=a GIT_COMMITTER_EMAIL=a@b
 export GIT_AUTHOR_DATE='2026-01-01T00:00:00Z' GIT_COMMITTER_DATE='2026-01-01T00:00:00Z'
 C=$HOME/.config/luish
@@ -33,6 +34,7 @@ X
 echo '--- not installed: reported by every shell'
 run '__luish_internal plugin list-loaded'
 run '__luish_internal plugin list-loaded'
+cmd '__luish_internal plugin check; echo "status $?"'
 echo '--- plugin sync'
 cmd '__luish_internal plugin sync; echo "status $?"'
 sed "s|$HOME|~|g" "$C/plugins.lock"
@@ -42,15 +44,22 @@ run '__luish_internal plugin list-loaded'
 echo '--- the plugins of the available sources can be loaded'
 cmd '__luish_internal plugin list-available'
 cmd '__luish_internal plugin load coll/x; __luish_internal plugin list-loaded'
-echo '--- plugin sync does not move a pinned source'
+echo '--- plugin check'
+cmd '__luish_internal plugin check; echo "status $?"'
 echo 'echo "single v2"' > single/init.lsh
 commit single two
+cmd '__luish_internal plugin check; echo "status $?"'
+cmd '__luish_internal plugin check extra; echo "status $?"'
+echo '--- plugin sync does not move a pinned source'
 cmd '__luish_internal plugin sync; echo "status $?"'
+cmd '__luish_internal plugin sync -q; echo "status $?"'
+cmd '__luish_internal plugin sync -q extra; echo "status $?"'
 run 'true'
 echo '--- plugin update does'
 cmd '__luish_internal plugin update single; echo "status $?"'
 run 'true'
 cmd '__luish_internal plugin update; echo "status $?"'
+cmd '__luish_internal plugin check; echo "status $?"'
 cmd '__luish_internal plugin update nosuch; echo "status $?"'
 echo '--- a removed data directory: not installed, and synced again at the same commit'
 rm -rf .local/share/luish
@@ -62,24 +71,32 @@ run 'true'
 echo '--- a removed cache: fetched again, loading is unaffected'
 rm -rf .cache/luish/plugins
 run 'true'
-cmd '__luish_internal plugin update single; echo "status $?"'
+cmd '__luish_internal plugin update --quiet single; echo "status $?"'
+cmd '__luish_internal plugin update -q single; echo "status $?"'
 ls .cache/luish/plugins/git | sed 's/-.*//'
 cat .local/share/luish/plugins/README | head -1
 echo '--- a tag, and a commit'
 first=$(cd single && git rev-list --max-parents=0 HEAD)
-(cd single && git tag v1 "$first")
+(cd single && git tag v1 "$first" && git tag -a -m v1 v1a "$first")
 cat > "$C/config.toml" <<X
+[plugins.available]
+annotated = { git = "file://$HOME/single", tag = "v1a" }
+
 [plugins.enabled]
 tagged = { git = "file://$HOME/single", tag = "v1" }
 X
 cmd '__luish_internal plugin sync; echo "status $?"'
 run 'true'
+cmd '__luish_internal plugin check; echo "status $?"'
+(cd single && git tag -f -a -m v1 v1a HEAD >/dev/null)
+cmd '__luish_internal plugin check; echo "status $?"'
 cat > "$C/config.toml" <<X
 [plugins.enabled]
 pinned = { git = "file://$HOME/single", rev = "$first" }
 X
 cmd '__luish_internal plugin sync; echo "status $?"'
 run 'true'
+cmd '__luish_internal plugin check; echo "status $?"'
 grep -c '^\[\[source\]\]' "$C/plugins.lock"
 echo '--- a repository that cannot be fetched'
 cat > "$C/config.toml" <<X
@@ -88,9 +105,12 @@ gone = { git = "file://$HOME/nosuch" }
 X
 # (git's own messages vary with its version.)
 $SH -c '__luish_internal plugin sync; echo "status $?"' 2>&1 | grep -e "^$SH" -e status | sed "s|$SH|luish|; s|$HOME|~|g"
+$SH -c '__luish_internal plugin check; echo "status $?"' 2>&1 | grep -e "^$SH" -e status | sed "s|$SH|luish|; s|$HOME|~|g"
 echo '--- nothing to lock: no lock file'
 rm "$C/plugins.lock" "$C/config.toml"
 cmd '__luish_internal plugin sync; echo "status $?"'
+cmd '__luish_internal plugin sync -q; echo "status $?"'
+cmd '__luish_internal plugin check; echo "status $?"'
 ls "$C"
 echo '--- a lock from a newer luish is left alone'
 printf 'version = 2\n' > "$C/plugins.lock"

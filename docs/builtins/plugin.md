@@ -5,8 +5,9 @@ plugin load name|source/name|path...
 plugin list-loaded
 plugin list-available
 plugin unload name...
-plugin sync
-plugin update [source...]
+plugin sync [-q]
+plugin update [-q] [source...]
+plugin check
 ```
 
 Load, unload and fetch plugins.
@@ -34,10 +35,16 @@ shows it, or as `plugin load` was given it (such as `std/NAME`).
 `plugins.available`, and records the commit of each in `plugins.lock`, next
 to `config.toml`. A source that is already in `plugins.lock` stays at its
 commit. `plugin update` fetches the newest commit of each git source, or of
-the sources named, and updates `plugins.lock`. Both print the sources whose
-commits changed. Interactive shells load the plugins in `plugins.enabled` at
-startup, from the commits in `plugins.lock`, without running git. With
-`--no-plugins`, `plugin load`, `plugin sync` and `plugin update` do nothing.
+the sources named, and updates `plugins.lock`. Both print the sources they
+fetch, those whose commits changed, and the number of git sources locked
+and the plugins enabled; with `-q` (or `--quiet`) they print only errors.
+`plugin check` asks each git source (with `git ls-remote`) for its newest
+commit and prints those newer than the locked one, and the sources that
+aren't installed, without fetching or changing anything; its exit status is
+0 unless a source couldn't be checked. Interactive shells load the plugins
+in `plugins.enabled` at startup, from the commits in `plugins.lock`, without
+running git. With `--no-plugins`, `plugin load`, `plugin sync`, `plugin
+update` and `plugin check` do nothing.
 
 `plugin` is a built-in only in interactive shells (and their subshells).
 Anywhere, `__luish_internal plugin` does the same. See the plugins page of

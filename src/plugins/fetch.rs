@@ -9,8 +9,9 @@
 //!   renamed into place once complete, so a directory that exists is
 //!   complete. Startup needs these.
 //!
-//! Only `plugin sync` and `plugin update` come here. Startup only looks for
-//! the directories of the locked commits, and never runs git.
+//! Only `plugin sync`, `plugin update` and `plugin check` (which only runs
+//! `git ls-remote`) come here. Startup only looks for the directories of the
+//! locked commits, and never runs git.
 
 use super::package::GitRef;
 use crate::exec::shell_quote;
@@ -127,6 +128,25 @@ pub fn resolve(sh: &mut Shell, url: &str, at: &GitRef) -> Result<String, String>
         true => Ok(commit),
         false => Err(format!("git rev-parse gave {commit:?}")),
     }
+}
+
+/// The newest commit of `at` (a branch, a tag, `HEAD`) at `url`, from `git
+/// ls-remote`, which neither fetches nor needs the bare repository.
+pub fn remote_commit(sh: &mut Shell, url: &str, at: &GitRef) -> Result<String, String> {
+    let name = refspec(at);
+    let peeled = format!("{name}^{{}}");
+    let out = git(sh, b"/", &["ls-remote", url, &name, &peeled])?;
+    let out = String::from_utf8_lossy(&out);
+    let find = |want: &str| {
+        out.lines().find_map(|l| match l.split_once('\t') {
+            Some((commit, r)) if r == want && is_hash(commit) => Some(commit.to_string()),
+            _ => None,
+        })
+    };
+    // An annotated tag's commit is on the peeled line.
+    find(&peeled)
+        .or_else(|| find(&name))
+        .ok_or_else(|| format!("no {name} at {url}"))
 }
 
 /// Whether `s` is a full commit hash.
