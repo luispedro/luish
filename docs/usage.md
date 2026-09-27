@@ -212,6 +212,11 @@ Plugins, through their extensions, can provide completion for other commands
 (see [Plugins](plugins.md)). Aliases are followed: if `g` is an alias for
 `git`, then `g ` completes as `git ` does.
 
+As in zsh, a word with a glob, a `$` or a command substitution in it is expanded instead: `ls *.md` Tab becomes
+`ls a.md b.md c\ d.md ` (quoted, and followed by a space when there are several words), and `echo $HOME` Tab becomes
+`echo /home/me`. A glob that matches nothing, or a variable that is empty or unset, is completed as usual (so
+`$HO` Tab still completes variable names).
+
 ### The completion menu
 
 The menu shows the matches in columns, or one per line with their descriptions (such as the commands of jobs for

@@ -312,6 +312,13 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   executables are cached until `PATH` or one of its directories changes. rustyline's own listing is never used:
   `Completer::complete` returns 0 or 1 candidates (in `CompletionType::List`, one candidate is put in the line with
   `update`).
+- **Expansion on Tab** (zsh's `expand-or-complete`, `ShellHelper::expansion`): a word ending at the cursor, outside
+  quotes, with `*?[$` or a backquote in it, is parsed as the argument of `:` and expanded by the shell (the `expand`
+  callback in `interactive/mod.rs`, through the same `SHELL` pointer as `ask`, so options such as bare glob
+  qualifiers apply and substitutions run). The fields replace the word, quoted, with a space after them when there
+  are several (as zsh). An empty result or the word itself unquoted (a glob without matches, `\*`) falls through to
+  completion, as does the cursor right after `$`. `Scan::raw_start` keeps the start of the word across `$(...)`,
+  which `Scan::start` forgets. Tests: `builtins/internal_complete_expand.sh`, `expand_or_complete` in `complete.rs`.
 - **Completion menu** (`menu.rs`): drawn as rustyline's **hint** (a multi-line string starting with `\n`; rustyline
   includes it in its layout, skips SGR escapes when measuring, and erases it on accept), so rustyline isn't patched.
   `Hint::completion()` returns None so Right doesn't insert it. Menu keys are `ConditionalEventHandler`s that set
@@ -499,7 +506,7 @@ truncates when it relocates the package.
 | Command cache | `path_cache` in `tests/interactive.rs` |
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |
-| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `tests/plugins/complete.sh` |
+| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `builtins/internal_complete_expand.sh`, `tests/plugins/complete.sh` |
 | Startup files | `misc/startup_cache.sh`, `misc/config_toml.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |

@@ -83,6 +83,7 @@ pub fn init_editor() -> bool {
     };
     let mut helper = ShellHelper::default();
     helper.ask = Some(ask);
+    helper.expand = Some(expand);
     ed.history_mut().search = helper.keys.lock().map(|k| k.search.clone()).unwrap_or_default();
     keys::bind(&mut ed, &helper.menu, &helper.keys);
     ed.set_helper(Some(helper));
@@ -213,6 +214,46 @@ fn ask(words: &[Vec<u8>], index: usize) -> Completion {
     }
 }
 
+/// Expands a word of the line for the editor (`expand-or-complete`), as an
+/// argument of a command. Errors are reported, and give None.
+fn expand(word: &[u8]) -> Option<Vec<Vec<u8>>> {
+    let p = SHELL.get();
+    if p.is_null() || EXIT.get().is_some() {
+        return None;
+    }
+    // A command name, so that the word isn't a reserved word, an alias
+    // or an assignment.
+    let mut text = b": ".to_vec();
+    text.extend_from_slice(word);
+    let mut parser = crate::lexer::Parser::new(text, 1, true);
+    // SAFETY: as in `ask`.
+    let sh = unsafe { &mut *p };
+    parser.bareglobqual = sh.opt(Opt::Bareglobqual);
+    let list = parser.parse_all().ok()?;
+    let [cmd] = &list[..] else { return None };
+    let ([pipeline], true) = (&cmd.list.first.cmds[..], cmd.list.rest.is_empty() && !cmd.async_) else {
+        return None;
+    };
+    let crate::ast::Command::Simple(simple) = pipeline else {
+        return None;
+    };
+    let [_, w] = &simple.words[..] else { return None };
+    if !simple.assigns.is_empty() || !simple.redirs.is_empty() {
+        return None;
+    }
+    let jobctl = sh.jobctl.take();
+    let r = sh.expand_words(std::slice::from_ref(w));
+    sh.jobctl = jobctl;
+    match r {
+        Ok(fields) => Some(fields),
+        Err(Flow::Exit(n)) => {
+            EXIT.set(Some(n));
+            None
+        }
+        Err(_) => None,
+    }
+}
+
 /// A match for the word under the cursor: the text that replaces the word
 /// in the line, and its description.
 pub type Match = (String, Option<String>);
@@ -224,6 +265,7 @@ pub fn completions(sh: &mut Shell, line: &[u8]) -> Result<Option<Vec<Match>>, Fl
     let mut helper = ShellHelper::default();
     helper.names = names(sh);
     helper.ask = Some(ask);
+    helper.expand = Some(expand);
     let outer = SHELL.replace(sh as *mut Shell);
     let r = helper.completions(line);
     SHELL.set(outer);

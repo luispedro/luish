@@ -1,0 +1,49 @@
+--- ls *.md
+a.md b.md c\ d.md 
+status 0
+--- ls sub/*
+sub/y.md
+status 0
+--- ls [ab].md
+a.md b.md 
+status 0
+--- ls a?md
+a.md
+status 0
+--- echo $X
+one two 
+status 0
+--- echo "$X"
+one\ two
+status 0
+--- echo x$(echo hi)y
+xhiy
+status 0
+--- echo `echo a b`
+a b 
+status 0
+--- ls *.md > x*
+x.txt
+status 0
+--- ls *.zz
+status 1
+--- ls "*.md
+status 1
+--- ls \*.md
+status 1
+--- ls "*".md
+status 1
+--- echo $EMP
+EMPTY
+status 0
+--- echo $EMPTY
+EMPTY
+status 0
+--- ls ~/sub
+~/sub/
+status 0
+--- ls *.md
+status 1
+--- ls *.md(.)
+a.md b.md c\ d.md 
+status 0

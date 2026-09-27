@@ -52,7 +52,8 @@ next one with the history entry after it), `backward-char`,
 `beginning-of-line`, `capitalize-word`, `clear-screen`, `delete-char`,
 `down-case-word`, `down-history`, `down-line-or-history`,
 `end-of-buffer-or-history`, `end-of-history`, `end-of-line`,
-`expand-or-complete`, `forward-char`, `forward-word`,
+`expand-or-complete` (Tab: expand the word before the cursor, or else
+complete it), `forward-char`, `forward-word`,
 `history-beginning-search-backward` and `-forward` (the previous or next
 history entry that starts with the text before the cursor),
 `history-incremental-search-backward` and `-forward`, `insert-last-word`

@@ -65,11 +65,16 @@ pub struct Names {
 /// ends at the cursor).
 pub type Ask = fn(&[Vec<u8>], usize) -> Completion;
 
+/// Expands a word as the shell would expand it as an argument (for
+/// `expand-or-complete`), or gives None if it can't.
+pub type Expand = fn(&[u8]) -> Option<Vec<Vec<u8>>>;
+
 #[derive(Default)]
 pub struct ShellHelper {
     pub names: Names,
     pub highlight: super::highlight::State,
     pub ask: Option<Ask>,
+    pub expand: Option<Expand>,
     /// The prompt, as the line editor measures it (for the menu's height).
     pub prompt: String,
     pub menu: Arc<Mutex<Menu>>,
@@ -277,9 +282,13 @@ struct Scan<'a> {
     /// Whether the last command word takes a command as its argument.
     precommand: bool,
     /// The state outside each open `$(`, `(` or backquote: its quoting,
-    /// whether it was opened by a backquote, and its command's words.
-    stack: Vec<(Quote, bool, Vec<Vec<u8>>)>,
-    /// Start of the current word, if in one.
+    /// whether it was opened by a backquote, its command's words, and where
+    /// the word it is in starts.
+    stack: Vec<(Quote, bool, Vec<Vec<u8>>, usize)>,
+    /// Where the current word starts in the line, substitutions included
+    /// (for `ShellHelper::expansion`).
+    raw_start: Option<usize>,
+    /// Start of the current word, if in one (after its last substitution).
     start: Option<usize>,
     /// The current word, unquoted.
     text: Vec<u8>,
@@ -321,6 +330,7 @@ impl<'a> Scan<'a> {
             redirect: false,
             precommand: false,
             stack: Vec::new(),
+            raw_start: None,
             start: None,
             text: Vec::new(),
             split: 0,
@@ -343,6 +353,7 @@ impl<'a> Scan<'a> {
     fn begin(&mut self, at: usize) {
         if self.start.is_none() {
             self.start = Some(at);
+            self.raw_start.get_or_insert(at);
             self.split = 0;
             self.offsets = vec![(at, self.quote)];
         }
@@ -356,6 +367,7 @@ impl<'a> Scan<'a> {
 
     /// Ends the current word, updating the command-position state.
     fn end_word(&mut self) {
+        self.raw_start = None;
         if self.start.take().is_none() {
             return;
         }
@@ -438,17 +450,19 @@ impl<'a> Scan<'a> {
     /// Forgets the current word.
     fn drop_word(&mut self) {
         self.start = None;
+        self.raw_start = None;
         self.text.clear();
         self.offsets.clear();
         self.subst = false;
     }
 
-    /// Starts a nested command (`$(`, `(` or a backquote). The word it is
-    /// in goes on after it.
-    fn open(&mut self, backquote: bool) {
+    /// Starts a nested command (`$(`, `(` or a backquote), which starts at
+    /// `at`. The word it is in goes on after it.
+    fn open(&mut self, backquote: bool, at: usize) {
+        let raw_start = self.raw_start.unwrap_or(at);
         self.drop_word();
-        self.stack
-            .push((self.quote, backquote, std::mem::take(&mut self.words)));
+        let words = std::mem::take(&mut self.words);
+        self.stack.push((self.quote, backquote, words, raw_start));
         self.quote = Quote::None;
         self.cmd_pos = true;
         self.precommand = false;
@@ -460,12 +474,14 @@ impl<'a> Scan<'a> {
     /// completed as if it were the whole word.
     fn close(&mut self, end: usize) {
         self.drop_word();
-        if let Some((q, _, words)) = self.stack.pop() {
+        let raw_start = self.stack.pop().map(|(q, _, words, raw_start)| {
             self.quote = q;
             self.words = words;
-        }
+            raw_start
+        });
         self.cmd_pos = false;
         self.begin(end);
+        self.raw_start = raw_start.or(self.raw_start);
         self.subst = true;
     }
 
@@ -500,14 +516,14 @@ impl<'a> Scan<'a> {
                 (Quote::Single, b'\'') | (Quote::Double, b'"') => self.quote = Quote::None,
                 (Quote::Single, _) => self.push(c, i),
                 (Quote::Double | Quote::None, b'$') if next == Some(b'(') => {
-                    self.open(false);
+                    self.open(false, i - 1);
                     i += 1;
                 }
                 (Quote::Double | Quote::None, b'`') => {
                     if self.in_backquote() {
                         self.close(i);
                     } else {
-                        self.open(true);
+                        self.open(true, i - 1);
                     }
                 }
                 (Quote::Double, b'\\') if next.is_some_and(|n| b"$`\"\\\n".contains(&n)) => {
@@ -517,7 +533,7 @@ impl<'a> Scan<'a> {
                 (Quote::Double, _) => self.push(c, i),
                 (Quote::None, b' ' | b'\t') => self.end_word(),
                 (Quote::None, b'\n' | b';' | b'&' | b'|') => self.end_command(),
-                (Quote::None, b'(') => self.open(false),
+                (Quote::None, b'(') => self.open(false, i - 1),
                 (Quote::None, b')') if self.after && self.stack.is_empty() => {
                     self.end_word();
                     self.done = true;
@@ -530,6 +546,7 @@ impl<'a> Scan<'a> {
                     }
                     self.skip = false;
                     self.start = None;
+                    self.raw_start = None;
                     self.text.clear();
                     self.offsets.clear();
                     while i < line.len() && b"<>&|-".contains(&line[i]) {
@@ -951,9 +968,59 @@ impl ShellHelper {
     }
 
     /// The matches for the word that ends at the end of `line` (for
-    /// `__luish_internal complete`), or None if a completer failed.
+    /// `__luish_internal complete`), or None if a completer failed. A word
+    /// that expands gives its expansion, as Tab does.
     pub fn completions(&self, line: &[u8]) -> Option<Vec<Item>> {
+        if let Some((_, text)) = self.expansion(line, b"") {
+            let item = Item {
+                display: text.clone(),
+                desc: None,
+                replacement: text,
+            };
+            return Some(vec![item]);
+        }
         self.matches(line, b"").ok().map(|m| m.1)
+    }
+
+    /// `expand-or-complete`, as zsh's: a word with a glob, `$` or backquote
+    /// in it that ends at the cursor is replaced by its expansion, quoted,
+    /// if that isn't empty and isn't the word itself (a glob that matches
+    /// nothing, a quoted `*`). Several words are followed by a space, as
+    /// in zsh. Gives where the word starts and the text that replaces it.
+    fn expansion(&self, line: &[u8], after: &[u8]) -> Option<(usize, String)> {
+        let expand = self.expand?;
+        if after.first().is_some_and(|c| !b" \t\n;&|<>()".contains(c)) {
+            return None;
+        }
+        let mut s = Scan::new(&self.names.aliases);
+        s.feed(line);
+        if s.comment || s.quote != Quote::None {
+            return None;
+        }
+        let start = s.raw_start.filter(|_| s.start.is_some())?;
+        let word = &line[start..];
+        if !word.iter().any(|c| b"*?[$`".contains(c)) {
+            return None;
+        }
+        let fields = expand(word)?;
+        // The word unquoted, unless the cursor is in a variable's name
+        // (where the word isn't all there is).
+        let w = analyze(line, &self.names.aliases);
+        if matches!(w.kind, Kind::Var(_)) && w.text.is_empty() {
+            return None;
+        }
+        let same = !matches!(w.kind, Kind::Var(_)) && fields.len() == 1 && fields[0] == w.text;
+        if fields.iter().all(|f| f.is_empty()) || same {
+            return None;
+        }
+        let mut out = Vec::new();
+        for f in &fields {
+            quote_suffix(f, Quote::None, true, &mut out);
+            if fields.len() > 1 {
+                out.push(b' ');
+            }
+        }
+        Some((start, String::from_utf8(out).ok()?))
     }
 
     /// Where the word that ends at the end of `line` starts, and its
@@ -1366,6 +1433,9 @@ impl Completer for ShellHelper {
         // (Not held while an extension's completer runs.)
         drop(menu);
         let (before, after) = line.as_bytes().split_at(pos);
+        if let Some((start, text)) = self.expansion(before, after) {
+            return Ok((start, vec![pair(&text)]));
+        }
         let (start, items) = self.complete_bytes(before, after);
         if items.len() < 2 {
             return Ok((start, items.iter().map(|i| pair(&i.replacement)).collect()));
@@ -1954,5 +2024,48 @@ mod tests {
         assert_eq!(menu_shown(&h, &line), None);
         tab(&h, &mut line);
         assert_eq!(line, "myfunc_a /nonexistent/x");
+    }
+
+    /// Expands as the shell would, for a few words.
+    fn fake_expand(word: &[u8]) -> Option<Vec<Vec<u8>>> {
+        let fields: &[&str] = match word {
+            b"*.md" => &["a.md", "c d.md"],
+            b"$HOME" | b"$(echo ~)" => &["/home/me"],
+            b"$" => &["$"],
+            b"$UNSET" => &[],
+            b"*.x" | b"\\*.x" => &["*.x"],
+            _ => return None,
+        };
+        Some(fields.iter().map(|f| f.as_bytes().to_vec()).collect())
+    }
+
+    #[test]
+    fn expand_or_complete() {
+        let h = ShellHelper {
+            expand: Some(fake_expand),
+            names: Names {
+                vars: vec![b"HOME".to_vec(), b"UNSET_TOO".to_vec()],
+                ..Names::default()
+            },
+            ..ShellHelper::default()
+        };
+        let exp = |line: &str, after: &str| h.expansion(line.as_bytes(), after.as_bytes());
+        assert_eq!(exp("ls *.md", ""), Some((3, "a.md c\\ d.md ".into())));
+        assert_eq!(exp("echo $HOME", " x"), Some((5, "/home/me".into())));
+        assert_eq!(exp("echo $(echo ~)", ""), Some((5, "/home/me".into())));
+        // In the middle of a word, or in quotes: completion.
+        assert_eq!(exp("ls *.md", "x"), None);
+        assert_eq!(exp("ls \"*.md", ""), None);
+        // Nothing, or the word itself: completion.
+        assert_eq!(exp("echo $", ""), None);
+        assert_eq!(exp("echo $UNSET", ""), None);
+        assert_eq!(exp("ls *.x", ""), None);
+        assert_eq!(exp("ls \\*.x", ""), None);
+        let mut line = "echo $UNSET".to_string();
+        tab(&h, &mut line);
+        assert_eq!(line, "echo $UNSET_TOO");
+        let mut line = "cat *.md".to_string();
+        tab(&h, &mut line);
+        assert_eq!(line, "cat a.md c\\ d.md ");
     }
 }
