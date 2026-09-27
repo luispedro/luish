@@ -147,6 +147,16 @@ fn set_matches(negated: bool, items: &[SetItem], c: u8) -> bool {
     hit != negated
 }
 
+/// Whether the element `p` could match the byte `c`: `*` could match
+/// anything.
+fn elem_could_match(p: Option<&Pat>, c: u8) -> bool {
+    match p {
+        Some(Pat::Lit(b)) => *b == c,
+        Some(Pat::Set { negated, items }) => set_matches(*negated, items, c),
+        _ => true,
+    }
+}
+
 fn match_compiled(p: &[Pat], s: &[u8]) -> bool {
     // Classic greedy matching with backtracking to the last `*`.
     let (mut pi, mut si) = (0, 0);
@@ -219,16 +229,22 @@ pub enum Trim {
 }
 
 /// `${x#pat}` and friends: the part of `s` that is kept. Only the prefixes
-/// or suffixes whose length the pattern can match are tried.
+/// or suffixes whose length the pattern can match are tried, and only
+/// those whose last (for a prefix) or first (for a suffix) byte the
+/// pattern's last or first element can match, so that `${x#*/}` doesn't
+/// match `*/` against every prefix.
 pub fn trim<'s>(s: &'s [u8], pat: &[XChar], how: Trim) -> &'s [u8] {
     let p = Pattern::new(pat);
     let n = s.len();
     let mut lens = p.lengths(n);
+    let (first, last) = (p.0.first(), p.0.last());
+    let prefix = |k: usize| (k == 0 || elem_could_match(last, s[k - 1])) && p.matches(&s[..k]);
+    let suffix = |k: usize| (k == 0 || elem_could_match(first, s[n - k])) && p.matches(&s[n - k..]);
     match how {
-        Trim::SmallestPrefix => lens.find(|&k| p.matches(&s[..k])).map(|k| &s[k..]),
-        Trim::LargestPrefix => lens.rev().find(|&k| p.matches(&s[..k])).map(|k| &s[k..]),
-        Trim::SmallestSuffix => lens.find(|&k| p.matches(&s[n - k..])).map(|k| &s[..n - k]),
-        Trim::LargestSuffix => lens.rev().find(|&k| p.matches(&s[n - k..])).map(|k| &s[..n - k]),
+        Trim::SmallestPrefix => lens.find(|&k| prefix(k)).map(|k| &s[k..]),
+        Trim::LargestPrefix => lens.rev().find(|&k| prefix(k)).map(|k| &s[k..]),
+        Trim::SmallestSuffix => lens.find(|&k| suffix(k)).map(|k| &s[..n - k]),
+        Trim::LargestSuffix => lens.rev().find(|&k| suffix(k)).map(|k| &s[..n - k]),
     }
     .unwrap_or(s)
 }
@@ -288,5 +304,11 @@ mod tests {
         let p = unquoted(b"a*b*");
         assert_eq!(trim(b"xab", &p, Trim::LargestSuffix), b"x");
         assert_eq!(trim(b"xab", &p, Trim::LargestPrefix), b"xab");
+        let p = unquoted(b"*[/:]");
+        assert_eq!(trim(b"a/b:c", &p, Trim::SmallestPrefix), b"b:c");
+        assert_eq!(trim(b"a/b:c", &p, Trim::LargestPrefix), b"c");
+        let p = unquoted(b"[/:]*");
+        assert_eq!(trim(b"a/b:c", &p, Trim::SmallestSuffix), b"a/b");
+        assert_eq!(trim(b"a/b:c", &p, Trim::LargestSuffix), b"a");
     }
 }
