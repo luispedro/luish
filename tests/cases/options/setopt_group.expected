@@ -1,0 +1,38 @@
+history.share on
+history.ignore_space on
+history.share off
+history.ignore_space off
+history.reduce_blanks on
+history.share on
+history.inc_append on
+tilde expanded
+through command
+100
+setopt history.file='it'"'"'s'
+unsetopt history.ignore_space
+setopt history.inc_append
+setopt history.reduce_blanks
+unsetopt history.save_no_dups
+setopt history.share
+setopt history.size='100'
+unsetopt history.ignore_space
+setopt history.inc_append
+setopt history.reduce_blanks
+unsetopt history.save_no_dups
+setopt history.share
+unsetopt glob.bare_qualifiers
+unsetopt glob.star
+setopt_group.sh: 23: setopt: no such option: history.bogus
+setopt_group.sh: 23: setopt: no such option: history.errexit
+setopt_group.sh: 23: setopt: history.share: bad value: maybe
+status 1
+setopt_group.sh: 24: setopt: no such group: bogus
+status 1
+setopt_group.sh: 25: setopt: no such group: history.share
+status 1
+setopt_group.sh: 26: setopt: No arg for -p option
+status 2
+setopt_group.sh: 27: setopt: Illegal option -x
+status 2
+setopt_group.sh: 28: setopt: no such option: -p
+status 1

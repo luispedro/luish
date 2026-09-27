@@ -841,14 +841,15 @@ file sets too. Three steps:
    `yes`, `1`, ...) for options and checks numbers; its arguments are
    expanded as assignments, as for `export`, so `history.file=~/x` gets its
    tilde. dash's options keep their flat names, and `set -o` and `$-` don't
-   change. (`Options.flags` is a `u32` with 29 bits used: the next options
-   need a `u64`.)
-2. **`setopt -p GROUP`**: the names that follow are in `GROUP`, as in
-   `setopt -p history share file=~/.histfile save_no_dups=false`
+   change.
+2. **Done: `setopt -p GROUP`**: the names that follow are in `GROUP`, as
+   in `setopt -p history share file=~/.histfile save_no_dups=false`
    (`unsetopt -p history share`). `-p` rather than `-g`, which means
-   "global" to zsh's `typeset`. `setopt -p GROUP` alone lists the group's
-   settings with their values, as commands that set them (options on and
-   off, and the values that are set). Plugins will be able to declare
+   "global" to zsh's `typeset` (in zsh's `setopt`, `-p` is
+   `privileged`, which luish's `setopt` sets by name only). `setopt -p
+   GROUP` alone lists the group's settings with their values, as commands
+   that set them (options on and off, and the values that are set).
+   Plain `setopt` still lists only the options that are on, as zsh does. Plugins will be able to declare
    settings in a group of their own (`bashcomp.*`), with a type and a
    default, which is where grouped names pay off most.
 3. **`config.toml`**: `$XDG_CONFIG_HOME/luish/config.toml`, where each

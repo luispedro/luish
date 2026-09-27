@@ -13,7 +13,8 @@ Options can be given as letters (`-e`, `-x`, ...) or with `-o name` / `+o name`.
 same options, and `setopt` and `unsetopt` set them by name as in zsh, together with luish's own options, which `set`
 doesn't show so that it stays as in dash. luish's own options are named in groups, such as `history.share` or
 `glob.star`; zsh's names for them (`share_history`) work too. `setopt` also sets luish's settings that have a value,
-as in `setopt history.file=~/.histfile` (see `help setopt`).
+as in `setopt history.file=~/.histfile`. `setopt -p GROUP` sets several settings of a group, as in `setopt -p history
+share file=~/.histfile`, and without names lists the group's settings (see `help setopt`).
 
 On the command line, `-o` and `+o` take any option named as for `setopt`, including luish's own: case and `_` don't
 matter, and a `no` prefix inverts it (`-o err_exit`, `-o no_glob`, `-o prompt_percent`; `+o glob` is the same as
@@ -155,8 +156,7 @@ files, so `HISTFILE` and `HISTSIZE` can be set there (or in `luishrc`). `setopt`
 The file is in zsh's format, with the time of each command, so luish and zsh can use the same file:
 
 ```sh
-setopt history.file=~/.histfile history.save_size=10000
-setopt history.share history.ignore_space history.reduce_blanks
+setopt -p history file=~/.histfile save_size=10000 share ignore_space reduce_blanks
 ```
 
 In zsh's words, which luish also accepts, this is:

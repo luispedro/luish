@@ -1,8 +1,8 @@
 # `setopt`, `unsetopt`
 
 ```text
-setopt [option[=value]...]
-unsetopt [option...]
+setopt [-p group] [option[=value]...]
+unsetopt [-p group] [option...]
 ```
 
 Turn options on or off by name, and set settings.
@@ -26,6 +26,18 @@ value isn't split into fields, so `setopt history.file=~/.history` works.
 
 Without arguments, `setopt` lists the options that are on and `unsetopt`
 the options that are off, in alphabetical order.
+
+`-p group`
+: The names that follow are in `group`: `setopt -p history share
+  file=~/.history` is `setopt history.share history.file=~/.history`, and
+  `setopt -p history no_share` is `setopt history.no_share`. Without
+  names, `setopt -p group` and `unsetopt -p group` print the group's
+  settings, in alphabetical order, as the commands that set them
+  (`setopt history.share`, `unsetopt history.ignore_space`,
+  `setopt history.file='...'`); a setting with a value is left out if its
+  variable isn't set. If `-p` is given more than once, the last one
+  counts. The groups are `cd`, `editor`, `glob`, `history`, `prompt` and
+  `pushd`.
 
 luish's own options, all off by default:
 
@@ -103,4 +115,6 @@ back. They aren't listed by `setopt` or `unsetopt` without arguments.
 The exit status is 1 if an option doesn't exist or can't be changed
 (`interactive` and `stdin`), if a value is wrong or missing, if
 `unsetopt` is given a value, or if the variable of a setting is
-read-only; the other options given are still set.
+read-only; the other options given are still set. It is also 1, and
+nothing is set, if the group of `-p` doesn't exist, and 2 for an invalid
+option or a missing group.

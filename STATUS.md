@@ -449,6 +449,16 @@ pass**.
   `NAME=VALUE` (with `.` allowed in the name) are expanded as assignments
   (`declaration_command` in `expand/mod.rs`), also through `command`.
   Test: `options/setopt_values.sh`.
+- `setopt -p GROUP` and `unsetopt -p GROUP` (also `-pGROUP`; the last `-p`
+  counts): the names that follow are in `GROUP` (`setopt -p history share
+  no_ignore_space file=~/h`). The group is found as names are (case and
+  `_` ignored); an unknown one is an error (status 1, nothing set), a
+  missing one or another option letter a usage error (status 2). Without
+  names, both print the group's settings sorted, as `setopt NAME`,
+  `unsetopt NAME` and `setopt NAME='VALUE'` (values only when their
+  variable is set). The completer completes group names after `-p`, and
+  the group's names without the group after `-p GROUP`. Test:
+  `options/setopt_group.sh`.
 - Tests: `options/*`.
 
 ### Interactive mode (`src/interactive/`)

@@ -2,7 +2,7 @@
 
 use super::illegal_number;
 use crate::lexer::is_valid_name;
-use crate::options::{Kind, OPTIONS, Opt, Options, Setting, parse_bool};
+use crate::options::{EXTENDED, Kind, OPTIONS, Opt, Options, Setting, VALUES, find_group, group_of, parse_bool};
 use crate::shell::{ExecResult, Flow, Shell};
 
 /// Single-quotes a value for output that can be read back by the shell.
@@ -252,10 +252,48 @@ pub fn set(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 /// name, luish's own ones as well as dash's, and `setopt NAME=VALUE` sets
 /// a setting (an option to `true` or `false`, or a setting with a value).
 /// Without arguments, list the options that are on (`setopt`) or off
-/// (`unsetopt`).
+/// (`unsetopt`). `-p GROUP` puts the names in `GROUP`, or without names
+/// lists the group's settings.
 pub fn setopt(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let on = argv[0] == b"setopt";
-    if argv.len() == 1 {
+    // `-p GROUP`: the names are in `GROUP` (the last one given counts).
+    let mut group = None;
+    let mut i = 1;
+    while let Some(a) = argv.get(i) {
+        if a.len() < 2 || a[0] != b'-' {
+            break;
+        }
+        i += 1;
+        if a == b"--" {
+            break;
+        }
+        if a[1] != b'p' {
+            sh.berr(&argv[0], format!("Illegal option -{}", a[1] as char));
+            return Ok(2);
+        }
+        let name = if a.len() > 2 {
+            &a[2..]
+        } else if let Some(g) = argv.get(i) {
+            i += 1;
+            &g[..]
+        } else {
+            sh.berr(&argv[0], "No arg for -p option");
+            return Ok(2);
+        };
+        match find_group(name) {
+            Some(g) => group = Some(g),
+            None => {
+                let msg = format!("no such group: {}", String::from_utf8_lossy(name));
+                sh.berr(&argv[0], msg);
+                return Ok(1);
+            }
+        }
+    }
+    let args = &argv[i..];
+    if args.is_empty() {
+        if let Some(g) = group {
+            return Ok(list_group(sh, g));
+        }
         let mut names: Vec<&str> = Options::all_names()
             .filter(|&(o, _)| sh.options.get(o) == on)
             .map(|o| o.1)
@@ -265,7 +303,15 @@ pub fn setopt(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         return Ok(sh.out_status(out.as_bytes()));
     }
     let mut status = 0;
-    for a in &argv[1..] {
+    for a in args {
+        let full;
+        let a = match group {
+            Some(g) => {
+                full = [g.as_bytes(), b".", a].concat();
+                &full
+            }
+            None => a,
+        };
         if let Err(msg) = set_setting(sh, on, a) {
             sh.berr(&argv[0], msg);
             status = 1;
@@ -273,6 +319,27 @@ pub fn setopt(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     }
     sh.set_jobctl(sh.opt(Opt::Monitor));
     Ok(status)
+}
+
+/// `setopt -p GROUP` without names: prints the group's settings, sorted,
+/// as the commands that set them (the settings with a value only if their
+/// variable is set).
+fn list_group(sh: &Shell, group: &str) -> i32 {
+    let in_group = |name: &str| group_of(name) == Some(group);
+    let mut lines: Vec<(&str, Vec<u8>)> = Vec::new();
+    for &(o, name) in EXTENDED.iter().filter(|o| in_group(o.1)) {
+        let cmd = if sh.opt(o) { "setopt" } else { "unsetopt" };
+        lines.push((name, format!("{cmd} {name}\n").into_bytes()));
+    }
+    for &(name, var, _) in VALUES.iter().filter(|v| in_group(v.0)) {
+        if let Some(v) = sh.get_var(var) {
+            let line = [format!("setopt {name}=").as_bytes(), &single_quote(&v), b"\n"].concat();
+            lines.push((name, line));
+        }
+    }
+    lines.sort_unstable_by_key(|l| l.0);
+    let out: Vec<u8> = lines.into_iter().flat_map(|l| l.1).collect();
+    sh.out_status(&out)
 }
 
 /// One argument of `setopt` (`on`) or `unsetopt`: `NAME` or `NAME=VALUE`.

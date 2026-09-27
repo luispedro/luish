@@ -806,6 +806,38 @@ pub(super) fn is_executable(path: &[u8]) -> bool {
     sys::stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) && sys::access(path, libc::X_OK)
 }
 
+/// Where `-p` leaves the arguments of `setopt` and `unsetopt`.
+enum SetoptGroup<'a> {
+    /// No `-p`.
+    None,
+    /// Right after `-p`, where a group's name goes.
+    Wanted,
+    /// After `-p GROUP`.
+    Given(&'a [u8]),
+}
+
+/// Parses the options of `setopt` or `unsetopt` before the current word,
+/// as the built-in does.
+fn setopt_group(args: &[Vec<u8>]) -> SetoptGroup<'_> {
+    let mut group = SetoptGroup::None;
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if a.len() < 2 || a[0] != b'-' || a == b"--" {
+            break;
+        }
+        if let Some(g) = a.strip_prefix(b"-p") {
+            group = match g {
+                b"" => match it.next() {
+                    Some(g) => SetoptGroup::Given(g),
+                    None => return SetoptGroup::Wanted,
+                },
+                g => SetoptGroup::Given(g),
+            };
+        }
+    }
+    group
+}
+
 /// Whether `-f` (for functions) is in effect after the options in `args`
 /// of `unset`: the last of `-f` and `-v` wins.
 fn unset_functions(args: &[Vec<u8>]) -> bool {
@@ -1074,6 +1106,28 @@ impl ShellHelper {
                         0
                     }
                     Some(Args::Setopt(on)) if !w.text.contains(&b'=') => {
+                        let group = match setopt_group(args) {
+                            SetoptGroup::Wanted => {
+                                let groups = crate::options::groups().into_iter();
+                                out.extend(groups.map(|g| Candidate::word(g.as_bytes())));
+                                return (0, out);
+                            }
+                            SetoptGroup::Given(g) => match crate::options::find_group(g) {
+                                Some(g) => Some([g.as_bytes(), b"."].concat()),
+                                None => return (0, out),
+                            },
+                            SetoptGroup::None => None,
+                        };
+                        // After `-p GROUP`, the names in the group, without
+                        // it.
+                        let mut push = |name: &[u8]| match &group {
+                            Some(g) => {
+                                if let Some(n) = name.strip_prefix(&g[..]) {
+                                    out.push(Candidate::word(n));
+                                }
+                            }
+                            None => out.push(Candidate::word(name)),
+                        };
                         // As in zsh: the options the command would change,
                         // and after `no` (on the last part of a grouped
                         // name) the others inverted. Then the settings with
@@ -1082,13 +1136,14 @@ impl ShellHelper {
                         let no = w.text[leaf..].get(..2).is_some_and(|p| p.eq_ignore_ascii_case(b"no"));
                         for &(name, state) in &self.names.options {
                             if state != on {
-                                out.push(Candidate::word(name.as_bytes()));
+                                push(name.as_bytes());
                             } else if no {
-                                out.push(Candidate::word(&crate::options::inverted(name.as_bytes())));
+                                push(&crate::options::inverted(name.as_bytes()));
                             }
                         }
-                        let values = crate::options::VALUES.iter().map(|v| v.0.as_bytes());
-                        out.extend(values.map(Candidate::word));
+                        for v in crate::options::VALUES {
+                            push(v.0.as_bytes());
+                        }
                         0
                     }
                     Some(Args::Dirs) => files(Files::Dirs, &mut out),
@@ -1605,6 +1660,20 @@ mod tests {
         assert_eq!(complete(&h, "setopt history.no"), ["history.no_share "]);
         assert_eq!(complete(&h, "unsetopt history.no"), ["history.no_save_no_dups "]);
         assert_eq!(complete(&h, "setopt errex"), ["errexit "]);
+        assert_eq!(complete(&h, "setopt -p hi"), ["history "]);
+        assert_eq!(
+            complete(&h, "setopt -p "),
+            ["cd ", "editor ", "glob ", "history ", "prompt ", "pushd "]
+        );
+        assert_eq!(
+            complete(&h, "setopt -p history s"),
+            ["save_no_dups ", "save_size ", "size "]
+        );
+        assert_eq!(complete(&h, "unsetopt -phistory no"), ["no_save_no_dups "]);
+        assert_eq!(complete(&h, "setopt -p History share f"), ["file "]);
+        assert_eq!(complete(&h, "setopt -p history file=~/f"), ["file=~/file\\ one "]);
+        assert_eq!(complete(&h, "setopt -p bogus "), Vec::<String>::new());
+        assert_eq!(complete(&h, "setopt -p glob -p cd a"), ["auto "]);
         assert_eq!(complete(&h, "setopt history.file=~/f"), ["history.file=~/file\\ one "]);
         // Commands whose arguments aren't filenames.
         assert_eq!(complete(&h, "cd ~/"), ["~/sub\\ dir/"]);

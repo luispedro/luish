@@ -140,6 +140,27 @@ pub fn parse_bool(s: &[u8]) -> Option<bool> {
     }
 }
 
+/// The group of a grouped name: `history` for `history.share`.
+pub fn group_of(name: &str) -> Option<&str> {
+    name.rsplit_once('.').map(|g| g.0)
+}
+
+/// The groups of luish's own settings, sorted, each once.
+pub fn groups() -> Vec<&'static str> {
+    let names = EXTENDED.iter().map(|o| o.1).chain(VALUES.iter().map(|v| v.0));
+    let mut groups: Vec<&str> = names.filter_map(group_of).collect();
+    groups.sort_unstable();
+    groups.dedup();
+    groups
+}
+
+/// Finds a group for `setopt -p`, by its name compared as the names of
+/// settings are (case doesn't matter and `_` is ignored).
+pub fn find_group(name: &[u8]) -> Option<&'static str> {
+    let name = normalize(name);
+    groups().into_iter().find(|g| normalize(g.as_bytes()) == name)
+}
+
 /// The name that inverts an option's: with `no` added to its last part
 /// (`noglob`, `history.no_share`).
 pub fn inverted(name: &[u8]) -> Vec<u8> {
@@ -235,7 +256,7 @@ impl Options {
 
 #[cfg(test)]
 mod tests {
-    use super::{Kind, Opt, Options, Setting, is_setting_name};
+    use super::{Kind, Opt, Options, Setting, find_group, groups, inverted, is_setting_name};
 
     #[test]
     fn zsh_names() {
@@ -265,6 +286,17 @@ mod tests {
         );
         assert_eq!(Options::find(b"history.nofile"), None);
         assert_eq!(Options::find(b"history"), None);
+    }
+
+    #[test]
+    fn setting_groups() {
+        assert_eq!(groups(), ["cd", "editor", "glob", "history", "prompt", "pushd"]);
+        assert_eq!(find_group(b"History"), Some("history"));
+        assert_eq!(find_group(b"hist_ory"), Some("history"));
+        assert_eq!(find_group(b"errexit"), None);
+        assert_eq!(find_group(b"history.share"), None);
+        assert_eq!(inverted(b"history.share"), b"history.no_share");
+        assert_eq!(inverted(b"glob"), b"noglob");
     }
 
     #[test]
