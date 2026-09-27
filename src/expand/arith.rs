@@ -3,29 +3,97 @@
 use crate::lexer::{is_name_char, is_name_start};
 use crate::shell::Shell;
 
-const OPS: &[&str] = &[
-    "<<=", ">>=", "<<", ">>", "<=", ">=", "==", "!=", "&&", "||", "*=", "/=", "%=", "+=", "-=", "&=", "^=", "|=", "<",
-    ">", "=", "+", "-", "*", "/", "%", "&", "^", "|", "!", "~", "?", ":", "(", ")",
-];
-
-fn binary_prec(op: &str) -> Option<u8> {
-    Some(match op {
-        "||" => 1,
-        "&&" => 2,
-        "|" => 3,
-        "^" => 4,
-        "&" => 5,
-        "==" | "!=" => 6,
-        "<" | "<=" | ">" | ">=" => 7,
-        "<<" | ">>" => 8,
-        "+" | "-" => 9,
-        "*" | "/" | "%" => 10,
-        _ => return None,
-    })
+/// A binary operator (also the operator of a compound assignment, and `+`
+/// and `-` as unary operators).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Bin {
+    LogOr,
+    LogAnd,
+    Or,
+    Xor,
+    And,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Shl,
+    Shr,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Rem,
 }
 
-fn is_assign_op(op: &str) -> bool {
-    op.ends_with('=') && !matches!(op, "==" | "!=" | "<=" | ">=")
+impl Bin {
+    fn prec(self) -> u8 {
+        match self {
+            Bin::LogOr => 1,
+            Bin::LogAnd => 2,
+            Bin::Or => 3,
+            Bin::Xor => 4,
+            Bin::And => 5,
+            Bin::Eq | Bin::Ne => 6,
+            Bin::Lt | Bin::Le | Bin::Gt | Bin::Ge => 7,
+            Bin::Shl | Bin::Shr => 8,
+            Bin::Add | Bin::Sub => 9,
+            Bin::Mul | Bin::Div | Bin::Rem => 10,
+        }
+    }
+}
+
+/// An operator token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Op {
+    Bin(Bin),
+    /// `=`, or a compound assignment such as `+=`.
+    Assign(Option<Bin>),
+    Not,
+    Compl,
+    Quest,
+    Colon,
+    LParen,
+    RParen,
+}
+
+/// The operator at the start of `s` and its length (the longest match).
+fn lex_op(s: &[u8]) -> Option<(Op, usize)> {
+    let at = |i: usize| s.get(i).copied().unwrap_or(0);
+    let (bin, len) = match at(0) {
+        b'|' if at(1) == b'|' => return Some((Op::Bin(Bin::LogOr), 2)),
+        b'&' if at(1) == b'&' => return Some((Op::Bin(Bin::LogAnd), 2)),
+        b'=' if at(1) == b'=' => return Some((Op::Bin(Bin::Eq), 2)),
+        b'!' if at(1) == b'=' => return Some((Op::Bin(Bin::Ne), 2)),
+        b'<' if at(1) == b'<' => (Bin::Shl, 2),
+        b'>' if at(1) == b'>' => (Bin::Shr, 2),
+        b'<' if at(1) == b'=' => return Some((Op::Bin(Bin::Le), 2)),
+        b'>' if at(1) == b'=' => return Some((Op::Bin(Bin::Ge), 2)),
+        b'<' => return Some((Op::Bin(Bin::Lt), 1)),
+        b'>' => return Some((Op::Bin(Bin::Gt), 1)),
+        b'=' => return Some((Op::Assign(None), 1)),
+        b'!' => return Some((Op::Not, 1)),
+        b'~' => return Some((Op::Compl, 1)),
+        b'?' => return Some((Op::Quest, 1)),
+        b':' => return Some((Op::Colon, 1)),
+        b'(' => return Some((Op::LParen, 1)),
+        b')' => return Some((Op::RParen, 1)),
+        b'|' => (Bin::Or, 1),
+        b'^' => (Bin::Xor, 1),
+        b'&' => (Bin::And, 1),
+        b'+' => (Bin::Add, 1),
+        b'-' => (Bin::Sub, 1),
+        b'*' => (Bin::Mul, 1),
+        b'/' => (Bin::Div, 1),
+        b'%' => (Bin::Rem, 1),
+        _ => return None,
+    };
+    if at(len) == b'=' {
+        Some((Op::Assign(Some(bin)), len + 1))
+    } else {
+        Some((Op::Bin(bin), len))
+    }
 }
 
 struct Arith<'a> {
@@ -55,25 +123,36 @@ pub fn parse_number(s: &[u8]) -> Option<i64> {
     } else {
         (10, t)
     };
-    let digits = std::str::from_utf8(digits).ok()?;
-    if digits.starts_with(['+', '-']) {
-        return None;
+    let mut v: u64 = 0;
+    for &c in digits {
+        let d = (c as char).to_digit(radix)?;
+        v = v.checked_mul(radix as u64)?.checked_add(d as u64)?;
     }
-    let v = u64::from_str_radix(digits, radix).ok()? as i64;
+    let v = v as i64;
     Some(if neg { v.wrapping_neg() } else { v })
 }
 
-impl Arith<'_> {
+impl<'a> Arith<'a> {
     fn skip_ws(&mut self) {
         while self.pos < self.s.len() && self.s[self.pos].is_ascii_whitespace() {
             self.pos += 1;
         }
     }
 
-    fn peek_op(&mut self) -> Option<&'static str> {
+    fn peek_op(&mut self) -> Option<(Op, usize)> {
         self.skip_ws();
-        let rest = &self.s[self.pos..];
-        OPS.iter().find(|op| rest.starts_with(op.as_bytes())).copied()
+        lex_op(&self.s[self.pos..])
+    }
+
+    /// Consumes the operator `op` if it comes next.
+    fn eat(&mut self, op: Op) -> bool {
+        match self.peek_op() {
+            Some((o, len)) if o == op => {
+                self.pos += len;
+                true
+            }
+            _ => false,
+        }
     }
 
     fn syntax<T>(&self, what: &str) -> Result<T, String> {
@@ -88,19 +167,18 @@ impl Arith<'_> {
         let save = self.pos;
         if self.pos < self.s.len() && is_name_start(self.s[self.pos]) {
             let name = self.ident();
-            if let Some(op) = self.peek_op()
-                && is_assign_op(op)
-            {
-                self.pos += op.len();
+            if let Some((Op::Assign(bin), len)) = self.peek_op() {
+                self.pos += len;
                 let rhs = self.expr()?;
-                let v = if op == "=" {
-                    rhs
-                } else {
-                    let lhs = self.var(&name)?;
-                    self.apply(&op[..op.len() - 1], lhs, rhs)?
+                let v = match bin {
+                    None => rhs,
+                    Some(bin) => {
+                        let lhs = self.var(name)?;
+                        self.apply(bin, lhs, rhs)?
+                    }
                 };
-                if self.noeval == 0 && self.sh.vars.set(&name, v.to_string().into_bytes()).is_err() {
-                    return Err(format!("{}: is read only", String::from_utf8_lossy(&name)));
+                if self.noeval == 0 && self.sh.vars.set(name, v.to_string().into_bytes()).is_err() {
+                    return Err(format!("{}: is read only", String::from_utf8_lossy(name)));
                 }
                 return Ok(v);
             }
@@ -111,10 +189,9 @@ impl Arith<'_> {
 
     fn conditional(&mut self) -> Result<i64, String> {
         let c = self.binary(1)?;
-        if self.peek_op() != Some("?") {
+        if !self.eat(Op::Quest) {
             return Ok(c);
         }
-        self.pos += 1;
         if c == 0 {
             self.noeval += 1;
         }
@@ -122,10 +199,9 @@ impl Arith<'_> {
         if c == 0 {
             self.noeval -= 1;
         }
-        if self.peek_op() != Some(":") {
+        if !self.eat(Op::Colon) {
             return self.syntax("expecting ':'");
         }
-        self.pos += 1;
         if c != 0 {
             self.noeval += 1;
         }
@@ -138,15 +214,15 @@ impl Arith<'_> {
 
     fn binary(&mut self, min_prec: u8) -> Result<i64, String> {
         let mut lhs = self.unary()?;
-        while let Some(op) = self.peek_op() {
-            let Some(prec) = binary_prec(op) else { break };
+        while let Some((Op::Bin(op), len)) = self.peek_op() {
+            let prec = op.prec();
             if prec < min_prec {
                 break;
             }
-            self.pos += op.len();
+            self.pos += len;
             let skip = match op {
-                "&&" => lhs == 0,
-                "||" => lhs != 0,
+                Bin::LogAnd => lhs == 0,
+                Bin::LogOr => lhs != 0,
                 _ => false,
             };
             if skip {
@@ -161,73 +237,75 @@ impl Arith<'_> {
         Ok(lhs)
     }
 
-    fn apply(&self, op: &str, a: i64, b: i64) -> Result<i64, String> {
+    fn apply(&self, op: Bin, a: i64, b: i64) -> Result<i64, String> {
         Ok(match op {
-            "||" => (a != 0 || b != 0) as i64,
-            "&&" => (a != 0 && b != 0) as i64,
-            "|" => a | b,
-            "^" => a ^ b,
-            "&" => a & b,
-            "==" => (a == b) as i64,
-            "!=" => (a != b) as i64,
-            "<" => (a < b) as i64,
-            "<=" => (a <= b) as i64,
-            ">" => (a > b) as i64,
-            ">=" => (a >= b) as i64,
-            "<<" => a.wrapping_shl(b as u32),
-            ">>" => a.wrapping_shr(b as u32),
-            "+" => a.wrapping_add(b),
-            "-" => a.wrapping_sub(b),
-            "*" => a.wrapping_mul(b),
-            "/" | "%" => {
+            Bin::LogOr => (a != 0 || b != 0) as i64,
+            Bin::LogAnd => (a != 0 && b != 0) as i64,
+            Bin::Or => a | b,
+            Bin::Xor => a ^ b,
+            Bin::And => a & b,
+            Bin::Eq => (a == b) as i64,
+            Bin::Ne => (a != b) as i64,
+            Bin::Lt => (a < b) as i64,
+            Bin::Le => (a <= b) as i64,
+            Bin::Gt => (a > b) as i64,
+            Bin::Ge => (a >= b) as i64,
+            Bin::Shl => a.wrapping_shl(b as u32),
+            Bin::Shr => a.wrapping_shr(b as u32),
+            Bin::Add => a.wrapping_add(b),
+            Bin::Sub => a.wrapping_sub(b),
+            Bin::Mul => a.wrapping_mul(b),
+            Bin::Div | Bin::Rem => {
                 if b == 0 {
                     if self.noeval > 0 {
                         return Ok(0);
                     }
                     return self.syntax("division by zero");
                 }
-                if op == "/" {
+                if op == Bin::Div {
                     a.wrapping_div(b)
                 } else {
                     a.wrapping_rem(b)
                 }
             }
-            _ => unreachable!("{op}"),
         })
     }
 
     fn unary(&mut self) -> Result<i64, String> {
-        match self.peek_op() {
-            Some(op @ ("+" | "-" | "!" | "~")) => {
-                self.pos += 1;
-                let v = self.unary()?;
-                Ok(match op {
-                    "+" => v,
-                    "-" => v.wrapping_neg(),
-                    "!" => (v == 0) as i64,
-                    _ => !v,
-                })
-            }
-            _ => self.primary(),
-        }
+        let op = match self.peek_op() {
+            Some((op @ (Op::Bin(Bin::Add | Bin::Sub) | Op::Not | Op::Compl), _)) => op,
+            _ => return self.primary(),
+        };
+        self.pos += 1;
+        let v = self.unary()?;
+        Ok(match op {
+            Op::Bin(Bin::Add) => v,
+            Op::Bin(Bin::Sub) => v.wrapping_neg(),
+            Op::Not => (v == 0) as i64,
+            _ => !v,
+        })
     }
 
-    fn ident(&mut self) -> Vec<u8> {
+    fn ident(&mut self) -> &'a [u8] {
         let start = self.pos;
         while self.pos < self.s.len() && is_name_char(self.s[self.pos]) {
             self.pos += 1;
         }
-        self.s[start..self.pos].to_vec()
+        let s = self.s;
+        &s[start..self.pos]
     }
 
     fn var(&mut self, name: &[u8]) -> Result<i64, String> {
         if self.noeval > 0 {
             return Ok(0);
         }
-        match self.sh.get_var(name) {
+        if name == b"LINENO" {
+            return Ok(self.sh.lineno.into());
+        }
+        match self.sh.vars.get(name) {
             None => Ok(0),
             Some(v) if v.trim_ascii().is_empty() => Ok(0),
-            Some(v) => parse_number(&v).ok_or_else(|| format!("Illegal number: {}", String::from_utf8_lossy(&v))),
+            Some(v) => parse_number(v).ok_or_else(|| format!("Illegal number: {}", String::from_utf8_lossy(v))),
         }
     }
 
@@ -239,10 +317,9 @@ impl Arith<'_> {
         if c == b'(' {
             self.pos += 1;
             let v = self.expr()?;
-            if self.peek_op() != Some(")") {
+            if !self.eat(Op::RParen) {
                 return self.syntax("expecting ')'");
             }
-            self.pos += 1;
             return Ok(v);
         }
         if c.is_ascii_digit() {
@@ -257,7 +334,7 @@ impl Arith<'_> {
         }
         if is_name_start(c) {
             let name = self.ident();
-            return self.var(&name);
+            return self.var(name);
         }
         self.syntax("expecting primary")
     }
