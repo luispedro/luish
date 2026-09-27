@@ -347,7 +347,8 @@ Only interactive shells read it (not scripts or `luish -c`), first, before `rc.d
 shell doesn't read it again until it changes.
 
 Its `[plugins]` table lists the plugins to load in every interactive shell, and where they come from (see
-[Installing plugins with config.toml](plugins.md#installing-plugins-with-configtoml)).
+[Installing plugins with config.toml](plugins.md#installing-plugins-with-configtoml)). To keep the same settings on
+several machines, put them in a plugin of your own (see [a personal plugin](plugins.md#example-a-personal-plugin)).
 
 ## Cached startup files
 
