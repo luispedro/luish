@@ -32,6 +32,11 @@ die() {
     exit 1
 }
 
+# Fails if the binary has an RPATH or RUNPATH.
+no_rpath() {
+    ! ${READELF:-readelf} -d "$1" | grep -q 'R\(UN\)\?PATH' || die "$1 has an rpath"
+}
+
 # Runs the built binary, including a Rhai extension.
 smoke() {
     tmp=$(mktemp -d)
@@ -58,6 +63,11 @@ build_gnu() {
     target=$arch-unknown-linux-gnu
     cargo build --release --locked --target "$target"
     bin=target/$target/release/luish
+    # conda-forge's gcc adds its environment's lib directory as an rpath to
+    # everything it links, which would make every luish look for its
+    # libraries in a directory of the build machine.
+    patchelf --remove-rpath "$bin"
+    no_rpath "$bin"
     # The newest glibc symbol version must be at most $glibc_max.
     newest=$(${OBJDUMP:-objdump} -T "$bin" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -Vu | tail -n 1)
     [ -n "$newest" ] || die "no glibc symbol versions in $bin"
@@ -75,6 +85,7 @@ build_musl() {
     rustup run "$rust" cargo build --release --locked --target "$target"
     bin=target/$target/release/luish
     ! ${READELF:-readelf} -l "$bin" | grep -q INTERP || die "$bin is not static"
+    no_rpath "$bin"
     smoke "$bin"
     package "$bin" musl
 }

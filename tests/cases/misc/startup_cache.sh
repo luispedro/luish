@@ -70,4 +70,5 @@ $SH -i -c 'origin' 2>/dev/null
 echo '--- without login.d, ~/.profile is read (after rc.d)'
 rm -r .config/luish/login.d
 echo 'echo profile' > .profile
-$SH -il -c 'echo "A=$A"; origin' 2>/dev/null
+# /etc/profile runs too, and may print something (/etc/profile.d varies).
+$SH -il -c 'echo "A=$A"; origin' 2>/dev/null | grep -x -E 'uncached rc|profile|A=.*|rc2'

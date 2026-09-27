@@ -39,6 +39,10 @@ docs = "sphinx-build -W -b html docs docs/_build/html"
 # Release builds (scripts/dist.sh): linked against glibc 2.17 with conda-forge's
 # sysroot, so that they run on any distribution from 2014 on, and a static musl
 # build, for which dist.sh uses rustup (conda-forge has no musl Rust library).
+[feature.dist.dependencies]
+# To remove the rpath that conda-forge's gcc adds (scripts/dist.sh).
+patchelf = "*"
+
 [feature.dist.target.linux-64.dependencies]
 gcc_linux-64 = "*"
 sysroot_linux-64 = "2.17.*"
