@@ -584,7 +584,7 @@ mod tests {
 
     /// Printing `src` gives text that parses to the same tree.
     fn round_trip(src: &str) -> String {
-        let printed = print(src.as_bytes(), &AliasMap::new());
+        let printed = print(src.as_bytes(), &AliasMap::default());
         let mut a = parse(src.as_bytes());
         let mut b = parse(printed.as_bytes());
         strip_lines(&mut a);
@@ -648,7 +648,7 @@ mod tests {
 
     #[test]
     fn alias_names_quoted() {
-        let mut aliases = AliasMap::new();
+        let mut aliases = AliasMap::default();
         aliases.insert(b"ls".to_vec(), b"ls -F".to_vec());
         assert_eq!(
             print(b"f() { ls; echo ls; }", &aliases),

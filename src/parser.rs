@@ -662,14 +662,14 @@ mod tests {
     fn incomplete() {
         for s in ["if x", "echo 'a", "echo \\", "cat <<E\nx\n", "f() {", "a &&"] {
             let mut p = Parser::new(s.as_bytes().to_vec(), 1, false);
-            let e = p.parse_next(&Rc::new(AliasMap::new())).unwrap_err();
+            let e = p.parse_next(&Rc::new(AliasMap::default())).unwrap_err();
             assert!(e.incomplete, "{s:?}: {e:?}");
         }
     }
 
     #[test]
     fn aliases() {
-        let mut aliases = AliasMap::new();
+        let mut aliases = AliasMap::default();
         aliases.insert(b"ll".to_vec(), b"ls -l ".to_vec());
         aliases.insert(b"x".to_vec(), b"y".to_vec());
         aliases.insert(b"ls".to_vec(), b"ls -F".to_vec());

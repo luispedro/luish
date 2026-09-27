@@ -1,6 +1,6 @@
 //! Interpreter state and the top-level read-parse-execute loop.
 
-use std::collections::HashMap;
+use crate::hash::HashMap;
 use std::rc::Rc;
 
 use crate::ast::FunctionBody;
@@ -135,14 +135,14 @@ impl Shell {
             last_status: 0,
             last_bg_pid: None,
             options: Options::default(),
-            functions: HashMap::new(),
-            aliases: Rc::new(AliasMap::new()),
+            functions: HashMap::default(),
+            aliases: Rc::new(AliasMap::default()),
             traps: vec![None; NSIG],
             ignored_on_entry: signals::ignored_on_entry(),
             jobs: JobTable::default(),
             jobctl: None,
             job_warning: 0,
-            hash: HashMap::new(),
+            hash: HashMap::default(),
             path_stamps: Vec::new(),
             interactive: false,
             in_subshell: false,

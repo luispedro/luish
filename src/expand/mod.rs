@@ -12,16 +12,13 @@ use crate::options::Opt;
 use crate::shell::{Flow, Shell};
 use crate::sys;
 use pattern::{Trim, has_meta};
-use split::{Fields, XChar, XField, bytes};
+use split::{Fields, IfsSet, XChar, XField, bytes};
 
 type EResult<T> = Result<T, Flow>;
 
 impl Shell {
-    fn ifs(&self) -> Vec<u8> {
-        self.vars
-            .get(b"IFS")
-            .map(|v| v.to_vec())
-            .unwrap_or_else(|| b" \t\n".to_vec())
+    fn ifs(&self) -> IfsSet {
+        IfsSet::new(self.vars.get(b"IFS").unwrap_or(b" \t\n"))
     }
 
     /// The separator for `"$*"`: the first character of IFS, a space if
@@ -291,6 +288,15 @@ impl Shell {
     }
 
     fn expand_param(&mut self, pe: &ParamExp, quoted: bool, f: &mut Fields) -> EResult<()> {
+        // The common case, a plain `$name` that is set, without copying the
+        // value.
+        if let (ParamName::Var(n), ParamOp::Plain) = (&pe.name, &pe.op)
+            && n != b"LINENO"
+            && let Some(v) = self.vars.get(n)
+        {
+            push_result(v, quoted, f);
+            return Ok(());
+        }
         let multi = matches!(pe.name, ParamName::Special(b'@' | b'*'));
         let val = self.param_value(&pe.name);
         let nounset = self.opt(Opt::Nounset) && !multi;

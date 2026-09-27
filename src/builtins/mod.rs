@@ -22,8 +22,25 @@ use crate::sys;
 
 pub type BuiltinFn = fn(&mut Shell, &[Vec<u8>]) -> ExecResult;
 
-/// (name, function, special)
-const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
+/// Defines `TABLE`, the built-ins as (name, function, special), and
+/// `lookup`, which finds one with a `match` (compiled to comparisons of the
+/// length and the bytes as integers, rather than a scan of the table).
+macro_rules! builtins {
+    ($(($name:literal, $f:expr, $special:expr),)*) => {
+        const TABLE: &[(&[u8], BuiltinFn, bool)] = &[$(($name, $f, $special)),*];
+
+        /// Finds a built-in that every shell has: (function, special). See
+        /// [`Shell::builtin`] for all of them.
+        pub fn lookup(name: &[u8]) -> Option<(BuiltinFn, bool)> {
+            match name {
+                $($name => Some(($f, $special)),)*
+                _ => None,
+            }
+        }
+    };
+}
+
+builtins! {
     // special built-ins
     (b":", colon, true),
     (b".", misc::dot, true),
@@ -77,7 +94,7 @@ const TABLE: &[(&[u8], BuiltinFn, bool)] = &[
     (b"unalias", misc::unalias, false),
     (b"unsetopt", vars::setopt, false),
     (b"wait", jobs::wait, false),
-];
+}
 
 /// Regular built-ins that exist only in shells started interactive (and
 /// their subshells), so that scripts find the same commands as in dash.
@@ -86,12 +103,6 @@ const INTERACTIVE: &[(&[u8], BuiltinFn)] = &[
     (b"help", help::help),
     (b"plugin", crate::plugins::plugin),
 ];
-
-/// Finds a built-in that every shell has: (function, special). See
-/// [`Shell::builtin`] for all of them.
-pub fn lookup(name: &[u8]) -> Option<(BuiltinFn, bool)> {
-    TABLE.iter().find(|b| b.0 == name).map(|b| (b.1, b.2))
-}
 
 /// The names of all built-ins, including the interactive-only ones (for
 /// the line editor).

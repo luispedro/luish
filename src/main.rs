@@ -5,6 +5,7 @@ mod builtins;
 mod cmdtext;
 mod exec;
 mod expand;
+mod hash;
 mod input;
 mod interactive;
 mod jobs;

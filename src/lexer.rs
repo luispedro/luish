@@ -2,8 +2,8 @@
 //! command substitutions (`$(...)`) are parsed recursively in the middle of
 //! lexing a word.
 
+use crate::hash::HashMap;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::ast::*;
@@ -159,7 +159,7 @@ impl Parser {
             source_eof,
             peeked: None,
             pending_heredocs: Vec::new(),
-            aliases: Rc::new(AliasMap::new()),
+            aliases: Rc::new(AliasMap::default()),
             active_aliases: Vec::new(),
             alias_blank_end: None,
             splice_delta: 0,

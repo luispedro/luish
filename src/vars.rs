@@ -1,6 +1,6 @@
 //! Shell variables.
 
-use std::collections::HashMap;
+use crate::hash::HashMap;
 use std::ffi::CString;
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -22,7 +22,7 @@ pub struct ReadonlyError;
 
 impl Vars {
     pub fn from_env() -> Vars {
-        let mut map = HashMap::new();
+        let mut map = HashMap::default();
         for (k, v) in std::env::vars_os() {
             use std::os::unix::ffi::OsStrExt;
             let k = k.as_bytes().to_vec();
