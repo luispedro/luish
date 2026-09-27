@@ -1,0 +1,24 @@
+1: shopt: not found
+1: shopt is bash's; in luish, use: setopt globstar autocd
+status 127
+1: shopt: not found
+1: shopt is bash's; in luish, use: unsetopt globstar
+1: shopt: not found
+1: shopt is bash's; luish sets options with setopt and unsetopt
+1: shopt: not found
+1: shopt is bash's; luish sets options with setopt and unsetopt
+1: shopt: not found
+1: shopt is bash's; in luish, use: setopt globstar
+1: shopt: not found
+1: shopt is bash's; in luish, use: setopt globstar
+1: shopt: not found
+1: shopt is bash's; in luish, use: setopt globstar
+1: shopt: not found
+1: shopt is bash's; in luish, use: setopt globstar
+1: shopt: not found
+1: shopt is bash's; in luish, use: setopt globstar
+1: shopt: not found
+1: shopt is bash's; in luish, use: setopt globstar
+1: nosuchcommand_xyz: not found
+1: ./shopt: not found
+status 127

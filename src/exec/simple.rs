@@ -226,7 +226,7 @@ impl Shell {
         let pid = if exec_now {
             0
         } else {
-            if !self.look_up_before_fork(&argv[0]) {
+            if !self.look_up_before_fork(argv) {
                 return Ok(127);
             }
             self.fork_child(ForkKind::Foreground(0))?
@@ -250,11 +250,12 @@ impl Shell {
     /// that the shell remembers it (`hash`; the child finds it in its copy of
     /// the cache) and a missing command costs no fork. Returns false, after
     /// reporting it, if there is no such command.
-    fn look_up_before_fork(&mut self, name: &[u8]) -> bool {
+    fn look_up_before_fork(&mut self, argv: &[Vec<u8>]) -> bool {
+        let name = &argv[0];
         if name.contains(&b'/') || self.find_in_path(name).is_some() {
             return true;
         }
-        self.error(format!("{}: not found", String::from_utf8_lossy(name)));
+        self.report_not_found(argv);
         false
     }
 
@@ -287,7 +288,7 @@ impl Shell {
             }
             r
         });
-        r.map_err(|e| self.exec_error(&argv[0], e))
+        r.map_err(|e| self.exec_error(argv, e))
     }
 
     /// Runs `f` with variable assignments that only last for its duration.
@@ -330,7 +331,7 @@ impl Shell {
                         Err(status) => return Ok(status),
                     }
                 } else {
-                    if alt_path.is_none() && !self.look_up_before_fork(&argv[0]) {
+                    if alt_path.is_none() && !self.look_up_before_fork(argv) {
                         return Ok(127);
                     }
                     let pid = self.fork_child(ForkKind::Foreground(0))?;
@@ -356,7 +357,7 @@ impl Shell {
             }
             Err(e)
         });
-        let code = self.exec_error(&argv[0], r.unwrap_err());
+        let code = self.exec_error(argv, r.unwrap_err());
         sys::exit(code)
     }
 
@@ -368,11 +369,16 @@ impl Shell {
         args
     }
 
-    /// Reports that `name` couldn't be executed (errno `e`), and returns
-    /// the status for it.
-    fn exec_error(&self, name: &[u8], e: i32) -> i32 {
+    /// Reports that the command `argv` couldn't be executed (errno `e`),
+    /// and returns the status for it.
+    fn exec_error(&self, argv: &[Vec<u8>], e: i32) -> i32 {
+        let name = &argv[0];
         // Debian's dash: 126 only for a file that can't be executed.
         let (msg, code) = match e {
+            libc::ENOENT if !name.contains(&b'/') => {
+                self.report_not_found(argv);
+                return 127;
+            }
             libc::ENOENT | libc::ENOTDIR => ("not found".to_string(), 127),
             libc::EACCES | libc::EISDIR => ("Permission denied".to_string(), 126),
             _ => (sys::strerror(e), 127),

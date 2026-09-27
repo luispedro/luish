@@ -1,4 +1,5 @@
 Unreleased
+    * `shopt` (not found) suggests the matching `setopt`
     * `builtin` built-in, as in zsh and bash
     * Tab expands globs, variables and substitutions, as in zsh
     * Don't print git's error for a locked plugin commit that isn't fetched yet

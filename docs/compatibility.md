@@ -65,6 +65,7 @@ instead.
 | Grouped option names, `setopt NAME=VALUE`, `setopt -p GROUP` | No `setopt` | luish's own options are named in groups (`history.share`, `glob.star`), with zsh's names as aliases, and a `no` prefix goes on the last part (`history.no_share`). `setopt NAME=VALUE` sets an option or a setting with a value, and such arguments are expanded as assignments, as for `export`. `setopt -p GROUP` puts the names that follow in `GROUP`. zsh has none of these (`setopt a=b` is an error there, and `setopt -p` sets `privileged`) |
 | `help` | Not a built-in (`not found`, status 127) | In interactive shells (and their subshells), a built-in that shows help for the built-ins. Not a built-in in scripts or `-c`, as in dash; there, `__luish_internal help` does the same |
 | `plugin` | Not a built-in (`not found`, status 127) | In interactive shells (and their subshells), a built-in that loads [plugins](plugins.md). Not a built-in in scripts or `-c`, as in dash; there, `__luish_internal plugin` does the same |
+| A command that isn't found | `NAME: not found` (status 127) | The same, followed by a hint for some commands of other shells: bash's `shopt` suggests `setopt` or `unsetopt` (as `in luish, use: setopt globstar` for `shopt -s globstar`) |
 
 ## Known limitations
 

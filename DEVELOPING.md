@@ -174,6 +174,12 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   used to be lost.
 - Redirections: `n>&n` does nothing even if `n` is closed; `>&word` with a word that isn't a number or `-` is a fatal
   syntax error, as in dash. Tests: `exec/redirect_dup.sh`, `exec/redirect_big_fd.sh`.
+- A command that isn't found is reported by `report_not_found` (`exec/not_found.rs`), from all three places that
+  find out (`look_up_before_fork`, and `exec_error` after `posix_spawn` or `execve`), so the hint is the same whether
+  the shell spawns, forks or execs. After `NAME: not found` it looks `NAME` up in `FALLBACKS`, whose functions get the
+  command's words and may return a hint (`shopt` suggests `setopt`, translating the options luish knows). This is the
+  place for further suggestions (such as similar command names); it runs only for a missing command, so it costs
+  nothing otherwise. A name with `/` gets no hint. Test: `exec/not_found_hint.sh`.
 - Exec errors other than EACCES give 127, as in Debian's dash (e.g. `ELOOP`). `wait_for` prints a message for deaths
   by signal except INT and PIPE.
 - `set -e`: as in dash, only simple commands, subshells and pipelines (and a compound command whose redirection
@@ -515,6 +521,7 @@ truncates when it relocates the package.
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
 | `plugin` | `builtins/internal_plugin.sh`, `builtins/plugin.sh` (same as dash), `plugin_builtin` in `tests/interactive.rs` |
+| Hints for commands not found | `exec/not_found_hint.sh` |
 
 ## dash as the reference
 

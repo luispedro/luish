@@ -1,6 +1,7 @@
 //! The executor: walks the AST and runs commands.
 
 mod fork;
+mod not_found;
 pub mod redirect;
 mod simple;
 
