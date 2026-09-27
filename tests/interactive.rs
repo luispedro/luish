@@ -714,8 +714,10 @@ complete -F _frob frob
     )
     .unwrap();
     std::fs::write(sh.path("notes.txt"), "").unwrap();
+    std::fs::create_dir(sh.path("my dir")).unwrap();
+    std::fs::write(sh.path("my dir/inner.txt"), "").unwrap();
     sh.expect("$ ");
-    sh.send("plugin load ./bash-completion/; frob() { echo \"frob:$*\"; }; quiet() { echo \"quiet:$*\"; }; echo \"loaded $?\"\n");
+    sh.send("plugin load ./bash-completion/; frob() { echo \"frob:$*\"; }; quiet() { echo \"quiet:$*\"; }; cat() { echo \"cat:${1#\"$HOME/\"}\"; }; echo \"loaded $?\"\n");
     sh.expect("loaded 0\n");
     sh.expect("$ ");
     sh.send("frob se\t\n");
@@ -732,6 +734,12 @@ complete -F _frob frob
     sh.expect("$ ");
     sh.send("echo not\t\n");
     sh.expect("notes.txt\n");
+    sh.expect("$ ");
+    // bash-completion's filenames (`cat` has `_longopt`), from `~` and with
+    // a space: bash-completion quotes the word for compgen, and directories
+    // get a `/`.
+    sh.send("cat ~/my\\ d\tin\t\n");
+    sh.expect("cat:my dir/inner.txt\n");
     sh.expect("$ ");
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);

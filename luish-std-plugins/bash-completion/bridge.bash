@@ -20,6 +20,12 @@ for f in "${BASH_COMPLETION_SCRIPT-}" \
 done
 source "$f" || exit 1
 
+# The words are unquoted, but bash-completion quotes the word for compgen
+# (`~` as `\~`, a space as `\ `), which is undone only while bash is
+# completing. So they go to compgen as they are.
+_quote_readline_by_ref() { printf -v "$2" %s "$1"; }
+_comp_quote_compgen() { REPLY=$1; }
+
 index=$1
 shift
 cmd=$1
@@ -62,16 +68,17 @@ if [[ -z $spec ]]; then
     spec=$(complete -p -- "$cmd" 2>/dev/null) || exit 1
 fi
 
-# The options (`-o`), the function (`-F`), the command (`-C`), and what is
+# The options (`-o`, named so that completion functions' own `opts` don't
+# hide it from compopt), the function (`-F`), the command (`-C`), and what is
 # left for compgen.
-opts=()
+copts=()
 func=
 command=
 args=()
 eval "set -- ${spec#complete }"
 while (($# > 1)); do
     case $1 in
-    -o) opts+=("$2"); shift ;;
+    -o) copts+=("$2"); shift ;;
     -F) func=$2; shift ;;
     -C) command=$2; shift ;;
     -[AGWXPS]) args+=("$1" "$2"); shift ;;
@@ -85,8 +92,8 @@ done
 compopt() {
     while (($#)); do
         case $1 in
-        -o) opts+=("$2"); shift ;;
-        +o) for i in "${!opts[@]}"; do [[ ${opts[i]} == "$2" ]] && unset 'opts[i]'; done; shift ;;
+        -o) copts+=("$2"); shift ;;
+        +o) for i in "${!copts[@]}"; do [[ ${copts[i]} == "$2" ]] && unset 'copts[i]'; done; shift ;;
         esac
         shift
     done
@@ -94,7 +101,7 @@ compopt() {
 
 has() {
     local o
-    for o in "${opts[@]}"; do [[ $o == "$1" ]] && return; done
+    for o in "${copts[@]}"; do [[ $o == "$1" ]] && return; done
     return 1
 }
 
@@ -106,7 +113,7 @@ COMPREPLY=()
 [[ -n $command ]] && mapfile -t -O "${#COMPREPLY[@]}" COMPREPLY < <(eval "$command" '"$cmd" "$word" "$prev"')
 if ((${#COMPREPLY[@]} == 0)) && has dirnames; then
     mapfile -t COMPREPLY < <(compgen -d -- "$word")
-    opts+=(filenames)
+    copts+=(filenames)
 fi
 if ((${#COMPREPLY[@]} == 0)) && { has default || has bashdefault; }; then
     exit 2

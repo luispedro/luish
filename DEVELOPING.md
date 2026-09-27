@@ -372,7 +372,9 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   (lists commands from `LC_ALL=C git help -a` without the low-level and guide sections, options from
   `git CMD --git-completion-helper`, files from `ls-files`/`diff --cached`, collapsed to the next directory) and
   `bash-completion/` (a default completer that runs bash-completion in bash through `bridge.bash`; about 50 ms per
-  Tab, since bash sources `bash_completion` each time).
+  Tab, since bash sources `bash_completion` each time). Outside bash's own completion, compgen doesn't undo
+  the quoting bash-completion gives the word (`~` as `\~`), so the bridge replaces the quoting functions; its
+  `-o` options are in `copts`, since completion functions have a local `opts`.
 - **Packages** (`package.rs`, `fetch.rs`): `read_config` turns `[plugins]` into owned `Config` (sources in
   `plugins.available`, plus the built-in `std`; entries in `plugins.enabled`), and `manifest` a directory plugin's
   `plugin.toml` into entries of the same kind. `Resolver` resolves entries depth-first, dependencies before
