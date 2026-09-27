@@ -300,7 +300,7 @@ You also [install plugins in
 config.toml](plugins.md#installing-plugins-with-configtoml)).
 
 To keep the same settings on several machines, put them in a plugin of your own
-(see [a personal plugin](plugins.md#example-a-personal-plugin)) and share that
+(see [a personal plugin](plugins.md#suggestion-a-personal-plugin)) and share that
 across them with git or another tool.
 
 ## Cached startup files
