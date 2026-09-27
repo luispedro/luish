@@ -1,5 +1,10 @@
 # luish
 
+[![CI](https://github.com/luispedro/luish/actions/workflows/ci.yml/badge.svg)](https://github.com/luispedro/luish/actions/workflows/ci.yml)
+[![Documentation](https://readthedocs.org/projects/luish/badge/?version=latest)](https://luish.readthedocs.io/en/latest/)
+[![Latest release](https://img.shields.io/github/v/release/luispedro/luish)](https://github.com/luispedro/luish/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](COPYING.MIT)
+
 luish is a POSIX `sh` for Linux, written in Rust, meant to replace zsh as a daily driver, built on a core that is as
 fast as [dash](http://gondor.apana.org.au/~herbert/dash/).
 
