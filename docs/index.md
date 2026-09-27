@@ -71,4 +71,5 @@ plugins
 improvements
 performance
 compatibility
+whatsnew
 ```
