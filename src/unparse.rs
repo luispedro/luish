@@ -14,7 +14,7 @@ use crate::lexer::{AliasMap, is_name_char};
 /// The definition of a function, ending with a newline. A command name that
 /// is one of `aliases` is quoted, so that reading the text back doesn't
 /// expand it again. Also returns whether the text has a glob qualifier
-/// (which reads back only under `setopt bareglobqual`).
+/// (which reads back only under `setopt glob.bare_qualifiers`).
 pub fn function(name: &[u8], body: &FunctionBody, aliases: &AliasMap) -> (Vec<u8>, bool) {
     let globqual = Cell::new(false);
     let mut p = Printer::new(0, aliases, &globqual);

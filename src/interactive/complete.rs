@@ -52,7 +52,7 @@ pub struct Names {
     /// Where `plugin load` finds plugins by name.
     pub plugin_dir: Option<Vec<u8>>,
     pub cdpath: Vec<u8>,
-    /// `setopt autocd`: directories are commands too.
+    /// `setopt cd.auto`: directories are commands too.
     pub autocd: bool,
     /// The options `setopt` and `unsetopt` can change, named as they list
     /// them, and whether each is on.
@@ -184,7 +184,8 @@ enum Args {
     For,
     /// Widget names after the key sequence.
     Bindkey,
-    /// Option names: those that are off for `setopt`, on for `unsetopt`.
+    /// Option names (those that are off for `setopt`, on for `unsetopt`),
+    /// setting names, and filenames after `NAME=`.
     Setopt(bool),
 }
 
@@ -460,9 +461,17 @@ impl<'a> Scan<'a> {
     /// Whether the current word is an assignment, where filenames are
     /// completed after `=` and `:`.
     fn in_assignment(&self) -> bool {
-        !self.redirect
-            && is_assignment(&self.text)
-            && (self.cmd_pos || self.words.first().is_some_and(|c| DECLARATIONS.contains(&&c[..])))
+        let Some(eq) = self.text.iter().position(|&c| c == b'=') else {
+            return false;
+        };
+        let name = &self.text[..eq];
+        match self.words.first() {
+            _ if self.redirect => false,
+            _ if self.cmd_pos => crate::lexer::is_valid_name(name),
+            Some(c) if c == b"setopt" => crate::options::is_setting_name(name),
+            Some(c) => DECLARATIONS.contains(&&c[..]) && crate::lexer::is_valid_name(name),
+            None => false,
+        }
     }
 
     /// Scans `line`, until the end or until `done` is set.
@@ -1064,18 +1073,22 @@ impl ShellHelper {
                         }
                         0
                     }
-                    Some(Args::Setopt(on)) => {
+                    Some(Args::Setopt(on)) if !w.text.contains(&b'=') => {
                         // As in zsh: the options the command would change,
-                        // and after `no` the others inverted.
-                        let no = w.text.get(..2).is_some_and(|p| p.eq_ignore_ascii_case(b"no"));
+                        // and after `no` (on the last part of a grouped
+                        // name) the others inverted. Then the settings with
+                        // a value.
+                        let leaf = w.text.iter().rposition(|&c| c == b'.').map_or(0, |i| i + 1);
+                        let no = w.text[leaf..].get(..2).is_some_and(|p| p.eq_ignore_ascii_case(b"no"));
                         for &(name, state) in &self.names.options {
                             if state != on {
                                 out.push(Candidate::word(name.as_bytes()));
                             } else if no {
-                                let name = name.as_bytes();
-                                out.push(Candidate::word(&[b"no", name].concat()));
+                                out.push(Candidate::word(&crate::options::inverted(name.as_bytes())));
                             }
                         }
+                        let values = crate::options::VALUES.iter().map(|v| v.0.as_bytes());
+                        out.extend(values.map(Candidate::word));
                         0
                     }
                     Some(Args::Dirs) => files(Files::Dirs, &mut out),
@@ -1084,7 +1097,7 @@ impl ShellHelper {
                         self.cd_dirs(&w.text[w.split..], &mut out);
                         w.split
                     }
-                    Some(Args::Vars | Args::Trap) | None => files(Files::All, &mut out),
+                    Some(Args::Vars | Args::Trap | Args::Setopt(_)) | None => files(Files::All, &mut out),
                 }
             }
             Kind::File => files(Files::All, &mut out),
@@ -1402,6 +1415,8 @@ mod tests {
         assert_eq!(kind("ls --file=fo"), (Arg, "fo".into()));
         assert_eq!(kind("ls a=b"), (Arg, "a=b".into()));
         assert_eq!(kind("export a=b:c"), (Arg, "c".into()));
+        assert_eq!(kind("setopt history.file=~/h"), (Arg, "~/h".into()));
+        assert_eq!(kind("export history.file=~/h"), (Arg, "history.file=~/h".into()));
         assert_eq!(kind("echo $HO"), (Var(false), "HO".into()));
         assert_eq!(kind("echo \"${HO"), (Var(true), "HO".into()));
         assert_eq!(kind("echo '$HO"), (Arg, "$HO".into()));
@@ -1548,7 +1563,14 @@ mod tests {
                 plugin_dir: Some(dir.join("plugins").as_os_str().as_bytes().to_vec()),
                 cdpath: format!("/nonexistent::{d}").into_bytes(),
                 autocd: false,
-                options: vec![("noglob", false), ("globstar", true), ("autocd", false)],
+                options: vec![
+                    ("errexit", false),
+                    ("noglob", false),
+                    ("glob.star", true),
+                    ("cd.auto", false),
+                    ("history.share", true),
+                    ("history.save_no_dups", false),
+                ],
             },
             ask: Some(fake_git),
             ..Default::default()
@@ -1572,6 +1594,18 @@ mod tests {
         assert_eq!(complete(&h, "echo ${HOM"), ["HOME}"]);
         assert_eq!(complete(&h, "echo \"${HOM"), ["HOME}"]);
         assert_eq!(complete(&h, "X=~/f"), ["X=~/file\\ one "]);
+        assert_eq!(
+            complete(&h, "setopt history.s"),
+            ["history.save_no_dups ", "history.save_size ", "history.size "]
+        );
+        assert_eq!(
+            complete(&h, "unsetopt history.s"),
+            ["history.save_size ", "history.share ", "history.size "]
+        );
+        assert_eq!(complete(&h, "setopt history.no"), ["history.no_share "]);
+        assert_eq!(complete(&h, "unsetopt history.no"), ["history.no_save_no_dups "]);
+        assert_eq!(complete(&h, "setopt errex"), ["errexit "]);
+        assert_eq!(complete(&h, "setopt history.file=~/f"), ["history.file=~/file\\ one "]);
         // Commands whose arguments aren't filenames.
         assert_eq!(complete(&h, "cd ~/"), ["~/sub\\ dir/"]);
         // `CDPATH`, after the current directory (the crate's), as in zsh.
@@ -1600,11 +1634,23 @@ mod tests {
         assert_eq!(complete(&h, "getopts HOM"), Vec::<String>::new());
         assert_eq!(complete(&h, "getopts ab: HOM"), ["HOME "]);
         assert_eq!(complete(&h, "getopts -- ab: HOM"), ["HOME "]);
-        assert_eq!(complete(&h, "setopt "), ["autocd ", "noglob "]);
+        assert_eq!(
+            complete(&h, "setopt "),
+            [
+                "cd.auto ",
+                "errexit ",
+                "history.file ",
+                "history.save_no_dups ",
+                "history.save_size ",
+                "history.size ",
+                "noglob "
+            ]
+        );
         assert_eq!(complete(&h, "setopt glob"), ["noglob "]);
-        assert_eq!(complete(&h, "setopt no"), ["noglob ", "noglobstar "]);
-        assert_eq!(complete(&h, "unsetopt "), ["globstar "]);
-        assert_eq!(complete(&h, "unsetopt noau"), ["noautocd "]);
+        assert_eq!(complete(&h, "setopt no"), ["noglob "]);
+        assert_eq!(complete(&h, "setopt glob.no"), ["glob.no_star "]);
+        assert_eq!(complete(&h, "unsetopt gl"), ["glob.star "]);
+        assert_eq!(complete(&h, "unsetopt cd.no_au"), ["cd.no_auto "]);
         assert_eq!(complete(&h, "for HOM"), ["HOME "]);
         assert_eq!(complete(&h, "for x "), ["in "]);
         assert_eq!(complete(&h, "for x in ~/f"), ["~/file\\ one "]);

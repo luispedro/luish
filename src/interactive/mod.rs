@@ -105,7 +105,7 @@ pub fn load_history(sh: &Shell) {
 }
 
 /// Appends the new entries to the history file (on exit, or after each
-/// command with `inc_append_history` or `share_history`).
+/// command with `history.inc_append` or `history.share`).
 pub fn save_history(sh: &Shell) {
     let Some(f) = history_file(sh) else { return };
     let save = save_options(sh, &f);
@@ -133,7 +133,7 @@ pub fn add_history(sh: &Shell, text: &[u8]) {
     }
 }
 
-/// Before each prompt: applies `HISTSIZE`, and with `share_history` reads
+/// Before each prompt: applies `HISTSIZE`, and with `history.share` reads
 /// what other shells have added to the history file.
 fn update_history(sh: &Shell) {
     let size = history_size(sh);

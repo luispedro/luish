@@ -23,7 +23,7 @@ in d
 uC
 noclobber
 nounset
-promptpercent
+prompt.percent
 bye
 status 1
 k() {

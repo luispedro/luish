@@ -647,7 +647,7 @@ impl ShellHelper {
 }
 
 impl ShellHelper {
-    /// Whether `name` is a directory that `setopt autocd` changes to (see
+    /// Whether `name` is a directory that `setopt cd.auto` changes to (see
     /// `Shell::autocd_target`).
     fn is_autocd_dir(&self, name: &[u8]) -> bool {
         let name = match (name.strip_prefix(b"~/"), &self.names.home) {

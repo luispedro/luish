@@ -1,5 +1,5 @@
 //! zsh's prompt expansion: the `%` sequences in `PS1`, `PS2` and `PS4`,
-//! expanded when the `promptpercent` option is on, after parameter
+//! expanded when the `prompt.percent` option is on, after parameter
 //! expansion (as zsh does with `PROMPT_SUBST`).
 //!
 //! The result keeps the escape sequences (colours, `%{...%}`) apart from

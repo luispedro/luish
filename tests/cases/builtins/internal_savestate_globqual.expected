@@ -1,12 +1,12 @@
 *(/)
-bareglobqual
-unsetopt bareglobqual
-setopt bareglobqual
+glob.bare_qualifiers
+unsetopt glob.bare_qualifiers
+setopt glob.bare_qualifiers
 f() {
-unsetopt bareglobqual
+unsetopt glob.bare_qualifiers
 d
 file internal_savestate_globqual.sh state
-bareglobqual
-setopt bareglobqual
+glob.bare_qualifiers
+setopt glob.bare_qualifiers
 f() {
 g() {

@@ -129,7 +129,7 @@ pub struct Parser {
     pub(crate) splice_delta: isize,
     /// `parse_next` found the start of a command (not just blank lines).
     pub started: bool,
-    /// `setopt bareglobqual`: a trailing `(...)` in a word is a glob
+    /// `setopt glob.bare_qualifiers`: a trailing `(...)` in a word is a glob
     /// qualifier. This is the only place the lexer depends on an option.
     pub bareglobqual: bool,
 }

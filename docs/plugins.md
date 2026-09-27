@@ -134,7 +134,7 @@ Before each prompt, luish:
 
 1. runs the `prompt-vars` hooks and `prompt-vars.lsh` files, plugin by plugin in the order the plugins were loaded
    (a plugin's hooks before its file), each setting its variables;
-2. expands `PS1` with those variables (parameter expansion, then `%` expansion under `promptpercent`);
+2. expands `PS1` with those variables (parameter expansion, then `%` expansion under `prompt.percent`);
 3. puts every variable they changed back as it was (or unsets it).
 
 So the variables don't leak into the shell: after the prompt, `echo $git_branch` prints what it printed before, and
@@ -183,7 +183,7 @@ The order of operations matters:
    give the prompt only in some directories, for example. A hook that fails (or returns something other than a
    string or `()`) is reported, and the next one is tried.
 3. The prompt a hook returns doesn't go through parameter expansion, so `$x` in it stays as it is. It does go through
-   `%` expansion if the `promptpercent` option is on (`setopt prompt_percent`, see [](usage.md)), as in the example.
+   `%` expansion if the `prompt.percent` option is on (`setopt prompt.percent`, see [](usage.md)), as in the example.
 4. The variables set by `prompt-vars` are put back. What a `prompt-rewrite` hook itself changes, with `sh::setvar` or
    `sh::run`, stays.
 

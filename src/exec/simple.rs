@@ -150,7 +150,7 @@ impl Shell {
             return Ok(self.subst_status.unwrap_or(0));
         }
         let mut kind = self.lookup_command(&argv[0], true);
-        // `setopt autocd`, as in zsh: a command that is a single word, with
+        // `setopt cd.auto`, as in zsh: a command that is a single word, with
         // no redirections, read from standard input (so not in scripts or
         // `-c`), that names a directory and not a command, runs `cd`.
         if matches!(kind, CommandKind::External)
@@ -183,7 +183,7 @@ impl Shell {
     }
 
     /// The directory that `name`, a command that wasn't found, changes to
-    /// under `setopt autocd` (zsh's `cancd`): a command in `PATH` or an
+    /// under `setopt cd.auto` (zsh's `cancd`): a command in `PATH` or an
     /// executable file comes first, and a relative name not starting with
     /// `.` or `..` is also looked for in `CDPATH`.
     fn autocd_target(&mut self, name: &[u8]) -> Option<Vec<u8>> {
@@ -387,13 +387,13 @@ impl Shell {
     }
 
     /// Expands a prompt variable: parameter expansion, then, with the
-    /// `promptpercent` option, `%` sequences (as zsh does).
+    /// `prompt.percent` option, `%` sequences (as zsh does).
     pub fn prompt(&mut self, var: &[u8]) -> crate::prompt::Prompt {
         let text = self.param_expand_prompt(var);
         self.percent_expand_prompt(text)
     }
 
-    /// Expands the `%` sequences of a prompt if `promptpercent` is on.
+    /// Expands the `%` sequences of a prompt if `prompt.percent` is on.
     pub fn percent_expand_prompt(&self, text: Vec<u8>) -> crate::prompt::Prompt {
         if self.opt(Opt::PromptPercent) && text.contains(&b'%') {
             crate::prompt::expand(self, &text)

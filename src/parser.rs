@@ -524,11 +524,16 @@ impl Parser {
 
 /// Splits `NAME=value` into an assignment, if the word has that form.
 pub(crate) fn split_assignment(w: &Word) -> Option<Assign> {
+    split_assignment_with(w, is_valid_name)
+}
+
+/// [`split_assignment`] with another test for the name (for `setopt`).
+pub(crate) fn split_assignment_with(w: &Word, is_name: fn(&[u8]) -> bool) -> Option<Assign> {
     let Some(WordPart::Literal(s)) = w.0.first() else {
         return None;
     };
     let eq = s.iter().position(|&c| c == b'=')?;
-    if !is_valid_name(&s[..eq]) {
+    if !is_name(&s[..eq]) {
         return None;
     }
     let mut parts = Vec::new();

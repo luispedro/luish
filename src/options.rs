@@ -61,8 +61,27 @@ pub const OPTIONS: &[(Opt, Option<u8>, &str)] = &[
 
 /// luish's own options, beyond POSIX and dash: (option, name). They are set
 /// only with `setopt` and `unsetopt`, as in zsh, so that `set -o` and `$-`
-/// stay as in dash. All are off by default.
+/// stay as in dash. All are off by default. Their names are grouped by
+/// what they apply to, as `group.name`.
 pub const EXTENDED: &[(Opt, &str)] = &[
+    (Opt::PromptPercent, "prompt.percent"),
+    (Opt::Globstar, "glob.star"),
+    (Opt::Bareglobqual, "glob.bare_qualifiers"),
+    (Opt::Autocd, "cd.auto"),
+    (Opt::HistIgnoreSpace, "history.ignore_space"),
+    (Opt::HistReduceBlanks, "history.reduce_blanks"),
+    (Opt::HistSaveNoDups, "history.save_no_dups"),
+    (Opt::IncAppendHistory, "history.inc_append"),
+    (Opt::ShareHistory, "history.share"),
+    (Opt::Autosuggest, "editor.autosuggest"),
+    (Opt::AutoPushd, "pushd.auto"),
+    (Opt::PushdIgnoreDups, "pushd.ignore_dups"),
+    (Opt::PushdSilent, "pushd.silent"),
+];
+
+/// Other names of luish's own options: zsh's, and those they had before
+/// they were grouped.
+const ALIASES: &[(Opt, &str)] = &[
     (Opt::PromptPercent, "promptpercent"),
     (Opt::Globstar, "globstar"),
     (Opt::Bareglobqual, "bareglobqual"),
@@ -77,6 +96,66 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::PushdIgnoreDups, "pushdignoredups"),
     (Opt::PushdSilent, "pushdsilent"),
 ];
+
+/// The type of a setting that holds a value rather than being on or off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// A non-negative decimal number.
+    Number,
+    /// Any string; a file name, for instance.
+    Text,
+}
+
+/// Settings with a value, set with `setopt NAME=VALUE`: (name, the variable
+/// that holds the value, its type). `unsetopt NAME` unsets the variable,
+/// which gives the default back.
+pub const VALUES: &[(&str, &[u8], Kind)] = &[
+    ("history.file", b"HISTFILE", Kind::Text),
+    ("history.size", b"HISTSIZE", Kind::Number),
+    ("history.save_size", b"SAVEHIST", Kind::Number),
+];
+
+/// A setting found by name for `setopt` and `unsetopt`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Setting {
+    /// An option, and whether the name means it is on.
+    Flag(Opt, bool),
+    /// A setting with a value: its variable and type.
+    Value(&'static [u8], Kind),
+}
+
+/// Whether `s` has the form of a setting's name: names (as for variables)
+/// separated by `.`.
+pub fn is_setting_name(s: &[u8]) -> bool {
+    s.split(|&c| c == b'.').all(crate::lexer::is_valid_name)
+}
+
+/// Parses the value of an option: `true`, `on`, `yes` or `1`, or `false`,
+/// `off`, `no` or `0` (case doesn't matter).
+pub fn parse_bool(s: &[u8]) -> Option<bool> {
+    match s.to_ascii_lowercase().as_slice() {
+        b"true" | b"on" | b"yes" | b"1" => Some(true),
+        b"false" | b"off" | b"no" | b"0" => Some(false),
+        _ => None,
+    }
+}
+
+/// The name that inverts an option's: with `no` added to its last part
+/// (`noglob`, `history.no_share`).
+pub fn inverted(name: &[u8]) -> Vec<u8> {
+    match name.iter().rposition(|&c| c == b'.') {
+        Some(i) => [&name[..=i], b"no_", &name[i + 1..]].concat(),
+        None => [b"no", name].concat(),
+    }
+}
+
+/// A name without `_` and in lower case, as names are compared.
+fn normalize(name: &[u8]) -> Vec<u8> {
+    name.iter()
+        .filter(|&&c| c != b'_')
+        .map(u8::to_ascii_lowercase)
+        .collect()
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct Options {
@@ -110,24 +189,31 @@ impl Options {
         OPTIONS.iter().find(|o| o.2.as_bytes() == name).map(|o| o.0)
     }
 
-    /// Finds an option for `setopt` and `unsetopt`: any option, named as in
-    /// zsh (case doesn't matter, `_` is ignored, and a `no` prefix is added
-    /// or removed to invert it). Returns the option and whether the name
-    /// means it is on.
-    pub fn by_zsh_name(name: &[u8]) -> Option<(Opt, bool)> {
-        let name: Vec<u8> = name
-            .iter()
-            .filter(|&&c| c != b'_')
-            .map(u8::to_ascii_lowercase)
-            .collect();
-        let find = |n: &[u8]| Self::all_names().find(|o| o.1.as_bytes() == n).map(|o| o.0);
-        if let Some(o) = find(&name) {
-            return Some((o, true));
+    /// Finds a setting for `setopt` and `unsetopt`, named as in zsh: case
+    /// doesn't matter, `_` is ignored, and for an option a `no` prefix
+    /// (on the last part of a grouped name, as in `history.no_share`) is
+    /// added or removed to invert it.
+    pub fn find(name: &[u8]) -> Option<Setting> {
+        let name = normalize(name);
+        let flag = |n: &[u8]| {
+            Self::all_names()
+                .chain(ALIASES.iter().copied())
+                .find(|o| normalize(o.1.as_bytes()) == n)
+                .map(|o| o.0)
+        };
+        if let Some(o) = flag(&name) {
+            return Some(Setting::Flag(o, true));
         }
-        match name.strip_prefix(b"no") {
-            Some(rest) => find(rest).map(|o| (o, false)),
-            None => find(&[b"no", name.as_slice()].concat()).map(|o| (o, false)),
+        if let Some(v) = VALUES.iter().find(|v| normalize(v.0.as_bytes()) == name) {
+            return Some(Setting::Value(v.1, v.2));
         }
+        let leaf = name.iter().rposition(|&c| c == b'.').map_or(0, |i| i + 1);
+        let (group, leaf) = name.split_at(leaf);
+        let inverse = match leaf.strip_prefix(b"no") {
+            Some(rest) => [group, rest].concat(),
+            None => [group, b"no", leaf].concat(),
+        };
+        flag(&inverse).map(|o| Setting::Flag(o, false))
     }
 
     /// All options with their names, dash's then luish's own, for `setopt`
@@ -149,23 +235,45 @@ impl Options {
 
 #[cfg(test)]
 mod tests {
-    use super::{Opt, Options};
+    use super::{Kind, Opt, Options, Setting, is_setting_name};
 
     #[test]
     fn zsh_names() {
+        let flag = |o, on| Some(Setting::Flag(o, on));
+        assert_eq!(Options::find(b"PROMPT_PERCENT"), flag(Opt::PromptPercent, true));
+        assert_eq!(Options::find(b"no_Prompt_Percent"), flag(Opt::PromptPercent, false));
+        assert_eq!(Options::find(b"errexit"), flag(Opt::Errexit, true));
+        assert_eq!(Options::find(b"NO_GLOB"), flag(Opt::Noglob, true));
+        assert_eq!(Options::find(b"glob"), flag(Opt::Noglob, false));
+        assert_eq!(Options::find(b"clobber"), flag(Opt::Noclobber, false));
+        assert_eq!(Options::find(b"bogus"), None);
+        assert_eq!(Options::find(b""), None);
+    }
+
+    #[test]
+    fn grouped_names() {
+        let flag = |o, on| Some(Setting::Flag(o, on));
+        assert_eq!(Options::find(b"history.share"), flag(Opt::ShareHistory, true));
+        assert_eq!(Options::find(b"History.Save_No_Dups"), flag(Opt::HistSaveNoDups, true));
+        assert_eq!(Options::find(b"history.no_share"), flag(Opt::ShareHistory, false));
+        assert_eq!(Options::find(b"no_history.share"), None);
+        assert_eq!(Options::find(b"share_history"), flag(Opt::ShareHistory, true));
+        assert_eq!(Options::find(b"glob.star"), flag(Opt::Globstar, true));
         assert_eq!(
-            Options::by_zsh_name(b"PROMPT_PERCENT"),
-            Some((Opt::PromptPercent, true))
+            Options::find(b"history.file"),
+            Some(Setting::Value(b"HISTFILE", Kind::Text))
         );
-        assert_eq!(
-            Options::by_zsh_name(b"no_Prompt_Percent"),
-            Some((Opt::PromptPercent, false))
-        );
-        assert_eq!(Options::by_zsh_name(b"errexit"), Some((Opt::Errexit, true)));
-        assert_eq!(Options::by_zsh_name(b"NO_GLOB"), Some((Opt::Noglob, true)));
-        assert_eq!(Options::by_zsh_name(b"glob"), Some((Opt::Noglob, false)));
-        assert_eq!(Options::by_zsh_name(b"clobber"), Some((Opt::Noclobber, false)));
-        assert_eq!(Options::by_zsh_name(b"bogus"), None);
-        assert_eq!(Options::by_zsh_name(b""), None);
+        assert_eq!(Options::find(b"history.nofile"), None);
+        assert_eq!(Options::find(b"history"), None);
+    }
+
+    #[test]
+    fn setting_names() {
+        assert!(is_setting_name(b"history.file"));
+        assert!(is_setting_name(b"errexit"));
+        assert!(!is_setting_name(b"history."));
+        assert!(!is_setting_name(b".file"));
+        assert!(!is_setting_name(b"a..b"));
+        assert!(!is_setting_name(b"1a.b"));
     }
 }

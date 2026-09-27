@@ -2,7 +2,7 @@
 
 use super::illegal_number;
 use crate::lexer::is_valid_name;
-use crate::options::{OPTIONS, Opt, Options};
+use crate::options::{Kind, OPTIONS, Opt, Options, Setting, parse_bool};
 use crate::shell::{ExecResult, Flow, Shell};
 
 /// Single-quotes a value for output that can be read back by the shell.
@@ -249,8 +249,10 @@ pub fn set(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 }
 
 /// `setopt` and `unsetopt` (not POSIX; as in zsh): set or unset options by
-/// name, luish's own ones as well as dash's. Without arguments, list the
-/// options that are on (`setopt`) or off (`unsetopt`).
+/// name, luish's own ones as well as dash's, and `setopt NAME=VALUE` sets
+/// a setting (an option to `true` or `false`, or a setting with a value).
+/// Without arguments, list the options that are on (`setopt`) or off
+/// (`unsetopt`).
 pub fn setopt(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let on = argv[0] == b"setopt";
     if argv.len() == 1 {
@@ -264,20 +266,48 @@ pub fn setopt(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     }
     let mut status = 0;
     for a in &argv[1..] {
-        match Options::by_zsh_name(a) {
-            Some((Opt::Interactive | Opt::Stdin, _)) => {
-                sh.berr(&argv[0], format!("can't change option: {}", String::from_utf8_lossy(a)));
-                status = 1;
-            }
-            Some((o, sense)) => sh.options.set(o, on == sense),
-            None => {
-                sh.berr(&argv[0], format!("no such option: {}", String::from_utf8_lossy(a)));
-                status = 1;
-            }
+        if let Err(msg) = set_setting(sh, on, a) {
+            sh.berr(&argv[0], msg);
+            status = 1;
         }
     }
     sh.set_jobctl(sh.opt(Opt::Monitor));
     Ok(status)
+}
+
+/// One argument of `setopt` (`on`) or `unsetopt`: `NAME` or `NAME=VALUE`.
+fn set_setting(sh: &mut Shell, on: bool, arg: &[u8]) -> Result<(), String> {
+    let (name, value) = match arg.iter().position(|&c| c == b'=') {
+        Some(i) => (&arg[..i], Some(&arg[i + 1..])),
+        None => (arg, None),
+    };
+    let text = |s: &[u8]| String::from_utf8_lossy(s).into_owned();
+    let bad_value = |v: &[u8]| format!("{}: bad value: {}", text(name), text(v));
+    if !on && value.is_some() {
+        return Err(format!("{}: can't give a value", text(arg)));
+    }
+    match Options::find(name) {
+        None => Err(format!("no such option: {}", text(name))),
+        Some(Setting::Flag(Opt::Interactive | Opt::Stdin, _)) => Err(format!("can't change option: {}", text(name))),
+        Some(Setting::Flag(o, sense)) => {
+            let v = match value {
+                Some(v) => parse_bool(v).ok_or_else(|| bad_value(v))?,
+                None => on,
+            };
+            sh.options.set(o, v == sense);
+            Ok(())
+        }
+        Some(Setting::Value(var, kind)) => match value {
+            None if on => Err(format!("{}: needs a value", text(name))),
+            None => sh.vars.unset(var).map_err(|_| format!("{}: is read only", text(var))),
+            Some(v) => {
+                if kind == Kind::Number && (v.is_empty() || !v.iter().all(u8::is_ascii_digit)) {
+                    return Err(bad_value(v));
+                }
+                sh.try_set_var(var, v.to_vec())
+            }
+        },
+    }
 }
 
 pub fn local(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {

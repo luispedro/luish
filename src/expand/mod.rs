@@ -43,6 +43,7 @@ impl Shell {
     /// `export`, `readonly` and `local` (also run through `command`) that
     /// have the form of an assignment are expanded as assignments: tilde
     /// expansion after `=` and `:`, and no field splitting or globbing.
+    /// So are those of `setopt`, whose names can have `.` in them.
     /// The command name is found by expanding the words one at a time.
     pub fn expand_command_words(&mut self, words: &[Word]) -> EResult<Vec<Vec<u8>>> {
         let mut out = Vec::with_capacity(words.len());
@@ -54,8 +55,8 @@ impl Shell {
             decl = declaration_command(&out);
         }
         for w in &words[i..] {
-            if decl == Some(true)
-                && let Some(a) = crate::parser::split_assignment(w)
+            if let Some(Some(is_name)) = decl
+                && let Some(a) = crate::parser::split_assignment_with(w, is_name)
             {
                 let mut arg = a.name;
                 arg.push(b'=');
@@ -490,15 +491,23 @@ fn qualifier_start(field: &[XChar]) -> Option<usize> {
     (open > 0 && rest[open].b == b'(').then_some(open)
 }
 
+/// Tells whether the text before the `=` of an argument is a name.
+type NameTest = fn(&[u8]) -> bool;
+
 /// Whether the command whose words have been expanded so far into `argv`
-/// is `export`, `readonly` or `local`, possibly through `command`
-/// (`None`: not known yet).
-fn declaration_command(argv: &[Vec<u8>]) -> Option<bool> {
+/// is `export`, `readonly`, `local` or `setopt`, possibly through `command`
+/// (`None`: not known yet). If it is, the test for the names in its
+/// assignments.
+fn declaration_command(argv: &[Vec<u8>]) -> Option<Option<NameTest>> {
     let mut k = 0;
     loop {
         let name = argv.get(k)?;
         if name != b"command" {
-            return Some(matches!(&name[..], b"export" | b"readonly" | b"local"));
+            return Some(match &name[..] {
+                b"export" | b"readonly" | b"local" => Some(crate::lexer::is_valid_name),
+                b"setopt" => Some(crate::options::is_setting_name),
+                _ => None,
+            });
         }
         k += 1;
         // `command`'s options: only `-p` leaves a command to run.
@@ -512,7 +521,7 @@ fn declaration_command(argv: &[Vec<u8>]) -> Option<bool> {
                 break;
             }
             if !a[1..].iter().all(|&c| c == b'p') {
-                return Some(false);
+                return Some(None);
             }
             k += 1;
         }

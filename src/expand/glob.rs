@@ -6,7 +6,7 @@ use crate::sys;
 
 #[derive(Clone, Copy, Default)]
 pub struct GlobOpts {
-    /// `setopt globstar`: a `**/` component matches any number of
+    /// `setopt glob.star`: a `**/` component matches any number of
     /// directories (`***/` also follows symbolic links to directories).
     pub globstar: bool,
     /// Patterns match names with a leading `.` (except `.` and `..`), and

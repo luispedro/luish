@@ -10,8 +10,10 @@ luish                             # interactive when stdin is a terminal
 ```
 
 Options can be given as letters (`-e`, `-x`, ...) or with `-o name` / `+o name`. In the shell, `set` takes the
-same options, and `setopt` and `unsetopt` set them by name as in zsh, together with luish's own options (such as
-`promptpercent`), which `set` doesn't show so that it stays as in dash.
+same options, and `setopt` and `unsetopt` set them by name as in zsh, together with luish's own options, which `set`
+doesn't show so that it stays as in dash. luish's own options are named in groups, such as `history.share` or
+`glob.star`; zsh's names for them (`share_history`) work too. `setopt` also sets luish's settings that have a value,
+as in `setopt history.file=~/.histfile` (see `help setopt`).
 
 On the command line, `-o` and `+o` take any option named as for `setopt`, including luish's own: case and `_` don't
 matter, and a `no` prefix inverts it (`-o err_exit`, `-o no_glob`, `-o prompt_percent`; `+o glob` is the same as
@@ -41,10 +43,10 @@ other shells; there, `__luish_internal help` does the same.
 that `set -x` prints. As POSIX requires, they go through parameter expansion, so `PS1='$PWD\$ '` shows the current
 directory.
 
-With the `promptpercent` option (`setopt prompt_percent`), they then also expand `%` sequences, as in zsh:
+With the `prompt.percent` option (`setopt prompt.percent`), they then also expand `%` sequences, as in zsh:
 
 ```sh
-setopt prompt_percent
+setopt prompt.percent
 PS1='%F{blue}%~%f %(?..%F{red}[%?]%f )%# '
 ```
 
@@ -129,7 +131,7 @@ As in zsh, words are made of letters, digits and the characters in `WORDCHARS`, 
 WORDCHARS='*?_-.[]~=&;!#$%^(){}<>'
 ```
 
-With `setopt autosuggest`, the line editor suggests the rest of the newest command in the history that starts
+With `setopt editor.autosuggest`, the line editor suggests the rest of the newest command in the history that starts
 with what has been typed, in grey after the cursor, as the zsh-autosuggestions plugin does. Right, End, Ctrl-F or
 Ctrl-E accept the suggestion, and Alt-F accepts its next word. Its colour is the `suggest` entry of
 `$LUISH_HIGHLIGHT` (described with the completion menu, below; by default grey, `90`).
@@ -147,9 +149,17 @@ An interactive shell keeps the last `HISTSIZE` commands (1000 by default) in its
 (Up and Down, Ctrl-R, Alt-.) and `fc` find them. A command the same as the one before it is not added again. The history is
 saved to the file `HISTFILE`, by default `$XDG_STATE_HOME/luish/history` (`~/.local/state/luish/history` if
 `XDG_STATE_HOME` isn't set); set `HISTFILE` to an empty value to keep no file. The file is read after the startup
-files, so `HISTFILE` and `HISTSIZE` can be set there (or in `luishrc`).
+files, so `HISTFILE` and `HISTSIZE` can be set there (or in `luishrc`). `setopt` sets them too, as the settings
+`history.file`, `history.size` and `history.save_size` (for `SAVEHIST`).
 
 The file is in zsh's format, with the time of each command, so luish and zsh can use the same file:
+
+```sh
+setopt history.file=~/.histfile history.save_size=10000
+setopt history.share history.ignore_space history.reduce_blanks
+```
+
+In zsh's words, which luish also accepts, this is:
 
 ```sh
 HISTFILE=~/.histfile
@@ -159,15 +169,16 @@ setopt share_history hist_ignore_space hist_reduce_blanks
 
 The file keeps up to `SAVEHIST` commands (by default as many as `HISTSIZE`). New commands are added to the end of it
 when the shell exits, so several shells don't overwrite each other's commands, and when it has grown to more than
-20% over `SAVEHIST` the oldest commands are dropped. Some options change this, as in zsh (see `help setopt`):
+20% over `SAVEHIST` the oldest commands are dropped. Some options change this, as in zsh (see `help setopt`; zsh's
+names are in parentheses):
 
-- `inc_append_history` adds each command to the file as soon as it is run;
-- `share_history` does too, and also reads the commands that other shells have added before each prompt, so that
+- `history.inc_append` (`inc_append_history`) adds each command to the file as soon as it is run;
+- `history.share` (`share_history`) does too, and also reads the commands that other shells have added before each prompt, so that
   commands typed in one terminal can be recalled in all of them;
-- `hist_ignore_space` keeps commands that start with a space out of the file (the next command replaces them in
+- `history.ignore_space` (`hist_ignore_space`) keeps commands that start with a space out of the file (the next command replaces them in
   memory as well), which is useful for commands with passwords;
-- `hist_reduce_blanks` removes superfluous blanks from commands;
-- `hist_save_no_dups` drops older copies of repeated commands when the file is trimmed.
+- `history.reduce_blanks` (`hist_reduce_blanks`) removes superfluous blanks from commands;
+- `history.save_no_dups` (`hist_save_no_dups`) drops older copies of repeated commands when the file is trimmed.
 
 Unlike zsh, luish saves the history by default: zsh keeps no file unless `HISTFILE` and `SAVEHIST` are set.
 
@@ -177,7 +188,7 @@ In an interactive shell, Tab completes the word under the cursor: a command name
 program in `PATH`) at the start of a command, a variable name after `$` or `${`, a user's home directory after `~`,
 and a filename elsewhere, also after the `=` or `:` of an assignment and the `=` of a `--option=`. After commands
 that run another command, such as `sudo`, `env`, `nohup`, `time` and `xargs`, the command they run (after their
-options) completes as a command name. With `setopt autocd`, a command name also completes to directories (see
+options) completes as a command name. With `setopt cd.auto`, a command name also completes to directories (see
 `help setopt`). Some commands complete their arguments differently:
 
 - `cd`, `pushd` and `rmdir` complete directories; for `cd` and `pushd`, when none in the current directory match,
@@ -190,7 +201,8 @@ options) completes as a command name. With `setopt autocd`, a command name also 
   a letter, they complete the command names instead, such as `%vim`);
 - `kill -` and `kill -s` complete signal names, as do the arguments of `trap` after its action;
 - `setopt` completes the options that are off and `unsetopt` those that are on, as in zsh (after `no`, also the
-  others with `no` in front);
+  others with `no` in front, as `history.no_share`), both complete the settings that have a value, and `setopt`
+  completes filenames after `history.file=`;
 - `plugin load` completes the plugins in the plugin directory, and `plugin unload` the loaded ones.
 
 Plugins can provide completion for other commands (see [Plugins](plugins.md)). Aliases are followed: if `g` is an

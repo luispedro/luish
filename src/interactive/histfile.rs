@@ -11,7 +11,7 @@
 //! Shells append to the file under an `fcntl` lock on the file itself (as
 //! zsh does with `hist_fcntl_lock`), and replace it through a temporary
 //! file when it has grown too long. [`FileState`] remembers how much of the
-//! file a shell has seen, so that `share_history` can read only what other
+//! file a shell has seen, so that `history.share` can read only what other
 //! shells have added since.
 
 use std::fs::File;

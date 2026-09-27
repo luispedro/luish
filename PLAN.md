@@ -16,9 +16,9 @@ design.
 - **Phases 0–10 are done.** Phases 2 and 3 lack their fuzz targets, and
   Phase 10 has the gaps listed in `STATUS.md`. Beyond the plan, Phase 10
   gained a zsh-style completion menu, syntax highlighting, zsh's `%` prompt
-  sequences (`setopt promptpercent`), a history file in zsh's format shared
-  with zsh (`share_history` and the other history options), `pushd`/`popd`,
-  `setopt autocd`, and `**/` and glob qualifiers behind their own options.
+  sequences (`setopt prompt.percent`), a history file in zsh's format shared
+  with zsh (`history.share` and the other history options), `pushd`/`popd`,
+  `setopt cd.auto`, and `**/` and glob qualifiers behind their own options.
 - **Phase 12 is under way**: autoconf `configure` scripts give the same
   results as under dash, 43 of 1620 Oils spec cases still differ (mostly
   deliberate deviations), and scripts run as fast as under dash. Startup is
@@ -119,7 +119,7 @@ luish/
 │   ├── ast.rs              # AST types
 │   ├── cmdtext.rs          # job text from the AST (dash's cmdtxt)
 │   ├── unparse.rs          # AST back to source text that re-parses exactly
-│   ├── prompt.rs           # zsh's % sequences (setopt promptpercent)
+│   ├── prompt.rs           # zsh's % sequences (setopt prompt.percent)
 │   ├── state.rs            # the shell's state as commands (savestate)
 │   ├── startcache.rs       # cached rc.d / login.d (§9.2)
 │   ├── expand/
@@ -129,8 +129,8 @@ luish/
 │   │   ├── cmdsubst.rs     # $(...) and `...`
 │   │   ├── split.rs        # IFS field splitting
 │   │   ├── pattern.rs      # fnmatch-style matcher (glob, case, ${x#pat})
-│   │   ├── glob.rs         # pathname expansion, and **/ (setopt globstar)
-│   │   └── qual.rs         # zsh's glob qualifiers (setopt bareglobqual)
+│   │   ├── glob.rs         # pathname expansion, and **/ (setopt glob.star)
+│   │   └── qual.rs         # zsh's glob qualifiers (setopt glob.bare_qualifiers)
 │   ├── exec/
 │   │   ├── mod.rs          # executor: nodes → exit status / control flow
 │   │   ├── simple.rs       # simple commands and command lookup
@@ -750,6 +750,7 @@ once):
    this, as a `__luish_internal` subcommand or a `print` built-in in
    interactive shells.
 7. **Lazy function parsing for the startup cache**, below.
+8. **Grouped settings and `config.toml`**, below.
 
 Not planned, because the history shows they aren't used or they are easy
 to rewrite in POSIX sh: `[[`, the `:h`/`:t` modifiers (the `cd` wrapper and
@@ -760,9 +761,10 @@ revisit with `read -e -i` if wanted), `zmv`, `mmv`, `zed`, `zcalc`,
 (redundant), zplug, `fpath`/`compinit`, and `typeset -U`.
 
 The user's config (`~/.config/luish/rc.d`) also needs porting: `setopt
-promptpercent` and `PS1`, `CDPATH`, `setopt autocd`, the history settings
-(`HISTFILE=~/.histfile HISTSIZE=1000 SAVEHIST=1000` and `setopt
-share_history hist_ignore_space hist_reduce_blanks hist_save_no_dups`;
+prompt.percent` and `PS1`, `CDPATH`, `setopt cd.auto`, the history settings
+(`setopt history.file=~/.histfile history.size=1000 history.save_size=1000`
+and `setopt history.share history.ignore_space history.reduce_blanks
+history.save_no_dups`;
 `append_history` and `hist_ignore_dups` are always on and `setopt` rejects
 them), the remaining aliases (`..`, `...`, `ls`, `open`), and the functions
 rewritten in POSIX sh. That is configuration, not luish work, but each item
@@ -819,6 +821,59 @@ config, and the history of a week shows no command that had to be run in
 zsh.
 
 ---
+
+#### Grouped settings and `config.toml`
+
+luish's own options had one flat namespace, named as in zsh
+(`histignorespace`), while the settings that go with them were variables
+(`HISTFILE`). They become one registry of settings with grouped names
+(`history.share`, `history.file`), which `setopt` sets, and which a TOML
+file sets too. Three steps:
+
+1. **Done: the registry and `setopt NAME=VALUE`.** `options.rs` has
+   `EXTENDED` (luish's options, now named `group.name`), `ALIASES` (their
+   earlier names and zsh's, which keep working) and `VALUES` (settings with
+   a value, each backed by the variable it has always been, since
+   `HISTFILE` and `HISTSIZE` are POSIX variables and zsh shares the file:
+   `history.file` is `$HISTFILE`). On/off options stay bits in `Options`,
+   so nothing on a hot path changes, and names are only looked up when
+   `setopt` runs. `setopt NAME=VALUE` takes `true`/`false` (and `on`,
+   `yes`, `1`, ...) for options and checks numbers; its arguments are
+   expanded as assignments, as for `export`, so `history.file=~/x` gets its
+   tilde. dash's options keep their flat names, and `set -o` and `$-` don't
+   change. (`Options.flags` is a `u32` with 29 bits used: the next options
+   need a `u64`.)
+2. **`setopt -p GROUP`**: the names that follow are in `GROUP`, as in
+   `setopt -p history share file=~/.histfile save_no_dups=false`
+   (`unsetopt -p history share`). `-p` rather than `-g`, which means
+   "global" to zsh's `typeset`. `setopt -p GROUP` alone lists the group's
+   settings with their values, as commands that set them (options on and
+   off, and the values that are set). Plugins will be able to declare
+   settings in a group of their own (`bashcomp.*`), with a type and a
+   default, which is where grouped names pay off most.
+3. **`config.toml`**: `$XDG_CONFIG_HOME/luish/config.toml`, where each
+   table under `options` is a group:
+
+   ```toml
+   [options.history]
+   file = "~/.histfile"
+   share = true
+   save_no_dups = false
+
+   [options.glob]
+   star = true
+   ```
+
+   Each key means the same as `setopt -p GROUP KEY=VALUE`, with TOML's own
+   types (booleans, integers, strings; a leading `~` in a string is
+   expanded, nothing else is). An unknown key, or a value of the wrong
+   type, is reported with its line and skipped. The file is read as if it
+   were the first file of `rc.d`: only by interactive shells (never by
+   scripts or `-c`), before `rc.d`, so that shell files can override it,
+   and it is covered by the rc cache's fingerprints, so a warm start
+   doesn't parse it. The `[plugins]` table of §6.6 will live in this file
+   too, rather than in `plugins.toml` (`plugins.lock` stays separate). The
+   TOML parser is then shared by both.
 
 ## 6. Plugin system design
 
@@ -1098,6 +1153,9 @@ one named like the entry, or the only one if the collection has a single
 plugin (so a repository holding just `z.rhai` works under any name).
 
 #### `plugins.toml`
+
+(This table will be the `[plugins]` table of `config.toml` instead, see
+Phase 13's grouped settings; the rest of this section still applies.)
 
 `$XDG_CONFIG_HOME/luish/plugins.toml` is the list the user edits. Each key
 in `[plugins]` is the name of a plugin (the name `plugin list-loaded` shows), and

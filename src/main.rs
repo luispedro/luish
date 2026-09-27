@@ -173,9 +173,9 @@ fn run(args: Vec<Vec<u8>>) -> ! {
                     };
                     // Any option, named as for `setopt` (so `+o noglob`
                     // and `-o glob` both turn globbing on).
-                    match options::Options::by_zsh_name(name) {
-                        Some((o, named_on)) => inv.set(&mut sh, o, on == named_on),
-                        None => usage_error(&sh, &format!("Illegal option -o {}", String::from_utf8_lossy(name))),
+                    match options::Options::find(name) {
+                        Some(options::Setting::Flag(o, named_on)) => inv.set(&mut sh, o, on == named_on),
+                        _ => usage_error(&sh, &format!("Illegal option -o {}", String::from_utf8_lossy(name))),
                     }
                 }
                 _ => match options::Options::by_letter(c) {

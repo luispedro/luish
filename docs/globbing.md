@@ -5,7 +5,7 @@ parentheses after a pattern selects files by type, size, age and more, and can s
 off by default, so that scripts behave as in other POSIX shells. Turn them on with:
 
 ```sh
-setopt globstar bareglobqual
+setopt glob.star glob.bare_qualifiers
 ```
 
 For example:
@@ -19,9 +19,9 @@ vi *(.om[1])            # the most recently modified file
 du -sh **/*(.Lm+100)    # files over 100 MiB
 ```
 
-## Recursive globbing (`globstar`)
+## Recursive globbing (`glob.star`)
 
-With `setopt globstar`, a path component that is exactly `**` and is followed by `/` matches zero or more
+With `setopt glob.star`, a path component that is exactly `**` and is followed by `/` matches zero or more
 directories. `**/*.md` matches `x.md`, `a/y.md` and `a/b/z.md`; `a/**/` lists `a/` and every directory below it.
 
 - Hidden directories (whose name starts with `.`) are not entered, unless the `D` qualifier is given. Symbolic links
@@ -32,9 +32,9 @@ directories. `**/*.md` matches `x.md`, `a/y.md` and `a/b/z.md`; `a/**/` lists `a
 
 As in zsh, the matches are sorted as full paths, so `a.md` comes before `a/b.md`.
 
-## Glob qualifiers (`bareglobqual`)
+## Glob qualifiers (`glob.bare_qualifiers`)
 
-With `setopt bareglobqual`, parentheses at the end of a word hold a list of qualifiers: `*(/)`, `**/*.c(.om)`. The
+With `setopt glob.bare_qualifiers`, parentheses at the end of a word hold a list of qualifiers: `*(/)`, `**/*.c(.om)`. The
 parentheses must be the last thing in the word and contain no blanks, quotes or `$`. A word with a qualifier is a
 pattern even if it has no `*`, `?` or `[`, so `file(N)` expands to `file` if it exists and to nothing otherwise.
 Function definitions such as `f()` and `f( )` are not affected.
@@ -85,8 +85,8 @@ A bad qualifier is an error, with status 1, as in zsh: `*(Z)` gives `unknown fil
 
 ## Differences from zsh
 
-- `**/` needs `setopt globstar`, and qualifiers need `setopt bareglobqual` (zsh has `**/` on by default, and
-  qualifiers on outside its `sh` emulation).
+- `**/` needs `setopt glob.star`, and qualifiers need `setopt glob.bare_qualifiers` (zsh's `bareglobqual`; zsh has
+  `**/` on by default, and qualifiers on outside its `sh` emulation).
 - If nothing matches, the pattern is left as it is, as with `setopt nonomatch` in zsh (and in other POSIX shells).
 - Subscripts count from 1, as in zsh's default mode (with `KSH_ARRAYS`, as in its `sh` emulation, they count from 0).
 - Not supported yet: the `e`, `+`, `f`, `F`, `Y` and `P` qualifiers, `(#q...)`, modifiers other than those above,

@@ -3,7 +3,7 @@ errexit off
 /*
 /*
 /
-promptpercent
+prompt.percent
 -o stdin: a b
 --stdin: x y
 interactive

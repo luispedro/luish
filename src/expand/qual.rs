@@ -1,5 +1,5 @@
 //! zsh-style glob qualifiers: the `(...)` at the end of a word under
-//! `setopt bareglobqual` (as in `*(/)` or `**/*.md(.om[1,3])`). They select
+//! `setopt glob.bare_qualifiers` (as in `*(/)` or `**/*.md(.om[1,3])`). They select
 //! matches by file type, permissions, owner, size and times, and sort,
 //! slice, mark and modify the result.
 

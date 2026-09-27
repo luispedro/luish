@@ -146,14 +146,14 @@ pass**.
 - Pathname expansion is sorted in byte order and needs an explicit leading
   `.`. A `.*` pattern matches `.` and `..` (as in dash). A lone `[` is not a
   pattern.
-- `setopt globstar` (`glob.rs`): a `**` component followed by `/` matches
+- `setopt glob.star` (`glob.rs`): a `**` component followed by `/` matches
   any number of directories, as in zsh, without entering hidden
   directories or following links (`***/` follows them, and stops at a link
   to a directory it is already in; zsh loops until the path is too long).
   Directory types come from `d_type` where the file system has it. Tests:
   `expand/globstar.sh` (zsh), `expand/globstar_off.sh`,
   `expand/globstar_loop.sh`.
-- `setopt bareglobqual` (`qual.rs`): zsh's glob qualifiers. The lexer reads
+- `setopt glob.bare_qualifiers` (`qual.rs`): zsh's glob qualifiers. The lexer reads
   a trailing `(...)` of a word as a `WordPart::GlobQual`, the only place
   where it depends on an option; it is kept as text and recognized when
   a field ends in an unquoted `(...)` at glob time, so that, as in zsh's
@@ -361,7 +361,7 @@ pass**.
   be found (`getcwd` fails); without `-e` it returns 0, and either way
   `PWD` is then the logical path. Tests: `builtins/chdir.sh`,
   `builtins/cd_e.sh`.
-- `setopt autocd` (`autocd_target` in `exec/simple.rs`), as in zsh: a
+- `setopt cd.auto` (`autocd_target` in `exec/simple.rs`), as in zsh: a
   simple command of one word, without redirections, read with `-s` or
   interactively, that isn't a built-in, function, command in `PATH` or
   executable file, runs `cd -- dir` if it is a directory (a relative one
@@ -384,12 +384,13 @@ pass**.
   `-q`, `-L` and `-P` are options (anything else, such as `-1`, is the
   operand). Interactive shells print the stack after `pushd` and `popd`
   unless `-q` is given. `dirs` prints with `~` for `HOME` (`-l`, `-p`, `-v`),
-  clears (`-c`) or replaces the stack. `setopt auto_pushd`: `cd` pushes the
-  old directory and takes `+n`/`-n` (which take the entry out of the
-  stack); `pushd_ignore_dups`: after `cd`, `pushd` or `popd` the new
-  directory is removed from the stack; `pushd_silent`: no printing. Not
+  clears (`-c`) or replaces the stack. `setopt pushd.auto` (zsh's
+  `auto_pushd`): `cd` pushes the old directory and takes `+n`/`-n` (which
+  take the entry out of the stack); `pushd.ignore_dups`: after `cd`,
+  `pushd` or `popd` the new directory is removed from the stack;
+  `pushd.silent`: no printing. Not
   implemented: zsh's `PUSHD_MINUS`, `PUSHD_TO_HOME`, `DIRSTACKSIZE`, `cd +n`
-  without `auto_pushd`, and the `dirstack` array. Tests:
+  without `pushd.auto`, and the `dirstack` array. Tests:
   `builtins/dirstack.sh`, `builtins/dirstack_interactive.sh`,
   `builtins/auto_pushd.sh`, `builtins/pushd_silent.sh` (all compared with
   zsh), `builtins/popd_dir.sh`.
@@ -421,18 +422,33 @@ pass**.
 - `set -o` / `set +o` output matches dash, except that the last option is
   `hashall` rather than dash's `debug` (see DEVIATIONS.md).
 - luish's own options (`EXTENDED` in `options.rs`, all off by default:
-  `promptpercent`, `globstar`, `bareglobqual`, `autocd`, and the history
-  options `histignorespace`, `histreduceblanks`, `histsavenodups`,
-  `incappendhistory` and `sharehistory`) have no letter and are
-  not in `set -o` or `$-`, so `set` stays as in dash. They are set with `setopt`
-  and `unsetopt` (not POSIX; as in zsh), which also set dash's options.
-  Names are as in zsh: case and `_` don't matter, and a `no` prefix is
-  added or removed to invert an option (`unsetopt glob` is `set -f`).
-  Without arguments they list the options that are on or off, sorted. An
-  unknown option, or `interactive` and `stdin`, is an error (status 1);
-  the other names are still set. `savestate` restores luish's own options
-  with `setopt` and `unsetopt`. Tests: `options/setopt.sh` (compared with
-  zsh), `options/setopt_list.sh`, `builtins/internal_savestate.sh`.
+  `prompt.percent`, `glob.star`, `glob.bare_qualifiers`, `cd.auto`,
+  `editor.autosuggest`, `pushd.auto`, `pushd.ignore_dups`, `pushd.silent`,
+  and the history options `history.ignore_space`, `history.reduce_blanks`,
+  `history.save_no_dups`, `history.inc_append` and `history.share`) have
+  no letter and are not in `set -o` or `$-`, so `set` stays as in dash.
+  They are set with `setopt` and `unsetopt` (not POSIX; as in zsh), which
+  also set dash's options. Their names are grouped (`group.name`); their
+  earlier names (`sharehistory`) and zsh's (`share_history`) are aliases
+  (`ALIASES`). Names are compared as in zsh: case and `_` don't matter,
+  and a `no` prefix (on the last part of a grouped name, as in
+  `history.no_share`) is added or removed to invert an option (`unsetopt
+  glob` is `set -f`). Without arguments they list the options that are on
+  or off, sorted, by their main names. An unknown option, or `interactive`
+  and `stdin`, is an error (status 1); the other names are still set.
+  `savestate` restores luish's own options with `setopt` and `unsetopt`.
+  Tests: `options/setopt.sh` (compared with zsh), `options/setopt_list.sh`,
+  `builtins/internal_savestate.sh`.
+- `setopt NAME=VALUE` sets an option (`true`/`on`/`yes`/`1` or
+  `false`/`off`/`no`/`0`), or a setting with a value (`VALUES` in
+  `options.rs`): `history.file`, `history.size` and `history.save_size`,
+  which are the variables `HISTFILE`, `HISTSIZE` and `SAVEHIST` (numbers
+  are checked). `unsetopt NAME` unsets the variable; `unsetopt NAME=VALUE`,
+  `setopt NAME` without a value, a bad value or a read-only variable is an
+  error (status 1). As for `export`, `setopt`'s arguments of the form
+  `NAME=VALUE` (with `.` allowed in the name) are expanded as assignments
+  (`declaration_command` in `expand/mod.rs`), also through `command`.
+  Test: `options/setopt_values.sh`.
 - Tests: `options/*`.
 
 ### Interactive mode (`src/interactive/`)
@@ -473,7 +489,7 @@ pass**.
   Re-running `fc` is limited to 4 levels (dash's `MAXHISTLOOPS`). In a
   non-interactive shell `fc` fails with `history not active`.
 - `PS1` and `PS2` go through parameter expansion.
-- With `setopt promptpercent`, `PS1`, `PS2` and `PS4` then expand zsh's
+- With `setopt prompt.percent`, `PS1`, `PS2` and `PS4` then expand zsh's
   `%` sequences (`src/prompt.rs`), in all shells: the directory (`%~`,
   `%d`, `%c`, `%C`, with a number of components), user, host, `%#`, `%?`,
   history number, jobs, `$SHLVL`, line number, terminal, dates and times
@@ -537,19 +553,20 @@ pass**.
   as for the command cache); a word
   with a `/` completes executables and directories. Elsewhere it completes
   filenames (with `~/` and `~user/`, and after `=` or `:` in an
-  assignment, including an argument of `export`, `readonly` or `local`, or
-  `=` in a `--option=`), user names after an unquoted `~`, and variable
+  assignment, including an argument of `export`, `readonly`, `local` or
+  `setopt`, or `=` in a `--option=`), user names after an unquoted `~`, and variable
   names after `$` or `${`. Some commands' arguments complete to something
   else: directories for `cd`, `pushd` and `rmdir` (for `cd` and `pushd`,
   those in `CDPATH` when none in the current directory match, as with
   zsh's `local-directories` first; also for command names under
-  `setopt autocd`, which the highlighter then accepts), variable names for
+  `setopt cd.auto`, which the highlighter then accepts), variable names for
   `export`, `local`, `readonly`, `unset` (function names after
   `unset -f`), `read` (not after `-p`), `getopts` (after the option
   string) and `for` (then `in`), aliases for `alias` and `unalias`, widget
   names for `bindkey`, option names for `setopt` (those that are off) and
-  `unsetopt` (those that are on; after `no`, also the others inverted, as
-  in zsh), command names for
+  `unsetopt` (those that are on; after `no`, on the last part of a grouped
+  name, also the others inverted, as in zsh) and setting names for both,
+  command names for
   `hash`, `type` and `which`, built-ins for `help`, job specs (described by
   their commands; after `%` and a letter, the command names that give one
   job, as `%vim`) for `fg`, `bg`, `jobs`, `wait` and `kill`, signal names
@@ -613,7 +630,7 @@ pass**.
   an empty SGR leaves a class uncoloured. `LUISH_HIGHLIGHT=none`, or a
   non-empty `$NO_COLOR`, turns it off. Both are read before each prompt.
   Command lookups are cached until the next prompt.
-- Autosuggestions (`setopt autosuggest`, off by default), as
+- Autosuggestions (`setopt editor.autosuggest`, off by default), as
   zsh-autosuggestions: while the cursor is at the end of a non-blank
   line (not a continuation line) and the menu isn't open, the hint is the
   rest of the newest history entry that starts with the line, in the
@@ -769,7 +786,7 @@ pass**.
   `prompt-rewrite`, called after `prompt-vars` (it sees the variables):
   the hooks are called from the most recently registered one until one
   returns a string, which is used instead of `PS1`, without parameter
-  expansion but with `%` expansion under `promptpercent`. A hook that
+  expansion but with `%` expansion under `prompt.percent`. A hook that
   returns `()` leaves it to the earlier hooks, then `PS1`; one that fails
   or returns something else is reported and skipped. A hook whose
   function takes a parameter (beyond its captured variables; looked up in

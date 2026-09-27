@@ -1,0 +1,32 @@
+history.share on
+history.share off
+history.share on
+history.share off
+history.share on
+history.share on
+history.share off
+glob.star on
+noglob on
+noglob off
+tilde expanded
+50 20
+[a  b]
+tilde after :
+[~/q]
+through command
+unset unset
+[]
+setopt_values.sh: 27: setopt: history.size: bad value: 12x
+setopt_values.sh: 27: setopt: history.share: bad value: maybe
+setopt_values.sh: 27: setopt: history.file: needs a value
+setopt_values.sh: 27: setopt: no such option: history.bogus
+setopt_values.sh: 27: setopt: no such option: history.nofile
+status 1
+glob.star off
+setopt_values.sh: 29: unsetopt: history.share=0: can't give a value
+status 1
+setopt_values.sh: 31: setopt: SAVEHIST: is read only
+status 1
+setopt_values.sh: 32: unsetopt: SAVEHIST: is read only
+status 1
+20

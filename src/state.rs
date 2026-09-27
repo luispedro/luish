@@ -157,11 +157,11 @@ impl Shell {
             // was turned off, needs it to be read back.
             let wrap = globqual && !self.opt(Opt::Bareglobqual);
             if wrap {
-                t.extend_from_slice(b"setopt bareglobqual\n");
+                t.extend_from_slice(b"setopt glob.bare_qualifiers\n");
             }
             t.extend(text);
             if wrap {
-                t.extend_from_slice(b"unsetopt bareglobqual\n");
+                t.extend_from_slice(b"unsetopt glob.bare_qualifiers\n");
             }
             add(Kind::Function, name, t);
         }
