@@ -59,6 +59,12 @@ echo 'echo "single v3"' > single/init.lsh
 commit single three
 cmd '__luish_internal plugin sync; echo "status $?"'
 run 'true'
+echo '--- a removed cache: fetched again, loading is unaffected'
+rm -rf .cache/luish/plugins
+run 'true'
+cmd '__luish_internal plugin update single; echo "status $?"'
+ls .cache/luish/plugins/git | sed 's/-.*//'
+cat .local/share/luish/plugins/README | head -1
 echo '--- a tag, and a commit'
 first=$(cd single && git rev-list --max-parents=0 HEAD)
 (cd single && git tag v1 "$first")

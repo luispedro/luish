@@ -1,11 +1,13 @@
 //! Git plugins (DEVELOPING.md): fetching with `git`, and the files of each
-//! commit, in `$XDG_DATA_HOME/luish/plugins/` (by default
-//! `~/.local/share/luish/plugins/`):
+//! commit:
 //!
-//! - `git/REPO-HASH/`: a bare repository per URL, fetched into shallowly;
-//! - `src/REPO-HASH/COMMIT/`: the files of one commit, from `git archive`,
+//! - `$XDG_CACHE_HOME/luish/plugins/git/REPO-HASH/` (by default in
+//!   `~/.cache`): a bare repository per URL, fetched into shallowly. Only
+//!   `plugin sync` and `plugin update` use it, so it can be removed;
+//! - `$XDG_DATA_HOME/luish/plugins/src/REPO-HASH/COMMIT/` (by default in
+//!   `~/.local/share`): the files of one commit, from `git archive`,
 //!   renamed into place once complete, so a directory that exists is
-//!   complete.
+//!   complete. Startup needs these.
 //!
 //! Only `plugin sync` and `plugin update` come here. Startup only looks for
 //! the directories of the locked commits, and never runs git.
@@ -22,6 +24,20 @@ pub fn data_dir(sh: &Shell) -> Option<Vec<u8>> {
     d.extend_from_slice(b"/luish/plugins");
     Some(d)
 }
+
+/// Where the bare repositories are kept (they can be fetched again).
+fn git_dir(sh: &Shell) -> Result<Vec<u8>, String> {
+    let mut d = crate::startcache::cache_dir(sh).ok_or("cannot find the cache directory (HOME is not set)")?;
+    d.extend_from_slice(b"/plugins/git");
+    Ok(d)
+}
+
+const DATA_README: &[u8] = b"This directory holds the plugins that luish, the shell, fetched with git:
+src/REPO-HASH/COMMIT/ has the files of one commit of a repository.
+
+luish loads plugins from here when it starts, without fetching. If this
+directory is removed, run `plugin sync` in luish to fetch them again.
+";
 
 /// `REPO-HASH`, which names the directories of a repository: the last part
 /// of its URL, and a hash of the URL (FNV-1a, which doesn't change with the
@@ -74,10 +90,13 @@ fn git(sh: &mut Shell, dir: &[u8], args: &[&str]) -> Result<Vec<u8>, String> {
 }
 
 /// The bare repository for `url`, created if it doesn't exist.
-fn repository(sh: &mut Shell, data: &[u8], url: &str) -> Result<Vec<u8>, String> {
-    let dir = [data, b"/git/", repo_key(url).as_bytes()].concat();
+fn repository(sh: &mut Shell, url: &str) -> Result<Vec<u8>, String> {
+    let dir = [git_dir(sh)?.as_slice(), b"/", repo_key(url).as_bytes()].concat();
     if !sys::is_dir(&dir) {
         std::fs::create_dir_all(to_path(&dir)).map_err(|e| format!("cannot create {}: {e}", show(&dir)))?;
+        if let Some(cache) = crate::startcache::cache_dir(sh) {
+            crate::startcache::mark_cache_dir(&to_path(&cache));
+        }
         git(sh, &dir, &["init", "-q", "--bare"])?;
     }
     Ok(dir)
@@ -95,8 +114,8 @@ fn refspec(at: &GitRef) -> String {
 
 /// Fetches the newest commit of `at` (a branch, a tag, `HEAD`) from `url`,
 /// and gives its hash.
-pub fn resolve(sh: &mut Shell, data: &[u8], url: &str, at: &GitRef) -> Result<String, String> {
-    let dir = repository(sh, data, url)?;
+pub fn resolve(sh: &mut Shell, url: &str, at: &GitRef) -> Result<String, String> {
+    let dir = repository(sh, url)?;
     git(
         sh,
         &dir,
@@ -123,7 +142,7 @@ pub fn extract(sh: &mut Shell, data: &[u8], url: &str, at: &GitRef, commit: &str
     if sys::is_dir(&dest) {
         return Ok(());
     }
-    let dir = repository(sh, data, url)?;
+    let dir = repository(sh, url)?;
     let object = format!("{commit}^{{commit}}");
     let have = |sh: &mut Shell| git(sh, &dir, &["cat-file", "-e", &object]).is_ok();
     if !have(sh) {
@@ -146,6 +165,10 @@ pub fn extract(sh: &mut Shell, data: &[u8], url: &str, at: &GitRef, commit: &str
     .concat();
     let _ = std::fs::remove_dir_all(to_path(&tmp));
     std::fs::create_dir_all(to_path(&tmp)).map_err(|e| format!("cannot create {}: {e}", show(&tmp)))?;
+    let readme = [data, b"/README"].concat();
+    if !to_path(&readme).exists() {
+        let _ = std::fs::write(to_path(&readme), DATA_README);
+    }
     let tar = [tmp.as_slice(), b"/.archive.tar"].concat();
     let r = git(
         sh,

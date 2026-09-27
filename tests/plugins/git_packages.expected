@@ -62,12 +62,15 @@ luish: 1: __luish_internal plugin: nosuch: no such git source
 status 1
 --- a removed data directory: not installed, and synced again at the same commit
 luish: plugin sources not installed: file://~/single, std (run plugin sync)
-fatal: Not a valid object name d0ea6cfb85f9c1606c01336f552534fd6c0a8ab1^{commit}
-fatal: Not a valid object name d6027815880e8ae7de95a6a477a54f9226765cdc^{commit}
-fatal: Not a valid object name 14cfcbd5a6f4955a94245ae73ecc7428e544cd97^{commit}
 status 0
 rhai from std
 single v2
+--- a removed cache: fetched again, loading is unaffected
+rhai from std
+Updating file://~/single d602781..036d918
+status 0
+single
+This directory holds the plugins that luish, the shell, fetched with git:
 --- a tag, and a commit
 Locking file://~/single at b2201bb
 status 0

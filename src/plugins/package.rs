@@ -784,7 +784,7 @@ impl<'a> Resolver<'a> {
                         return Err(());
                     }
                     None if self.interrupted => return Err(()),
-                    None => match fetch::resolve(self.sh, &data, url, at) {
+                    None => match fetch::resolve(self.sh, url, at) {
                         Ok(c) => c,
                         Err(e) => {
                             self.interrupted |= e == "interrupted";

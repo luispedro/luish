@@ -121,8 +121,9 @@ luish: plugin sources not installed: std (run plugin sync)
 ```
 
 luish runs `git` (found in `PATH`) to fetch, so git's own settings apply (credentials, SSH keys, proxies). It keeps
-a bare repository for each URL and the files of each commit in `~/.local/share/luish/plugins/` (or
-`$XDG_DATA_HOME/luish/plugins/`). Fetches are shallow when they can be. Nothing runs when a plugin is fetched (no git
+a bare repository for each URL in `~/.cache/luish/plugins/git/` (or `$XDG_CACHE_HOME/luish/plugins/git/`), which can
+be removed at any time, and the files of each commit, which shells load, in `~/.local/share/luish/plugins/` (or
+`$XDG_DATA_HOME/luish/plugins/`); if these are removed, `plugin sync` fetches them again. Fetches are shallow when they can be. Nothing runs when a plugin is fetched (no git
 hooks); a plugin's code runs only when a shell loads it.
 
 The plugins enabled in `config.toml` load before the files in `rc.d`, so that these can use and adjust what the plugins

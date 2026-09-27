@@ -193,13 +193,20 @@ fn is_current(cache: &Cache, dir: &[u8], files: &[Dep]) -> bool {
             .all(|d| format_stamp(&stamp(&d.path)) == d.stamp)
 }
 
+/// `$XDG_CACHE_HOME/luish` (or `~/.cache/luish`).
+pub fn cache_dir(sh: &Shell) -> Option<Vec<u8>> {
+    let mut c = xdg_dir(sh, b"XDG_CACHE_HOME", b"/.cache")?;
+    c.extend_from_slice(b"/luish");
+    Some(c)
+}
+
 /// Runs the startup files in `dir`, from the cache `luish/NAME-HOST` when it
 /// is current. `config` is `config.toml`, applied first and cached with
 /// the files (whether it exists or not, so that creating it is noticed).
 pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8], config: Option<&[u8]>) {
     let files = cached_files(dir);
-    let cache_path = xdg_dir(sh, b"XDG_CACHE_HOME", b"/.cache").map(|mut c| {
-        c.extend_from_slice(b"/luish/");
+    let cache_path = cache_dir(sh).map(|mut c| {
+        c.push(b'/');
         c.extend_from_slice(name);
         c.push(b'-');
         c.extend(hostname());
@@ -291,14 +298,18 @@ const README: &[u8] = b"This directory holds caches written by luish, the shell:
   ~/.config/luish/rc.d/ and ~/.config/luish/login.d/ (variables,
   functions, aliases, options, ...), saved on the host HOST, so that new
   shells restore them instead of running the files.
+- plugins/git/: git repositories of plugins, which `plugin sync` and
+  `plugin update` fetch into (the files that shells load are in
+  ~/.local/share/luish/plugins/).
 
 Everything here can be recreated: the directory can be removed at any time
-without losing anything (the next shell rebuilds what it needs).
+without losing anything (the next shell rebuilds what it needs, and
+`plugin sync` fetches again).
 ";
 
 /// Adds `CACHEDIR.TAG` and `README` to the cache directory, if missing.
 /// Failures are ignored: the cache works without them.
-fn mark_cache_dir(dir: &std::path::Path) {
+pub fn mark_cache_dir(dir: &std::path::Path) {
     for (name, text) in [("CACHEDIR.TAG", CACHEDIR_TAG), ("README", README)] {
         let path = dir.join(name);
         if !path.exists() {

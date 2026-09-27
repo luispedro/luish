@@ -391,11 +391,13 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   dependencies), and syntax errors are left to the resolver, so they are reported once. `load_found` records the
   file for the rc cache, also for plugins that `rc.d` loads with `plugin load`. Test: `tests/plugins/manifest.sh`.
 - `fetch.rs` runs git through the shell (`command git`, in a forked child, with `GIT_TERMINAL_PROMPT=0`), with
-  `-C` a bare repository per URL in `$XDG_DATA_HOME/luish/plugins/git/REPO-HASH` (FNV-1a of the URL). A ref is
+  `-C` a bare repository per URL in `$XDG_CACHE_HOME/luish/plugins/git/REPO-HASH` (FNV-1a of the URL). A ref is
   fetched with `--depth 1` and read from `FETCH_HEAD^{commit}`; a locked commit that is missing is fetched by hash,
   else with a full fetch of its ref. `git archive` into a temporary directory next to `src/REPO-HASH/COMMIT`,
   extracted with `tar` and renamed into place, so an existing directory is complete. The data directory (not the
-  cache) holds them, since startup needs them and can't recreate them.
+  cache) holds these, since startup needs them and can't recreate them, with a `README` saying that `plugin sync`
+  fetches them again; the bare repositories are only for fetching, so they are in the cache (whose `README` lists
+  them).
 - Not yet done (see `PLAN.md`): `plugin add`/`remove`/`gc`, version requirements other than `"*"`, `flock` for
   concurrent syncs, `login.lsh`.
 - Tests: `tests/plugins/*` (packages: `packages.sh` for local sources, `git_packages.sh` for git ones with
