@@ -242,6 +242,10 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   `builtins/popd_dir.sh`.
 - `unset` of a bad name is an error; `set -` turns off `-x` and `-v`; `.` of a directory reads nothing. Test:
   `builtins/special_misc.sh`. `source`: `builtins/source.sh`, `builtins/source_missing.sh`.
+- `builtin` (`misc::builtin`) is a regular built-in that calls the one named, passing its errors through, so a special
+  one's errors still exit (as in zsh), but assignments before it are temporary (as in bash). Its arguments aren't
+  expanded as assignments (`declaration_command` doesn't skip it), as in zsh and bash. Test: `builtins/builtin.sh`
+  (zsh).
 - `__luish_internal` (`internal.rs`) holds luish's own commands, so they don't take names from the command
   namespace; a missing or unknown subcommand is status 2. `print-git-rev` is set at compile time by `build.rs`
   (`-dirty` if `src/`, `build.rs`, `Cargo.toml` or `Cargo.lock` differ). Test: `builtins/internal_git_rev.sh`.

@@ -422,6 +422,27 @@ pub fn command(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     }
 }
 
+/// `builtin name args`, as in zsh and bash: runs the built-in `name`,
+/// bypassing functions. A special built-in stays special: its errors exit
+/// the shell.
+pub fn builtin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    let args = match argv.get(1) {
+        Some(a) if a == b"--" => &argv[2..],
+        _ => &argv[1..],
+    };
+    let Some(name) = args.first() else { return Ok(0) };
+    match sh.builtin(name) {
+        Some((f, _)) => sh.call_builtin(f, args),
+        None => {
+            sh.berr(
+                &argv[0],
+                format!("{}: not a shell builtin", String::from_utf8_lossy(name)),
+            );
+            Ok(1)
+        }
+    }
+}
+
 pub fn type_(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let mut status = 0;
     for name in &argv[1..] {

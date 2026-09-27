@@ -66,6 +66,8 @@ builtins! {
     (b"[", test::bracket, false),
     (b"alias", misc::alias, false),
     (b"bg", jobs::fg, false),
+    // Not POSIX: as in zsh and bash.
+    (b"builtin", misc::builtin, false),
     (b"cd", cd::cd, false),
     (b"chdir", cd::cd, false),
     (b"command", misc::command, false),
