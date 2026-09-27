@@ -1,0 +1,21 @@
+f() {
+    echo \G \set >\G
+}
+g() {
+    \a.txt
+}
+{
+command alias -- -x='echo dash x'
+command alias -g G='| tr a-z A-Z'
+command alias ll='echo ll'
+command alias -g set='SET'
+command alias -s txt='echo TXT'
+}
+same
+G set
+alias -- -x='echo dash x'
+alias -g G='| tr a-z A-Z'
+alias ll='echo ll'
+alias -g set='SET'
+alias -s txt='echo TXT'
+g is a shell function

@@ -80,3 +80,25 @@ rc.d sees star=1 HISTSIZE=
 setopt editor.autosuggest
 unsetopt glob.bare_qualifiers
 setopt glob.star
+--- aliases, with global and suffix ones in their own tables
+luish: ~/.config/luish/config.toml: line 4: alias.bad: expected a string, found integer
+luish: ~/.config/luish/config.toml: line 5: alias: bad alias name: "a=b"
+luish: ~/.config/luish/config.toml: line 8: alias.global.N: expected a string, found integer
+rc.d sees star=0 HISTSIZE=
+alias ..='echo up'
+alias -g U='| tr a-z A-Z'
+alias ll='echo ll'
+alias -s txt='echo TXT'
+LL
+up
+TXT a.txt
+alias ..='echo up'
+alias -g U='| tr a-z A-Z'
+alias ll='echo ll'
+alias -s txt='echo TXT'
+LL
+up
+TXT a.txt
+luish: ~/.config/luish/config.toml: line 3: alias.suffix: expected a string, found array
+rc.d sees star=0 HISTSIZE=
+global='echo g'

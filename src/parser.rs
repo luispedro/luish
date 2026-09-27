@@ -422,7 +422,11 @@ impl Parser {
         let Some(kind) = op.redir_kind() else {
             return self.unexpected(&t, None);
         };
-        let t = self.next()?;
+        let t = if kind == RedirKind::HereDoc {
+            self.next_raw()?
+        } else {
+            self.next()?
+        };
         let Tok::Word(word) = t.tok else {
             return self.unexpected(&t, None);
         };
@@ -675,9 +679,9 @@ mod tests {
     #[test]
     fn aliases() {
         let mut aliases = AliasMap::default();
-        aliases.insert(b"ll".to_vec(), b"ls -l ".to_vec());
-        aliases.insert(b"x".to_vec(), b"y".to_vec());
-        aliases.insert(b"ls".to_vec(), b"ls -F".to_vec());
+        aliases.insert(b"ll".to_vec(), b"ls -l ".to_vec(), false);
+        aliases.insert(b"x".to_vec(), b"y".to_vec(), false);
+        aliases.insert(b"ls".to_vec(), b"ls -F".to_vec(), false);
         let aliases = Rc::new(aliases);
         let mut p = Parser::new(b"ll x\necho after\n".to_vec(), 1, true);
         let l = p.parse_next(&aliases).unwrap().unwrap();

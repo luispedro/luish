@@ -1,0 +1,19 @@
+x='y'
+alias x='y'
+alias -- +y='echo plus y'
+alias -- -x='echo dash x'
+alias 'a b'='c'
+alias x='y'
+alias: Illegal option -z
+status 2
+alias: Illegal option +x
+alias: illegal combination of options
+status 2
+status 2
+alias: x: not found
+status 1
+alias -s txt='cat -n'
+unalias: x: not found
+status 0
+status 2
+here-document

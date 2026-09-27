@@ -1,8 +1,8 @@
 # ~/.config/luish/config.toml sets luish's settings, for interactive shells
 # only, before rc.d: each table under `options` is a group, and each key is
 # a setting in it, as for `setopt -p GROUP KEY=VALUE` (a value directly under
-# `options` is a setting by its own name). Errors are reported
-# with their lines, in the file's order, and skipped.
+# `options` is a setting by its own name); the `alias` table defines aliases.
+# Errors are reported with their lines, in the file's order, and skipped.
 run() { $SH -i -c "$1" luish 2>&1 | grep -v 'job control' | sed "s|$HOME|~|g"; }
 mkdir -p .config/luish
 cat > .config/luish/config.toml <<'X'
@@ -71,3 +71,23 @@ run 'setopt -p cd'
 echo '--- a setting by its own name, directly under options'
 printf '[options]\nautosuggest = true\nglob.star = true\n' > .config/luish/config.toml
 run 'setopt -p editor; setopt -p glob'
+echo '--- aliases, with global and suffix ones in their own tables'
+cat > .config/luish/config.toml <<'X'
+[alias]
+ll = "echo ll"
+".." = "echo up"
+bad = 3
+"a=b" = "x"
+[alias.global]
+U = "| tr a-z A-Z"
+N = 1
+[alias.suffix]
+txt = "echo TXT"
+X
+show='alias -L; alias -Ls; ll U; ..; a.txt'
+run "$show"
+# From the cache.
+run "$show"
+# Without those tables, `global` and `suffix` can name regular aliases.
+printf '[alias]\nglobal = "echo g"\nsuffix = [1]\n' > .config/luish/config.toml
+run 'alias'

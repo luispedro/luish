@@ -7,6 +7,9 @@ use std::rc::Rc;
 
 use super::vars::single_quote;
 use crate::exec::CommandKind;
+use crate::expand::pattern::Pattern;
+use crate::expand::split::XChar;
+use crate::lexer::AliasKind;
 use crate::parser::is_reserved;
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::sys;
@@ -119,23 +122,126 @@ fn alias_line(name: &[u8], value: &[u8]) -> Vec<u8> {
     l
 }
 
+/// The command that defines an alias (`alias -L`, `savestate`).
+pub fn alias_command(name: &[u8], value: &[u8], kind: AliasKind) -> Vec<u8> {
+    let mut l = b"alias ".to_vec();
+    match kind {
+        AliasKind::Regular => {}
+        AliasKind::Global => l.extend_from_slice(b"-g "),
+        AliasKind::Suffix => l.extend_from_slice(b"-s "),
+    }
+    if name.first().is_some_and(|&c| c == b'-' || c == b'+') {
+        l.extend_from_slice(b"-- ");
+    }
+    let plain = |c: &u8| c.is_ascii_alphanumeric() || b"_-.,+/:@%^!".contains(c);
+    if !name.is_empty() && name.iter().all(plain) {
+        l.extend_from_slice(name);
+    } else {
+        l.extend(single_quote(name));
+    }
+    l.push(b'=');
+    l.extend(single_quote(value));
+    l.push(b'\n');
+    l
+}
+
+/// A pattern for `alias -m` and `unalias -m`, where a backslash quotes the
+/// next character.
+fn name_pattern(p: &[u8]) -> Pattern {
+    let mut x = Vec::with_capacity(p.len());
+    let mut it = p.iter();
+    while let Some(&b) = it.next() {
+        x.push(match (b, it.clone().next()) {
+            (b'\\', Some(&n)) => {
+                it.next();
+                XChar { b: n, quoted: true }
+            }
+            _ => XChar { b, quoted: false },
+        });
+    }
+    Pattern::new(&x)
+}
+
+/// `alias [{+|-}gmrsL] [name[=value]...]`, with zsh's options: `-g` and
+/// `-s` define global and suffix aliases; for printing, `-g`, `-r` and `-s`
+/// select global, regular or suffix aliases, `-m` takes the names as
+/// patterns, `-L` prints `alias` commands, and `+` prints names only.
 pub fn alias(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    if argv.len() == 1 {
-        let mut names: Vec<_> = sh.aliases.iter().collect();
-        names.sort();
-        let out: Vec<u8> = names.into_iter().flat_map(|(n, v)| alias_line(n, v)).collect();
+    let (mut kind, mut pattern, mut commands, mut names_only) = (None, false, false, false);
+    let mut i = 1;
+    while let Some(a) = argv.get(i) {
+        if a == b"--" {
+            i += 1;
+            break;
+        }
+        let plus = a.first() == Some(&b'+');
+        if !(plus || (a.len() >= 2 && a[0] == b'-')) {
+            break;
+        }
+        names_only |= plus;
+        i += 1;
+        for &c in &a[1..] {
+            let k = match c {
+                b'g' => AliasKind::Global,
+                b'r' => AliasKind::Regular,
+                b's' => AliasKind::Suffix,
+                b'm' => {
+                    pattern = true;
+                    continue;
+                }
+                b'L' => {
+                    commands = true;
+                    continue;
+                }
+                _ => {
+                    sh.berr(&argv[0], format!("Illegal option {}{}", a[0] as char, c as char));
+                    return Ok(2);
+                }
+            };
+            if kind.is_some_and(|old| old != k) {
+                sh.berr(&argv[0], "illegal combination of options");
+                return Ok(2);
+            }
+            kind = Some(k);
+        }
+    }
+    let args = &argv[i..];
+    let suffix = kind == Some(AliasKind::Suffix);
+    let entry = |name: &[u8], value: &[u8], k: AliasKind| -> Vec<u8> {
+        if kind.is_some_and(|want| want != k) {
+            Vec::new()
+        } else if names_only {
+            [name, b"\n"].concat()
+        } else if commands {
+            alias_command(name, value, k)
+        } else {
+            alias_line(name, value)
+        }
+    };
+    let all: Vec<(&[u8], &[u8], AliasKind)> = if suffix {
+        let s = sh.aliases.sorted_suffixes();
+        s.into_iter().map(|(n, v)| (n, v, AliasKind::Suffix)).collect()
+    } else {
+        (sh.aliases.sorted().into_iter())
+            .map(|(n, a)| (n, &a.value[..], a.kind()))
+            .collect()
+    };
+    if args.is_empty() || pattern {
+        let pats: Vec<_> = args.iter().map(|a| name_pattern(a)).collect();
+        let out: Vec<u8> = (all.iter())
+            .filter(|(n, ..)| pats.is_empty() || pats.iter().any(|p| p.matches(n)))
+            .flat_map(|&(n, v, k)| entry(n, v, k))
+            .collect();
         return Ok(sh.out_status(&out));
     }
+    let mut out = Vec::new();
     let mut status = 0;
-    for a in &argv[1..] {
+    let mut defs = Vec::new();
+    for a in args {
         match a.iter().position(|&c| c == b'=') {
-            Some(i) if i > 0 => {
-                Rc::make_mut(&mut sh.aliases).insert(a[..i].to_vec(), a[i + 1..].to_vec());
-            }
-            _ => match sh.aliases.get(a) {
-                Some(v) => {
-                    sh.out(&alias_line(a, v));
-                }
+            Some(i) if i > 0 => defs.push((a[..i].to_vec(), a[i + 1..].to_vec())),
+            _ => match all.iter().find(|e| e.0 == &a[..]) {
+                Some(&(n, v, k)) => out.extend(entry(n, v, k)),
                 None => {
                     sh.berr(&argv[0], format!("{}: not found", String::from_utf8_lossy(a)));
                     status = 1;
@@ -143,17 +249,61 @@ pub fn alias(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             },
         }
     }
+    sh.out(&out);
+    let aliases = Rc::make_mut(&mut sh.aliases);
+    for (name, value) in defs {
+        match kind {
+            Some(AliasKind::Suffix) => aliases.insert_suffix(name, value),
+            k => aliases.insert(name, value, k == Some(AliasKind::Global)),
+        }
+    }
     Ok(status)
 }
 
+/// `unalias [-ams] name...`: `-s` removes suffix aliases (otherwise
+/// regular and global ones), `-a` all of them, and with `-m` the names are
+/// patterns.
 pub fn unalias(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    if argv.get(1).is_some_and(|a| a == b"-a") {
-        Rc::make_mut(&mut sh.aliases).clear();
+    let (opts, args) = match super::options(sh, argv, b"ams") {
+        Ok(o) => o,
+        Err(status) => return Ok(status),
+    };
+    let suffix = opts.contains(&b's');
+    let aliases = Rc::make_mut(&mut sh.aliases);
+    if opts.contains(&b'a') {
+        if suffix {
+            aliases.clear_suffixes();
+        } else {
+            aliases.clear();
+        }
         return Ok(0);
     }
+    if opts.contains(&b'm') {
+        let pats: Vec<_> = args.iter().map(|a| name_pattern(a)).collect();
+        let names: Vec<Vec<u8>> = if suffix {
+            aliases.sorted_suffixes().into_iter().map(|e| e.0.to_vec()).collect()
+        } else {
+            aliases.sorted().into_iter().map(|e| e.0.to_vec()).collect()
+        };
+        let mut found = false;
+        for n in names.iter().filter(|n| pats.iter().any(|p| p.matches(n))) {
+            found = true;
+            if suffix {
+                aliases.remove_suffix(n);
+            } else {
+                aliases.remove(n);
+            }
+        }
+        return Ok(if found || args.is_empty() { 0 } else { 1 });
+    }
     let mut status = 0;
-    for a in &argv[1..] {
-        if Rc::make_mut(&mut sh.aliases).remove(a).is_none() {
+    for a in args {
+        let removed = if suffix {
+            Rc::make_mut(&mut sh.aliases).remove_suffix(a)
+        } else {
+            Rc::make_mut(&mut sh.aliases).remove(a)
+        };
+        if !removed {
             sh.berr(&argv[0], format!("{}: not found", String::from_utf8_lossy(a)));
             status = 1;
         }
@@ -176,15 +326,23 @@ fn describe(sh: &mut Shell, name: &[u8], verbose: bool, alt_path: Option<&[u8]>)
     };
     let text = if is_reserved(name) {
         line("is a shell keyword")
-    } else if let Some(v) = sh.aliases.get(name) {
+    } else if let Some((alias, value, kind)) = (sh.aliases.get(name))
+        .map(|a| (name, &a.value[..], a.kind()))
+        .or_else(|| (sh.aliases.for_suffix(name)).map(|(s, v)| (s, v, AliasKind::Suffix)))
+    {
         if verbose {
-            format!("{n} is an alias for {}", String::from_utf8_lossy(v)).into_bytes()
+            let what = match kind {
+                AliasKind::Regular => "an alias",
+                AliasKind::Global => "a global alias",
+                AliasKind::Suffix => "a suffix alias",
+            };
+            // As in zsh, a suffix alias is shown by its suffix.
+            let alias = String::from_utf8_lossy(alias);
+            format!("{alias} is {what} for {}", String::from_utf8_lossy(value)).into_bytes()
         } else {
-            let mut s = b"alias ".to_vec();
-            let mut l = alias_line(name, v);
+            let mut l = alias_command(alias, value, kind);
             l.pop();
-            s.extend(l);
-            s
+            l
         }
     } else {
         match sh.lookup_command(name, true) {

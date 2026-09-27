@@ -97,6 +97,13 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
 - Here-docs: several on one line, inside `$(...)`; bodies over 64 KiB go through an unlinked temporary file.
 - Aliases: a value ending in a blank makes the next word eligible wherever it is (also a `for` variable, `in`, or a
   `case` word, as in dash). Test: `parse/alias_blank_compound.sh`.
+- `AliasMap` holds regular and global aliases in one table (a name is one or the other, as in zsh) and suffix aliases
+  in another. Regular and suffix aliases are expanded by the parser in command position (`maybe_expand_alias`);
+  global ones by `peek` for every token, only while `AliasMap::has_globals` (a count), except for a here-document
+  delimiter (`next_raw`). All three splice text into `src` (`splice_alias`). A suffix alias being expanded is
+  recorded in `active_aliases` as NUL plus its suffix, so it can't clash with a name. New parsers share one empty
+  table (`NO_ALIASES`), so an `eval` doesn't allocate one. The completer's `Scan` mirrors these rules. Tests:
+  `parse/alias_global.sh` (zsh), `parse/alias_suffix.sh` (zsh), unit tests in `complete.rs`.
 - Function bodies may be any command (`f() echo hi`), as in dash.
 - As in dash, a bad `${...}` (such as `${x//a/b}`) is an error only when expanded, and `$(` in a here-doc delimiter
   is a syntax error. Test: `parse/dash_lenient.sh`.
@@ -219,10 +226,13 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   namespace; a missing or unknown subcommand is status 2. `print-git-rev` is set at compile time by `build.rs`
   (`-dirty` if `src/`, `build.rs`, `Cargo.toml` or `Cargo.lock` differ). Test: `builtins/internal_git_rev.sh`.
 - `savestate` (`state.rs`): not `PPID`, `LINENO`, or the options `-i -s -m -n`. Functions are printed by
-  `unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`); command names in function bodies that are aliases are
-  quoted, and a function named like an alias is preceded by `unalias`. Loaded plugins are printed as
-  `__luish_internal plugin restore NAME PATH`, after aliases and before options. Tests:
-  `builtins/internal_savestate.sh` (a new shell reading the state prints the same state), unit tests in `unparse.rs`.
+  `unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`); words in function bodies that would be expanded as
+  aliases (command names that are aliases of any kind, other words that are global aliases) are quoted, and a
+  function named like an alias is preceded by `unalias`. Loaded plugins are printed as
+  `__luish_internal plugin restore NAME PATH`, after aliases and before options. When there are aliases, the commands
+  from them on are grouped in `{ }` (`join`), which is parsed before any of it runs, so that a global alias doesn't
+  change the words after it (`set -o NAME` ...). Tests: `builtins/internal_savestate.sh` (a new shell reading the
+  state prints the same state), `builtins/internal_savestate_aliases.sh`, unit tests in `unparse.rs`.
 - `help` (`help.rs`) shows the Markdown in `docs/builtins/` (compiled in with `include_str!`). It is a built-in only
   in shells started with `-i` (which `set` can't change, so also their subshells). Unit tests check that every
   built-in has a page, that pages fit 80 columns and that `docs/builtins.md` includes them all. Tests:
@@ -307,7 +317,9 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   `login.d` ran, is used in shells started from it), changes a fingerprint can't show, per-file entries, background
   revalidation, `flock` for many shells at once, and merging into running shells.
 - `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. A key directly
-  under `[options]` is a setting by its `setopt` name. Test: `misc/config_toml.sh`.
+  under `[options]` is a setting by its `setopt` name. The `alias` table defines regular aliases, and its `global` and
+  `suffix` tables the other kinds (so a string named `global` or `suffix` is a regular alias, and TOML won't have both
+  in one file). Test: `misc/config_toml.sh`.
 - The rc stage (`interactive::rc_d`, `startcache::run` with `config`) is: `config.toml`'s options, the plugins it
   enables (`plugins::load_enabled`), `rc.d`'s files, then every loaded plugin's `post-rc.lsh` (`post_rc_files`), all
   inside the cache; then, outside it and so in every shell, the `post-rc` hooks (`post_rc_hooks`), then
@@ -403,6 +415,9 @@ file. When adding a deviation, add it to both.
 | A directory as a command | `builtins/autocd.sh` (zsh) |
 | `bindkey` | `builtins/bindkey.sh` (same as dash), `builtins/internal_bindkey.sh`, `line_editor_keys` in `tests/interactive.rs` |
 | History file | `history_file` and `share_history` in `tests/interactive.rs`, unit tests in `interactive/histfile.rs` |
+| `alias`, `unalias` options | `builtins/alias_options.sh` (zsh), `builtins/alias_deviations.sh` |
+| Global aliases | `parse/alias_global.sh` (zsh), `builtins/alias_deviations.sh` (here-document delimiter), `builtins/internal_savestate_aliases.sh` |
+| Suffix aliases | `parse/alias_suffix.sh` (zsh), `builtins/alias_deviations.sh` (`command -v`) |
 | Last command of `sh -c` | `exec/c_exec_last.sh` (zsh) |
 | Script read from a pipe | `misc/stdin_script.sh` (zsh) |
 | `$LINENO` | `misc/lineno.sh` |

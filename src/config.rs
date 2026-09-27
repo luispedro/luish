@@ -16,11 +16,25 @@
 //! The `plugins` table is read by `plugins/package.rs`.
 //!
 //! Options take booleans, numbers take integers and text takes strings,
-//! where a leading `~` is expanded (nothing else is). An unknown key, or a
-//! value of the wrong type, is reported with its line and skipped; a file
-//! that isn't valid TOML is reported and ignored. The rc cache
-//! (`startcache.rs`) records the file, so a warm start doesn't read it.
+//! where a leading `~` is expanded (nothing else is). The `alias` table
+//! defines aliases, with global and suffix aliases in its `global` and
+//! `suffix` tables:
+//!
+//! ```toml
+//! [alias]
+//! ll = "ls -l"
+//! [alias.global]
+//! G = "| grep"
+//! [alias.suffix]
+//! pdf = "evince"
+//! ```
+//!
+//! An unknown key, or a value of the wrong type, is reported with its line
+//! and skipped; a file that isn't valid TOML is reported and ignored. The
+//! rc cache (`startcache.rs`) records the file, so a warm start doesn't
+//! read it.
 
+use crate::lexer::AliasKind;
 use crate::options::{Kind, Options, Setting, find_group};
 use crate::shell::Shell;
 use crate::sys;
@@ -60,6 +74,10 @@ pub fn load(sh: &mut Shell, path: &[u8]) {
                 None => err(sh, value.span.start, "options: not a table"),
             },
             "plugins" => {}
+            "alias" => match value.as_table() {
+                Some(_) => aliases(sh, value, &err),
+                None => err(sh, value.span.start, "alias: not a table"),
+            },
             name => err(sh, key.span.start, &format!("unknown key: {name}")),
         }
     }
@@ -99,6 +117,62 @@ fn options(sh: &mut Shell, mut value: Value<'_>, err: &dyn Fn(&Shell, usize, &st
             }
         }
     }
+}
+
+/// The `alias` table: a string is a regular alias, and the tables `global`
+/// and `suffix` hold global and suffix aliases.
+fn aliases(sh: &mut Shell, mut value: Value<'_>, err: &dyn Fn(&Shell, usize, &str)) {
+    let ValueInner::Table(entries) = value.take() else {
+        return;
+    };
+    for (key, mut value) in in_order(entries) {
+        let kind = match (&*key.name, value.as_ref()) {
+            (_, ValueInner::String(_)) => {
+                define(sh, "alias", &key.name, &value, AliasKind::Regular)
+                    .unwrap_or_else(|msg| err(sh, key.span.start, &msg));
+                continue;
+            }
+            ("global", ValueInner::Table(_)) => AliasKind::Global,
+            ("suffix", ValueInner::Table(_)) => AliasKind::Suffix,
+            (name, v) => {
+                err(
+                    sh,
+                    key.span.start,
+                    &format!("alias.{name}: expected a string, found {}", v.type_str()),
+                );
+                continue;
+            }
+        };
+        let ValueInner::Table(entries) = value.take() else {
+            continue;
+        };
+        let table = format!("alias.{}", key.name);
+        for (key, value) in in_order(entries) {
+            define(sh, &table, &key.name, &value, kind).unwrap_or_else(|msg| err(sh, key.span.start, &msg));
+        }
+    }
+}
+
+/// Defines the alias `name` in `table` from a TOML value.
+fn define(sh: &mut Shell, table: &str, name: &str, value: &Value<'_>, kind: AliasKind) -> Result<(), String> {
+    let ValueInner::String(s) = value.as_ref() else {
+        return Err(format!(
+            "{table}.{name}: expected a string, found {}",
+            value.as_ref().type_str()
+        ));
+    };
+    // What `alias` couldn't define: the name ends at the first `=`, and an
+    // argument can't hold a NUL byte (the lexer's mark for a suffix alias).
+    if name.is_empty() || name.contains(['=', '\0']) {
+        return Err(format!("{table}: bad alias name: {name:?}"));
+    }
+    let (name, value) = (name.as_bytes().to_vec(), s.as_bytes().to_vec());
+    let aliases = std::rc::Rc::make_mut(&mut sh.aliases);
+    match kind {
+        AliasKind::Suffix => aliases.insert_suffix(name, value),
+        k => aliases.insert(name, value, k == AliasKind::Global),
+    }
+    Ok(())
 }
 
 /// Sets the setting `name` from a TOML value.

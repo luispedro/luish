@@ -8,7 +8,129 @@ use std::rc::Rc;
 
 use crate::ast::*;
 
-pub type AliasMap = HashMap<Vec<u8>, Vec<u8>>;
+/// The aliases. Regular and global aliases share one table (as in zsh, a
+/// name is one or the other); suffix aliases, keyed by what follows the
+/// last `.` of a command name, have their own.
+#[derive(Clone, Default)]
+pub struct AliasMap {
+    names: HashMap<Vec<u8>, Alias>,
+    suffixes: HashMap<Vec<u8>, Vec<u8>>,
+    /// The number of global aliases: without any, words that aren't
+    /// command names aren't looked up.
+    globals: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Alias {
+    pub value: Vec<u8>,
+    /// Expanded in any position, not only as a command name (`alias -g`).
+    pub global: bool,
+}
+
+/// The kinds of alias.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AliasKind {
+    Regular,
+    Global,
+    Suffix,
+}
+
+impl Alias {
+    /// Regular or global.
+    pub fn kind(&self) -> AliasKind {
+        if self.global {
+            AliasKind::Global
+        } else {
+            AliasKind::Regular
+        }
+    }
+}
+
+impl AliasMap {
+    pub fn is_empty(&self) -> bool {
+        self.names.is_empty() && self.suffixes.is_empty()
+    }
+
+    pub fn has_globals(&self) -> bool {
+        self.globals > 0
+    }
+
+    /// The regular or global alias `name`.
+    pub fn get(&self, name: &[u8]) -> Option<&Alias> {
+        self.names.get(name)
+    }
+
+    pub fn contains(&self, name: &[u8]) -> bool {
+        self.names.contains_key(name)
+    }
+
+    pub fn insert(&mut self, name: Vec<u8>, value: Vec<u8>, global: bool) {
+        let old = self.names.insert(name, Alias { value, global });
+        self.globals = self.globals + usize::from(global) - usize::from(old.is_some_and(|a| a.global));
+    }
+
+    pub fn remove(&mut self, name: &[u8]) -> bool {
+        let old = self.names.remove(name);
+        self.globals -= usize::from(old.as_ref().is_some_and(|a| a.global));
+        old.is_some()
+    }
+
+    /// Removes the regular and global aliases.
+    pub fn clear(&mut self) {
+        self.names.clear();
+        self.globals = 0;
+    }
+
+    /// The regular and global aliases, by name.
+    pub fn sorted(&self) -> Vec<(&[u8], &Alias)> {
+        let mut v: Vec<_> = self.names.iter().map(|(n, a)| (&n[..], a)).collect();
+        v.sort_unstable_by_key(|e| e.0);
+        v
+    }
+
+    pub fn insert_suffix(&mut self, suffix: Vec<u8>, value: Vec<u8>) {
+        self.suffixes.insert(suffix, value);
+    }
+
+    pub fn remove_suffix(&mut self, suffix: &[u8]) -> bool {
+        self.suffixes.remove(suffix).is_some()
+    }
+
+    pub fn clear_suffixes(&mut self) {
+        self.suffixes.clear();
+    }
+
+    /// The suffix aliases, by suffix.
+    pub fn sorted_suffixes(&self) -> Vec<(&[u8], &[u8])> {
+        let mut v: Vec<_> = self.suffixes.iter().map(|(s, v)| (&s[..], &v[..])).collect();
+        v.sort_unstable_by_key(|e| e.0);
+        v
+    }
+
+    /// The suffix alias (suffix and value) that applies to the command name
+    /// `name`: one for what follows its last `.`, if neither that nor what
+    /// precedes it is empty.
+    pub fn for_suffix(&self, name: &[u8]) -> Option<(&[u8], &[u8])> {
+        if self.suffixes.is_empty() {
+            return None;
+        }
+        let dot = name
+            .iter()
+            .rposition(|&c| c == b'.')
+            .filter(|&i| i > 0 && i + 1 < name.len())?;
+        let (s, v) = self.suffixes.get_key_value(&name[dot + 1..])?;
+        Some((s, v))
+    }
+
+    /// Whether the word `w` would be expanded as an alias, as a command
+    /// name if `command` (for quoting a word that must stay as it is).
+    pub fn expands(&self, w: &[u8], command: bool) -> bool {
+        match self.get(w) {
+            Some(a) => command || a.global,
+            None => command && self.for_suffix(w).is_some(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParseError {
@@ -121,7 +243,12 @@ pub struct Parser {
     pending_heredocs: Vec<PendingHereDoc>,
     pub(crate) aliases: Rc<AliasMap>,
     /// Aliases currently being expanded, with the end of their text in `src`.
+    /// A suffix alias is recorded as its suffix after a NUL byte, which
+    /// can't be in the name of another alias.
     pub(crate) active_aliases: Vec<(Vec<u8>, usize)>,
+    /// The next word is a here-document delimiter, which isn't expanded
+    /// as a global alias.
+    raw_word: bool,
     /// End of the text of the last alias expanded, if that text ended in a
     /// blank: the word after it is checked for aliases too.
     pub(crate) alias_blank_end: Option<usize>,
@@ -132,6 +259,11 @@ pub struct Parser {
     /// `setopt glob.bare_qualifiers`: a trailing `(...)` in a word is a glob
     /// qualifier. This is the only place the lexer depends on an option.
     pub bareglobqual: bool,
+}
+
+/// Whether the word after an alias with this value is checked for aliases.
+pub fn ends_in_blank(value: &[u8]) -> bool {
+    value.last().is_some_and(|&c| c == b' ' || c == b'\t')
 }
 
 pub fn is_name_start(c: u8) -> bool {
@@ -150,6 +282,12 @@ fn is_special_param(c: u8) -> bool {
     matches!(c, b'@' | b'*' | b'#' | b'?' | b'-' | b'$' | b'!' | b'0')
 }
 
+thread_local! {
+    /// An empty alias table, shared so that a new parser (as for each
+    /// `eval`) doesn't allocate one.
+    static NO_ALIASES: Rc<AliasMap> = Rc::new(AliasMap::default());
+}
+
 impl Parser {
     pub fn new(src: Vec<u8>, lineno: u32, source_eof: bool) -> Parser {
         Parser {
@@ -159,9 +297,10 @@ impl Parser {
             source_eof,
             peeked: None,
             pending_heredocs: Vec::new(),
-            aliases: Rc::new(AliasMap::default()),
+            aliases: NO_ALIASES.with(Rc::clone),
             active_aliases: Vec::new(),
             alias_blank_end: None,
+            raw_word: false,
             splice_delta: 0,
             started: false,
             bareglobqual: false,
@@ -227,12 +366,30 @@ impl Parser {
     // ------------------------------------------------------------------
     // Tokens
 
+    #[inline]
     pub(crate) fn peek(&mut self) -> PResult<&Token> {
         if self.peeked.is_none() {
-            let t = self.lex()?;
-            self.peeked = Some(t);
+            self.lex_next()?;
         }
         Ok(self.peeked.as_ref().unwrap())
+    }
+
+    /// Reads the next token into `peeked`.
+    fn lex_next(&mut self) -> PResult<()> {
+        let t = self.lex()?;
+        self.peeked = Some(t);
+        if self.aliases.has_globals() && !self.raw_word {
+            self.expand_global()?;
+        }
+        Ok(())
+    }
+
+    /// Reads the next token, a here-document delimiter, as it is written.
+    pub(crate) fn next_raw(&mut self) -> PResult<Token> {
+        self.raw_word = true;
+        let t = self.next();
+        self.raw_word = false;
+        t
     }
 
     pub(crate) fn next(&mut self) -> PResult<Token> {
@@ -905,8 +1062,9 @@ impl Parser {
     // ------------------------------------------------------------------
     // Aliases
 
-    /// If the next token is a word naming an alias that is not already being
-    /// expanded, substitute the alias text into the input.
+    /// If the next token, a command name, is an alias that is not already
+    /// being expanded, substitute the alias text into the input. For a
+    /// suffix alias, that is its value and the word.
     pub(crate) fn maybe_expand_alias(&mut self) -> PResult<()> {
         if self.aliases.is_empty() {
             return Ok(());
@@ -919,32 +1077,81 @@ impl Parser {
                 },
                 _ => return Ok(()),
             };
-            if crate::parser::is_reserved(&name) || self.active_aliases.iter().any(|(n, _)| *n == name) {
+            if crate::parser::is_reserved(&name) {
                 return Ok(());
             }
-            let Some(value) = self.aliases.get(&name).cloned() else {
+            let aliases = self.aliases.clone();
+            if let Some(a) = aliases.get(&name) {
+                if self.is_active(&name) {
+                    return Ok(());
+                }
+                let tok = self.peeked.take().unwrap();
+                self.splice_alias(tok, name, &a.value, ends_in_blank(&a.value));
+                continue;
+            }
+            let Some((suffix, value)) = aliases.for_suffix(&name) else {
                 return Ok(());
             };
+            let key = [b"\0", suffix].concat();
+            if self.is_active(&key) {
+                return Ok(());
+            }
             let tok = self.peeked.take().unwrap();
-            let delta = value.len() as isize - (tok.end - tok.start) as isize;
-            for end in self
-                .active_aliases
-                .iter_mut()
-                .map(|(_, end)| end)
-                .chain(self.alias_blank_end.as_mut())
-            {
-                if *end >= tok.end {
-                    *end = (*end as isize + delta) as usize;
-                }
+            // As in zsh, a blank at the end of the value makes the word
+            // after the name eligible (zsh's manual says it doesn't).
+            self.splice_alias(tok, key, &[value, b" ", &name].concat(), ends_in_blank(value));
+        }
+    }
+
+    /// Expands a global alias in the peeked token, whatever its position.
+    fn expand_global(&mut self) -> PResult<()> {
+        loop {
+            let Some(Token { tok: Tok::Word(w), .. }) = &self.peeked else {
+                return Ok(());
+            };
+            let Some(name) = w.as_literal() else {
+                return Ok(());
+            };
+            let aliases = self.aliases.clone();
+            let Some(a) = aliases.get(name).filter(|a| a.global) else {
+                return Ok(());
+            };
+            if crate::parser::is_reserved(name) || self.is_active(name) {
+                return Ok(());
             }
-            self.src.splice(tok.start..tok.end, value.iter().copied());
-            self.splice_delta += delta;
-            self.pos = tok.start;
-            self.lineno = tok.lineno;
-            self.active_aliases.push((name, tok.start + value.len()));
-            if value.last().is_some_and(|&c| c == b' ' || c == b'\t') {
-                self.alias_blank_end = Some(tok.start + value.len());
+            let name = name.to_vec();
+            let tok = self.peeked.take().unwrap();
+            self.splice_alias(tok, name, &a.value, ends_in_blank(&a.value));
+            self.peeked = Some(self.lex()?);
+        }
+    }
+
+    fn is_active(&self, key: &[u8]) -> bool {
+        self.active_aliases.iter().any(|(n, _)| n == key)
+    }
+
+    /// Replaces the token `tok` with `value`, the text of the alias `key`,
+    /// and reads on from its start. If `blank`, the word after `value` is
+    /// checked for aliases too.
+    fn splice_alias(&mut self, tok: Token, key: Vec<u8>, value: &[u8], blank: bool) {
+        let delta = value.len() as isize - (tok.end - tok.start) as isize;
+        for end in self
+            .active_aliases
+            .iter_mut()
+            .map(|(_, end)| end)
+            .chain(self.alias_blank_end.as_mut())
+        {
+            if *end >= tok.end {
+                *end = (*end as isize + delta) as usize;
             }
+        }
+        self.src.splice(tok.start..tok.end, value.iter().copied());
+        self.splice_delta += delta;
+        self.pos = tok.start;
+        self.lineno = tok.lineno;
+        self.active_aliases.push((key, tok.start + value.len()));
+        if blank {
+            self.alias_blank_end = Some(tok.start + value.len());
         }
     }
 

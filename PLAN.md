@@ -28,7 +28,7 @@ second (nvm) are otherwise a daily cost.
 
 ### Next steps, in priority order
 
-1. **Phase 13, in its order**: `alias -g`; an ssh-host completer, then a generic completion bridge (needs a
+1. **Phase 13, in its order**: an ssh-host completer, then a generic completion bridge (needs a
    design note first) and typing to narrow the menu; shell-function `chpwd`/`precmd`/`preexec`; lazy function
    parsing of the startup cache.
 2. **Startup cost** (deferred by the user for now; see Performance in `DEVELOPING.md`): the dynamic loader's share,
@@ -39,7 +39,7 @@ second (nvm) are otherwise a daily cost.
    `Candidate`, also for plugins), `LS_COLORS` for files, fuzzy matching.
 5. **Fuzz targets** for the lexer, parser, arithmetic and pattern matcher, with a round-trip property: unparsing then
    re-parsing an AST gives the same AST.
-6. **Plugins (Phase 11)**: `precmd`/`preexec` hooks (Phase 13 item 3 needs them), extension built-ins, `plugin add`
+6. **Plugins (Phase 11)**: `precmd`/`preexec` hooks (Phase 13 item 2 needs them), extension built-ins, `plugin add`
    and `plugin remove`.
 
 ## Phase 11 — Plugin system (Stage 2)
@@ -131,17 +131,14 @@ replace the author's own zsh setup (`~/.zshrc` from home-manager plus zplug, and
 each item against luish and from about 670 commands of typed history.
 
 Already done: the prompt, the line-editor keys (`bindkey`, prefix search on Up/Down, `WORDCHARS`, `^O`, `Alt-.`),
-autosuggestions, `auto_pushd` (with `pushd_ignore_dups` and `pushd_silent`), `CDPATH`, the directory stack, aliases,
-the conda, nvm and home-manager setup scripts (through the `rc.d` cache), `**/`, `autocd`, menu completion, the
-history shared with zsh through `~/.histfile`, and grouped settings with `config.toml`.
+autosuggestions, `auto_pushd` (with `pushd_ignore_dups` and `pushd_silent`), `CDPATH`, the directory stack, aliases
+(with zsh's options, global and suffix aliases, and an `[alias]` table in `config.toml`), the conda, nvm and
+home-manager setup scripts (through the `rc.d` cache), `**/`, `autocd`, menu completion, the history shared with zsh
+through `~/.histfile`, and grouped settings with `config.toml`.
 
 Still to build, in this order:
 
-1. **Global aliases, `alias -g`**: expanded in any word position (`....` → `../../..`). The lexer already splices
-   aliases in one place; a global alias is looked up for every unquoted word, which costs a hash lookup per word only
-   when a global alias exists (`Shell` keeps a count). `alias` and `savestate` print them with `-g`. The highlighter
-   and completer expand them as they expand aliases now.
-2. **Completion content**, the biggest gap by volume (zsh gets git, ssh, make, man, cargo ... from `compinit` and
+1. **Completion content**, the biggest gap by volume (zsh gets git, ssh, make, man, cargo ... from `compinit` and
    zsh-completions):
    - **git**: done, as `git-completion` in `luish-std-plugins/`. Still missing: `REV:PATH`, `git config` keys, and
      values for most `--option=` words.
@@ -153,11 +150,11 @@ Still to build, in this order:
      options only (as fish does). This needs a design note before building.
    - **Typing to narrow the menu** (zsh's `menu select interactive`): while the menu is open, printable keys filter
      the matches instead of closing the menu.
-3. **Shell-function hooks**: functions named `chpwd`, `precmd` and `preexec` run at the same points as the Rhai hooks
+2. **Shell-function hooks**: functions named `chpwd`, `precmd` and `preexec` run at the same points as the Rhai hooks
    of the same names (the setup sets the terminal title in `chpwd`). Only interactive shells look them up, and only
    when a function with that name exists. `precmd` and `preexec` need the Rhai hooks of Phase 11. zsh's `print -P`
    comes with this, as a `__luish_internal` subcommand or a `print` built-in in interactive shells.
-4. **Lazy function parsing for the startup cache**, below.
+3. **Lazy function parsing for the startup cache**, below.
 
 Not planned, because the history shows they aren't used or they are easy to rewrite in POSIX sh: `[[`, the `:h`/`:t`
 modifiers, `builtin` (`command cd` works), zsh's two-argument `cd old new`, `vared`, `zmv`, `mmv`, `zed`, `zcalc`,

@@ -170,7 +170,7 @@ pub fn prompt(sh: &mut Shell, continuation: bool) -> crate::prompt::Prompt {
 fn names(sh: &Shell) -> Names {
     Names {
         functions: sh.functions.keys().cloned().collect(),
-        aliases: sh.aliases.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        aliases: sh.aliases.clone(),
         vars: sh.vars.names().cloned().collect(),
         path: sh.get_var(b"PATH").unwrap_or_default(),
         home: sh.get_var(b"HOME"),

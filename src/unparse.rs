@@ -171,13 +171,14 @@ impl<'a> Printer<'a> {
         }
         for (i, w) in sc.words.iter().enumerate() {
             sep(self);
-            if i == 0
-                && let Some(name) = w.as_literal()
-                && self.aliases.contains_key(name)
-            {
-                self.w(b"\\");
+            if i == 0 {
+                if w.as_literal().is_some_and(|name| self.aliases.expands(name, true)) {
+                    self.w(b"\\");
+                }
+                self.parts(&w.0);
+            } else {
+                self.word(w);
             }
-            self.word(w);
         }
         for r in &sc.redirs {
             sep(self);
@@ -326,7 +327,11 @@ impl<'a> Printer<'a> {
         }
     }
 
+    /// A word, quoted if it would be expanded as a global alias.
     fn word(&mut self, w: &Word) {
+        if w.as_literal().is_some_and(|name| self.aliases.expands(name, false)) {
+            self.w(b"\\");
+        }
         self.parts(&w.0);
     }
 
@@ -649,10 +654,16 @@ mod tests {
     #[test]
     fn alias_names_quoted() {
         let mut aliases = AliasMap::default();
-        aliases.insert(b"ls".to_vec(), b"ls -F".to_vec());
+        aliases.insert(b"ls".to_vec(), b"ls -F".to_vec(), false);
+        aliases.insert(b"G".to_vec(), b"| grep".to_vec(), true);
+        aliases.insert_suffix(b"txt".to_vec(), b"less".to_vec());
         assert_eq!(
             print(b"f() { ls; echo ls; }", &aliases),
             "f() {\n    \\ls\n    echo ls\n}\n"
+        );
+        assert_eq!(
+            print(b"f() { G G >G; a.txt a.txt; }", &aliases),
+            "f() {\n    \\G \\G >\\G\n    \\a.txt a.txt\n}\n"
         );
     }
 }

@@ -9,7 +9,9 @@
 //! by running them with `.`. Restoring sets everything that was saved, but
 //! doesn't remove what wasn't (such as variables set since).
 
+use crate::builtins::misc::alias_command;
 use crate::builtins::single_quote;
+use crate::lexer::AliasKind;
 use crate::options::{EXTENDED, OPTIONS, Opt};
 use crate::shell::Shell;
 use crate::{signals, sys, unparse};
@@ -27,12 +29,13 @@ const PROCESS_VARS: &[&[u8]] = &[b"PPID", b"LINENO"];
 /// The kinds of state, in the order their commands must run: the directory
 /// comes first (so that the saved `PWD` and `OLDPWD` win), functions come
 /// before aliases (which would otherwise be expanded in their bodies;
-/// command names that are aliases are also quoted, for a shell that has
-/// them already), and options come last (so that `set -e`, `-u`, `-x` or
-/// `-a` don't affect the rest), except those that change how function
-/// bodies are parsed, which come just before the functions. Plugins are
-/// loaded after everything that their top level might use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// words that are aliases are also quoted, for a shell that has them
+/// already), and options come last (so that `set -e`, `-u`, `-x` or `-a`
+/// don't affect the rest), except those that change how function bodies
+/// are parsed, which come just before the functions. Plugins are loaded
+/// after everything that their top level might use. The commands from the
+/// aliases on are grouped in braces (see [`join`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Kind {
     Dir,
     DirStack,
@@ -43,6 +46,7 @@ pub enum Kind {
     SyntaxOption,
     Function,
     Alias,
+    SuffixAlias,
     Plugin,
     Binding,
     Option,
@@ -58,7 +62,9 @@ pub struct Entry {
 impl Shell {
     /// The shell's state, as commands.
     pub fn dump_state(&self) -> Vec<u8> {
-        self.state_entries().into_iter().flat_map(|e| e.text).collect()
+        let mut out = Vec::new();
+        join(&mut out, &self.state_entries().iter().collect::<Vec<_>>());
+        out
     }
 
     /// The shell's state, one entry per variable, function, and so on, in
@@ -147,8 +153,8 @@ impl Shell {
             // The name of a function can't be quoted to keep it from being
             // expanded as an alias (restored later).
             let mut t = Vec::new();
-            if self.aliases.contains_key(name) {
-                t.extend_from_slice(b"command unalias ");
+            if self.aliases.contains(name) {
+                t.extend_from_slice(b"command unalias -- ");
                 t.extend(single_quote(name));
                 t.extend_from_slice(b" 2>/dev/null\n");
             }
@@ -166,15 +172,16 @@ impl Shell {
             add(Kind::Function, name, t);
         }
 
-        let mut aliases: Vec<_> = self.aliases.iter().collect();
-        aliases.sort();
-        for (name, value) in aliases {
-            let mut t = b"command alias ".to_vec();
-            t.extend(single_quote(name));
-            t.push(b'=');
-            t.extend(single_quote(value));
-            t.push(b'\n');
-            add(Kind::Alias, name, t);
+        for (name, a) in self.aliases.sorted() {
+            add(
+                Kind::Alias,
+                name,
+                [b"command ", &alias_command(name, &a.value, a.kind())[..]].concat(),
+            );
+        }
+        for (suffix, value) in self.aliases.sorted_suffixes() {
+            let t = [b"command ", &alias_command(suffix, value, AliasKind::Suffix)[..]].concat();
+            add(Kind::SuffixAlias, suffix, t);
         }
 
         if let Some(host) = &self.plugins {
@@ -230,7 +237,8 @@ pub fn difference(before: &[Entry], after: &[Entry]) -> Vec<u8> {
         match e.kind {
             Kind::Var => out.extend([b"unset -v ".to_vec(), e.name.clone()].concat()),
             Kind::Function => out.extend([b"unset -f ".to_vec(), e.name.clone()].concat()),
-            Kind::Alias => out.extend([b"command unalias ".to_vec(), quoted()].concat()),
+            Kind::Alias => out.extend([b"command unalias -- ".to_vec(), quoted()].concat()),
+            Kind::SuffixAlias => out.extend([b"command unalias -s -- ".to_vec(), quoted()].concat()),
             Kind::Trap => out.extend([b"trap - ".to_vec(), e.name.clone()].concat()),
             Kind::Plugin => out.extend([b"__luish_internal plugin unload ".to_vec(), quoted()].concat()),
             Kind::DirStack => out.extend_from_slice(b"command dirs -c"),
@@ -242,11 +250,35 @@ pub fn difference(before: &[Entry], after: &[Entry]) -> Vec<u8> {
         }
         out.push(b'\n');
     }
-    for e in after {
-        match old.get(&(e.kind, e.name.clone())) {
-            Some(&i) if before[i].text == e.text => {}
-            _ => out.extend_from_slice(&e.text),
-        }
-    }
+    let changed: Vec<_> = (after.iter())
+        .filter(|e| {
+            !old.get(&(e.kind, e.name.clone()))
+                .is_some_and(|&i| before[i].text == e.text)
+        })
+        .collect();
+    join(&mut out, &changed);
     out
+}
+
+/// Appends the commands of `entries`. If aliases are among them, those
+/// from the aliases on are grouped in braces: the group is parsed before
+/// any of it runs, so that the aliases don't change the commands after
+/// them (a global alias could be any word).
+fn join(out: &mut Vec<u8>, entries: &[&Entry]) {
+    let has_aliases = entries
+        .iter()
+        .any(|e| matches!(e.kind, Kind::Alias | Kind::SuffixAlias));
+    let group = entries
+        .iter()
+        .position(|e| e.kind >= Kind::Alias)
+        .filter(|_| has_aliases);
+    for (i, e) in entries.iter().enumerate() {
+        if group == Some(i) {
+            out.extend_from_slice(b"{\n");
+        }
+        out.extend_from_slice(&e.text);
+    }
+    if group.is_some() {
+        out.extend_from_slice(b"}\n");
+    }
 }

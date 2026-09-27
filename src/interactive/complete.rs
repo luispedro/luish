@@ -20,6 +20,7 @@
 
 use std::cell::RefCell;
 use std::os::unix::ffi::OsStrExt;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use rustyline::Changeset;
@@ -31,6 +32,7 @@ use rustyline::{Context, Helper};
 
 use super::keys::Pending;
 use super::menu::{self, Item, Menu};
+use crate::lexer::{AliasMap, ends_in_blank};
 use crate::path::{DirStamp, dir_stamps};
 use crate::sys;
 
@@ -38,8 +40,7 @@ use crate::sys;
 #[derive(Default)]
 pub struct Names {
     pub functions: Vec<Vec<u8>>,
-    /// The aliases' names and values.
-    pub aliases: Vec<(Vec<u8>, Vec<u8>)>,
+    pub aliases: Rc<AliasMap>,
     pub vars: Vec<Vec<u8>>,
     pub path: Vec<u8>,
     pub home: Option<Vec<u8>>,
@@ -294,8 +295,9 @@ struct Scan<'a> {
     /// Whether the current word has quotes or backslashes (and so is not
     /// an alias).
     quoted: bool,
-    /// The aliases (name and value), and those being expanded.
-    aliases: &'a [(Vec<u8>, Vec<u8>)],
+    /// The aliases, and those being expanded (a suffix alias after a NUL
+    /// byte, as in the lexer).
+    aliases: &'a AliasMap,
     expanding: Vec<Vec<u8>>,
     /// Whether the next word is an alias even if it is not a command name
     /// (after an alias whose value ends with a blank).
@@ -313,7 +315,7 @@ struct Scan<'a> {
 }
 
 impl<'a> Scan<'a> {
-    fn new(aliases: &'a [(Vec<u8>, Vec<u8>)]) -> Scan<'a> {
+    fn new(aliases: &'a AliasMap) -> Scan<'a> {
         Scan {
             cmd_pos: true,
             redirect: false,
@@ -367,11 +369,12 @@ impl<'a> Scan<'a> {
         if std::mem::take(&mut self.skip) {
             return;
         }
-        let alias = (alias_next || self.cmd_pos) && !quoted && !BEFORE_COMMAND.contains(&&w[..]);
+        let cmd = alias_next || self.cmd_pos;
+        let alias = !quoted && !BEFORE_COMMAND.contains(&&w[..]);
         if self.redirect {
             self.redirect = false;
-        } else if let Some(value) = self.alias(&w).filter(|_| alias) {
-            self.expand_alias(w, value);
+        } else if let Some((key, value, blank)) = self.alias(&w, cmd).filter(|_| alias) {
+            self.expand_alias(key, &value, blank);
         } else if !self.cmd_pos {
             self.words.push(w);
         } else if is_assignment(&w) || (self.precommand && w.starts_with(b"-")) {
@@ -386,25 +389,37 @@ impl<'a> Scan<'a> {
         }
     }
 
-    /// The value of the alias `name`, unless it is being expanded.
-    fn alias(&self, name: &[u8]) -> Option<&'a [u8]> {
-        let aliases: &'a [(Vec<u8>, Vec<u8>)] = self.aliases;
-        let (_, value) = aliases.iter().find(|a| a.0 == name)?;
-        (!self.expanding.iter().any(|e| e == name)).then_some(&value[..])
+    /// The text that replaces the word `name` (a command name if `cmd`) as
+    /// an alias, unless that alias is being expanded: the alias's key in
+    /// `expanding`, the text, and whether the next word is checked too.
+    fn alias(&self, name: &[u8], cmd: bool) -> Option<(Vec<u8>, Vec<u8>, bool)> {
+        let (key, text, blank) = match self.aliases.get(name) {
+            Some(a) if cmd || a.global => (name.to_vec(), a.value.clone(), ends_in_blank(&a.value)),
+            Some(_) => return None,
+            None => {
+                let (suffix, value) = self.aliases.for_suffix(name).filter(|_| cmd)?;
+                (
+                    [b"\0", suffix].concat(),
+                    [value, b" ", name].concat(),
+                    ends_in_blank(value),
+                )
+            }
+        };
+        (!self.expanding.contains(&key)).then_some((key, text, blank))
     }
 
-    /// Scans the value of an alias in place of its name, a word that has
-    /// just ended.
-    fn expand_alias(&mut self, name: Vec<u8>, value: &'a [u8]) {
+    /// Scans the text of an alias in place of the word that has just
+    /// ended.
+    fn expand_alias(&mut self, key: Vec<u8>, text: &[u8], blank: bool) {
         let quote = self.quote;
-        self.expanding.push(name);
-        self.feed(value);
+        self.expanding.push(key);
+        self.feed(text);
         self.end_word();
         self.expanding.pop();
         self.quote = quote;
         self.done = false;
         self.comment = false;
-        self.alias_next = value.last().is_some_and(|&c| c == b' ' || c == b'\t');
+        self.alias_next = blank;
     }
 
     /// Ends the current command, at an operator.
@@ -556,7 +571,7 @@ impl<'a> Scan<'a> {
 /// Finds the word ending at the end of `line` and what it should complete to.
 /// This is a rough tokenizer: it follows quoting, operators, redirections,
 /// assignments, and substitutions, but not the full grammar.
-fn analyze(line: &[u8], aliases: &[(Vec<u8>, Vec<u8>)]) -> Word {
+fn analyze(line: &[u8], aliases: &AliasMap) -> Word {
     let mut s = Scan::new(aliases);
     s.feed(line);
     if s.comment {
@@ -623,7 +638,8 @@ fn analyze(line: &[u8], aliases: &[(Vec<u8>, Vec<u8>)]) -> Word {
 /// after it (`rest`) and the quoting at the cursor. The rest of the word
 /// under the cursor is left out.
 fn words_after(rest: &[u8], quote: Quote) -> Vec<Vec<u8>> {
-    let mut s = Scan::new(&[]);
+    let no_aliases = AliasMap::default();
+    let mut s = Scan::new(&no_aliases);
     s.cmd_pos = false;
     s.after = true;
     s.quote = quote;
@@ -1028,7 +1044,7 @@ impl ShellHelper {
                     Some(Args::Unset) if unset_functions(args) => words(&self.names.functions, &mut out),
                     Some(Args::Unset) => words(&self.names.vars, &mut out),
                     Some(Args::Aliases) => {
-                        out.extend(self.names.aliases.iter().map(|a| Candidate::word(&a.0)));
+                        out.extend(self.names.aliases.sorted().into_iter().map(|a| Candidate::word(a.0)));
                         0
                     }
                     Some(Args::Commands) => {
@@ -1166,11 +1182,12 @@ impl ShellHelper {
         let mut cache = self.path_cache.borrow_mut();
         cache.refresh(&self.names.path);
         // (The `map` shortens the built-in names' `'static` lifetime.)
+        let aliases = self.names.aliases.sorted();
         let all = crate::builtins::names()
             .map(|b: &[u8]| b)
             .chain(RESERVED.iter().copied())
             .chain(self.names.functions.iter().map(|c| &c[..]))
-            .chain(self.names.aliases.iter().map(|a| &a.0[..]))
+            .chain(aliases.into_iter().map(|a| a.0))
             .chain(cache.names.iter().map(|c| &c[..]));
         out.extend(all.map(Candidate::word));
     }
@@ -1429,12 +1446,12 @@ mod tests {
     use super::*;
 
     fn kind(line: &str) -> (Kind, String) {
-        let w = analyze(line.as_bytes(), &[]);
+        let w = analyze(line.as_bytes(), &AliasMap::default());
         (w.kind, String::from_utf8(w.text[w.split..].to_vec()).unwrap())
     }
 
     fn words(line: &str) -> Vec<String> {
-        let w = analyze(line.as_bytes(), &[]);
+        let w = analyze(line.as_bytes(), &AliasMap::default());
         w.words.into_iter().map(|w| String::from_utf8(w).unwrap()).collect()
     }
 
@@ -1476,7 +1493,7 @@ mod tests {
         assert_eq!(kind("echo \"${HO"), (Var(true), "HO".into()));
         assert_eq!(kind("echo '$HO"), (Arg, "$HO".into()));
         assert_eq!(kind("echo \\$HO"), (Arg, "$HO".into()));
-        let w = analyze(b"ls 'a b", &[]);
+        let w = analyze(b"ls 'a b", &AliasMap::default());
         assert_eq!((w.start, w.quote), (3, Quote::Single));
     }
 
@@ -1497,7 +1514,8 @@ mod tests {
 
     #[test]
     fn aliases() {
-        let aliases = [
+        let mut aliases = AliasMap::default();
+        for (name, value) in [
             (b"g".to_vec(), b"git".to_vec()),
             (b"gc".to_vec(), b"git -C 'my dir' commit".to_vec()),
             (b"ls".to_vec(), b"ls -F".to_vec()),
@@ -1507,7 +1525,12 @@ mod tests {
             (b"cdg".to_vec(), b"cd /tmp; git".to_vec()),
             (b"w".to_vec(), b"watch ".to_vec()),
             (b"c".to_vec(), b"echo # g".to_vec()),
-        ];
+        ] {
+            aliases.insert(name, value, false);
+        }
+        aliases.insert(b"G".to_vec(), b"| grep".to_vec(), true);
+        aliases.insert(b"S".to_vec(), b"sudo ".to_vec(), true);
+        aliases.insert_suffix(b"txt".to_vec(), b"less -R".to_vec());
         let analyze = |line: &str| {
             let w = analyze(line.as_bytes(), &aliases);
             let words: Vec<_> = w.words.into_iter().map(|w| String::from_utf8(w).unwrap()).collect();
@@ -1531,6 +1554,15 @@ mod tests {
         assert_eq!(analyze("'g' ad"), (Arg, vec!["g".into()]));
         assert_eq!(analyze("c a"), (Arg, vec!["echo".into()]));
         assert_eq!(analyze("if g ad"), (Arg, vec!["git".into()]));
+        // Global aliases, in any position, and suffix aliases.
+        assert_eq!(analyze("ls G g"), (Arg, vec!["grep".into()]));
+        assert_eq!(analyze("S g ad"), (Arg, vec!["git".into()]));
+        assert_eq!(analyze("echo 'G' a"), (Arg, vec!["echo".into(), "G".into()]));
+        assert_eq!(
+            analyze("a.txt x"),
+            (Arg, vec!["less".into(), "-R".into(), "a.txt".into()])
+        );
+        assert_eq!(analyze("echo a.txt x"), (Arg, vec!["echo".into(), "a.txt".into()]));
     }
 
     #[test]
@@ -1608,7 +1640,11 @@ mod tests {
         let h = ShellHelper {
             names: Names {
                 functions: vec![b"myfunc".to_vec()],
-                aliases: vec![(b"ll".to_vec(), b"ls -l".to_vec())],
+                aliases: {
+                    let mut a = AliasMap::default();
+                    a.insert(b"ll".to_vec(), b"ls -l".to_vec(), false);
+                    Rc::new(a)
+                },
                 vars: vec![b"HOME".to_vec(), b"HOSTNAME".to_vec()],
                 path: format!("{d}/sub dir").into_bytes(),
                 home: Some(dir.as_os_str().as_bytes().to_vec()),
@@ -1794,7 +1830,7 @@ mod tests {
         assert_eq!(complete(&h, "git 'Com"), Vec::<String>::new());
         assert_eq!(complete(&h, "git 'mit"), ["'commit' "]);
         // Through an alias, and with words after the cursor.
-        h.names.aliases.push((b"g".to_vec(), b"git".to_vec()));
+        Rc::make_mut(&mut h.names.aliases).insert(b"g".to_vec(), b"git".to_vec(), false);
         assert_eq!(complete(&h, "g c"), ["commit "]);
         assert_eq!(h.complete_bytes(b"git ", b" x after").1.len(), 0);
         // Candidates that complete the part after a prefix.
@@ -1821,7 +1857,7 @@ mod tests {
             desc: d.map(|d| d.as_bytes().to_vec()),
             ..Candidate::word(v.as_bytes())
         };
-        let w = analyze(b"", &[]);
+        let w = analyze(b"", &AliasMap::default());
         let t = Target {
             w: &w,
             line: b"",

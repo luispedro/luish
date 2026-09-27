@@ -303,12 +303,32 @@ star = true
 ```
 
 The values have TOML's types: `true` or `false` for an option, an integer for a number, and a string for text, where
-a leading `~` is expanded to the home directory (nothing else in it is expanded). A key that isn't a setting, or a
-value of the wrong type, is reported with its line and skipped; a file that isn't valid TOML is reported and
-ignored.
+a leading `~` is expanded to the home directory (nothing else in it is expanded).
+
+Aliases go in the `alias` table, each as `NAME = "VALUE"`, the same as `alias NAME=VALUE`. Global and suffix aliases
+(`alias -g` and `alias -s`, see `help alias`) go in its `global` and `suffix` tables:
+
+```toml
+[alias]
+ll = "ls -l"
+".." = "cd .."            # a name with other characters than letters, digits, _ and - is quoted
+
+[alias.global]
+G = "| grep"              # ls G foo runs ls | grep foo
+"..." = "../.."
+
+[alias.suffix]
+pdf = "evince"            # notes.pdf runs evince notes.pdf
+```
+
+A string named `global` or `suffix` in `[alias]` is an ordinary alias with that name (but TOML doesn't allow it in
+the same file as the table of that name). Values are used as they are, with no `~` expansion.
+
+A key that isn't a setting, a value of the wrong type or an alias name with `=` in it is reported with its line and
+skipped; a file that isn't valid TOML is reported and ignored.
 
 Only interactive shells read it (not scripts or `luish -c`), first, before `rc.d` (see below), so that a file in
-`rc.d` can change what it sets. The plugins it enables load next, also before `rc.d`. Its effects are cached with those of `rc.d` (even if there is no `rc.d`), so a new
+`rc.d` can change what it sets (and use its aliases). The plugins it enables load next, also before `rc.d`. Its effects are cached with those of `rc.d` (even if there is no `rc.d`), so a new
 shell doesn't read it again until it changes.
 
 Its `[plugins]` table lists the plugins to load in every interactive shell, and where they come from (see
