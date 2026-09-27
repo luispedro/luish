@@ -299,8 +299,8 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   keeps the rest of `PATH` from when the cache was built, and an `rc.d` cache built in a login shell, before
   `login.d` ran, is used in shells started from it), changes a fingerprint can't show, per-file entries, background
   revalidation, `flock` for many shells at once, and merging into running shells.
-- `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. Test:
-  `misc/config_toml.sh`.
+- `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. A key directly
+  under `[options]` is a setting by its `setopt` name. Test: `misc/config_toml.sh`.
 
 ### Plugins (`plugins/`)
 

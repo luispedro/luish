@@ -285,9 +285,13 @@ and a build outside a git checkout prints `unknown`.
 
 luish's own settings can also be set in `~/.config/luish/config.toml` (or `$XDG_CONFIG_HOME/luish/config.toml`), a
 [TOML](https://toml.io) file. Each table under `options` is a group of settings, and each key in it means the same as
-`setopt -p GROUP KEY=VALUE` (see `help setopt` for the settings):
+`setopt -p GROUP KEY=VALUE` (see `help setopt` for the settings). A key directly under `options` is a setting by the
+name that `setopt` knows it by:
 
 ```toml
+[options]
+autosuggest = true
+
 [options.history]
 file = "~/.histfile"
 save_size = 10000

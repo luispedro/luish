@@ -1,6 +1,7 @@
 # ~/.config/luish/config.toml sets luish's settings, for interactive shells
 # only, before rc.d: each table under `options` is a group, and each key is
-# a setting in it, as for `setopt -p GROUP KEY=VALUE`. Errors are reported
+# a setting in it, as for `setopt -p GROUP KEY=VALUE` (a value directly under
+# `options` is a setting by its own name). Errors are reported
 # with their lines, in the file's order, and skipped.
 run() { $SH -i -c "$1" luish 2>&1 | grep -v 'job control' | sed "s|$HOME|~|g"; }
 mkdir -p .config/luish
@@ -67,3 +68,6 @@ echo '--- or a new one'
 printf '[options.cd]\nauto = true\n' > .config/luish/config.toml
 run 'setopt -p cd'
 run 'setopt -p cd'
+echo '--- a setting by its own name, directly under options'
+printf '[options]\nautosuggest = true\nglob.star = true\n' > .config/luish/config.toml
+run 'setopt -p editor; setopt -p glob'

@@ -1,9 +1,13 @@
 //! `$XDG_CONFIG_HOME/luish/config.toml` (DEVELOPING.md): luish's
 //! settings in TOML, read by interactive shells before `rc.d`. Each table
 //! under `options` is a group of settings, and each key in it means the
-//! same as `setopt -p GROUP KEY=VALUE`, with TOML's types:
+//! same as `setopt -p GROUP KEY=VALUE`, with TOML's types; a value directly
+//! under `options` is `setopt NAME=VALUE`:
 //!
 //! ```toml
+//! [options]
+//! autosuggest = true
+//!
 //! [options.history]
 //! file = "~/.histfile"
 //! share = true
@@ -65,18 +69,24 @@ fn in_order(table: Table<'_>) -> Vec<(toml_span::value::Key<'_>, Value<'_>)> {
     entries
 }
 
-/// The `options` table: one table per group.
+/// The `options` table: one table per group, and settings by their own
+/// names.
 fn options(sh: &mut Shell, mut value: Value<'_>, err: &dyn Fn(&Shell, usize, &str)) {
     let ValueInner::Table(groups) = value.take() else {
         return;
     };
     for (key, mut value) in in_order(groups) {
+        if value.as_table().is_none() {
+            if let Err(msg) = set(sh, &key.name, &value) {
+                err(sh, key.span.start, &msg);
+            }
+            continue;
+        }
         let Some(group) = find_group(key.name.as_bytes()) else {
             err(sh, key.span.start, &format!("no such group: {}", key.name));
             continue;
         };
         let ValueInner::Table(settings) = value.take() else {
-            err(sh, value.span.start, &format!("options.{}: not a table", key.name));
             continue;
         };
         for (key, value) in in_order(settings) {
