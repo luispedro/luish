@@ -1,4 +1,7 @@
 Unreleased
+    * zsh's `RANDOM`, `SECONDS`, `EPOCHSECONDS`, `EPOCHREALTIME`, `UID`,
+      `EUID`, `GID`, `EGID` and `HISTCMD`
+    * `SHLVL` is maintained
     * `set -o pipefail`
     * `let` built-in, as in zsh
     * `shopt` (not found) suggests the matching `setopt`

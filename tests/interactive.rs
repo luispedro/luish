@@ -851,6 +851,19 @@ fn git_completion() {
 }
 
 #[test]
+fn histcmd_shlvl() {
+    let mut sh = Pty::spawn("histcmd");
+    sh.expect("$ ");
+    sh.run("echo one");
+    // `$HISTCMD` is the event number of the command being run.
+    assert_has(&sh.run("echo h=$HISTCMD"), "h=2\n");
+    // Not set in the environment, SHLVL starts at 1 in an interactive shell.
+    assert_has(&sh.run("echo l=$SHLVL; env | grep ^SHLVL"), "l=1\nSHLVL=1\n");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
 fn fc_history() {
     let mut sh = Pty::spawn("fc");
     std::fs::write(

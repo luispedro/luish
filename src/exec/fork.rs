@@ -100,6 +100,7 @@ impl Shell {
     fn child_reset(&mut self) {
         self.in_subshell = true;
         self.jobs.clear();
+        self.vars.child_reset();
         // Traps with an action are reset; ignored signals stay ignored.
         for sig in 1..NSIG {
             if self.traps[sig].as_ref().is_some_and(|a| !a.is_empty()) {

@@ -10,7 +10,7 @@ use crate::lexer::{AliasMap, ParseError, Parser};
 use crate::options::{Opt, Options};
 use crate::signals::{self, NSIG};
 use crate::sys;
-use crate::vars::{Var, Vars};
+use crate::vars::{Special, Var, Vars};
 
 /// Non-local control flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -184,7 +184,33 @@ impl Shell {
         if name == b"LINENO" {
             return Some(self.lineno.to_string().into_bytes());
         }
-        self.vars.get(name).map(|v| v.to_vec())
+        if let Some(v) = self.vars.get(name) {
+            return Some(v.to_vec());
+        }
+        self.special_value(name)
+    }
+
+    /// Increments `SHLVL`, as zsh does. It is set to 1 where it wasn't set
+    /// only in an interactive shell, so that scripts see the same
+    /// environment as under dash.
+    pub fn bump_shlvl(&mut self, interactive: bool) {
+        let level = match self.vars.get(b"SHLVL") {
+            Some(v) => crate::expand::arith::parse_number(v).unwrap_or(0) + 1,
+            None if interactive => 1,
+            None => return,
+        };
+        if self.vars.set(b"SHLVL", level.to_string().into_bytes()).is_ok() {
+            self.vars.entry(b"SHLVL").exported = true;
+        }
+    }
+
+    /// The value of a special parameter such as `RANDOM` (`vars.rs`), if
+    /// `name` is one that is still special.
+    pub fn special_value(&self, name: &[u8]) -> Option<Vec<u8>> {
+        match self.vars.special(name)? {
+            Special::Histcmd => Some(crate::interactive::histcmd().to_string().into_bytes()),
+            s => Some(self.vars.special_value(s)),
+        }
     }
 
     /// Sets a variable, reporting an error if it is readonly.

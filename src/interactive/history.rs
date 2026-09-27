@@ -119,6 +119,12 @@ impl ShellHistory {
         self.first + self.entries.len()
     }
 
+    /// `$HISTCMD`: the event number of the command being run, or else of
+    /// the next one.
+    pub fn current_event(&self) -> usize {
+        self.next_event() - usize::from(self.current)
+    }
+
     /// The event number of the entry at `index` (as rustyline counts them,
     /// from the oldest kept).
     pub fn event_at(&self, index: usize) -> usize {

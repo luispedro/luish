@@ -142,6 +142,14 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   with a qualifier in `set -o`/`+o` when it is off. Tests: `expand/glob_qualifiers.sh`,
   `expand/glob_qualifier_errors.sh`, `builtins/internal_savestate_globqual.sh`, unit tests in `qual.rs` and
   `parser.rs`.
+- zsh's special parameters (`RANDOM`, `SECONDS`, `EPOCH*`, `UID`/`EUID`/`GID`/`EGID`, `HISTCMD`, in
+  `vars.rs`) are not in the variable map, so plain lookups and assignments of other names cost only a check of the
+  first byte. They are computed on a miss (`Shell::special_value`, also in arithmetic), and a bit per special
+  records whether it is set (`unset` clears it, assigning `RANDOM` or `SECONDS` sets it; assigning another makes it
+  an ordinary variable). `RANDOM` is libc's `rand() & 0x7fff`, as in zsh, seeded on first use, and again in a
+  forked child unless it was assigned. `SHLVL` is an ordinary variable incremented in `main` (`bump_shlvl`).
+  Tests: `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `misc/shlvl.sh`, `histcmd_shlvl` in
+  `tests/interactive.rs`.
 - Unit tests in `split.rs`, `pattern.rs` and `arith.rs`; cases in `expand/*`.
 
 ### Execution (`exec/`)
@@ -263,7 +271,7 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   replacement for the word (with the suffix of a single match), a tab and the description. It works in any shell,
   so plugin cases can test completers. Status 1 if there are none or a completer failed. Test:
   `tests/plugins/complete.sh`.
-- `savestate` (`state.rs`): not `PPID`, `LINENO`, or the options `-i -s -m -n`. Functions are printed by
+- `savestate` (`state.rs`): not `PPID`, `LINENO`, `SHLVL`, or the options `-i -s -m -n`. Functions are printed by
   `unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`); words in function bodies that would be expanded as
   aliases (command names that are aliases of any kind, other words that are global aliases) are quoted, and a
   function named like an alias is preceded by `unalias`. Loaded plugins are printed as
@@ -510,6 +518,8 @@ truncates when it relocates the package.
 | `alias`, `unalias` options | `builtins/alias_options.sh` (zsh), `builtins/alias_deviations.sh` |
 | Global aliases | `parse/alias_global.sh` (zsh), `builtins/alias_deviations.sh` (here-document delimiter), `builtins/internal_savestate_aliases.sh` |
 | Suffix aliases | `parse/alias_suffix.sh` (zsh), `builtins/alias_deviations.sh` (`command -v`) |
+| `RANDOM`, `SECONDS` and the other specials | `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
+| `SHLVL` | `misc/shlvl.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | Last command of `sh -c` | `exec/c_exec_last.sh` (zsh) |
 | Script read from a pipe | `misc/stdin_script.sh` (zsh) |
 | `$LINENO` | `misc/lineno.sh` |

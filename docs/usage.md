@@ -28,6 +28,23 @@ no_glob`, `-o prompt_percent`; `+o glob` is the same as
 
 Options end at the first operand, or at `--` or `-`.
 
+## Special variables
+
+Besides POSIX's (`$?`, `$$`, `$!`, `$-`, `$#`, `$0`, `$@`, `$*`, `LINENO`, `PPID`, `PWD`, `OLDPWD`, `OPTIND`,
+`OPTARG`), luish has these from zsh, computed when they are read:
+
+| Variable | Value |
+|---|---|
+| `RANDOM` | A random number from 0 to 32767. Assigning a number seeds the generator, which gives the same sequence as in zsh |
+| `SECONDS` | The seconds since the shell started. Assigning a number makes it count from there |
+| `EPOCHSECONDS`, `EPOCHREALTIME` | The time in seconds since 1970, and with microseconds (`1790530996.977661`) |
+| `UID`, `EUID`, `GID`, `EGID` | The real and effective user and group ids |
+| `HISTCMD` | The history event number of the command being run (0 without a history) |
+| `SHLVL` | How deeply shells are nested: incremented at startup, and set to 1 by an interactive shell where it wasn't set |
+
+Unset, they read as unset until they are assigned again. Assigning to `UID`, `EUID`, `GID`, `EGID`, `EPOCHSECONDS`
+or `EPOCHREALTIME` makes it an ordinary variable, so that scripts that use these names still work.
+
 ## Getting help
 
 In an interactive shell, `help` lists the built-in commands, and `help NAME` shows the help for any of them (the

@@ -234,6 +234,7 @@ fn run(args: Vec<Vec<u8>>) -> ! {
     }
 
     let interactive = force_interactive || (stdin_mode && !command_mode && sys::isatty(0) && sys::isatty(2));
+    sh.bump_shlvl(interactive);
     if interactive {
         sh.interactive = true;
         sh.options.set(Opt::Interactive, true);

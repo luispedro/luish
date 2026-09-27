@@ -154,6 +154,11 @@ pub fn with_history<R>(f: impl FnOnce(&mut ShellHistory) -> R) -> Option<R> {
     EDITOR.with(|e| e.try_borrow_mut().ok()?.as_mut().map(|ed| f(ed.history_mut())))
 }
 
+/// `$HISTCMD`: 0 without a history, as in zsh.
+pub fn histcmd() -> usize {
+    with_history(|h| h.current_event()).unwrap_or(0)
+}
+
 /// The prompt: `PS2` for a continuation line, otherwise `PS1`, built with
 /// the extensions' prompt hooks and the plugins' files if there are any.
 pub fn prompt(sh: &mut Shell, continuation: bool) -> crate::prompt::Prompt {
@@ -172,7 +177,9 @@ fn names(sh: &Shell) -> Names {
     Names {
         functions: sh.functions.keys().cloned().collect(),
         aliases: sh.aliases.clone(),
-        vars: sh.vars.names().cloned().collect(),
+        vars: (sh.vars.names().cloned())
+            .chain(sh.vars.special_names().map(<[u8]>::to_vec))
+            .collect(),
         path: sh.get_var(b"PATH").unwrap_or_default(),
         home: sh.get_var(b"HOME"),
         completers: crate::plugins::completer_names(sh),

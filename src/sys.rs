@@ -57,6 +57,16 @@ pub fn getppid() -> i32 {
     unsafe { libc::getppid() }
 }
 
+pub fn getuid() -> u32 {
+    // SAFETY: always succeeds.
+    unsafe { libc::getuid() }
+}
+
+pub fn getgid() -> u32 {
+    // SAFETY: always succeeds.
+    unsafe { libc::getgid() }
+}
+
 pub fn geteuid() -> u32 {
     // SAFETY: always succeeds.
     unsafe { libc::geteuid() }

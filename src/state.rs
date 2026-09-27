@@ -24,7 +24,7 @@ const MODE_OPTIONS: &[Opt] = &[Opt::Interactive, Opt::Stdin, Opt::Monitor, Opt::
 const SYNTAX_OPTIONS: &[Opt] = &[Opt::Bareglobqual];
 
 /// Variables that belong to the process.
-const PROCESS_VARS: &[&[u8]] = &[b"PPID", b"LINENO"];
+const PROCESS_VARS: &[&[u8]] = &[b"PPID", b"LINENO", b"SHLVL"];
 
 /// The kinds of state, in the order their commands must run: the directory
 /// comes first (so that the saved `PWD` and `OLDPWD` win), functions come

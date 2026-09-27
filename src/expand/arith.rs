@@ -311,7 +311,7 @@ impl<'a> Arith<'a> {
             return Ok(self.sh.lineno.into());
         }
         match self.sh.vars.get(name) {
-            None => Ok(0),
+            None => Ok(self.sh.special_value(name).and_then(|v| parse_number(&v)).unwrap_or(0)),
             Some(v) if v.trim_ascii().is_empty() => Ok(0),
             Some(v) => parse_number(v).ok_or_else(|| format!("Illegal number: {}", String::from_utf8_lossy(v))),
         }

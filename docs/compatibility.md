@@ -31,6 +31,8 @@ instead.
 | `alias`, `unalias` options | No options: `alias -g x=y` defines an alias named `-g`, and lists a missing alias `-g`. `unalias` has only `-a` | zsh's options: `alias -g` and `-s` define global and suffix aliases (below), `-r`, `-g`, `-s` select which to list, `-m` takes patterns, `-L` prints `alias` commands and `+` prints names only; `unalias -s` and `-m`. So an argument to `alias` that starts with `-` or `+` is an option, and a name that starts with one needs `--` before it. Plain `alias` lists regular and global aliases, not suffix ones. Unlike zsh: values are always quoted (as in dash), `alias -L` quotes names that need it, errors are dash's (status 2 for a bad option, a message for a missing alias), `unalias -a` ignores further arguments (as in dash), and `command -v` shows a suffix alias as `alias -s SUFFIX=VALUE` (zsh shows its value) |
 | Global aliases (`alias -g`) | None | Expanded in any position, not only as a command name, as in zsh: also arguments, `for` and `case` words, redirection targets, and inside `$(...)`, but not when quoted, and never as a reserved word (as with zsh's `posix_aliases`, set by its sh emulation). Unlike zsh, a here-document delimiter isn't expanded |
 | Suffix aliases (`alias -s`) | None | As in zsh: a command name `TEXT.SUFFIX` (`TEXT` not empty) becomes the alias's value followed by the name, when it isn't a regular alias. A blank at the end of the value makes the next word eligible, as zsh does (its manual says otherwise) |
+| `RANDOM`, `SECONDS`, `UID`, `EUID`, `GID`, `EGID`, `HISTCMD`, `EPOCHSECONDS`, `EPOCHREALTIME` | Ordinary variables | zsh's special parameters, computed when read (see [Special variables](usage.md#special-variables)); their values in the environment are ignored. Unset, they read as unset until assigned again, as in zsh. Unlike zsh: assigning to `UID`, `EUID`, `GID`, `EGID`, `EPOCHSECONDS` or `EPOCHREALTIME` makes it an ordinary variable (zsh calls `setuid` or refuses), so scripts that use these names still work; `EPOCHREALTIME` has microseconds, as in bash, and `EPOCH*` need no `zmodload zsh/datetime`; a subshell seeds `RANDOM` anew unless it was assigned (zsh's subshells repeat the parent's numbers); `set` doesn't list them, and `local` doesn't give a function its own `SECONDS` |
+| `SHLVL` | Not maintained | Incremented at startup, as in zsh, but set to 1 when it isn't in the environment only in an interactive shell (zsh always sets it), so scripts see dash's environment |
 | Last command of `sh -c` | Debian's dash forks it (a Debian patch; upstream dash execs it) | Replaces the shell with it unless a trap is set, as zsh, bash and upstream dash do |
 
 ### Following POSIX where dash doesn't
@@ -111,8 +113,7 @@ Interactive use:
   go to the kill ring. After Ctrl-O the next line is filled with the entry, but the history position is the end of
   the history (zsh's is the entry).
 - Prompt expansion lacks zsh's `%_`, `%e`, `%I`, `%N`, `%x`, `%v`, the `l`, `S`, `_`, `e` and `v` conditions, and
-  widths relative to the terminal's (negative truncation lengths). luish doesn't maintain `SHLVL`, so `%L` shows the
-  inherited value.
+  widths relative to the terminal's (negative truncation lengths).
 - Glob qualifiers lack zsh's `e`, `+`, `f`, `F`, `Y` and `P`, `(#q...)`, most modifiers, and `EXTENDED_GLOB`
   patterns.
 - The startup cache doesn't see changes that don't show in a file's fingerprint (see
