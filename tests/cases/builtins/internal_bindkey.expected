@@ -20,3 +20,16 @@ __luish_internal bindkey -r '^[[A'
 2
 vi
 emacs
+"^[[A" undefined-key
+bindkey "^[[1;5C" undefined-key
+"^X^E" undo
+"^[B" undefined-key
+"^[[3;7~" kill-line
+"^[[15;2~" undo
+can't be typed: 1
+no such key: 1
+"^X^E" undo
+"^[[15;2~" undo
+"^_" undo
+"\125p" undo
+"\125p" undo

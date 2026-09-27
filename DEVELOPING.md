@@ -274,7 +274,11 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   searches work; `word_cmd` picks a rustyline motion that lands in the right place (so kills go to the kill ring),
   else edits through `Completer::update` (no kill ring). Widgets that need the history go through the completer
   (`Pending`) or the hinter (which records `history_index`). `history.rs::starts_with` implements the prefix search,
-  sharing `Search` with the key handlers. Bindings changed with `bindkey` are part of the saved state. Tests:
+  sharing `Search` with the key handlers. Bindings changed with `bindkey` are part of the saved state. Keys given
+  by name (`named`: `Up`, `Ctrl-X Ctrl-E`) are turned into the bytes xterm sends and decoded as the others; an
+  argument is read as names only if every space-separated word is a name, has a modifier, or is one character (and
+  some word isn't just a character), and `show` writes the first character in octal when its output would read as
+  names (`\125p` for U, p), so listings and saved state read back as the same keys. Tests:
   `line_editor_keys` in `tests/interactive.rs`, `builtins/internal_bindkey.sh`, `builtins/bindkey.sh`, unit tests in
   `keys.rs` and `history.rs`.
 - **Completion** (`complete.rs`): a rough tokenizer finds command position (quotes, operators, redirections,
@@ -319,7 +323,8 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
 - `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. A key directly
   under `[options]` is a setting by its `setopt` name. The `alias` table defines regular aliases, and its `global` and
   `suffix` tables the other kinds (so a string named `global` or `suffix` is a regular alias, and TOML won't have both
-  in one file). Test: `misc/config_toml.sh`.
+  in one file). The `bindkey` table goes through `keys::bind_widget`, as `bindkey KEY WIDGET` does. Test:
+  `misc/config_toml.sh`.
 - The rc stage (`interactive::rc_d`, `startcache::run` with `config`) is: `config.toml`'s options, the plugins it
   enables (`plugins::load_enabled`), `rc.d`'s files, then every loaded plugin's `post-rc.lsh` (`post_rc_files`), all
   inside the cache; then, outside it and so in every shell, the `post-rc` hooks (`post_rc_hooks`), then

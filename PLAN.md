@@ -130,7 +130,7 @@ Stage 1 asks for a daily driver "at least as good as a basic zsh setup". This ph
 replace the author's own zsh setup (`~/.zshrc` from home-manager plus zplug, and `~/.zshrc_local`), found by probing
 each item against luish and from about 670 commands of typed history.
 
-Already done: the prompt, the line-editor keys (`bindkey`, prefix search on Up/Down, `WORDCHARS`, `^O`, `Alt-.`),
+Already done: the prompt, the line-editor keys (`bindkey`, with keys by name and a `[bindkey]` table in `config.toml`, prefix search on Up/Down, `WORDCHARS`, `^O`, `Alt-.`),
 autosuggestions, `auto_pushd` (with `pushd_ignore_dups` and `pushd_silent`), `CDPATH`, the directory stack, aliases
 (with zsh's options, global and suffix aliases, and an `[alias]` table in `config.toml`), the conda, nvm and
 home-manager setup scripts (through the `rc.d` cache), `**/`, `autocd`, menu completion, the history shared with zsh

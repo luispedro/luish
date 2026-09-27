@@ -1,7 +1,8 @@
 # ~/.config/luish/config.toml sets luish's settings, for interactive shells
 # only, before rc.d: each table under `options` is a group, and each key is
 # a setting in it, as for `setopt -p GROUP KEY=VALUE` (a value directly under
-# `options` is a setting by its own name); the `alias` table defines aliases.
+# `options` is a setting by its own name); the `alias` table defines aliases
+# and the `bindkey` table key bindings.
 # Errors are reported with their lines, in the file's order, and skipped.
 run() { $SH -i -c "$1" luish 2>&1 | grep -v 'job control' | sed "s|$HOME|~|g"; }
 mkdir -p .config/luish
@@ -91,3 +92,17 @@ run "$show"
 # Without those tables, `global` and `suffix` can name regular aliases.
 printf '[alias]\nglobal = "echo g"\nsuffix = [1]\n' > .config/luish/config.toml
 run 'alias'
+echo '--- key bindings, by name or as sequences'
+cat > .config/luish/config.toml <<'Y'
+[bindkey]
+Up = "up-line-or-history"
+"Ctrl-X Ctrl-E" = "undo"
+"^[[B" = "down-line-or-history"
+Down = 3
+"Ctrl-Tab" = "undo"
+"^W" = "nosuch"
+Y
+show='bindkey -L Up; bindkey "^X^E"; bindkey Down'
+run "$show"
+# From the cache.
+run "$show"

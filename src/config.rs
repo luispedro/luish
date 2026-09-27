@@ -29,6 +29,14 @@
 //! pdf = "evince"
 //! ```
 //!
+//! The `bindkey` table binds keys (as `bindkey` takes them) to widgets:
+//!
+//! ```toml
+//! [bindkey]
+//! Up = "up-line-or-history"
+//! "^X^E" = "undo"
+//! ```
+//!
 //! An unknown key, or a value of the wrong type, is reported with its line
 //! and skipped; a file that isn't valid TOML is reported and ignored. The
 //! rc cache (`startcache.rs`) records the file, so a warm start doesn't
@@ -77,6 +85,10 @@ pub fn load(sh: &mut Shell, path: &[u8]) {
             "alias" => match value.as_table() {
                 Some(_) => aliases(sh, value, &err),
                 None => err(sh, value.span.start, "alias: not a table"),
+            },
+            "bindkey" => match value.as_table() {
+                Some(_) => bindkeys(sh, value, &err),
+                None => err(sh, value.span.start, "bindkey: not a table"),
             },
             name => err(sh, key.span.start, &format!("unknown key: {name}")),
         }
@@ -173,6 +185,22 @@ fn define(sh: &mut Shell, table: &str, name: &str, value: &Value<'_>, kind: Alia
         k => aliases.insert(name, value, k == AliasKind::Global),
     }
     Ok(())
+}
+
+/// The `bindkey` table: each key sequence and the widget it is bound to.
+fn bindkeys(sh: &mut Shell, mut value: Value<'_>, err: &dyn Fn(&Shell, usize, &str)) {
+    let ValueInner::Table(entries) = value.take() else {
+        return;
+    };
+    for (key, value) in in_order(entries) {
+        let result = match value.as_ref() {
+            ValueInner::String(w) => crate::interactive::keys::bind_widget(sh, key.name.as_bytes(), w.as_bytes()),
+            v => Err(format!("expected a string, found {}", v.type_str())),
+        };
+        if let Err(msg) = result {
+            err(sh, key.span.start, &format!("bindkey.{}: {msg}", key.name));
+        }
+    }
 }
 
 /// Sets the setting `name` from a TOML value.

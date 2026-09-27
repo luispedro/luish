@@ -28,3 +28,18 @@ __luish_internal savestate | grep -c "^__luish_internal bindkey"
 # -e and -v select the editing mode.
 b -v; case $- in *V*) echo vi;; esac
 b -e; case $- in *E*) echo emacs;; esac
+# Keys by name: modifiers and names ignore case, characters don't.
+b Up
+b -L Ctrl-Right
+b 'ctrl-x ctrl-e'
+b Alt-B
+b C-M-Delete kill-line
+b '^[[3;7~'
+b Shift-F5 undo
+b '^[[15;2~'
+b Ctrl-Tab 2>/dev/null; echo "can't be typed: $?"
+b Ctrl-Nosuch 2>/dev/null; echo "no such key: $?"
+# Plain characters that would read as a name are shown in octal.
+b '\Up' undo
+b | grep undo
+b '\125p'

@@ -348,6 +348,135 @@ fn unit(s: &[u8], i: &mut usize, out: &mut Vec<u8>) -> Option<()> {
     Some(())
 }
 
+/// Parses a key sequence given by the names of its keys, separated by
+/// spaces: `Up`, `Ctrl-Right`, `Alt-.`, `Ctrl-X Ctrl-E`. Keys are named as in
+/// `NAMES` or by their character, after modifiers (`Ctrl-`, `Alt-`,
+/// `Shift-`, or `C-`, `M-`, `S-`; with `-` or `+`), all ignoring case. Gives
+/// the bytes xterm sends for them, or None if `s` isn't written that way
+/// (then it is a sequence as zsh writes them): some word must be a name or
+/// have a modifier, and each other word must be a single character.
+fn named(s: &[u8]) -> Option<Result<Vec<u8>, String>> {
+    let words: Vec<&[u8]> = s.split(|&c| c == b' ').filter(|w| !w.is_empty()).collect();
+    let parsed: Vec<_> = words.iter().map(|w| name_word(w)).collect();
+    let one_char = |w: &[u8]| char_at(w).is_some_and(|(_, n)| n == w.len());
+    if !parsed.iter().any(Option::is_some) || words.iter().zip(&parsed).any(|(w, p)| p.is_none() && !one_char(w)) {
+        return None;
+    }
+    let mut out = Vec::new();
+    for (w, p) in words.iter().zip(parsed) {
+        match p.unwrap_or_else(|| Ok(w.to_vec())) {
+            Ok(b) => out.extend(b),
+            Err(()) => return Some(Err(format!("invalid key: {}", String::from_utf8_lossy(w)))),
+        }
+    }
+    Some(Ok(out))
+}
+
+/// The keys that have names, and what xterm sends for each: a final byte of
+/// `ESC [`, or the number before its `~` (or else the bytes).
+const NAMES: &[(&str, NamedKey)] = &[
+    ("backspace", NamedKey::Byte(0x7f)),
+    ("bs", NamedKey::Byte(0x7f)),
+    ("del", NamedKey::Tilde(3)),
+    ("delete", NamedKey::Tilde(3)),
+    ("down", NamedKey::Csi(b'B')),
+    ("end", NamedKey::Csi(b'F')),
+    ("enter", NamedKey::Byte(b'\r')),
+    ("esc", NamedKey::Byte(0x1b)),
+    ("escape", NamedKey::Byte(0x1b)),
+    ("home", NamedKey::Csi(b'H')),
+    ("ins", NamedKey::Tilde(2)),
+    ("insert", NamedKey::Tilde(2)),
+    ("left", NamedKey::Csi(b'D')),
+    ("pagedown", NamedKey::Tilde(6)),
+    ("pageup", NamedKey::Tilde(5)),
+    ("pgdn", NamedKey::Tilde(6)),
+    ("pgup", NamedKey::Tilde(5)),
+    ("return", NamedKey::Byte(b'\r')),
+    ("right", NamedKey::Csi(b'C')),
+    ("space", NamedKey::Byte(b' ')),
+    ("tab", NamedKey::Byte(b'\t')),
+    ("up", NamedKey::Csi(b'A')),
+];
+
+#[derive(Clone, Copy)]
+enum NamedKey {
+    Csi(u8),
+    Tilde(u8),
+    Byte(u8),
+}
+
+/// The bytes of one named key (a word of `named`): None if it has no
+/// modifier and isn't a name, Err if it can't be typed.
+fn name_word(w: &[u8]) -> Option<Result<Vec<u8>, ()>> {
+    let (mut ctrl, mut alt, mut shift) = (false, false, false);
+    let mut rest = w;
+    while rest.len() > 2 {
+        let Some(sep) = rest[1..].iter().position(|&c| c == b'-' || c == b'+') else {
+            break;
+        };
+        let flag = match rest[..sep + 1].to_ascii_lowercase().as_slice() {
+            b"ctrl" | b"control" | b"c" => &mut ctrl,
+            b"alt" | b"meta" | b"m" => &mut alt,
+            b"shift" | b"s" => &mut shift,
+            _ => break,
+        };
+        *flag = true;
+        rest = &rest[sep + 2..];
+    }
+    let lower = rest.to_ascii_lowercase();
+    let fkey = (lower.first() == Some(&b'f'))
+        .then(|| std::str::from_utf8(&lower[1..]).ok()?.parse::<u8>().ok())
+        .flatten()
+        .filter(|n| (1..=12).contains(n));
+    let key = match fkey {
+        Some(n) => NamedKey::Tilde([11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 23, 24][n as usize - 1]),
+        None => match NAMES.iter().find(|(n, _)| n.as_bytes() == lower) {
+            Some(&(_, k)) => k,
+            None if rest.len() == w.len() => return None,
+            None => match char_at(rest) {
+                Some((_, 1)) if rest.len() == 1 => NamedKey::Byte(rest[0]),
+                // Another character, which can only be typed with Alt.
+                Some((_, n)) if n == rest.len() && !ctrl && !shift => {
+                    return Some(Ok([&b"\x1b"[..usize::from(alt)], rest].concat()));
+                }
+                _ => return Some(Err(())),
+            },
+        },
+    };
+    let code = 1 + u8::from(shift) + 2 * u8::from(alt) + 4 * u8::from(ctrl);
+    let mut out = Vec::new();
+    match key {
+        NamedKey::Csi(fin) if code == 1 => out.extend([0x1b, b'[', fin]),
+        NamedKey::Csi(fin) => out.extend(format!("\x1b[1;{code}{}", fin as char).bytes()),
+        NamedKey::Tilde(n) if code == 1 => out.extend(format!("\x1b[{n}~").bytes()),
+        NamedKey::Tilde(n) => out.extend(format!("\x1b[{n};{code}~").bytes()),
+        NamedKey::Byte(b) => {
+            if alt {
+                out.push(0x1b);
+            }
+            let b = match (b, ctrl, shift) {
+                (b'\t', false, true) => return Some(Ok([&out[..], b"\x1b[Z"].concat())),
+                (_, false, false) => b,
+                (b'a'..=b'z' | b'A'..=b'Z', false, true) => b.to_ascii_uppercase(),
+                (b' ', true, false) => 0,
+                (b'?', true, false) => 0x7f,
+                (b'@'..=b'_' | b'a'..=b'z', true, false) => b.to_ascii_uppercase() ^ 0x40,
+                _ => return Some(Err(())),
+            };
+            out.push(b);
+        }
+    }
+    Some(Ok(out))
+}
+
+/// Parses a key sequence as `bindkey` takes it: by the names of its keys
+/// (`named`), or as zsh writes them (`parse`).
+fn sequence(seq: &[u8]) -> Result<Keys, String> {
+    let bytes = named(seq).unwrap_or_else(|| parse(seq))?;
+    decode(&bytes).ok_or_else(|| format!("unknown key sequence: {}", String::from_utf8_lossy(seq)))
+}
+
 /// Decodes the bytes a terminal sends into keys, as rustyline does (for the
 /// sequences of xterm and the Linux console).
 fn decode(mut b: &[u8]) -> Option<Keys> {
@@ -521,6 +650,11 @@ fn show(keys: &[KeyEvent]) -> String {
                 }
             }
         }
+    }
+    // Plain characters that would be read as the names of keys (`Up` is U
+    // and p): the first is written in octal.
+    if named(out.as_bytes()).is_some() {
+        out = format!("\\{:03o}{}", out.as_bytes()[0], &out[1..]);
     }
     out
 }
@@ -948,11 +1082,7 @@ pub fn run(sh: &mut Shell, name: &[u8], args: &[Vec<u8>]) -> ExecResult {
         }
     }
     let args = &args[i..];
-    let keys = |sh: &Shell, seq: &[u8]| {
-        let keys = parse(seq)
-            .and_then(|b| decode(&b).ok_or_else(|| format!("unknown key sequence: {}", String::from_utf8_lossy(seq))));
-        keys.map_err(|e| sh.berr(name, e)).ok()
-    };
+    let keys = |sh: &Shell, seq: &[u8]| sequence(seq).map_err(|e| sh.berr(name, e)).ok();
     if remove {
         let mut status = 0;
         for seq in args {
@@ -985,20 +1115,27 @@ pub fn run(sh: &mut Shell, name: &[u8], args: &[Vec<u8>]) -> ExecResult {
                 .map_or("undefined-key", |(_, w)| w);
             Ok(sh.out_status(line(&shown, w).as_bytes()))
         }
-        [seq, w] => {
-            let Some(k) = keys(sh, seq) else { return Ok(1) };
-            let Some((w, _)) = widget(w) else {
-                sh.berr(name, format!("no such widget `{}'", String::from_utf8_lossy(w)));
-                return Ok(1);
-            };
-            sh.keymap.set(k, Some(w));
-            Ok(0)
-        }
+        [seq, w] => match bind_widget(sh, seq, w) {
+            Ok(()) => Ok(0),
+            Err(e) => {
+                sh.berr(name, e);
+                Ok(1)
+            }
+        },
         _ => {
             sh.berr(name, "too many arguments");
             Ok(1)
         }
     }
+}
+
+/// Binds the key sequence `seq` (as `bindkey` takes it) to the widget `w`
+/// (for `bindkey` and config.toml's `bindkey` table).
+pub fn bind_widget(sh: &mut Shell, seq: &[u8], w: &[u8]) -> Result<(), String> {
+    let k = sequence(seq)?;
+    let (w, _) = widget(w).ok_or_else(|| format!("no such widget `{}'", String::from_utf8_lossy(w)))?;
+    sh.keymap.set(k, Some(w));
+    Ok(())
 }
 
 /// The widget names, for completion.
@@ -1050,6 +1187,50 @@ mod tests {
         assert_eq!(show(&keys("^[[15~")), "^[[15~");
         assert!(decode(&parse(b"^[[9x").unwrap()).is_none());
         assert!(parse(b"").is_err());
+    }
+
+    #[test]
+    fn names() {
+        let seq = |s: &str| sequence(s.as_bytes());
+        assert_eq!(seq("Up"), Ok(keys("^[[A")));
+        assert_eq!(seq("UP"), seq("up"));
+        assert_eq!(seq("Ctrl-Right"), Ok(keys("^[[1;5C")));
+        assert_eq!(seq("C-S-left"), Ok(keys("^[[1;6D")));
+        assert_eq!(seq("Alt+Up"), Ok(keys("^[[1;3A")));
+        assert_eq!(seq("Delete"), Ok(keys("^[[3~")));
+        assert_eq!(seq("Ctrl-PageUp"), Ok(keys("^[[5;5~")));
+        assert_eq!(seq("F1"), Ok(keys("^[OP")));
+        assert_eq!(seq("Shift-F5"), Ok(keys("^[[15;2~")));
+        assert_eq!(seq("Ctrl-w"), Ok(keys("^W")));
+        assert_eq!(seq("Ctrl-?"), Ok(keys("^?")));
+        assert_eq!(seq("Ctrl-Space"), Ok(keys("^@")));
+        assert_eq!(seq("Alt-."), Ok(keys("^[.")));
+        assert_eq!(seq("M-b"), Ok(keys("^[b")));
+        assert_eq!(seq("Alt-B"), Ok(keys("^[B")));
+        assert_eq!(seq("Alt-Shift-b"), Ok(keys("^[B")));
+        assert_eq!(seq("Alt-Backspace"), Ok(keys("^[^?")));
+        assert_eq!(seq("Ctrl-_"), Ok(keys("^_")));
+        assert_eq!(seq("Alt--"), Ok(keys("^[-")));
+        assert_eq!(seq("Shift-Tab"), Ok(keys("^[[Z")));
+        assert_eq!(seq("Enter"), Ok(keys("^M")));
+        assert_eq!(seq("Ctrl-X Ctrl-E"), Ok(keys("^X^E")));
+        assert_eq!(seq("Ctrl-X e"), Ok(keys("^Xe")));
+        assert_eq!(seq("Alt-é"), Ok(keys("\\eé")));
+        assert!(seq("Ctrl-Tab").is_err());
+        assert!(seq("Ctrl-1").is_err());
+        assert!(seq("Ctrl-Bogus").is_err());
+        // Not written with names: as zsh writes them.
+        assert_eq!(seq("ab"), Ok(keys("ab")));
+        assert_eq!(seq("a b"), Ok(keys("a b")));
+        assert_eq!(seq("C-"), Ok(keys("C-")));
+        assert_eq!(seq("^X Up"), Ok(keys("^X Up")));
+        assert_eq!(seq("\\Up"), Ok(keys("Up")));
+        // Shown so that they are read back as the same keys.
+        for s in ["Up", "up", "C-x", "a Up", "F1", "Tab"] {
+            let k = keys(s);
+            assert_eq!(seq(&show(&k)), Ok(k), "{s}");
+        }
+        assert_eq!(show(&keys("Up")), "\\125p");
     }
 
     #[test]

@@ -140,9 +140,12 @@ Ctrl-E accept the suggestion, and Alt-F accepts its next word. Its colour is the
 To bind Up and Down as zsh does by default:
 
 ```sh
-bindkey '^[[A' up-line-or-history
-bindkey '^[[B' down-line-or-history
+bindkey Up up-line-or-history
+bindkey Down down-line-or-history
 ```
+
+Keys can be named (as `Up`, `Ctrl-Right`, `Alt-.` or `'Ctrl-X Ctrl-E'`) or written as zsh writes them (`'^[[A'`),
+and bindings can also go in `config.toml` (see below).
 
 ## Syntax highlighting
 
@@ -324,7 +327,19 @@ pdf = "evince"            # notes.pdf runs evince notes.pdf
 A string named `global` or `suffix` in `[alias]` is an ordinary alias with that name (but TOML doesn't allow it in
 the same file as the table of that name). Values are used as they are, with no `~` expansion.
 
-A key that isn't a setting, a value of the wrong type or an alias name with `=` in it is reported with its line and
+Key bindings go in the `bindkey` table, each as `KEY = "WIDGET"`, the same as `bindkey KEY WIDGET` (see
+`help bindkey`):
+
+```toml
+[bindkey]
+Up = "up-line-or-history"
+Down = "down-line-or-history"
+"Ctrl-X Ctrl-E" = "undo"
+"^[[1;5C" = "forward-word"   # Ctrl-Right, as zsh writes it
+```
+
+A key that isn't a setting, a value of the wrong type, an alias name with `=` in it or a key or widget that `bindkey`
+doesn't take is reported with its line and
 skipped; a file that isn't valid TOML is reported and ignored.
 
 Only interactive shells read it (not scripts or `luish -c`), first, before `rc.d` (see below), so that a file in

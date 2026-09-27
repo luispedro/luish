@@ -102,3 +102,14 @@ TXT a.txt
 luish: ~/.config/luish/config.toml: line 3: alias.suffix: expected a string, found array
 rc.d sees star=0 HISTSIZE=
 global='echo g'
+--- key bindings, by name or as sequences
+luish: ~/.config/luish/config.toml: line 5: bindkey.Down: expected a string, found integer
+luish: ~/.config/luish/config.toml: line 6: bindkey.Ctrl-Tab: invalid key: Ctrl-Tab
+luish: ~/.config/luish/config.toml: line 7: bindkey.^W: no such widget `nosuch'
+rc.d sees star=0 HISTSIZE=
+bindkey "^[[A" up-line-or-history
+"^X^E" undo
+"^[[B" down-line-or-history
+bindkey "^[[A" up-line-or-history
+"^X^E" undo
+"^[[B" down-line-or-history
