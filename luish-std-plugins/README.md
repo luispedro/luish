@@ -63,8 +63,10 @@ std.bash-completion = "*"
 ```
 
 and run `plugin sync`, which fetches them from luish's repository and pins the commit in `plugins.lock`. Every
-interactive shell then loads them; `plugin update std` moves to the newest commit. To use a local checkout instead,
-for example while working on these plugins, name it `std` yourself:
+interactive shell then loads them. `std` is the tag of the luish release that runs it (`v0.1.0` for luish 0.1.0), so
+the plugins match the shell; after upgrading luish, run `plugin sync` again. To follow the `main` branch instead,
+name `std` yourself as `{ gh = "luispedro/luish", subdir = "luish-std-plugins", branch = "main" }`, or, to use a
+local checkout, for example while working on these plugins:
 
 ```toml
 [plugins.available]

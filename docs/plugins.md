@@ -88,8 +88,9 @@ needs quoted because of the `/`), or `NAME = { ... }` with a source. `NAME` alon
 version requirement for now. Plugins load in the order of the file, each after its dependencies, and each once.
 
 **`plugins.available`**: each entry names a source, `NAME = { ... }`. `std` is always available: it is the
-[collection in luish's repository](#plugins-in-luish-std-plugins) (`{ gh = "luispedro/luish", subdir =
-"luish-std-plugins" }`), unless `plugins.available` has a `std` of its own.
+[collection in luish's repository](#plugins-in-luish-std-plugins), as released with the version of luish that
+runs it (`{ gh = "luispedro/luish", subdir = "luish-std-plugins", tag = "vVERSION" }`), unless `plugins.available`
+has a `std` of its own.
 
 ### Fetching plugins: `plugin sync` and `plugins.lock`
 
@@ -100,9 +101,9 @@ their dependencies, at any time), and records in `~/.config/luish/plugins.lock` 
 ```console
 $ plugin sync
 Fetching std
-Fetching luispedro/smarty-prompt
+Fetching smarty-prompt
 Locking std at 15e39bb
-Locking luispedro/smarty-prompt at 8a1c0de
+Locking smarty-prompt at 8a1c0de
 2 git sources locked, 2 plugins enabled: git-completion, smarty-prompt
 ```
 
@@ -115,9 +116,9 @@ commit. `plugin update` does, for all the git sources or for those named (a sour
 an entry's name for a source of its own):
 
 ```console
-$ plugin update std
-Fetching std
-Updating std 15e39bb..3f00c2d
+$ plugin update smarty-prompt
+Fetching smarty-prompt
+Updating smarty-prompt 8a1c0de..3f00c2d
 2 git sources locked, 2 plugins enabled: git-completion, smarty-prompt
 ```
 
@@ -126,7 +127,7 @@ would move, and which sources `plugin sync` still has to fetch. It changes nothi
 
 ```console
 $ plugin check
-Update available: std 3f00c2d..9b41e7a
+Update available: smarty-prompt 3f00c2d..9b41e7a
 1 of 2 git sources can be updated (run plugin update)
 ```
 
@@ -572,6 +573,16 @@ how a collection of plugins is laid out (see its `README.md`). It is the source 
 [plugins.enabled]
 std.completion = "*"        # common commands, and git (git-completion)
 std.bash-completion = "*"
+```
+
+`std` comes from the tag of the luish release that runs it (`v0.1.0` for luish 0.1.0), so its plugins are those
+released with your luish, and `plugin update` doesn't move it. After upgrading luish, run `plugin sync` to fetch the
+plugins of the new version: until then, shells start without them, and say so. To follow the newest plugins instead,
+which may need a newer luish than yours, name the source yourself:
+
+```toml
+[plugins.available]
+std = { gh = "luispedro/luish", subdir = "luish-std-plugins", branch = "main" }
 ```
 
 - **`completion`** (a directory) completes the options of about 70 common commands, with their descriptions, the

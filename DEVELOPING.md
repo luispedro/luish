@@ -414,8 +414,8 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   is the name it was registered for); a module's constants aren't visible to its functions (shared tables are
   functions); arrays are passed to functions by value. `plugin.toml` depends on `git-completion`.
 - **Packages** (`package.rs`, `fetch.rs`): `read_config` turns `[plugins]` into owned `Config` (sources in
-  `plugins.available`, plus the built-in `std`; entries in `plugins.enabled`), and `manifest` a directory plugin's
-  `plugin.toml` into entries of the same kind. `Resolver` resolves entries depth-first, dependencies before
+  `plugins.available`, plus the built-in `std`, at the tag `vVERSION` of the running luish (`std_ref`); entries in
+  `plugins.enabled`), and `manifest` a directory plugin's `plugin.toml` into entries of the same kind. `Resolver` resolves entries depth-first, dependencies before
   dependents, identifying plugins by absolute path: the same plugin twice is loaded once, two plugins with one name
   and a cycle (found on the stack) are errors, and a failed dependency fails its dependents. A plain `NAME` in a
   manifest is looked for in the collection the plugin came from (`Scope::Collection`). Git sources resolve through
@@ -589,7 +589,9 @@ against those packages (with `LUISH_DOWNLOAD_URL=file://...`) under dash, bash a
 build, a reinstall over the running binary, a corrupt or missing download, and the fallback to musl when the gnu
 build doesn't run. The workflow also runs on pull requests that change any of these, without publishing. To make a
 release, set the version in `Cargo.toml` and push a tag `vVERSION`: the workflow checks that the two agree and
-publishes the packages and `install.sh` as a GitHub release. `install.sh` downloads from the latest release's URLs
+publishes the packages and `install.sh` as a GitHub release. The tag is also where every luish of that version
+takes the `std` plugins from (`package::std_ref`), so they can't change after the release, and a build whose
+version has no tag yet can't fetch them: developers use a `path` or `branch` source named `std`. `install.sh` downloads from the latest release's URLs
 (`releases/latest/download/NAME`), so the packages' names must not change.
 
 - **gnu**: linked against glibc 2.17 with conda-forge's `sysroot_linux-64` (or `-aarch64`) and `gcc_linux-*` as the

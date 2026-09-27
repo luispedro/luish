@@ -36,6 +36,14 @@ use toml_span::value::{Table, Value, ValueInner};
 const STD_REPO: &str = "luispedro/luish";
 const STD_SUBDIR: &str = "luish-std-plugins";
 
+/// The ref `std` is taken from: the tag of this version of luish (which the
+/// release workflow checks against `Cargo.toml`), so that the plugins are
+/// those released with the shell that runs them, not newer ones that may
+/// need a newer luish.
+fn std_ref() -> GitRef {
+    GitRef::Tag(concat!("v", env!("CARGO_PKG_VERSION")).into())
+}
+
 /// The version of `plugins.lock`'s layout.
 const LOCK_VERSION: i64 = 1;
 
@@ -123,7 +131,7 @@ impl Config {
         (name == "std").then(|| Source {
             origin: Origin::Git {
                 url: github_url(STD_REPO),
-                at: GitRef::Head,
+                at: std_ref(),
             },
             subdir: Some(STD_SUBDIR.into()),
             label: "std".into(),
@@ -1444,7 +1452,18 @@ pub fn available(sh: &mut Shell) -> Vec<(Vec<u8>, Vec<u8>)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{GitRef, Pin, lock_text, toml_str};
+    use super::{Config, GitRef, Origin, Pin, lock_text, toml_str};
+
+    #[test]
+    fn std_is_this_release() {
+        let std = Config::default().named("std").unwrap();
+        let Origin::Git { url, at } = std.origin else {
+            panic!("std isn't a git source");
+        };
+        assert_eq!(url, "https://github.com/luispedro/luish.git");
+        assert_eq!(at, GitRef::Tag(format!("v{}", env!("CARGO_PKG_VERSION"))));
+        assert_eq!(std.subdir.as_deref(), Some("luish-std-plugins"));
+    }
 
     #[test]
     fn strings() {
