@@ -3,7 +3,7 @@
 # emulation). (In a directory of its own, since the test's own files are
 # in the current one.)
 # reference: zsh +o shglob -o bareglobqual -o ksharrays
-[ -n "$ZSH_VERSION" ] || setopt bareglobqual
+[ -n "$ZSH_NAME" ] || setopt bareglobqual
 umask 022
 mkdir t; cd t
 mkdir -p d/sub .hid
@@ -61,7 +61,7 @@ echo sort: *(oL) / *(OL) / *(om) / *(Om) / *(om[0]) / *(Ol) / *(ol)
 cd ..
 
 # With globstar.
-[ -n "$ZSH_VERSION" ] || setopt globstar
+[ -n "$ZSH_NAME" ] || setopt globstar
 echo recursive: **/*(.)
 # Only one file per directory, since zsh sorts files at the same depth in
 # no particular order.

@@ -5,7 +5,7 @@
 mkdir -p a/b/c .hid/sub e
 touch x.md a/y.md a/b/z.md a/b/c/w.md .hid/h.md .hid/sub/s.md a/.dot.md
 ln -s a lnk
-[ -n "$ZSH_VERSION" ] || setopt globstar
+[ -n "$ZSH_NAME" ] || setopt globstar
 echo 1 **/*.md
 echo 2 a/**/*.md
 echo 3 **/

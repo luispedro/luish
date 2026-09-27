@@ -449,6 +449,10 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
 Each deviation in `docs/compatibility.md` has a test: a case marked `# reference: zsh`, or one with a `.expected`
 file. When adding a deviation, add it to both.
 
+A case that must tell zsh from luish tests `$ZSH_NAME`, not `$ZSH_VERSION`: conda-forge's aarch64 zsh has
+`ZSH_VERSION` empty, because the linker merged the string `5.9` into the tail of its module path, which conda
+truncates when it relocates the package.
+
 | Deviation | Tests |
 |---|---|
 | `source` | `builtins/source.sh` (zsh), `builtins/source_missing.sh` |
