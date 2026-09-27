@@ -1,7 +1,7 @@
 # luish-std-plugins
 
-A collection of plugins for [luish](../README.md). It lives in the luish repository for now, and will become a
-repository of its own, as an example of how a plugin collection is laid out.
+A collection of plugins for [luish](../README.md), known to luish as `std`. It lives in the luish repository for now,
+and will become a repository of its own, as an example of how a plugin collection is laid out.
 
 ## The plugins
 
@@ -40,19 +40,28 @@ luish-std-plugins/
 
 ## Using them
 
-luish doesn't load plugins from collections yet. Until it does, load a plugin by its path:
+This collection is the source `std` of luish's plugin configuration. Enable its plugins in `~/.config/luish/config.toml`:
+
+```toml
+[plugins.enabled]
+std.git-completion = "*"
+std.bash-completion = "*"
+```
+
+and run `plugin sync`, which fetches them from luish's repository and pins the commit in `plugins.lock`. Every
+interactive shell then loads them; `plugin update std` moves to the newest commit. To use a local checkout instead,
+for example while working on these plugins, name it `std` yourself:
+
+```toml
+[plugins.available]
+std = { path = "~/src/luish/luish-std-plugins" }
+```
+
+A plugin can also be loaded by its path, in one shell:
 
 ```sh
 plugin load ~/src/luish/luish-std-plugins/git-completion.rhai
-plugin load ~/src/luish/luish-std-plugins/bash-completion/
 ```
 
-or link it into your plugin directory, and load it by name:
-
-```sh
-ln -s ~/src/luish/luish-std-plugins/git-completion.rhai ~/.config/luish/plugins/
-plugin load git-completion
-```
-
-Put the `plugin load` lines in `~/.config/luish/luishrc` (or a file in `~/.config/luish/rc.d/`) to load the plugins
-in every interactive shell.
+A directory plugin here can list the plugins it needs in a `plugin.toml` (see the plugins page of luish's
+documentation); a plain name there is another plugin of this collection.

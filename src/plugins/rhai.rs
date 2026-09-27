@@ -209,6 +209,7 @@ fn hook_kind(name: &str) -> Option<HookKind> {
         "chpwd" => Some(HookKind::Chpwd),
         "prompt-vars" => Some(HookKind::PromptVars),
         "prompt-rewrite" => Some(HookKind::PromptRewrite),
+        "post-rc" => Some(HookKind::PostRc),
         _ => None,
     }
 }
@@ -246,35 +247,10 @@ fn register(f: FnPtr, add: impl FnOnce(&Host, Callback)) -> RhaiResult<()> {
 /// Runs `script` in a subshell, as `$(...)` does, and returns its status
 /// and its output without trailing newlines.
 fn capture(sh: &mut Shell, script: &[u8]) -> RhaiResult<rhai::Map> {
-    let Ok((r, w)) = sys::pipe() else {
-        return error("capture: cannot create a pipe");
+    let (status, mut out) = match super::capture(sh, script) {
+        Ok(r) => r,
+        Err(e) => return error(format!("capture: {e}")),
     };
-    let pid = match sh.fork_or_error() {
-        Ok(pid) => pid,
-        Err(_) => {
-            sys::close(r);
-            sys::close(w);
-            return error("capture: cannot fork");
-        }
-    };
-    if pid == 0 {
-        sys::close(r);
-        let _ = sys::dup2(w, 1);
-        sys::close(w);
-        let res = sh.run_string(script);
-        sh.child_exit(res);
-    }
-    sys::close(w);
-    let mut out = Vec::new();
-    let mut buf = [0u8; 4096];
-    while let Ok(n) = sys::read(r, &mut buf, false) {
-        if n == 0 {
-            break;
-        }
-        out.extend_from_slice(&buf[..n]);
-    }
-    sys::close(r);
-    let status = sh.wait_for(pid);
     out.retain(|&b| b != 0);
     while out.last() == Some(&b'\n') {
         out.pop();
@@ -670,6 +646,20 @@ impl Host {
     /// Runs the hooks of one kind. A failing hook is reported and the
     /// others still run. `$?` is kept.
     pub fn run_hooks(&self, sh: &mut Shell, kind: HookKind, args: &[&[u8]]) -> Result<(), Flow> {
+        self.run_hooks_of(sh, kind, args, None)
+    }
+
+    /// Runs the hooks of one kind that the plugin `name` registered.
+    pub fn run_plugin_hooks(&self, sh: &mut Shell, kind: HookKind, name: &[u8]) -> Result<(), Flow> {
+        let id = self.plugins.borrow().iter().find(|p| p.name == name).map(|p| p.id);
+        match id {
+            Some(id) => self.run_hooks_of(sh, kind, &[], Some(id)),
+            None => Ok(()),
+        }
+    }
+
+    /// Runs the hooks of one kind, of all plugins or of the plugin `only`.
+    fn run_hooks_of(&self, sh: &mut Shell, kind: HookKind, args: &[&[u8]], only: Option<u32>) -> Result<(), Flow> {
         if self.running.borrow().contains(&kind) {
             return Ok(());
         }
@@ -677,7 +667,7 @@ impl Host {
             .hooks
             .borrow()
             .iter()
-            .filter(|h| h.0 == kind)
+            .filter(|h| h.0 == kind && only.is_none_or(|id| h.1.plugin == id))
             .map(|h| h.1.clone())
             .collect();
         if hooks.is_empty() {

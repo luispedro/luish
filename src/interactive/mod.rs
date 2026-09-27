@@ -342,18 +342,25 @@ pub fn login_profiles(sh: &mut Shell) {
     }
 }
 
-/// Runs the cached files of `luish/rc.d`, if it exists, for an interactive
-/// shell, before the login files (see `startcache.rs`).
+/// Runs the cached files of `luish/rc.d` and `config.toml`, with the
+/// plugins it enables, for an interactive shell, before the login files
+/// (see `startcache.rs`). Without `rc.d`, `config.toml` is cached alone.
 pub fn rc_d(sh: &mut Shell) {
-    let config = crate::config::path(sh);
-    match crate::startcache::config_dir(sh, b"rc.d") {
-        Some(dir) => crate::startcache::run(sh, &dir, b"rc", config.as_deref()),
-        None => {
-            if let Some(c) = config {
-                crate::config::load(sh, &c);
-            }
-        }
+    let Some(config) = crate::config::path(sh) else {
+        return;
+    };
+    let dir = crate::startcache::config_dir(sh, b"rc.d").or_else(|| {
+        sys::stat(&config)
+            .is_some()
+            .then(|| [parent_dir(&config), b"/rc.d"].concat())
+    });
+    if let Some(dir) = dir {
+        crate::startcache::run(sh, &dir, b"rc", Some(&config));
     }
+}
+
+fn parent_dir(path: &[u8]) -> &[u8] {
+    &path[..path.iter().rposition(|&c| c == b'/').unwrap_or(0)]
 }
 
 /// Reads the startup files of an interactive shell: `$ENV`, then luish's

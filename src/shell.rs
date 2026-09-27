@@ -87,6 +87,10 @@ pub struct Shell {
     pub plugins: Option<Rc<crate::plugins::Host>>,
     /// `--no-plugins`: `plugin load` does nothing.
     pub no_plugins: bool,
+    /// Set while the startup files of `rc.d` run, with the plugins that
+    /// `config.toml` enables: plugins then wait for the end of `rc.d` to run
+    /// their `post-rc.lsh` and `post-rc` hooks (`plugins/mod.rs`).
+    pub in_rc: bool,
 }
 
 impl Shell {
@@ -155,6 +159,7 @@ impl Shell {
             sourced_files: None,
             plugins: None,
             no_plugins: false,
+            in_rc: false,
         }
     }
 

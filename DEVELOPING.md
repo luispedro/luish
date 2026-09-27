@@ -31,7 +31,13 @@ brings C code into the build.
 
 **Why `toml-span`** for `config.toml`: it is small (no serde; its only dependency is `smallvec`) and keeps the
 positions of keys and values, which give the lines for errors and the order of the keys (its tables are sorted maps,
-so `config.rs` sorts entries by position; the order will matter for the planned `[plugins]` table).
+so `config.rs` sorts entries by position; the order matters for `plugins.enabled`, which loads in the file's
+order). TOML's bare keys can't contain `/`, so `plugins.enabled` takes `SOURCE.NAME = "*"` (a table, told apart from
+an inline source by having none of `gh`, `git` and `path`) as well as the quoted `"SOURCE/NAME" = "*"`.
+
+**Why git plugins are fetched by running `git`**, not with libgit2 or gitoxide: no dependency, and git's own
+configuration applies (credentials, SSH keys, proxies, `insteadOf`). Only `plugin sync` and `plugin update` run it;
+startup reads `plugins.lock` and looks for the extracted commits, so it never touches the network.
 
 **Grouped settings.** luish's own options are bits in `Options` (so nothing on a hot path changes), named
 `group.name` in `EXTENDED` (`options.rs`), with their earlier names and zsh's in `ALIASES`. Settings with a value
@@ -61,7 +67,8 @@ src/
 ├── builtins/           # mod.rs (table, special vs regular), one file per built-in or small group; help.rs
 ├── interactive/        # mod.rs (REPL, rustyline helper), history.rs, histfile.rs, complete.rs, menu.rs,
 │                       # keys.rs, highlight.rs
-└── plugins/            # mod.rs (the `plugin` built-in), rhai.rs, fs.rs, vcs.rs, bytes.rs
+└── plugins/            # mod.rs (the `plugin` built-in), package.rs (config.toml's [plugins], plugin.toml,
+                        # plugins.lock), fetch.rs (git), rhai.rs, fs.rs, vcs.rs, bytes.rs
 tests/
 ├── cases/              # differential cases (*.sh, with .expected/.status/.stdin where needed)
 ├── plugins/            # plugin cases (*.sh with .expected, .stderr)
@@ -301,6 +308,15 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   revalidation, `flock` for many shells at once, and merging into running shells.
 - `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. A key directly
   under `[options]` is a setting by its `setopt` name. Test: `misc/config_toml.sh`.
+- The rc stage (`interactive::rc_d`, `startcache::run` with `config`) is: `config.toml`'s options, the plugins it
+  enables (`plugins::load_enabled`), `rc.d`'s files, then every loaded plugin's `post-rc.lsh` (`post_rc_files`), all
+  inside the cache; then, outside it and so in every shell, the `post-rc` hooks (`post_rc_hooks`), then
+  `_uncached.lsh`. `Shell::in_rc` is set meanwhile, so that `plugin load` defers `post-rc.lsh` and hooks; outside
+  it, a plugin runs them right after `rc.lsh`. With `config.toml` but no `rc.d`, the cache is still used (for the
+  nonexistent directory). A startup with plugins that aren't installed or can't be resolved doesn't write the cache,
+  so the message repeats until they are. `--no-plugins` bypasses the caches (reading one would restore plugins'
+  effects, and writing one would save a state without them). Tests: `tests/plugins/packages.sh`,
+  `tests/plugins/post_rc.sh`.
 
 ### Plugins (`plugins/`)
 
@@ -334,12 +350,33 @@ luish-std-plugins/      # a collection of plugins (git-completion, bash-completi
   names, the stash log), running git only for the reftable format and for `vcs::status` (`git --no-optional-locks
   status --porcelain=v2 --branch -z`). Not supported: bare repositories, `GIT_DIR`, `GIT_CEILING_DIRECTORIES`.
 - Examples: `docs/examples/cobra.rhai` (programs built with Cobra). Plugins for use, in the collection
-  `luish-std-plugins/` (to become a repository of its own; nothing loads it by itself yet): `git-completion.rhai`
+  `luish-std-plugins/` (to become a repository of its own; the source `std`): `git-completion.rhai`
   (lists commands from `LC_ALL=C git help -a` without the low-level and guide sections, options from
   `git CMD --git-completion-helper`, files from `ls-files`/`diff --cached`, collapsed to the next directory) and
   `bash-completion/` (a default completer that runs bash-completion in bash through `bridge.bash`; about 50 ms per
   Tab, since bash sources `bash_completion` each time).
-- Tests: `tests/plugins/*`, `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit tests for the byte
+- **Packages** (`package.rs`, `fetch.rs`): `read_config` turns `[plugins]` into owned `Config` (sources in
+  `plugins.available`, plus the built-in `std`; entries in `plugins.enabled`), and `manifest` a directory plugin's
+  `plugin.toml` into entries of the same kind. `Resolver` resolves entries depth-first, dependencies before
+  dependents, identifying plugins by absolute path: the same plugin twice is loaded once, two plugins with one name
+  and a cycle (found on the stack) are errors, and a failed dependency fails its dependents. A plain `NAME` in a
+  manifest is looked for in the collection the plugin came from (`Scope::Collection`). Git sources resolve through
+  pins (URL and ref to commit): pins already used in this run, then (unless updating) `plugins.lock`, then (only for
+  `sync`/`update`) `fetch::resolve`. `plugin sync` also resolves every plugin of each `plugins.available` source (each
+  separately, so unrelated name clashes don't matter), so their pins are locked too; problems there are reported but
+  don't stop the lock being written, while problems with enabled plugins do. The lock is written only if its text
+  changed (so the rc cache, which fingerprints it, stays valid). Messages about manifests of git plugins show
+  `SOURCE:PATH/plugin.toml` rather than the data directory.
+- `fetch.rs` runs git through the shell (`command git`, in a forked child, with `GIT_TERMINAL_PROMPT=0`), with
+  `-C` a bare repository per URL in `$XDG_DATA_HOME/luish/plugins/git/REPO-HASH` (FNV-1a of the URL). A ref is
+  fetched with `--depth 1` and read from `FETCH_HEAD^{commit}`; a locked commit that is missing is fetched by hash,
+  else with a full fetch of its ref. `git archive` into a temporary directory next to `src/REPO-HASH/COMMIT`,
+  extracted with `tar` and renamed into place, so an existing directory is complete. The data directory (not the
+  cache) holds them, since startup needs them and can't recreate them.
+- Not yet done (see `PLAN.md`): `plugin add`/`remove`/`gc`, version requirements other than `"*"`, `flock` for
+  concurrent syncs, `login.lsh`.
+- Tests: `tests/plugins/*` (packages: `packages.sh` for local sources, `git_packages.sh` for git ones with
+  `file://` repositories, `post_rc.sh`), `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit tests for the byte
   conversion, `git status` parsing and (with a stand-in completer) in `complete.rs`, and `plugin_builtin`,
   `plugin_completer`, `cobra_completer`, `git_completion` and `bash_completion_bridge` (skipped without
   bash-completion) in `tests/interactive.rs`.

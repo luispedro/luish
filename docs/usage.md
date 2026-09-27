@@ -26,7 +26,7 @@ matter, and a `no` prefix inverts it (`-o err_exit`, `-o no_glob`, `-o prompt_pe
 | `--interactive` | The same as `-i`: an interactive shell, even when standard input is not a terminal |
 | `--stdin` | The same as `-s`: read commands from standard input; the operands are the positional parameters |
 | `--no-rcs` | Don't read any startup files: `config.toml`, `rc.d`, `$ENV`, `luishrc`, and for a login shell `login.d` or `/etc/profile` and `~/.profile`. As zsh's `--no-rcs` |
-| `--no-plugins` | Make `plugin load` do nothing, for example to check whether a problem comes from a plugin |
+| `--no-plugins` | Load no plugins: those that `config.toml` enables, and `plugin load` does nothing (as do `plugin sync` and `plugin update`), for example to check whether a problem comes from a plugin. The startup caches are neither used nor written |
 | `--help` | Show a summary of the options and exit |
 | `--version` | Show the version of luish and the git revision it was built from, and exit |
 
@@ -308,8 +308,11 @@ value of the wrong type, is reported with its line and skipped; a file that isn'
 ignored.
 
 Only interactive shells read it (not scripts or `luish -c`), first, before `rc.d` (see below), so that a file in
-`rc.d` can change what it sets. When `rc.d` exists, its effects are cached with those of `rc.d`, so a new shell
-doesn't read it again until it changes.
+`rc.d` can change what it sets. The plugins it enables load next, also before `rc.d`. Its effects are cached with those of `rc.d` (even if there is no `rc.d`), so a new
+shell doesn't read it again until it changes.
+
+Its `[plugins]` table lists the plugins to load in every interactive shell, and where they come from (see
+[Installing plugins with config.toml](plugins.md#installing-plugins-with-configtoml)).
 
 ## Cached startup files
 
@@ -336,7 +339,8 @@ echo "alias ll='ls -l'" > ~/.config/luish/rc.d/aliases.lsh
 ```
 
 The caches are `~/.cache/luish/rc-HOST` and `~/.cache/luish/login-HOST` (or under `$XDG_CACHE_HOME`). A cache is
-used as long as the `.lsh` files, the files they read with `.` and (for `rc.d`) `config.toml` are unchanged, and luish itself is the same build.
+used as long as the `.lsh` files, the files they read with `.` and (for `rc.d`) `config.toml`, `plugins.lock` and the
+plugins it loads are unchanged, and luish itself is the same build.
 When one of them changes (luish compares their size and modification time), or after luish is upgraded, the next
 shell reruns the files and updates the cache.
 

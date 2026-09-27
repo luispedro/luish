@@ -7,7 +7,11 @@
 #[cfg(feature = "plugins")]
 mod bytes;
 #[cfg(feature = "plugins")]
+mod fetch;
+#[cfg(feature = "plugins")]
 mod fs;
+#[cfg(feature = "plugins")]
+mod package;
 #[cfg(feature = "plugins")]
 mod rhai;
 #[cfg(feature = "plugins")]
@@ -71,6 +75,10 @@ pub enum HookKind {
     /// instead of `PS1`.
     #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
     PromptRewrite,
+    /// In interactive shells, once after the startup files of `rc.d` (or,
+    /// for a plugin loaded later, right after it is loaded).
+    #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+    PostRc,
 }
 
 /// Runs the `chpwd` hooks after `cd` changed the directory.
@@ -105,15 +113,17 @@ pub fn complete(sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Compl
     }
 }
 
-const USAGE: &str = "usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available, plugin unload NAME...";
+const USAGE: &str = "usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available, plugin unload NAME..., \
+                     plugin sync, plugin update [SOURCE...]";
 
 /// The `plugin` built-in (interactive shells only, like `help`).
 pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     run(sh, &argv[0], &argv[1..])
 }
 
-/// `plugin load NAME|PATH...`, `plugin list-loaded`, `plugin list-available`
-/// and `plugin unload NAME...`, also available as `__luish_internal plugin`. `name` is the command, for
+/// `plugin load NAME|PATH...`, `plugin list-loaded`, `plugin list-available`,
+/// `plugin unload NAME...`, `plugin sync` and `plugin update [SOURCE...]`,
+/// also available as `__luish_internal plugin`. `name` is the command, for
 /// error messages.
 ///
 /// `plugin restore NAME PATH`, which `savestate` prints, loads a plugin
@@ -140,7 +150,11 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
         Some(sub @ (b"list-loaded" | b"list-available")) if args.is_empty() => {
             let names = match sub {
                 b"list-loaded" => loaded_names(sh),
-                _ => plugin_dir(sh).map_or_else(Vec::new, |dir| available_names(&dir)),
+                _ => {
+                    let mut names = plugin_dir(sh).map_or_else(Vec::new, |dir| available_names(&dir));
+                    names.extend(from_sources(sh));
+                    names
+                }
             };
             let mut out = Vec::new();
             for name in names {
@@ -149,6 +163,8 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
             }
             Ok(sh.out_status(&out))
         }
+        Some(b"sync") if args.is_empty() => sync(sh, name, None),
+        Some(b"update") => sync(sh, name, Some(args)),
         Some(b"unload") if !args.is_empty() => {
             let mut status = 0;
             for a in args {
@@ -211,6 +227,7 @@ enum Kind {
 
 #[cfg(feature = "plugins")]
 /// A plugin found on disk.
+#[derive(Clone, Debug)]
 struct Found {
     path: Vec<u8>,
     kind: Kind,
@@ -222,47 +239,80 @@ fn is_dir(path: &[u8]) -> bool {
 }
 
 #[cfg(feature = "plugins")]
-/// The plugin for `plugin load ARG`: ARG itself if it contains a `/` (a
-/// file ending in `.lsh` is shell, any other file Rhai), otherwise the
-/// first of `ARG.rhai`, `ARG.lsh` and `ARG/` in the plugin directory.
-fn find(sh: &Shell, arg: &[u8]) -> Option<Found> {
-    if arg.contains(&b'/') {
-        let kind = match is_dir(arg) {
-            true => Kind::Dir,
-            false if arg.ends_with(b".lsh") => Kind::Lsh,
-            false => Kind::Rhai,
-        };
-        return Some(Found {
-            path: arg.to_vec(),
-            kind,
-        });
-    }
-    let mut p = plugin_dir(sh)?;
-    p.push(b'/');
-    p.extend_from_slice(arg);
-    let lsh = [p.as_slice(), b".lsh"].concat();
+/// The files that make a directory a plugin.
+const ENTRY_POINTS: [&[u8]; 6] = [
+    b"init.lsh",
+    b"extension.rhai",
+    b"rc.lsh",
+    b"post-rc.lsh",
+    b"prompt-vars.lsh",
+    b"login.lsh",
+];
+
+#[cfg(feature = "plugins")]
+/// Whether the directory `dir` is a plugin (has one of the entry points),
+/// rather than a collection of plugins.
+fn is_plugin_dir(dir: &[u8]) -> bool {
+    ENTRY_POINTS
+        .iter()
+        .any(|f| crate::sys::stat(&[dir, b"/", f].concat()).is_some())
+}
+
+#[cfg(feature = "plugins")]
+/// The plugin `name` in the collection `dir` (such as the plugin
+/// directory): the first of `NAME.rhai`, `NAME.lsh` and `NAME/`.
+fn find_in(dir: &[u8], name: &[u8]) -> Option<Found> {
+    let p = [dir, b"/", name].concat();
     let rhai = [p.as_slice(), b".rhai"].concat();
-    Some(if crate::sys::stat(&rhai).is_some() {
-        Found {
+    let lsh = [p.as_slice(), b".lsh"].concat();
+    if crate::sys::stat(&rhai).is_some() {
+        Some(Found {
             path: rhai,
             kind: Kind::Rhai,
-        }
+        })
     } else if crate::sys::stat(&lsh).is_some() {
-        Found {
+        Some(Found {
             path: lsh,
             kind: Kind::Lsh,
-        }
+        })
     } else if is_dir(&p) {
-        Found {
+        Some(Found {
             path: p,
             kind: Kind::Dir,
-        }
+        })
     } else {
-        Found {
-            path: rhai,
-            kind: Kind::Rhai,
-        }
-    })
+        None
+    }
+}
+
+#[cfg(feature = "plugins")]
+/// The plugin at `path`, a file or a directory: a file whose name ends in
+/// `.lsh` is shell, any other file Rhai.
+fn at_path(path: &[u8]) -> Found {
+    let kind = match is_dir(path) {
+        true => Kind::Dir,
+        false if path.ends_with(b".lsh") => Kind::Lsh,
+        false => Kind::Rhai,
+    };
+    Found {
+        path: path.to_vec(),
+        kind,
+    }
+}
+
+#[cfg(feature = "plugins")]
+/// The plugin for `plugin load ARG`: ARG itself if it contains a `/`,
+/// otherwise the first of `ARG.rhai`, `ARG.lsh` and `ARG/` in the plugin
+/// directory (or `ARG.rhai`, which doesn't exist, for the error).
+fn find(sh: &Shell, arg: &[u8]) -> Option<Found> {
+    if arg.contains(&b'/') {
+        return Some(at_path(arg));
+    }
+    let dir = plugin_dir(sh)?;
+    Some(find_in(&dir, arg).unwrap_or_else(|| Found {
+        path: [dir.as_slice(), b"/", arg, b".rhai"].concat(),
+        kind: Kind::Rhai,
+    }))
 }
 
 #[cfg(feature = "plugins")]
@@ -318,17 +368,37 @@ pub(super) fn with_plugin_vars<R>(sh: &mut Shell, dir: &[u8], name: &[u8], f: im
 }
 
 #[cfg(feature = "plugins")]
+/// `plugin load ARG`, or `plugin restore NAME ARG` (with `restore`, the
+/// name).
 fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], restore: Option<Vec<u8>>) -> ExecResult {
+    if restore.is_none() {
+        return package::load(sh, cmd, arg);
+    }
     let Some(found) = find(sh, arg) else {
         sh.berr(cmd, "no plugin directory (HOME is not set)");
         return Ok(1);
     };
+    load_found(sh, cmd, &found, restore, false)
+}
+
+#[cfg(feature = "plugins")]
+/// The absolute form of a path, from the current directory.
+fn absolute(sh: &Shell, path: &[u8]) -> Vec<u8> {
+    let path = path.strip_suffix(b"/").unwrap_or(path);
+    match (path.first(), &sh.curdir) {
+        (Some(b'/'), _) | (_, None) => path.to_vec(),
+        (_, Some(dir)) => crate::builtins::cd::canonicalize(&[dir.as_slice(), b"/", path].concat()),
+    }
+}
+
+#[cfg(feature = "plugins")]
+/// Loads the plugin `found`, under the name `name` (by default, from its
+/// path). `fresh` is false when restoring a saved state, which already has
+/// what the plugin's shell files did.
+fn load_found(sh: &mut Shell, cmd: &[u8], found: &Found, name: Option<Vec<u8>>, fresh: bool) -> ExecResult {
     let path = found.path.strip_suffix(b"/").unwrap_or(&found.path).to_vec();
-    let abs = match (path.first(), &sh.curdir) {
-        (Some(b'/'), _) | (_, None) => path.clone(),
-        (_, Some(dir)) => crate::builtins::cd::canonicalize(&[dir.as_slice(), b"/", path.as_slice()].concat()),
-    };
-    let name = restore.clone().unwrap_or_else(|| plugin_name(&path, found.kind));
+    let abs = absolute(sh, &path);
+    let name = name.unwrap_or_else(|| plugin_name(&path, found.kind));
     let (loading, init, rc) = if found.kind == Kind::Dir {
         let entry = |f: &[u8]| {
             let p = [path.as_slice(), b"/", f].concat();
@@ -338,11 +408,11 @@ fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], restore: Option<Vec<u8>>) -> Exe
         };
         let (init, rhai, rc) = (entry(b"init.lsh"), entry(b"extension.rhai"), entry(b"rc.lsh"));
         let prompt_vars = entry(b"prompt-vars.lsh").map(|(_, abs)| abs);
-        if init.is_none() && rhai.is_none() && rc.is_none() && prompt_vars.is_none() && entry(b"login.lsh").is_none() {
+        if !is_plugin_dir(&path) {
             sh.berr(
                 cmd,
                 format!(
-                    "{}: not a plugin (no init.lsh, extension.rhai, rc.lsh, prompt-vars.lsh or login.lsh)",
+                    "{}: not a plugin (no init.lsh, extension.rhai, rc.lsh, post-rc.lsh, prompt-vars.lsh or login.lsh)",
                     String::from_utf8_lossy(&path)
                 ),
             );
@@ -388,18 +458,142 @@ fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], restore: Option<Vec<u8>>) -> Exe
     let (dir, name) = (loading.dir.clone(), loading.name.clone());
     // The shell files' effects are in the saved state when restoring, and
     // `rc.lsh` is only for interactive shells (and their subshells).
-    let fresh = restore.is_none();
-    let rc = rc.filter(|_| fresh && sh.opt(Opt::Interactive));
-    let dot = |sh: &mut Shell, file: Vec<u8>| crate::builtins::misc::dot(sh, &[b".".to_vec(), file]).map(|_| 0);
+    let interactive = fresh && sh.opt(Opt::Interactive);
+    let rc = rc.filter(|_| interactive);
+    // During `rc.d`, `post-rc.lsh` and the `post-rc` hooks wait for its end
+    // (`post_rc_files`, `post_rc_hooks`).
+    let post_rc = interactive && !sh.in_rc;
+    let is_dir = found.kind == Kind::Dir;
     with_plugin_vars(sh, &dir, &name, |sh| {
         if let Some(init) = init.filter(|_| fresh) {
             dot(sh, init)?;
         }
-        match (host.load(sh, cmd, loading), rc) {
+        let r = match (host.load(sh, cmd, loading), rc) {
             (Ok(0), Some(rc)) => dot(sh, rc),
             (r, _) => r,
+        };
+        match r {
+            Ok(0) if post_rc => {
+                let file = [dir.as_slice(), b"/post-rc.lsh"].concat();
+                if is_dir && crate::sys::stat(&file).is_some() {
+                    dot(sh, file)?;
+                }
+                host.run_plugin_hooks(sh, HookKind::PostRc, &name).map(|_| 0)
+            }
+            r => r,
         }
     })
+}
+
+#[cfg(feature = "plugins")]
+fn dot(sh: &mut Shell, file: Vec<u8>) -> ExecResult {
+    crate::builtins::misc::dot(sh, &[b".".to_vec(), file]).map(|_| 0)
+}
+
+/// Runs the `post-rc.lsh` of each directory plugin loaded, in the order
+/// they were loaded, after the files of `rc.d` (in its cache).
+#[cfg(feature = "plugins")]
+pub fn post_rc_files(sh: &mut Shell) {
+    let Some(host) = sh.plugins.clone() else {
+        return;
+    };
+    for (name, abs) in host.loaded() {
+        let file = [abs.as_slice(), b"/post-rc.lsh"].concat();
+        if !is_dir(&abs) || crate::sys::stat(&file).is_none() {
+            continue;
+        }
+        let r = with_plugin_vars(sh, &abs, &name, |sh| dot(sh, file));
+        if let Err(Flow::Exit(n)) = r {
+            sh.exit(n);
+        }
+    }
+}
+
+#[cfg(not(feature = "plugins"))]
+pub fn post_rc_files(_: &mut Shell) {}
+
+/// Runs the `post-rc` hooks, after `rc.d` (cached or not).
+pub fn post_rc_hooks(sh: &mut Shell) {
+    if let Some(host) = sh.plugins.clone()
+        && let Err(Flow::Exit(n)) = host.run_hooks(sh, HookKind::PostRc, &[])
+    {
+        sh.exit(n);
+    }
+}
+
+#[cfg(feature = "plugins")]
+/// Runs `script` in a subshell, as `$(...)` does, and returns its status
+/// and its output. Its standard error is the shell's.
+fn capture(sh: &mut Shell, script: &[u8]) -> Result<(i32, Vec<u8>), &'static str> {
+    use crate::sys;
+    let Ok((r, w)) = sys::pipe() else {
+        return Err("cannot create a pipe");
+    };
+    let pid = match sh.fork_or_error() {
+        Ok(pid) => pid,
+        Err(_) => {
+            sys::close(r);
+            sys::close(w);
+            return Err("cannot fork");
+        }
+    };
+    if pid == 0 {
+        sys::close(r);
+        let _ = sys::dup2(w, 1);
+        sys::close(w);
+        let res = sh.run_string(script);
+        sh.child_exit(res);
+    }
+    sys::close(w);
+    let mut out = Vec::new();
+    let mut buf = [0u8; 4096];
+    while let Ok(n) = sys::read(r, &mut buf, false) {
+        if n == 0 {
+            break;
+        }
+        out.extend_from_slice(&buf[..n]);
+    }
+    sys::close(r);
+    Ok((sh.wait_for(pid), out))
+}
+
+/// The plugins of the sources in `config.toml` that are installed.
+#[cfg(feature = "plugins")]
+fn from_sources(sh: &mut Shell) -> Vec<Vec<u8>> {
+    package::available(sh)
+}
+
+#[cfg(not(feature = "plugins"))]
+fn from_sources(_: &mut Shell) -> Vec<Vec<u8>> {
+    Vec::new()
+}
+
+/// `plugin sync` and `plugin update`.
+#[cfg(feature = "plugins")]
+fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>) -> ExecResult {
+    if sh.no_plugins {
+        return Ok(0);
+    }
+    package::sync(sh, cmd, update)
+}
+
+#[cfg(not(feature = "plugins"))]
+fn sync(sh: &mut Shell, cmd: &[u8], _: Option<&[Vec<u8>]>) -> ExecResult {
+    sh.berr(cmd, "luish was built without plugin support");
+    Ok(1)
+}
+
+/// Loads the plugins that `config.toml` enables, at the start of an
+/// interactive shell. Returns false if some couldn't be found, so that the
+/// startup cache isn't written.
+#[cfg(feature = "plugins")]
+pub fn load_enabled(sh: &mut Shell) -> bool {
+    sh.no_plugins || package::load_enabled(sh)
+}
+
+#[cfg(not(feature = "plugins"))]
+pub fn load_enabled(_: &mut Shell) -> bool {
+    true
 }
 
 #[cfg(not(feature = "plugins"))]

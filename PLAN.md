@@ -39,14 +39,15 @@ second (nvm) are otherwise a daily cost.
    `Candidate`, also for plugins), `LS_COLORS` for files, fuzzy matching.
 5. **Fuzz targets** for the lexer, parser, arithmetic and pattern matcher, with a round-trip property: unparsing then
    re-parsing an AST gives the same AST.
-6. **Plugins (Phase 11)**: `precmd`/`preexec` hooks (Phase 13 item 3 needs them), extension built-ins, the
-   `[plugins]` table.
+6. **Plugins (Phase 11)**: `precmd`/`preexec` hooks (Phase 13 item 3 needs them), extension built-ins, `plugin add`
+   and `plugin remove`.
 
 ## Phase 11 — Plugin system (Stage 2)
 
-Done: the `plugin` built-in (`load`, `list-loaded`, `list-available`, `unload`, and `restore` for the startup cache),
-directory plugins, the byte conversion, the Rhai engine with its limits and interrupts, the `chpwd`, `prompt-vars` and
-`prompt-rewrite` hooks, completers, part of the `sh` module, and the `fs` and `vcs` modules. Still to do:
+Done: the `plugin` built-in (`load`, `list-loaded`, `list-available`, `unload`, `sync`, `update`, and `restore` for
+the startup cache), directory plugins, plugin packages (below), the byte conversion, the Rhai engine with its limits
+and interrupts, the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks, completers, part of the `sh`
+module, and the `fs` and `vcs` modules. Still to do:
 
 1. A plugin-agnostic `Builtin` trait, with the Rust built-ins moved onto it, so that extension and native built-ins
    go through the same code path:
@@ -89,102 +90,30 @@ directory plugins, the byte conversion, the Rhai engine with its limits and inte
    ```
 
 4. Example plugins: a git-aware prompt, a `json` query built-in, and a command-timing `preexec`/`precmd` pair (M5).
-5. Plugin packages: the `[plugins]` table, git plugins pinned by `plugins.lock`, and `login.lsh` (below).
+5. Plugin packages: `plugin add`/`remove`/`gc` and `login.lsh` (below; the table, the lock, `sync` and `update` are
+   done).
 
 ### Plugin packages
 
-Plugins are listed in the `[plugins]` table of `config.toml` (below, "the table"), and plugins fetched from git are
-pinned by a file that luish manages (`plugins.lock`), as Cargo and pixi do. Scripts and `-c` never load plugins, and
-a warm startup must not get slower.
+Done (see `DEVELOPING.md` and the plugins page of the user docs): the `[plugins]` table of `config.toml`, with
+`plugins.available` (named sources: `gh`, `git` or `path`, with `branch`/`tag`/`rev` and `subdir`; `std` built in)
+and `plugins.enabled` (`NAME`, `SOURCE.NAME` or `"SOURCE/NAME"`, and inline sources, all `= "*"`); dependencies in a
+directory plugin's `plugin.toml`, resolved recursively; `plugins.lock` (pins and the resolved plugins); `plugin sync`
+and `plugin update`, which run git into `$XDG_DATA_HOME/luish/plugins/`; `plugin load SOURCE/NAME` with dependencies;
+enabled plugins loaded at startup before `rc.d`, cached with it; `post-rc.lsh` and the `post-rc` hook. Still to do:
 
-**Collections.** A collection is a directory laid out like `~/.config/luish/plugins/`: each `NAME.rhai`, `NAME.lsh`
-and `NAME/` in it is a plugin. A git repository (or its `path`) is one plugin if its top directory holds an entry
-point (`init.lsh`, `extension.rhai`, `rc.lsh`, `prompt-vars.lsh` or `login.lsh`); otherwise a collection, of its
-`plugins/` directory if it has one, else of its top directory. An entry takes one plugin from a collection: by
-default the one named like the entry, or the only one.
+1. `plugin add SPEC [NAME]` and `plugin remove NAME...`, editing `config.toml` as text (keeping comments, as
+   `cargo add` does), and `plugin gc` for the repositories and checkouts the lock doesn't use (`sync` and `update`
+   never remove them, since a running shell may still read their files).
+2. `plugin list-loaded -l`: each plugin's source and commit, and the enabled plugins that aren't installed.
+3. `login.lsh`: run after `login.d`, in its cache, or uncached after `~/.profile` without `login.d`.
+4. `flock` on the data directory, for two `plugin sync` at once (extraction is already safe: rename into place).
+5. Version requirements other than `"*"`, once plugins have versions (a `version` in `plugin.toml`, or tags).
+6. More in `plugin.toml`: `description` (shown by `list-available -l`), the oldest luish a plugin needs.
 
-**The table.** Each key is a plugin's name, and plugins load in the order of the file (luish's TOML parser keeps it;
-it matters for hooks and for which `rc.lsh` has the last word).
-
-```toml
-[plugins]
-greet = {}                                             # ~/.config/luish/plugins/greet.rhai, .lsh or greet/
-git-prompt = "alice/luish-git-prompt"                  # a GitHub repository that is one plugin
-z = { github = "bob/luish-plugins", tag = "v2.1" }     # the plugin `z` of a collection, at a tag
-bfzf = { github = "bob/luish-plugins", plugin = "fzf" }
-work = { git = "https://git.example.com/me/dotfiles.git", branch = "main", path = "luish/work" }
-dev = { path = "~/src/luish-dev" }                     # used where it is
-old = { github = "carol/old", enabled = false }        # kept, with its pin, but not loaded
-```
-
-| Field | Meaning |
-|---|---|
-| `github = "OWNER/REPO"` | Short for `git = "https://github.com/OWNER/REPO.git"`. A string value is short for `{ github = ... }` |
-| `git = URL` | Any URL that `git fetch` accepts |
-| `branch`, `tag`, `rev` | At most one; the default is the remote's `HEAD`. `rev` is a full commit hash |
-| `path` | With `git`: where in the repository the plugin or collection is. On its own: a local file or directory, used in place |
-| `plugin` | Which plugin of a collection (default: the key) |
-| `enabled = false` | Don't load the plugin |
-
-A plugin's name can't contain `/` or start with `.`. `config.toml` and `plugins.lock` are both meant for version
-control, so another machine gets the same plugins at the same commits after `plugin sync`.
-
-**`plugins.lock`**, next to `config.toml`, written only by luish (through a rename), in a fixed layout sorted by name:
-
-```toml
-# Written by luish (plugin sync, plugin update). Don't edit.
-version = 1
-
-[[plugin]]
-name = "z"
-source = { github = "bob/luish-plugins", tag = "v2.1" }
-url = "https://github.com/bob/luish-plugins.git"
-commit = "9f1c2b3a4d5e6f708192a3b4c5d6e7f8091a2b3c"
-path = "plugins/z.rhai"
-```
-
-`source` is the table's entry, normalised: when they differ, `plugin sync` locks the entry again. `path` is where the
-plugin is in the commit, after the collection lookup. Local plugins aren't in the lock. A luish that finds a newer
-`version` refuses to write the file.
-
-**Commands.** Only `sync`, `update` and `add` run git or use the network.
-
-| Command | What it does |
-|---|---|
-| `plugin sync` | Makes the lock and the cache match the table: locks new and changed entries, drops removed ones, fetches locked commits missing from the cache. Never moves an unchanged entry to a newer commit |
-| `plugin update [NAME...]` | Fetches the newest commit of each entry's branch, tag or `HEAD`, rewrites the lock, and prints each change as `NAME OLD..NEW` with the commits' subject lines |
-| `plugin add SPEC [NAME]` | Adds an entry (`OWNER/REPO`, a git URL, or a local name or path; `--branch`, `--tag`, `--rev`, `--path`, `--plugin`), syncs it, and loads it. Edits the file as text, keeping comments, as `cargo add` does |
-| `plugin remove NAME...` | Removes entries from the table and the lock, and unloads them |
-| `plugin list-loaded -l` | Adds each plugin's source and commit, and lists entries that aren't installed |
-| `plugin gc` | Removes checkouts and repositories the lock doesn't use |
-
-`sync` and `update` don't change the running shell, nor remove old checkouts (a running shell may still read files
-from one), hence `gc`.
-
-**Fetching.** luish runs `git` (found in `PATH`) rather than linking libgit2 or gitoxide: no dependency, and git's
-own configuration applies (credentials, SSH keys, proxies, `insteadOf`). The cache, in
-`$XDG_CACHE_HOME/luish/plugins/`, holds `git/REPO-HASH/` (a bare repository per URL), `src/REPO-HASH/COMMIT/` (the
-files of one commit, extracted once with `git archive`, read-only, renamed into place) and `lock` (`flock`ed by the
-commands). Fetches are shallow (`git fetch --depth 1 URL REF`; for `rev` the commit itself, else a full fetch). No
-hooks, submodules or LFS: code runs only when a shell loads the plugin, at the locked commit. Directory names hold
-the commit, so git plugins need no fingerprints in the startup cache. The cache can be removed at any time.
-
-**Startup.** Only interactive shells read the table (not with `--no-plugins`). Plugins load right after `rc.d`, in
-its cached state (`init.lsh`, `extension.rhai`, `rc.lsh` for each), whether or not `rc.d` exists; `login.lsh` files
-run after `login.d`, in its cache, or uncached after `~/.profile` without `login.d`. The cache key adds the
-fingerprints of `config.toml` (already there), `plugins.lock` and the entry points of local plugins. An entry that
-isn't locked, whose lock differs, or whose commit isn't in the cache is skipped, with one line for all of them
-(`luish: plugins not installed: z, work (run plugin sync)`), and the cache isn't written. Startup never runs git.
-
-**Implementation.** `plugins/package.rs` (layouts, collections), `plugins/config.rs` (the table and `plugins.lock`),
-`plugins/fetch.rs` (git and the cache), all behind the `plugins` feature. Steps: (1) the table with local and `path`
-plugins, loaded at startup in the rc cache; (2) git plugins, the lock, `sync`, `update` and `gc`; (3) `add` and
-`remove`; (4) `login.lsh`. Tests don't use the network: cases create git repositories in their temporary directory and
-list them with `git = "file://..."`.
-
-**Later**: a plugin's `bin/` on `PATH` and `completions/`; a manifest (`plugin.toml`: description, oldest luish,
-dependencies); per-plugin settings (`[plugins.NAME.config]`, or a settings group of the plugin's own, such as
-`bashcomp.*`, with a type and a default), given to Rhai as `sh::config()`; archives for systems without git.
+**Later**: a plugin's `bin/` on `PATH` and `completions/`; per-plugin settings (`[plugins.NAME.config]`, or a settings
+group of the plugin's own, such as `bashcomp.*`, with a type and a default), given to Rhai as `sh::config()`;
+archives for systems without git.
 
 ## Phase 12 — Conformance and performance
 

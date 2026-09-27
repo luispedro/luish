@@ -13,6 +13,8 @@
 //! share = true
 //! ```
 //!
+//! The `plugins` table is read by `plugins/package.rs`.
+//!
 //! Options take booleans, numbers take integers and text takes strings,
 //! where a leading `~` is expanded (nothing else is). An unknown key, or a
 //! value of the wrong type, is reported with its line and skipped; a file
@@ -57,13 +59,14 @@ pub fn load(sh: &mut Shell, path: &[u8]) {
                 Some(_) => options(sh, value, &err),
                 None => err(sh, value.span.start, "options: not a table"),
             },
+            "plugins" => {}
             name => err(sh, key.span.start, &format!("unknown key: {name}")),
         }
     }
 }
 
 /// The entries of a table in the order of the file (`Table` sorts them).
-fn in_order(table: Table<'_>) -> Vec<(toml_span::value::Key<'_>, Value<'_>)> {
+pub fn in_order(table: Table<'_>) -> Vec<(toml_span::value::Key<'_>, Value<'_>)> {
     let mut entries: Vec<_> = table.into_iter().collect();
     entries.sort_by_key(|e| e.0.span.start);
     entries
@@ -120,7 +123,7 @@ fn set(sh: &mut Shell, name: &str, value: &Value<'_>) -> Result<(), String> {
 
 /// Expands a leading `~` or `~user`, up to the first `/`, as the shell
 /// does.
-fn tilde(sh: &Shell, s: &[u8]) -> Vec<u8> {
+pub fn tilde(sh: &Shell, s: &[u8]) -> Vec<u8> {
     let Some(rest) = s.strip_prefix(b"~") else {
         return s.to_vec();
     };
@@ -138,11 +141,12 @@ fn tilde(sh: &Shell, s: &[u8]) -> Vec<u8> {
 }
 
 /// The line (from 1) of a byte offset.
-fn line_of(text: &[u8], offset: usize) -> usize {
+pub fn line_of(text: &[u8], offset: usize) -> usize {
     1 + text[..offset.min(text.len())].iter().filter(|&&c| c == b'\n').count()
 }
 
-fn report(sh: &Shell, path: &[u8], line: usize, msg: &str) {
+/// Prints `luish: PATH: line N: MSG`.
+pub fn report(sh: &Shell, path: &[u8], line: usize, msg: &str) {
     let mut s = sh.arg0.clone();
     s.extend_from_slice(b": ");
     s.extend_from_slice(path);

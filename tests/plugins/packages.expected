@@ -1,0 +1,80 @@
+--- startup: dependencies first, each once
+helper
+lib
+one
+tool (lib: yes, one: yes)
+greet (helper: yes, tool: yes)
+helper
+lib
+one
+tool
+greet
+--- a later shell uses the cache (the extension is loaded again)
+one
+helper
+lib
+one
+tool
+greet
+--- changing a manifest is noticed
+helper
+greet (helper: yes, tool: )
+lib
+helper
+greet
+lib
+--- scripts and --no-plugins load nothing
+--- plugin list-available adds the plugins of the sources
+greet
+helper
+coll/cyc1
+coll/cyc2
+coll/lib
+coll/tool
+--- plugin load: by SOURCE/NAME, with the dependencies not loaded yet
+helper
+lib
+one
+tool (lib: yes, one: yes)
+helper
+lib
+one
+tool
+--- plugin load: a path, whose plain dependencies are next to it
+lib
+one
+tool (lib: yes, one: yes)
+lib
+one
+tool
+--- a dependency cycle
+luish: ~/src/coll/cyc2/plugin.toml: line 2: dependency cycle: cyc1 -> cyc2 -> cyc1
+status 1
+--- a source that is one plugin, and a plugin of a source of its own
+one
+lib
+tool (lib: yes, one: yes)
+one
+lib
+t
+--- errors
+luish: ~/.config/luish/config.toml: line 2: unknown key: plugins.bogus
+luish: ~/.config/luish/config.toml: line 4: std: expected a table ({ gh = "OWNER/REPO" })
+luish: ~/.config/luish/config.toml: line 5: x.gh: expected OWNER/REPO, found "no-slash"
+luish: ~/.config/luish/config.toml: line 6: y: needs one of gh, git and path
+luish: ~/.config/luish/config.toml: line 7: z: branch, tag and rev need gh or git
+luish: ~/.config/luish/config.toml: line 8: w.rev: not a full commit hash
+luish: ~/.config/luish/config.toml: line 9: v.subdir: must be a relative path inside the source
+luish: ~/.config/luish/config.toml: line 10: u: unknown key: colour
+luish: ~/.config/luish/config.toml: line 12: greet: unsupported version requirement "1.0" (only "*")
+luish: ~/.config/luish/config.toml: line 13: a/b/c: bad plugin name (NAME or SOURCE/NAME)
+luish: ~/.config/luish/config.toml: line 14: nosuch: no such plugin
+luish: ~/.config/luish/config.toml: line 15: nosrc/x: no source called nosrc
+helper
+helper
+--- SOURCE/NAME must be quoted in TOML
+luish: ~/.config/luish/config.toml: line 2: unexpected character found: `/`
+--- the same name for two plugins
+luish: ~/.config/luish/config.toml: line 5: helper: two different plugins with this name (from local and coll)
+helper
+helper

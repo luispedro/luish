@@ -1,0 +1,87 @@
+--- not installed: reported by every shell
+luish: plugin sources not installed: file://~/single, std (run plugin sync)
+luish: plugin sources not installed: file://~/single, std (run plugin sync)
+--- plugin sync
+Locking std at d0ea6cf
+Locking file://~/single at b2201bb
+Locking coll at 14cfcbd
+status 0
+# Written by luish (plugin sync, plugin update). Don't edit.
+version = 1
+
+[[source]]
+url = "file://~/coll"
+commit = "14cfcbd5a6f4955a94245ae73ecc7428e544cd97"
+
+[[source]]
+url = "file://~/luish"
+commit = "d0ea6cfb85f9c1606c01336f552534fd6c0a8ab1"
+
+[[source]]
+url = "file://~/single"
+branch = "main"
+commit = "b2201bb3130aa17c95e5fde956bcc5cd8502334e"
+
+[[plugin]]
+name = "rhai-only"
+source = "std"
+path = "rhai-only.rhai"
+dependencies = []
+
+[[plugin]]
+name = "single"
+source = "file://~/single"
+path = "."
+dependencies = []
+--- startup
+rhai from std
+single v1
+rhai-only
+single
+rhai from std
+rhai-only
+single
+--- the plugins of the available sources can be loaded
+std/hello
+std/rhai-only
+coll/x
+hello from std
+x (needs hello)
+hello
+x
+--- plugin sync does not move a pinned source
+status 0
+rhai from std
+--- plugin update does
+Updating file://~/single b2201bb..d602781
+status 0
+rhai from std
+single v2
+status 0
+luish: 1: __luish_internal plugin: nosuch: no such git source
+status 1
+--- a removed data directory: not installed, and synced again at the same commit
+luish: plugin sources not installed: file://~/single, std (run plugin sync)
+fatal: Not a valid object name d0ea6cfb85f9c1606c01336f552534fd6c0a8ab1^{commit}
+fatal: Not a valid object name d6027815880e8ae7de95a6a477a54f9226765cdc^{commit}
+fatal: Not a valid object name 14cfcbd5a6f4955a94245ae73ecc7428e544cd97^{commit}
+status 0
+rhai from std
+single v2
+--- a tag, and a commit
+Locking file://~/single at b2201bb
+status 0
+single v1
+Locking file://~/single at b2201bb
+status 0
+single v1
+1
+--- a repository that cannot be fetched
+luish: ~/.config/luish/config.toml: line 2: file://~/nosuch: git fetch failed (status 128)
+status 1
+--- nothing to lock: no lock file
+status 0
+--- a lock from a newer luish is left alone
+luish: 1: __luish_internal plugin: ~/.config/luish/plugins.lock: written by a newer luish (version 2)
+status 1
+version = 2

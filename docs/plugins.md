@@ -12,7 +12,8 @@ for embedding, that runs inside the shell and registers hooks and completers. A 
 plugins are, has no extension. Plugins are opt-in: nothing is loaded unless you ask for it, and a shell that loads no
 plugins pays nothing for them.
 
-Plugin support is new. For now, an extension can run code whenever the current directory changes (the `chpwd` hook),
+Plugin support is new. For now, an extension can run code whenever the current directory changes (the `chpwd` hook)
+or once the startup files have run (the `post-rc` hook),
 provide variables for the prompt (the `prompt-vars` hook, as a plugin's `prompt-vars.lsh` file can) or rewrite it
 entirely (the `prompt-rewrite` hook), provide Tab completion for the arguments of commands, query files (the `fs`
 module), and ask about git repositories (the `vcs` module).
@@ -22,8 +23,10 @@ module), and ask about git repositories (the `vcs` module).
 ```sh
 plugin load NAME|PATH...   # load plugins (loading one again reloads it)
 plugin list-loaded         # print the names of the loaded plugins
-plugin list-available      # print the names of the plugins in the plugin directory
+plugin list-available      # print the names of the plugins that plugin load finds by name
 plugin unload NAME...      # remove plugins and their hooks
+plugin sync                # fetch the plugins that config.toml lists, and write plugins.lock
+plugin update [SOURCE...]  # the same, with the newest commits of git sources
 ```
 
 `plugin` is a built-in only in interactive shells, so that scripts find the same commands as in other shells. In a
@@ -34,10 +37,117 @@ script, use `__luish_internal plugin` instead.
 a `/`, such as `./greet.lsh` or `./greet/`, is a path: a file whose name ends in `.lsh` is shell, and any other file
 is Rhai. A plugin's name is its file name without `.rhai` or `.lsh`, or its directory's name.
 
-Plugins are usually loaded from `~/.config/luish/luishrc`, which interactive shells read at startup. They can also
-be loaded from the cached startup files in `rc.d/`: the cache records which plugins were loaded and loads them again
-(but what the plugin changed in the shell is cached with the rest). Start luish with
-`--no-plugins` to make `plugin load` do nothing, for example to check whether a problem comes from a plugin.
+`plugin load SOURCE/NAME` loads the plugin `NAME` of a source that `config.toml` names (see
+[below](#installing-plugins-with-configtoml)), such as `plugin load std/git-completion`, and `plugin load SOURCE` a
+source that is one plugin. A plugin's dependencies (listed in its `plugin.toml`) are loaded first, unless they are
+already loaded.
+
+The simplest way to load plugins in every interactive shell is to list them in `config.toml`, as below. They can
+also be loaded from `~/.config/luish/luishrc`, which interactive shells read at startup, or from the cached startup
+files in `rc.d/`: the cache records which plugins were loaded and loads them again (but what the plugin changed in
+the shell is cached with the rest). Start luish with `--no-plugins` to load no plugins and make `plugin load` do
+nothing, for example to check whether a problem comes from a plugin.
+
+## Installing plugins with `config.toml`
+
+The `[plugins]` table of `~/.config/luish/config.toml` lists plugins in two tables: `plugins.enabled`, the plugins
+that every interactive shell loads when it starts (with their dependencies), and `plugins.available`, sources of
+plugins that `plugin load` can then load by name.
+
+```toml
+[plugins.available]
+smarty-prompt = { gh = "luispedro/smarty-prompt", branch = "main" }
+work = { path = "~/src/work-plugins" }
+
+[plugins.enabled]
+std.bash-completion = "*"      # the plugin bash-completion of the collection std
+"std/git-completion" = "*"     # the same, written differently
+smarty-prompt = "*"            # a source that is one plugin
+work.proxy = "*"               # the plugin proxy of ~/src/work-plugins
+greet = "*"                    # ~/.config/luish/plugins/greet.rhai, greet.lsh or greet/
+z = { gh = "bob/luish-z" }     # a source of its own
+```
+
+A **source** is where plugins come from, and is either one plugin (if it has an `init.lsh`, `extension.rhai`,
+`rc.lsh`, `post-rc.lsh`, `prompt-vars.lsh` or `login.lsh` at its top) or a **collection** of plugins, laid out like the plugin
+directory: each `NAME.rhai`, `NAME.lsh` and directory `NAME/` in it is a plugin called `NAME`.
+
+| Key | Meaning |
+|---|---|
+| `gh = "OWNER/REPO"` | A repository on GitHub, the same as `git = "https://github.com/OWNER/REPO.git"` |
+| `git = "URL"` | A git repository: any URL that `git fetch` accepts, including `file://` and SSH ones |
+| `path = "DIR"` | A local file or directory, used where it is. A leading `~` is the home directory, and a relative path is relative to the file that has it |
+| `branch`, `tag`, `rev` | At most one, for `gh` and `git`: which commit to use. `rev` is a full commit hash. By default, the repository's default branch (its `HEAD`) |
+| `subdir = "DIR"` | Where in the repository (or `path`) the plugin or collection is |
+| `plugin = "NAME"` | In `plugins.enabled`: which plugin of a collection. By default the one with the entry's name, or the only one |
+
+**`plugins.enabled`**: each entry is `NAME = "*"`, `SOURCE.NAME = "*"` (or `"SOURCE/NAME" = "*"`, which TOML
+needs quoted because of the `/`), or `NAME = { ... }` with a source. `NAME` alone is the source called `NAME` in
+`plugins.available`, or else the plugin `NAME` in the plugin directory. `"*"` means any version; it is the only
+version requirement for now. Plugins load in the order of the file, each after its dependencies, and each once.
+
+**`plugins.available`**: each entry names a source, `NAME = { ... }`. `std` is always available: it is the
+[collection in luish's repository](#plugins-in-luish-std-plugins) (`{ gh = "luispedro/luish", subdir =
+"luish-std-plugins" }`), unless `plugins.available` has a `std` of its own.
+
+### Fetching plugins: `plugin sync` and `plugins.lock`
+
+Plugins from git are fetched by `plugin sync`, never when a shell starts. It fetches every git source that the enabled
+plugins and their dependencies need, and those of `plugins.available` (so that `plugin load` can load them, and
+their dependencies, at any time), and records in `~/.config/luish/plugins.lock` the commit it used for each.
+
+```console
+$ plugin sync
+Locking std at 15e39bb
+Locking luispedro/smarty-prompt at 8a1c0de
+```
+
+After that, shells use the commits in `plugins.lock`: `plugin sync` fetches only what is missing (new entries, an
+entry whose `branch`, `tag` or `rev` changed, or files that were removed), and never moves a source to a newer
+commit. `plugin update` does, for all the git sources or for those named (a source's name in `plugins.available`, or
+an entry's name for a source of its own):
+
+```console
+$ plugin update std
+Updating std 15e39bb..3f00c2d
+```
+
+Keep `config.toml` and `plugins.lock` together (in version control, for example): another machine then gets the
+same plugins at the same commits with `plugin sync`. luish writes `plugins.lock` itself; don't edit it. A shell that
+starts with plugins that aren't fetched yet says so, once, and loads the others:
+
+```text
+luish: plugin sources not installed: std (run plugin sync)
+```
+
+luish runs `git` (found in `PATH`) to fetch, so git's own settings apply (credentials, SSH keys, proxies). It keeps
+a bare repository for each URL and the files of each commit in `~/.local/share/luish/plugins/` (or
+`$XDG_DATA_HOME/luish/plugins/`). Fetches are shallow when they can be. Nothing runs when a plugin is fetched (no git
+hooks); a plugin's code runs only when a shell loads it.
+
+The plugins enabled in `config.toml` load before the files in `rc.d`, so that these can use and adjust what the plugins
+set, and their effects are cached with them (see [Cached startup files](usage.md#cached-startup-files)), even if
+there is no `rc.d`. The cache is used as long as `config.toml`, `plugins.lock` and the local plugins' files are
+unchanged. Plugins that need to see your settings can do that part in `post-rc.lsh` or a `post-rc` hook (see
+[below](#after-the-startup-files-post-rc)).
+
+### Dependencies: `plugin.toml`
+
+A directory plugin can list the plugins it needs in a file `plugin.toml`, which luish loads first:
+
+```toml
+# ~/src/work-plugins/proxy/plugin.toml
+description = "Sets the proxy variables for the office network."
+
+[dependencies]
+netutils = "*"                        # the plugin netutils of the same collection
+std.git-completion = "*"              # a plugin of a source that luish knows
+fzf = { gh = "bob/luish-fzf" }        # a source of its own
+```
+
+The entries are as in `plugins.enabled`, but `NAME` alone is a plugin of the same collection. Dependencies can have
+dependencies of their own; a plugin that ends up depending on itself is an error, as are two different plugins with
+the same name. Other keys in `plugin.toml`, such as `description`, are ignored for now.
 
 `plugin load` runs the plugin's files, in the order below. The top level of its extension runs once, and registers
 its hooks and completers. If the extension has an error, it is reported with its file and line, nothing from the
@@ -51,13 +161,15 @@ A plugin directory holds files in shell and in Rhai. luish runs these files in i
 |---|---|
 | `init.lsh` | First, when the plugin is loaded, in the current shell (as with `.`). A `NAME.lsh` plugin is this file |
 | `extension.rhai` | Next: the plugin's extension. A `NAME.rhai` plugin is this file |
-| `rc.lsh` | Last, as with `.`, but only in interactive shells (and their subshells), and not if `extension.rhai` fails |
+| `rc.lsh` | Next, as with `.`, but only in interactive shells (and their subshells), and not if `extension.rhai` fails |
+| `post-rc.lsh` | Last, as `rc.lsh`, but after the startup files in `rc.d` (see [below](#after-the-startup-files-post-rc)) |
 | `prompt-vars.lsh` | Before each prompt, to set variables for `PS1` (see [below](#variables-for-the-prompt-prompt-vars)) |
 
 A directory needs at least one of them (or a `login.lsh`, which luish will run in login shells in a later version).
 Put what scripts need too, such as functions, in `init.lsh`, and what is only for typing commands, such as aliases,
 in `rc.lsh`. `extension.rhai` runs after `init.lsh`, so it can use what `init.lsh` set, and before `rc.lsh`, so that
-`rc.lsh` can use what the extension set.
+`rc.lsh` can use what the extension set. Put what depends on your own settings in `post-rc.lsh`, which runs after
+them.
 
 Other files in the directory are read only when these files ask for them. In Rhai, `import "util" as u;` loads
 `util.rhai` from the plugin's directory, and loading the plugin again reads it again. In shell, use
@@ -108,6 +220,32 @@ sh::hook("chpwd", |from, to| {
 `chpwd` hooks are called after each successful `cd`, `pushd` or `popd`, with the old and the new directory. `$?` is the same after
 the hooks as before them. If a hook fails, the error is printed and the other hooks still run. A `chpwd` hook that
 itself runs `cd` does not trigger `chpwd` again.
+
+## After the startup files: `post-rc`
+
+An interactive shell starts in this order:
+
+1. the settings in `config.toml`;
+2. the plugins that `config.toml` enables (each plugin's `init.lsh`, `extension.rhai` and `rc.lsh`);
+3. the files in `rc.d`, which can load more plugins;
+4. the `post-rc.lsh` of each plugin loaded so far, in the order they were loaded;
+5. the `post-rc` hooks of their extensions, in the same order;
+6. `rc.d/_uncached.lsh`, then `login.d` (in login shells), `$ENV` and `luishrc`.
+
+So a plugin can read, in its `post-rc.lsh` or `post-rc` hook, the variables that you set in `rc.d` to configure it,
+even though it was loaded before `rc.d`:
+
+```rhai
+// extension.rhai
+sh::hook("post-rc", || {
+    let style = sh::getvar("MYPROMPT_STYLE") ?? "plain";
+    // ...
+});
+```
+
+A plugin loaded later (in `luishrc`, or at the prompt) runs its `post-rc.lsh` and `post-rc` hooks right after its
+`rc.lsh`. As `rc.lsh`, they run only in interactive shells. What `post-rc.lsh` does is cached with `rc.d`, but the
+`post-rc` hooks run in every shell, since extensions are loaded again in every shell.
 
 ## Customizing the prompt
 
@@ -297,8 +435,14 @@ Save it as `~/.config/luish/plugins/cobra.rhai`, change the list of programs at 
 ## Plugins in luish-std-plugins
 
 The luish repository has a collection of plugins, in its `luish-std-plugins` directory, which is also an example of
-how a collection of plugins is laid out (see its `README.md`). luish doesn't load plugins from it by itself: load one
-by its path, or link it into `~/.config/luish/plugins/` and load it by name.
+how a collection of plugins is laid out (see its `README.md`). It is the source `std`: enable its plugins in
+`config.toml`, and run `plugin sync` to fetch them:
+
+```toml
+[plugins.enabled]
+std.git-completion = "*"
+std.bash-completion = "*"
+```
 
 - **`git-completion`** (`git-completion.rhai`) completes git's commands, with their descriptions, and aliases; the
   options of each command, as git lists them; and each command's arguments: branches, tags, the end of a range
@@ -319,7 +463,7 @@ Extensions reach the shell through the `sh` module:
 
 | Function | Description |
 |---|---|
-| `sh::hook(kind, fn)` | Register a hook: `"chpwd"`, `"prompt-vars"` or `"prompt-rewrite"` |
+| `sh::hook(kind, fn)` | Register a hook: `"chpwd"`, `"post-rc"`, `"prompt-vars"` or `"prompt-rewrite"` |
 | `sh::completer(command, fn)` | Register a completer for a command's arguments (`-default-` for the others) |
 | `sh::getvar(name)` | The variable's value, or `()` if it is unset |
 | `sh::setvar(name, value)` | Set a shell variable. Throws an error if it is readonly |

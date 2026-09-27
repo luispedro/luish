@@ -1,0 +1,27 @@
+--- builds the cache
+p init.lsh (rc.d has run: no)
+p extension.rhai
+p rc.lsh
+rc.d (loaded: p)
+p post-rc.lsh (rc.d has run: yes, in p)
+q post-rc.lsh
+p post-rc hook (post-rc.lsh: done)
+q post-rc hook
+_uncached.lsh
+r rc.lsh
+r post-rc.lsh
+r post-rc hook
+prompt: done
+--- uses it
+p extension.rhai
+p post-rc hook (post-rc.lsh: done)
+q post-rc hook
+_uncached.lsh
+r rc.lsh
+r post-rc.lsh
+r post-rc hook
+prompt: done
+--- a script
+p init.lsh (rc.d has run: no)
+p extension.rhai
+script: unset

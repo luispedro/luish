@@ -12,7 +12,12 @@
 //! the build of luish that wrote it. `rc.d`'s cache also covers
 //! `config.toml` (see `config.rs`), applied before its files and
 //! fingerprinted even when it doesn't exist, so that creating it is
-//! noticed. Later shells check the fingerprints and the build and run the
+//! noticed, and the plugins it enables (`plugins/package.rs`), loaded
+//! before the files (with `plugins.lock` and the manifests of local plugins
+//! in the key); the plugins' `post-rc.lsh` files run after them, and their
+//! `post-rc` hooks after the cached state is restored or built (before
+//! `_uncached.lsh`). With `config.toml`, `rc.d`'s cache is used even if the directory
+//! doesn't exist. `--no-plugins` bypasses the caches. Later shells check the fingerprints and the build and run the
 //! saved commands instead of the files; when either differs, they rerun
 //! the files and rewrite the cache. A directory's `_uncached.lsh` runs
 //! every time, after the rest.
@@ -200,14 +205,23 @@ pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8], config: Option<&[u8]>) {
         c.extend(hostname());
         c
     });
+    // A shell without plugins would save a state without them.
+    let cache_path = cache_path.filter(|_| !sh.no_plugins);
     let cache = cache_path
         .as_ref()
         .and_then(|p| std::fs::read(crate::interactive::to_path(p)).ok())
         .and_then(|t| Cache::parse(&t))
         .filter(|c| is_current(c, dir, &files));
+    let rc = config.is_some();
+    sh.in_rc = rc;
     match cache {
         Some(c) => run_file(sh, &c.state),
         None => build(sh, dir, files, config, cache_path.as_deref()),
+    }
+    sh.in_rc = false;
+    // Extensions run in every shell, from the cache too.
+    if rc {
+        crate::plugins::post_rc_hooks(sh);
     }
     let uncached = join(dir, b"_uncached.lsh");
     if sys::stat(&uncached).is_some() {
@@ -222,11 +236,19 @@ fn build(sh: &mut Shell, dir: &[u8], files: Vec<Dep>, config: Option<&[u8]>, cac
         crate::config::load(sh, c);
     }
     sh.sourced_files = Some(config.into_iter().map(<[u8]>::to_vec).collect());
+    // Plugins that aren't installed are reported by every shell until they
+    // are.
+    let complete = config.is_none() || crate::plugins::load_enabled(sh);
     for f in &files {
         source_file(sh, &join(dir, &f.path));
     }
+    if config.is_some() {
+        crate::plugins::post_rc_files(sh);
+    }
     let sourced = sh.sourced_files.take().unwrap_or_default();
-    let Some(cache_path) = cache_path else { return };
+    let Some(cache_path) = cache_path.filter(|_| complete) else {
+        return;
+    };
     let mut deps = files;
     for path in sourced {
         if !deps.iter().any(|d| d.sourced && d.path == path) {
