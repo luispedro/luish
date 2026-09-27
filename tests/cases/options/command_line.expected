@@ -1,0 +1,20 @@
+status 1
+errexit off
+/*
+/*
+/
+promptpercent
+-o stdin: a b
+--stdin: x y
+interactive
+--interactive
+status 2
+status 2
+login.d
+env
+luishrc
+run
+run
+Usage: luish [OPTION...] [SCRIPT [ARG...]]
+status 0
+luish 0.1.0 (REV)

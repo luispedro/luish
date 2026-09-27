@@ -35,6 +35,88 @@ fn usage_error(sh: &Shell, msg: &str) -> ! {
     sys::exit(2)
 }
 
+const USAGE: &str = "\
+Usage: luish [OPTION...] [SCRIPT [ARG...]]
+       luish [OPTION...] -c COMMAND [ARG0 [ARG...]]
+       luish [OPTION...] -s [ARG...]
+
+Without SCRIPT or -c, luish reads commands from standard input, as an
+interactive shell if it is a terminal.
+
+  -c                  run COMMAND, with ARG0 as $0 and ARGs as $1, $2...
+  -s, --stdin         read commands from standard input (ARGs are $1, $2...)
+  -i, --interactive   run as an interactive shell
+  -l, --login         run as a login shell: read /etc/profile and ~/.profile
+                      (or ~/.config/luish/login.d/)
+  -LETTER, +LETTER    set or unset an option by its letter, as with `set`
+  -o NAME, +o NAME    set or unset any option, named as for `setopt`: case
+                      and `_` don't matter, and a `no` prefix inverts it
+                      (-o err_exit, -o no_glob, -o prompt_percent)
+  --no-rcs            don't read any startup files
+  --no-plugins        make `plugin load` do nothing
+  --help              show this help and exit
+  --version           show the version and exit
+
+In an interactive shell, `help` lists the built-in commands.
+";
+
+/// What the command line's options choose, apart from the shell options.
+#[derive(Default)]
+struct Invocation {
+    /// `-c`.
+    command: bool,
+    /// `-s`.
+    stdin: bool,
+    /// `-i`.
+    interactive: bool,
+    /// `-l`, or `$0` starting with `-`.
+    login: bool,
+    /// `-m` (or `+m`) was given, so an interactive shell keeps it.
+    monitor_given: bool,
+    /// `--no-rcs`.
+    no_rcs: bool,
+}
+
+impl Invocation {
+    /// Sets an option given on the command line. As in dash, `interactive`
+    /// and `stdin` (by letter or with `-o`) choose how the shell runs.
+    fn set(&mut self, sh: &mut Shell, o: Opt, on: bool) {
+        match o {
+            Opt::Interactive => self.interactive = on,
+            Opt::Stdin => self.stdin = on,
+            _ => {
+                self.monitor_given |= o == Opt::Monitor;
+                sh.options.set(o, on);
+            }
+        }
+    }
+
+    /// Handles luish's long options.
+    fn long_option(&mut self, sh: &mut Shell, arg: &[u8]) {
+        match arg {
+            b"--help" => {
+                sys::write_all(1, USAGE.as_bytes());
+                sys::exit(0)
+            }
+            b"--version" => {
+                let v = format!(
+                    "luish {} ({})\n",
+                    env!("CARGO_PKG_VERSION"),
+                    builtins::internal::GIT_REV_SHORT
+                );
+                sys::write_all(1, v.as_bytes());
+                sys::exit(0)
+            }
+            b"--login" => self.login = true,
+            b"--interactive" => self.interactive = true,
+            b"--stdin" => self.stdin = true,
+            b"--no-rcs" => self.no_rcs = true,
+            b"--no-plugins" => sh.no_plugins = true,
+            _ => usage_error(sh, &format!("Illegal option {}", String::from_utf8_lossy(arg))),
+        }
+    }
+}
+
 fn main() {
     // Rust ignores SIGPIPE; a shell (and its children) must not.
     signals::set_disposition(libc::SIGPIPE, Disposition::Default);
@@ -42,13 +124,11 @@ fn main() {
     let args: Vec<Vec<u8>> = std::env::args_os().map(|a| a.into_vec()).collect();
     let mut sh = Shell::new();
     sh.arg0 = args.first().cloned().unwrap_or_else(|| b"luish".to_vec());
-    let mut login = sh.arg0.first() == Some(&b'-');
+    let mut inv = Invocation {
+        login: sh.arg0.first() == Some(&b'-'),
+        ..Default::default()
+    };
 
-    // Option letters that only make sense on the command line.
-    let mut command_mode = false;
-    let mut stdin_mode = false;
-    let mut force_interactive = false;
-    let mut monitor_given = false;
     let mut i = 1;
     while i < args.len() {
         let a = &args[i];
@@ -57,11 +137,7 @@ fn main() {
             break;
         }
         if a.starts_with(b"--") {
-            if a != b"--no-plugins" {
-                // dash's wording: the second `-` is the illegal letter.
-                usage_error(&sh, "Illegal option --");
-            }
-            sh.no_plugins = true;
+            inv.long_option(&mut sh, a);
             i += 1;
             continue;
         }
@@ -72,28 +148,22 @@ fn main() {
         for &c in &a[1..] {
             match c {
                 // As in dash, `+c` and `+l` work like `-c` and `-l`.
-                b'c' => command_mode = true,
-                b'l' => login = true,
-                b's' => stdin_mode = on,
-                b'i' => force_interactive = on,
+                b'c' => inv.command = true,
+                b'l' => inv.login = true,
                 b'o' => {
                     i += 1;
                     let Some(name) = args.get(i) else {
                         usage_error(&sh, "-o requires an argument");
                     };
-                    match options::Options::by_name(name) {
-                        Some(o) => {
-                            monitor_given |= o == Opt::Monitor;
-                            sh.options.set(o, on)
-                        }
+                    // Any option, named as for `setopt` (so `+o noglob`
+                    // and `-o glob` both turn globbing on).
+                    match options::Options::by_zsh_name(name) {
+                        Some((o, named_on)) => inv.set(&mut sh, o, on == named_on),
                         None => usage_error(&sh, &format!("Illegal option -o {}", String::from_utf8_lossy(name))),
                     }
                 }
                 _ => match options::Options::by_letter(c) {
-                    Some(o) => {
-                        monitor_given |= o == Opt::Monitor;
-                        sh.options.set(o, on)
-                    }
+                    Some(o) => inv.set(&mut sh, o, on),
                     None => usage_error(&sh, &format!("Illegal option {}{}", a[0] as char, c as char)),
                 },
             }
@@ -101,6 +171,15 @@ fn main() {
         i += 1;
     }
     let operands = &args[i..];
+
+    let Invocation {
+        command: command_mode,
+        stdin: mut stdin_mode,
+        interactive: force_interactive,
+        login,
+        monitor_given,
+        no_rcs,
+    } = inv;
 
     let mut input;
     if command_mode {
@@ -160,14 +239,18 @@ fn main() {
             }
         }
     }
-    if interactive {
-        interactive::rc_d(&mut sh);
+    if !no_rcs {
+        if interactive {
+            interactive::rc_d(&mut sh);
+        }
+        if login {
+            interactive::login_profiles(&mut sh);
+        }
+        if interactive {
+            interactive::startup(&mut sh);
+        }
     }
-    if login {
-        interactive::login_profiles(&mut sh);
-    }
     if interactive {
-        interactive::startup(&mut sh);
         interactive::load_history(&sh);
     }
     if stdin_mode {

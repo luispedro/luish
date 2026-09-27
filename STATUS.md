@@ -75,6 +75,13 @@ pass**.
   As in dash, `+c` works like `-c` and `-l` (or `+l`) makes a login shell.
   `--no-plugins` makes `plugin load` do nothing. Tests:
   `options/interactive_c.sh`, `tests/plugins/no-plugins.sh`.
+- On the command line, `-o NAME` / `+o NAME` take any option named as for
+  `setopt` (case and `_` ignored, a `no` prefix inverts), including luish's
+  own. As in dash, `-o interactive` and `-o stdin` work like `-i` and `-s`.
+  Long options: `--login`, `--interactive` and `--stdin` (as `-l`, `-i`
+  and `-s`), `--no-rcs` skips all startup files,
+  `--help` prints a summary of the options and `--version` the version and
+  git revision. Test: `options/command_line.sh`.
 - A missing script prints `cannot open X: No such file` and exits with
   status 127.
 - A script without `#!` (execve returns ENOEXEC) is re-run with this

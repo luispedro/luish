@@ -13,6 +13,22 @@ Options can be given as letters (`-e`, `-x`, ...) or with `-o name` / `+o name`.
 same options, and `setopt` and `unsetopt` set them by name as in zsh, together with luish's own options (such as
 `promptpercent`), which `set` doesn't show so that it stays as in dash.
 
+On the command line, `-o` and `+o` take any option named as for `setopt`, including luish's own: case and `_` don't
+matter, and a `no` prefix inverts it (`-o err_exit`, `-o no_glob`, `-o prompt_percent`; `+o glob` is the same as
+`-o noglob`). luish also has these long options:
+
+| Option | Effect |
+|---|---|
+| `--login` | The same as `-l`: a login shell, which reads `/etc/profile` and `~/.profile` (or `login.d`, see below) |
+| `--interactive` | The same as `-i`: an interactive shell, even when standard input is not a terminal |
+| `--stdin` | The same as `-s`: read commands from standard input; the operands are the positional parameters |
+| `--no-rcs` | Don't read any startup files: `rc.d`, `$ENV`, `luishrc`, and for a login shell `login.d` or `/etc/profile` and `~/.profile`. As zsh's `--no-rcs` |
+| `--no-plugins` | Make `plugin load` do nothing, for example to check whether a problem comes from a plugin |
+| `--help` | Show a summary of the options and exit |
+| `--version` | Show the version of luish and the git revision it was built from, and exit |
+
+Options end at the first operand, or at `--` or `-`.
+
 ## Getting help
 
 In an interactive shell, `help` lists the built-in commands, and `help NAME` shows the help for one of them (the

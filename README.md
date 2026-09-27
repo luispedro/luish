@@ -34,7 +34,9 @@ luish -s [args...]                # read commands from stdin
 luish                             # interactive when stdin is a terminal
 ```
 
-Options can be given as letters (`-e`, `-x`, ...) or with `-o name` / `+o name`.
+Options can be given as letters (`-e`, `-x`, ...) or with `-o name` / `+o name`, where the name can be any option as
+`setopt` names it (such as `-o err_exit` or `-o prompt_percent`). `luish --help` lists the options, and `--no-rcs`
+starts a shell without reading any startup files.
 
 ## Differences from dash
 
