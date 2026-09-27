@@ -31,6 +31,9 @@ pub enum Opt {
     IncAppendHistory,
     ShareHistory,
     Autosuggest,
+    AutoPushd,
+    PushdIgnoreDups,
+    PushdSilent,
 }
 
 /// Option table: (option, letter, long name), in dash's order. `$-` lists
@@ -70,23 +73,26 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::IncAppendHistory, "incappendhistory"),
     (Opt::ShareHistory, "sharehistory"),
     (Opt::Autosuggest, "autosuggest"),
+    (Opt::AutoPushd, "autopushd"),
+    (Opt::PushdIgnoreDups, "pushdignoredups"),
+    (Opt::PushdSilent, "pushdsilent"),
 ];
 
 #[derive(Debug, Default, Clone)]
 pub struct Options {
-    flags: u32,
+    flags: u64,
 }
 
 impl Options {
     pub fn get(&self, o: Opt) -> bool {
-        self.flags & (1 << o as u32) != 0
+        self.flags & (1 << o as u64) != 0
     }
 
     pub fn set(&mut self, o: Opt, on: bool) {
         if on {
-            self.flags |= 1 << o as u32;
+            self.flags |= 1 << o as u64;
         } else {
-            self.flags &= !(1 << o as u32);
+            self.flags &= !(1 << o as u64);
         }
         // vi and emacs editing modes are mutually exclusive
         if on && o == Opt::Vi {

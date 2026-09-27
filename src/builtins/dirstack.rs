@@ -3,9 +3,12 @@
 //! The stack ([`Shell::dirstack`]) doesn't hold the current directory, but
 //! the commands number it as entry 0, followed by the stack, most recent
 //! first. `+n` counts entries from the start of that list, `-n` from its
-//! end. zsh's options for the stack (`AUTO_PUSHD`, `PUSHD_MINUS`, ...) are
-//! all off. zsh's sh emulation sets `POSIX_CD`, which disables `+n` and
-//! `-n`; luish always has them, as zsh does by default.
+//! end. Of zsh's options for the stack, luish has `auto_pushd` (`cd` pushes
+//! the old directory, and takes `+n` and `-n`; see `cd.rs`),
+//! `pushd_ignore_dups` and `pushd_silent`; the others (`PUSHD_MINUS`, ...)
+//! are off. zsh's sh emulation sets `POSIX_CD`, which disables `+n` and
+//! `-n`; luish always has them for `pushd` and `popd`, as zsh does by
+//! default.
 
 use super::cd::{Print, change_dir};
 use crate::options::Opt;
@@ -68,7 +71,7 @@ pub fn popd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     };
     if n > 0 {
         sh.dirstack.remove(n - 1);
-        if sh.opt(Opt::Interactive) && !quiet {
+        if sh.opt(Opt::Interactive) && !quiet && !sh.opt(Opt::PushdSilent) {
             print_stack(sh, false, Format::Line);
         }
         return Ok(0);
@@ -145,7 +148,7 @@ fn stack_args<'a>(sh: &Shell, argv: &'a [Vec<u8>]) -> Option<(bool, bool, Option
 /// The entry that `+n` or `-n` names, with the current directory as entry
 /// 0. `None` if `arg` isn't of this form; `Some(None)` after an error
 /// message if there is no such entry.
-fn entry(sh: &Shell, name: &[u8], arg: &[u8]) -> Option<Option<usize>> {
+pub fn entry(sh: &Shell, name: &[u8], arg: &[u8]) -> Option<Option<usize>> {
     let (&sign, digits) = arg.split_first()?;
     if !matches!(sign, b'+' | b'-') || digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
         return None;
@@ -195,10 +198,11 @@ fn rotate(sh: &mut Shell, name: &[u8], n: usize, physical: bool) -> Result<Optio
 }
 
 /// After `pushd` or `popd` changed the directory: as in zsh, an interactive
-/// shell prints the stack (unless `-q` was given), then the `chpwd` hook
-/// runs.
+/// shell prints the stack (unless `-q` was given or `pushd_silent` is on),
+/// then the `chpwd` hook runs.
 fn changed(sh: &mut Shell, old: &[u8], quiet: bool) -> ExecResult {
-    if sh.opt(Opt::Interactive) && !quiet {
+    super::cd::ignore_dups(sh);
+    if sh.opt(Opt::Interactive) && !quiet && !sh.opt(Opt::PushdSilent) {
         print_stack(sh, false, Format::Line);
     }
     let new = sh.curdir.clone().unwrap_or_default();
@@ -206,7 +210,7 @@ fn changed(sh: &mut Shell, old: &[u8], quiet: bool) -> ExecResult {
     Ok(0)
 }
 
-fn current(sh: &Shell) -> Vec<u8> {
+pub fn current(sh: &Shell) -> Vec<u8> {
     sh.curdir.clone().or_else(sys::getcwd).unwrap_or_default()
 }
 

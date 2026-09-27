@@ -4,6 +4,7 @@ promptpercent
 ---
 allexport
 autocd
+autopushd
 autosuggest
 bareglobqual
 emacs
@@ -22,6 +23,8 @@ noexec
 nolog
 notify
 privileged
+pushdignoredups
+pushdsilent
 sharehistory
 stdin
 verbose

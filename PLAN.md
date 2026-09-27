@@ -701,7 +701,7 @@ once):
    shown only while no menu is open. The lookup runs on every keystroke,
    so it must stay fast over the whole history (search from the newest
    entry, stop at the first match).
-3. **`setopt auto_pushd`** (with `pushd_ignore_dups` and `pushd_silent`,
+3. **`setopt auto_pushd`** (**done**, with `pushd_ignore_dups` and `pushd_silent`) (with `pushd_ignore_dups` and `pushd_silent`,
    which zsh setups usually pair with it): `cd` pushes the old directory
    onto the stack. The history shows `popd` used and `pushd` never, so
    this setup depends on it. Compared with zsh as the reference.

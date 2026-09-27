@@ -1,5 +1,6 @@
 //! `cd` and `pwd`, and changing directory for `pushd` and `popd`.
 
+use crate::options::Opt;
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::sys;
 
@@ -29,15 +30,25 @@ pub fn canonicalize(path: &[u8]) -> Vec<u8> {
 
 /// `cd` (also `chdir`, as in dash).
 pub fn cd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    let (opts, args) = match super::options(sh, argv, b"LPe") {
-        Ok(r) => r,
-        Err(s) => return Ok(s),
+    let auto_pushd = sh.opt(Opt::AutoPushd);
+    // With `auto_pushd`, `-n` is a stack entry rather than options.
+    let (opts, args) = match argv.get(1) {
+        Some(a) if auto_pushd && a.len() > 1 && a[0] == b'-' && a[1..].iter().all(u8::is_ascii_digit) => {
+            (Vec::new(), &argv[1..])
+        }
+        _ => match super::options(sh, argv, b"LPe") {
+            Ok(r) => r,
+            Err(s) => return Ok(s),
+        },
     };
     // The last of `-L` and `-P` wins. `-e` (POSIX 2024) makes `cd -P` fail
     // with status 1 if the new directory's name can't be found.
     let physical = opts.iter().rfind(|&&c| c != b'e') == Some(&b'P');
     let check = opts.contains(&b'e');
     let mut print = Print::Cdpath;
+    // With `auto_pushd`, `+n` and `-n` take an entry out of the directory
+    // stack, as in zsh (without `POSIX_CD`).
+    let mut taken = None;
     let dir = match args.first() {
         None => match sh.get_var(b"HOME") {
             Some(h) if !h.is_empty() => h,
@@ -47,15 +58,44 @@ pub fn cd(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             print = Print::Always;
             sh.get_var(b"OLDPWD").unwrap_or_default()
         }
+        Some(d) if auto_pushd && let Some(n) = super::dirstack::entry(sh, &argv[0], d) => match n {
+            None => return Ok(1),
+            Some(0) => super::dirstack::current(sh),
+            Some(n) => {
+                taken = Some(n - 1);
+                sh.dirstack.remove(n - 1)
+            }
+        },
         Some(d) => d.clone(),
     };
-    match change_dir(sh, &argv[0], dir, physical, check, print)? {
+    match change_dir(sh, &argv[0], dir.clone(), physical, check, print)? {
         Some((old, status)) => {
+            if auto_pushd && !old.is_empty() {
+                sh.dirstack.insert(0, old.clone());
+            }
+            ignore_dups(sh);
             let new = sh.curdir.clone().unwrap_or_default();
             crate::plugins::chpwd(sh, &old, &new)?;
             Ok(status)
         }
-        None => Ok(2),
+        None => {
+            if let Some(i) = taken {
+                sh.dirstack.insert(i, dir);
+            }
+            Ok(2)
+        }
+    }
+}
+
+/// With `pushd_ignore_dups`, after the directory has changed: removes the
+/// new directory from the stack, as zsh does (after `cd`, `pushd` and
+/// `popd`), so that it holds each directory once.
+pub fn ignore_dups(sh: &mut Shell) {
+    if sh.opt(Opt::PushdIgnoreDups)
+        && let Some(cur) = &sh.curdir
+        && let Some(i) = sh.dirstack.iter().position(|d| d == cur)
+    {
+        sh.dirstack.remove(i);
     }
 }
 

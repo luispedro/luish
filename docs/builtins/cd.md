@@ -14,6 +14,10 @@ start with `.` or `..` is looked for in each directory of `CDPATH`; if it is
 found through `CDPATH`, the new directory is printed. `PWD` and `OLDPWD` are
 set and exported. `chdir` is another name for `cd`.
 
+With `setopt auto_pushd`, as in zsh, `cd` also pushes the previous
+directory onto the directory stack, and `cd +n` or `cd -n` takes that entry
+out of the stack and goes to it (see `pushd`).
+
 `-L`
 : Follow the path as given: `..` removes the last component of the logical
   path (with symbolic links not resolved). This is the default.

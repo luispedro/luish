@@ -40,6 +40,12 @@ luish's own options, all off by default:
   executable file of that name. A relative name not starting with `.` or
   `..` is looked for in the current directory, then in `CDPATH`.
 
+`autopushd`, `pushdignoredups`, `pushdsilent`
+: As in zsh: `cd` pushes the previous directory onto the directory stack
+  (and takes `+n` and `-n`); the new directory is removed from the stack
+  after `cd`, `pushd` and `popd`, so that each is there once; `pushd` and
+  `popd` don't print the stack. See `pushd`.
+
 `autosuggest`
 : In an interactive shell, show the rest of the newest command in the
   history that starts with the line typed, in grey after the cursor, as

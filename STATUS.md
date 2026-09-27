@@ -377,10 +377,15 @@ pass**.
   `-q`, `-L` and `-P` are options (anything else, such as `-1`, is the
   operand). Interactive shells print the stack after `pushd` and `popd`
   unless `-q` is given. `dirs` prints with `~` for `HOME` (`-l`, `-p`, `-v`),
-  clears (`-c`) or replaces the stack. Not implemented: zsh's `AUTO_PUSHD`,
-  `PUSHD_*` and `DIRSTACKSIZE`, `cd +n`, and the `dirstack` array. Tests:
-  `builtins/dirstack.sh`, `builtins/dirstack_interactive.sh` (both
-  compared with zsh), `builtins/popd_dir.sh`.
+  clears (`-c`) or replaces the stack. `setopt auto_pushd`: `cd` pushes the
+  old directory and takes `+n`/`-n` (which take the entry out of the
+  stack); `pushd_ignore_dups`: after `cd`, `pushd` or `popd` the new
+  directory is removed from the stack; `pushd_silent`: no printing. Not
+  implemented: zsh's `PUSHD_MINUS`, `PUSHD_TO_HOME`, `DIRSTACKSIZE`, `cd +n`
+  without `auto_pushd`, and the `dirstack` array. Tests:
+  `builtins/dirstack.sh`, `builtins/dirstack_interactive.sh`,
+  `builtins/auto_pushd.sh`, `builtins/pushd_silent.sh` (all compared with
+  zsh), `builtins/popd_dir.sh`.
 - `unset` of a bad name is an error; `set -` turns off `-x` and `-v` without
   resetting the parameters; `.` of a directory reads nothing. Test:
   `builtins/special_misc.sh`.

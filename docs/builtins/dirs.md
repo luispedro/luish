@@ -26,7 +26,14 @@ even if the directory can't be changed to. `popd +n` or `-n` removes that
 entry instead, without changing directory.
 
 In an interactive shell, `pushd` and `popd` print the stack afterwards, as
-`dirs` does.
+`dirs` does, unless `pushd_silent` is set.
+
+Three of zsh's options (see `setopt`) change how the stack is kept:
+`auto_pushd` makes `cd` push the previous directory, as `pushd` does, and
+lets it take `+n` and `-n` to take that entry out of the stack and go to
+it. `pushd_ignore_dups` keeps one copy of each directory: after `cd`,
+`pushd` or `popd`, the new directory is removed from the stack.
+`pushd_silent` stops `pushd` and `popd` from printing the stack.
 
 `-q`
 : For `pushd` and `popd`: don't print the stack.
