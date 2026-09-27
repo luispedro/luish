@@ -20,6 +20,7 @@ pub enum Opt {
     Emacs,
     Nolog,
     Privileged,
+    Pipefail,
     // luish's own options, in `EXTENDED`
     PromptPercent,
     Globstar,
@@ -36,8 +37,9 @@ pub enum Opt {
     PushdSilent,
 }
 
-/// Option table: (option, letter, long name), in dash's order. `$-` lists
-/// the letters in reverse order, as dash does.
+/// Option table: (option, letter, long name), in dash's order (with POSIX's
+/// `pipefail` and `hashall`, which Debian's dash lacks, where its `debug` is).
+/// `$-` lists the letters in reverse order, as dash does.
 pub const OPTIONS: &[(Opt, Option<u8>, &str)] = &[
     (Opt::Errexit, Some(b'e'), "errexit"),
     (Opt::Noglob, Some(b'f'), "noglob"),
@@ -56,6 +58,7 @@ pub const OPTIONS: &[(Opt, Option<u8>, &str)] = &[
     (Opt::Nounset, Some(b'u'), "nounset"),
     (Opt::Privileged, Some(b'p'), "privileged"),
     (Opt::Nolog, None, "nolog"),
+    (Opt::Pipefail, None, "pipefail"),
     (Opt::Hashall, Some(b'h'), "hashall"),
 ];
 

@@ -306,6 +306,24 @@ fn stopped_pipeline_and_exit_warning() {
 }
 
 #[test]
+fn pipefail_job_control() {
+    let mut sh = Pty::spawn("pipefail");
+    sh.expect("$ ");
+    // Under job control a pipeline is a job, whose status comes from
+    // `Job::status`.
+    assert_has(&sh.run("false | true; echo st=$?"), "st=0\n");
+    sh.run("set -o pipefail");
+    assert_has(&sh.run("(exit 3) | (exit 2) | true; echo st=$?"), "st=2\n");
+    assert_has(&sh.run("(exit 3) | true & wait %1; echo st=$?"), "st=3\n");
+    // A stopped job's status is that of the process that stopped.
+    sh.send("sleep 30 | true\n");
+    sh.wait_for_procs(&["sleep"]);
+    sh.send("\x1a");
+    sh.expect("\n$ ");
+    assert_has(&sh.run("echo st=$?"), "st=148\n");
+}
+
+#[test]
 fn interrupt_and_terminal_input() {
     let mut sh = Pty::spawn("interrupt");
     sh.expect("$ ");

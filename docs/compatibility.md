@@ -42,7 +42,8 @@ instead.
 | fd numbers in redirections | Only a single digit is an fd number: `exec 20>f` runs a command named `20`, and `echo hi 99>&1` prints `hi 99` | Any number of digits, as POSIX allows (and bash does; zsh is like dash) |
 | `exec -- cmd` | No `--` handling: tries to run a command named `--` (status 127) | `--` ends the options, as POSIX requires (and bash and zsh do) |
 | `cd -e` | Not supported (`Illegal option -e`, status 2) | The POSIX 2024 option: with `-P`, status 1 if the directory is changed but its name can't be found (as bash does) |
-| Options listed by `set -o` / `set +o` | The last one is `debug` (no option letter) | The last one is `hashall` (`-h`, which POSIX has and dash lacks); luish has no `debug` option |
+| `set -o pipefail` | Not supported (`Illegal option -o pipefail`, status 2) | The POSIX 2024 option, as in bash: a pipeline's status is that of its last command that failed. The setting when a pipeline starts applies, also to `wait` for a background one (zsh ignores it there) |
+| Options listed by `set -o` / `set +o` | The last one is `debug` (no option letter) | The last ones are `pipefail` and `hashall` (`-h`), which POSIX has and dash lacks; luish has no `debug` option |
 
 ### Following bash
 

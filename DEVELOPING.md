@@ -281,6 +281,12 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
 
 - dash's table order; `$-` lists letters in reverse table order. luish's own options have no letter and aren't in
   `set -o` or `$-`. An unknown option, or `interactive` and `stdin`, is status 1 (the other names are still set).
+- `pipefail` (POSIX 2024) is in `OPTIONS`, without a letter, next to `hashall` where dash has `debug`. Its setting
+  when a pipeline starts decides the status: `wait_foreground` reads it (nothing can change it while the shell
+  waits), and a job records it in `Job::pipefail` for `Job::status`, which `wait_job` and `wait` use. The status of
+  a stopped job is still that of its last process when that one stopped. `jobs` shows the last process's status, as
+  bash does. Tests: `options/pipefail.sh` (zsh), `options/pipefail_async.sh`, `pipefail_job_control` in
+  `tests/interactive.rs`.
 - `setopt -p GROUP`: an unknown group is status 1 (nothing set), a missing one or another option letter status 2. The
   completer completes group names after `-p`, and the group's names after `-p GROUP`.
 - Tests: `options/setopt.sh` (zsh), `options/setopt_list.sh`, `options/setopt_values.sh`, `options/setopt_group.sh`,
@@ -510,7 +516,8 @@ truncates when it relocates the package.
 | fd numbers in redirections | `exec/redirect_big_fd.sh` |
 | `exec -- cmd` | `exec/exec_dashdash.sh` |
 | `cd -e` | `builtins/cd_e.sh` |
-| `set -o` / `set +o` list | `options/set_o_hashall.sh` |
+| `set -o pipefail` | `options/pipefail.sh` (zsh), `options/pipefail_async.sh`, `pipefail_job_control` in `tests/interactive.rs` |
+| `set -o` / `set +o` list | `options/set_o_hashall.sh`, `options/setopt_list.sh` |
 | `set -x` output | `options/xtrace.sh` |
 | `kill %n` without job control | `builtins/kill_job.sh` |
 | `fc` | `builtins/fc_noninteractive.sh`, `fc_history` in `tests/interactive.rs` |

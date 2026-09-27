@@ -220,8 +220,8 @@ shell tracks the current file as well as the line, for provenance and for error 
   and run as fast. The lexer checks such options in one place (as it does `Parser::bareglobqual`).
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL
   around the prompt and command output. Unicode width handling and bracketed paste belong to the line editor.
-- **Scripting**: error messages with file, line and function stack (from call frames), `pipefail`, a predictable
-  strict mode, and a debugger or step-trace mode.
+- **Scripting**: error messages with file, line and function stack (from call frames), a predictable strict mode,
+  and a debugger or step-trace mode.
 - **Variable provenance**: a built-in (e.g. `whereset`) that shows where each variable was set, like a more
   informative `env`:
 

@@ -1,4 +1,5 @@
 Unreleased
+    * `set -o pipefail`
     * `let` built-in, as in zsh
     * `shopt` (not found) suggests the matching `setopt`
     * `builtin` built-in, as in zsh and bash

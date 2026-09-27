@@ -55,6 +55,11 @@ Arguments after the options replace the positional parameters (`$1`, `$2`,
 `-x` xtrace
 : Print each command, after expansion, before it runs (prefixed by `$PS4`).
 
+`-o pipefail`
+: A pipeline's status is that of its last command that failed, or 0 if
+  none did (not only that of its last command). A background pipeline
+  keeps the setting it started with.
+
 `-E` emacs, `-V` vi
 : Line editing mode of an interactive shell.
 

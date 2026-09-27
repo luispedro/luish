@@ -46,10 +46,13 @@ pub struct Job {
     /// Created under job control: the job has its own process group, led by
     /// its first process.
     pub jobctl: bool,
+    /// `set -o pipefail` was on when the job started, so its status is that
+    /// of the last process that failed.
+    pub pipefail: bool,
 }
 
 impl Job {
-    pub fn new(procs: Vec<(i32, String)>, jobctl: bool) -> Job {
+    pub fn new(procs: Vec<(i32, String)>, jobctl: bool, pipefail: bool) -> Job {
         Job {
             procs: procs
                 .into_iter()
@@ -60,6 +63,7 @@ impl Job {
             changed: false,
             waited: false,
             jobctl,
+            pipefail,
         }
     }
 
@@ -67,9 +71,14 @@ impl Job {
         self.procs[0].pid
     }
 
-    /// The job's `$?`: that of its last process.
+    /// The job's `$?`: that of its last process, or with `pipefail` that of
+    /// the last process that failed (0 if none did).
     pub fn status(&self) -> i32 {
-        self.procs.last().and_then(|p| p.status).map_or(0, |s| s.code())
+        let code = |p: &Proc| p.status.map_or(0, |s| s.code());
+        if self.pipefail {
+            return self.procs.iter().rev().map(code).find(|&c| c != 0).unwrap_or(0);
+        }
+        self.procs.last().map_or(0, code)
     }
 
     /// Recomputes the state from the processes' statuses. A job runs while

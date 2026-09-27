@@ -57,7 +57,7 @@ impl Shell {
         self.last_bg_pid = Some(pid);
         let jobctl = self.jobctl();
         let cmd = if jobctl { cmdtext::and_or(ao) } else { String::new() };
-        self.jobs.add(Job::new(vec![(pid, cmd)], jobctl), true);
+        self.jobs.add(Job::new(vec![(pid, cmd)], jobctl, false), true);
         Ok(0)
     }
 
@@ -190,7 +190,7 @@ impl Shell {
                 .zip(cmds)
                 .map(|(pid, c)| (pid, if jobctl { cmdtext::command(c) } else { String::new() }))
                 .collect();
-            self.jobs.add(Job::new(procs, jobctl), true);
+            self.jobs.add(Job::new(procs, jobctl, self.opt(Opt::Pipefail)), true);
             return Ok(0);
         }
         Ok(self.wait_foreground(&pids, || cmds.iter().map(cmdtext::command).collect()))

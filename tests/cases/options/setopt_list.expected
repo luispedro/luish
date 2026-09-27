@@ -22,6 +22,7 @@ noclobber
 noexec
 nolog
 notify
+pipefail
 privileged
 pushd.auto
 pushd.ignore_dups

@@ -1,6 +1,7 @@
 //! Forking, the child-side reset, and waiting for children.
 
 use crate::jobs::Job;
+use crate::options::Opt;
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::signals::{self, Disposition, NSIG};
 use crate::sys;
@@ -129,15 +130,21 @@ impl Shell {
     /// status. Under job control, the job is recorded (with the command
     /// text from `text`, one entry per process) so that it can be stopped.
     pub fn wait_foreground(&mut self, pids: &[i32], text: impl FnOnce() -> Vec<String>) -> i32 {
+        // Nothing can change the option while the shell waits, so it is
+        // as it was when the pipeline started, as POSIX requires.
+        let pipefail = pids.len() > 1 && self.opt(Opt::Pipefail);
         if !self.jobctl() {
             let mut status = 0;
             for &pid in pids {
-                status = self.wait_for(pid);
+                let s = self.wait_for(pid);
+                if s != 0 || !pipefail {
+                    status = s;
+                }
             }
             return status;
         }
         let procs = pids.iter().copied().zip(text()).collect();
-        let i = self.jobs.add(Job::new(procs, true), false);
+        let i = self.jobs.add(Job::new(procs, true, pipefail), false);
         self.wait_job(i)
     }
 

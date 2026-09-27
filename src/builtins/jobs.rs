@@ -137,7 +137,7 @@ pub fn wait(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         let job = sh.jobs.get_mut(i);
         job.waited = true;
         status = match job.procs.last().and_then(|p| p.status) {
-            Some(ws) => ws.code(),
+            Some(_) => job.status(),
             None => 127,
         };
     }
