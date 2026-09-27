@@ -264,11 +264,11 @@ pub(super) fn with_plugin_vars<R>(sh: &mut Shell, dir: &[u8], name: &[u8], f: im
             value: Some(value.to_vec()),
             ..Default::default()
         };
-        sh.vars.restore(v, Some(var));
+        sh.vars.restore(v.to_vec(), Some(var));
     }
     let r = f(sh);
     for (v, var) in PLUGIN_VARS.iter().zip(saved) {
-        sh.vars.restore(v, var);
+        sh.vars.restore(v.to_vec(), var);
     }
     r
 }

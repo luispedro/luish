@@ -350,8 +350,16 @@ impl Shell {
                 let subject = self.expand_word_str(word)?;
                 for arm in arms {
                     for pat in &arm.patterns {
-                        let p = self.expand_pattern(pat)?;
-                        if crate::expand::pattern::Pattern::new(&p).matches(&subject) {
+                        let matched = match pat.as_literal() {
+                            // A pattern without special characters, as in
+                            // most arms, needs no expansion or compiling.
+                            Some(lit) if !lit.iter().any(|c| matches!(c, b'*' | b'?' | b'[' | b'\\')) => lit == subject,
+                            _ => {
+                                let p = self.expand_pattern(pat)?;
+                                crate::expand::pattern::Pattern::new(&p).matches(&subject)
+                            }
+                        };
+                        if matched {
                             return self.run_list_exit(&arm.body, exit);
                         }
                     }
@@ -380,8 +388,7 @@ impl Shell {
             Err(e) => Err(e.into()),
         };
         for (name, var) in self.locals.pop().unwrap().into_iter().rev() {
-            self.vars.restore(&name, var);
-            self.var_changed(&name);
+            self.restore_var(name, var);
         }
         self.func_depth -= 1;
         self.loop_depth = saved_loop;

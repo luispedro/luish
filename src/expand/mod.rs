@@ -399,8 +399,8 @@ impl Shell {
                     _ => Trim::LargestPrefix,
                 };
                 let pat = self.expand_pattern(w)?;
-                let v = pattern::trim(&val.unwrap_or_default(), &pat, how);
-                push_result(&v, quoted, f);
+                let v = val.unwrap_or_default();
+                push_result(pattern::trim(&v, &pat, how), quoted, f);
             }
             ParamOp::Length => unreachable!(),
             ParamOp::Bad(_) => {

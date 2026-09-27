@@ -184,6 +184,14 @@ impl Pattern {
         Pattern(compile(p))
     }
 
+    /// The lengths of the strings the pattern can match: every element but
+    /// `*` matches one byte.
+    fn lengths(&self, max: usize) -> std::ops::RangeInclusive<usize> {
+        let min = self.0.iter().filter(|x| !matches!(x, Pat::Star)).count();
+        let has_star = self.0.len() > min;
+        min..=if has_star { max } else { min.min(max) }
+    }
+
     pub fn matches(&self, s: &[u8]) -> bool {
         match_compiled(&self.0, s)
     }
@@ -210,17 +218,19 @@ pub enum Trim {
     LargestSuffix,
 }
 
-/// `${x#pat}` and friends.
-pub fn trim(s: &[u8], pat: &[XChar], how: Trim) -> Vec<u8> {
+/// `${x#pat}` and friends: the part of `s` that is kept. Only the prefixes
+/// or suffixes whose length the pattern can match are tried.
+pub fn trim<'s>(s: &'s [u8], pat: &[XChar], how: Trim) -> &'s [u8] {
     let p = Pattern::new(pat);
     let n = s.len();
+    let mut lens = p.lengths(n);
     match how {
-        Trim::SmallestPrefix => (0..=n).find(|&i| p.matches(&s[..i])).map(|i| s[i..].to_vec()),
-        Trim::LargestPrefix => (0..=n).rev().find(|&i| p.matches(&s[..i])).map(|i| s[i..].to_vec()),
-        Trim::SmallestSuffix => (0..=n).rev().find(|&i| p.matches(&s[i..])).map(|i| s[..i].to_vec()),
-        Trim::LargestSuffix => (0..=n).find(|&i| p.matches(&s[i..])).map(|i| s[..i].to_vec()),
+        Trim::SmallestPrefix => lens.find(|&k| p.matches(&s[..k])).map(|k| &s[k..]),
+        Trim::LargestPrefix => lens.rev().find(|&k| p.matches(&s[..k])).map(|k| &s[k..]),
+        Trim::SmallestSuffix => lens.find(|&k| p.matches(&s[n - k..])).map(|k| &s[..n - k]),
+        Trim::LargestSuffix => lens.rev().find(|&k| p.matches(&s[n - k..])).map(|k| &s[..n - k]),
     }
-    .unwrap_or_else(|| s.to_vec())
+    .unwrap_or(s)
 }
 
 #[cfg(test)]
@@ -264,5 +274,19 @@ mod tests {
         let p = unquoted(b".*");
         assert_eq!(trim(b"x.tar.gz", &p, Trim::SmallestSuffix), b"x.tar");
         assert_eq!(trim(b"x.tar.gz", &p, Trim::LargestSuffix), b"x");
+        let p = unquoted(b"?");
+        assert_eq!(trim(b"abc", &p, Trim::SmallestPrefix), b"bc");
+        assert_eq!(trim(b"abc", &p, Trim::LargestSuffix), b"ab");
+        assert_eq!(trim(b"", &p, Trim::LargestPrefix), b"");
+        let p = unquoted(b"a?c");
+        assert_eq!(trim(b"ab", &p, Trim::SmallestPrefix), b"ab");
+        assert_eq!(trim(b"abcabc", &p, Trim::LargestPrefix), b"abc");
+        assert_eq!(trim(b"abcabc", &p, Trim::SmallestSuffix), b"abc");
+        let p = unquoted(b"*");
+        assert_eq!(trim(b"abc", &p, Trim::SmallestPrefix), b"abc");
+        assert_eq!(trim(b"abc", &p, Trim::LargestPrefix), b"");
+        let p = unquoted(b"a*b*");
+        assert_eq!(trim(b"xab", &p, Trim::LargestSuffix), b"x");
+        assert_eq!(trim(b"xab", &p, Trim::LargestPrefix), b"xab");
     }
 }

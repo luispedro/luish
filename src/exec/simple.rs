@@ -108,15 +108,21 @@ impl Shell {
     }
 
     /// Expands the assignments of `cmd`. With `now` (no command, or a
-    /// special built-in), each takes effect before the next is expanded.
+    /// special built-in), each takes effect before the next is expanded,
+    /// and they are only returned for `set -x`.
     fn expand_assigns(&mut self, cmd: &SimpleCommand, now: bool) -> EResult {
-        let mut assigns = Vec::with_capacity(cmd.assigns.len());
+        let keep = !now || self.opt(Opt::Xtrace);
+        let mut assigns = Vec::with_capacity(if keep { cmd.assigns.len() } else { 0 });
         for a in &cmd.assigns {
             let v = self.expand_word_str(&a.value)?;
-            if now {
+            if !now {
+                assigns.push((a.name.clone(), v));
+            } else if keep {
                 self.set_var(&a.name, v.clone())?;
+                assigns.push((a.name.clone(), v));
+            } else {
+                self.set_var(&a.name, v)?;
             }
-            assigns.push((a.name.clone(), v));
         }
         Ok(assigns)
     }
@@ -162,8 +168,8 @@ impl Shell {
         self.trace(err_fd, &assigns, &argv);
         if special && argv[0] == b"exec" {
             // As in dash, `exec` exports its assignments to the command.
-            for (n, _) in &assigns {
-                self.vars.entry(n).exported = true;
+            for a in &cmd.assigns {
+                self.vars.entry(&a.name).exported = true;
             }
         }
         match kind {
@@ -293,17 +299,20 @@ impl Shell {
         let mut saved = Vec::with_capacity(assigns.len());
         let mut r = None;
         for (n, v) in assigns {
-            saved.push((n.clone(), self.vars.take(&n)));
-            if let Err(e) = self.set_var(&n, v) {
+            let old = self.vars.take(&n);
+            let set = self.set_var(&n, v);
+            if set.is_ok() {
+                self.vars.entry(&n).exported = true;
+            }
+            saved.push((n, old));
+            if let Err(e) = set {
                 r = Some(Err(e));
                 break;
             }
-            self.vars.entry(&n).exported = true;
         }
         let r = r.unwrap_or_else(|| f(self));
         for (n, old) in saved.into_iter().rev() {
-            self.vars.restore(&n, old);
-            self.var_changed(&n);
+            self.restore_var(n, old);
         }
         r
     }

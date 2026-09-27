@@ -757,8 +757,7 @@ impl Host {
             }))
         });
         for (name, var) in changed {
-            sh.vars.restore(&name, var);
-            sh.var_changed(&name);
+            sh.restore_var(name, var);
         }
         sh.last_status = saved;
         sh.lineno = saved_lineno;

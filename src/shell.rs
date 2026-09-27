@@ -213,6 +213,17 @@ impl Shell {
         self.optoff = None;
     }
 
+    /// Puts back a saved variable (after `local` or a temporary
+    /// assignment).
+    pub fn restore_var(&mut self, name: Vec<u8>, var: Option<Var>) {
+        if matches!(&name[..], b"PATH" | b"OPTIND") {
+            self.vars.restore(name.clone(), var);
+            self.var_changed(&name);
+        } else {
+            self.vars.restore(name, var);
+        }
+    }
+
     pub fn var_changed(&mut self, name: &[u8]) {
         if name == b"PATH" {
             self.hash.clear();

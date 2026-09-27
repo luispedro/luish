@@ -76,17 +76,21 @@ impl Vars {
     }
 
     pub fn entry(&mut self, name: &[u8]) -> &mut Var {
-        self.map.entry(name.to_vec()).or_default()
+        // Not `map.entry`, which would copy the name even if it is there.
+        if !self.map.contains_key(name) {
+            self.map.insert(name.to_vec(), Var::default());
+        }
+        self.map.get_mut(name).unwrap()
     }
 
     /// Replaces a variable wholesale (used to restore saved variables).
-    pub fn restore(&mut self, name: &[u8], var: Option<Var>) {
+    pub fn restore(&mut self, name: Vec<u8>, var: Option<Var>) {
         match var {
             Some(v) => {
-                self.map.insert(name.to_vec(), v);
+                self.map.insert(name, v);
             }
             None => {
-                self.map.remove(name);
+                self.map.remove(&name);
             }
         }
     }
