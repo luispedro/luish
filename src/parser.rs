@@ -215,6 +215,10 @@ impl Parser {
     }
 
     fn parse_command(&mut self) -> PResult<Command> {
+        // Nested commands recurse through here (nested words through read_dollar).
+        if !crate::stack::ok() {
+            return self.err(crate::stack::TOO_DEEP);
+        }
         self.maybe_expand_alias()?;
         if self.peek_op()? == Some(Op::LParen) {
             let cmd = self.parse_compound()?;

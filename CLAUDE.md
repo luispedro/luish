@@ -111,7 +111,7 @@ state on the `Shell` struct in `shell.rs`.
   matcher shared by globbing, `case`, and `${x#pat}`; `arith.rs` is the `$((...))` evaluator.
 - **Signals** are installed without `SA_RESTART` so `wait` gets EINTR. `main` is a C `main` (`#![no_main]`),
   so Rust's start-up doesn't run: SIGPIPE is left as inherited, closed fds 0 to 2 stay closed, and there is no stack
-  overflow handler. Whether a signal was ignored on entry is looked up lazily (`signals::ignored_on_entry`).
+  overflow handler (`stack.rs` makes deep nesting an error instead). Whether a signal was ignored on entry is looked up lazily (`signals::ignored_on_entry`).
 - **Interactive mode** (`interactive/`) uses rustyline, kept behind its own module so the line editor stays separate
   from the executor (a Stage 3 SSH mode depends on this). The completer (`interactive/complete.rs`) and the
   syntax highlighter (`interactive/highlight.rs`) never see `Shell`: `read_line` hands them a `Names` snapshot (and

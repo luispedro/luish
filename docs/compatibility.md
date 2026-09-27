@@ -53,6 +53,7 @@ The system dash on Debian and Ubuntu has patches of its own. Where they matter, 
 | Behaviour | dash | luish |
 |---|---|---|
 | Command cache (`hash`) in an interactive shell | Kept until `PATH` is assigned or `hash -r`, so a command installed earlier in `PATH` than a cached one is ignored | Also cleared when a `PATH` directory changes, checked after each line is read (see [Improvements](improvements.md)) |
+| Running out of stack | Recursion through `eval`, `.` or a trap, and very deeply nested commands, crash the shell (SIGSEGV). A function calling itself stops at a depth of 1000, as a Debian patch (upstream dash crashes), but in an interactive shell the depth isn't reset by the error, so every function call fails after that | The same limit for functions (`Maximum function recursion depth (1000) reached`, status 2), reset by the error. Other nesting that would run out of stack is an error too, `nested too deeply`, with status 2, which exits a non-interactive shell and returns an interactive one to its prompt |
 | Command-line options | `-o` takes only the names that `set -o` lists, and any `--name` other than `--` is an error (`Illegal option --`, status 2) | `-o` and `+o` also take any option named as for `setopt` (such as `-o ERR_EXIT` or `-o prompt_percent`), and there are long options such as `--login` and `--no-rcs` (see [Usage](usage.md)) |
 | `__luish_internal` | Not a built-in (`not found`, status 127) | luish's own built-in, with subcommands such as `savestate`, which prints commands that restore the shell's state, and `print-git-rev` |
 | Startup files | Login shells read `/etc/profile` and `~/.profile`; interactive shells read `$ENV` | Interactive shells first apply the settings and aliases in `config.toml`, if it exists, and load the plugins it enables; if `rc.d` exists, they then run its `*.lsh` files (then the plugins' `post-rc.lsh`); if `login.d` exists, login shells then run its files instead of `/etc/profile` and `~/.profile`. Their effects are cached (see [Cached startup files](usage.md#cached-startup-files)). Without them, as dash |
@@ -71,7 +72,9 @@ Scripts:
 - Glob results are sorted in byte order; locale collation is not implemented.
 - `command local x=1` keeps the variable in the function; in dash it is local to the `command` invocation and
   disappears.
-- Deep function recursion overflows the stack (a segmentation fault); dash stops at a depth of 1000.
+- Commands, `$(...)`, `${...}` and `$((...))` can't be nested as deeply as in dash: with the usual 8 MB of stack,
+  about 4000 levels of `( ... )` in a release build (dash: more than 10,000). Deeper nesting is an error, `nested too
+  deeply`, as is recursion through `eval` or `.` that runs out of stack (see above).
 
 Interactive use:
 

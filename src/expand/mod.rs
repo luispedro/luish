@@ -159,6 +159,8 @@ impl Shell {
     /// `quoted`: inside double quotes. `lit_exp`: literal text counts as
     /// the result of an expansion (the word in an unquoted `${x-word}`).
     fn expand_parts(&mut self, parts: &[WordPart], quoted: bool, lit_exp: bool, f: &mut Fields) -> EResult<()> {
+        // Words nested in `${...}` and `"..."` recurse through here.
+        self.check_stack()?;
         for part in parts {
             self.expand_part(part, quoted, lit_exp, f)?;
         }
@@ -232,6 +234,7 @@ impl Shell {
     /// The text of `$((...))` after expansion. As in dash, quotes and
     /// backslashes are kept, so the evaluator rejects them.
     fn arith_text(&mut self, parts: &[WordPart], out: &mut Vec<u8>) -> EResult<()> {
+        self.check_stack()?;
         for part in parts {
             match part {
                 WordPart::DoubleQuoted(inner) => {

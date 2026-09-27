@@ -52,6 +52,7 @@ src/
 ├── main.rs             # C `main` (#![no_main]): command line, mode selection
 ├── shell.rs            # `Shell`: all interpreter state
 ├── sys.rs              # syscall wrappers (retry on EINTR)
+├── stack.rs            # the guard against running out of stack, and the function depth limit
 ├── input.rs            # input sources: string, file, stdin, line editor
 ├── lexer.rs, parser.rs # one `Parser` struct: tokens, quoting, here-docs, aliases, recursive descent
 ├── ast.rs              # AST types
@@ -179,6 +180,19 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   fails) exit on their own status, so `{ false && true; }` doesn't exit. Inside `$(...)` the suppression is reset.
   Tests: `errexit/compound.sh`, `errexit/cmdsubst_condition.sh`, `errexit/*`.
 - A function can't be named after a special built-in ("Bad function name").
+- Recursion (`stack.rs`): as in Debian's dash (its patch 0009, for Debian bug 579815), a function call when 1000 are
+  running is a shell error, `Maximum function recursion depth (1000) reached`; unlike dash, `func_depth` also goes
+  down when the error unwinds. Other deep nesting would overflow the stack, which kills the shell with SIGSEGV
+  (there is no overflow handler, and an alternate signal stack would cost startup syscalls). `stack::ok()` compares
+  the address of a local with one recorded in `main`, and reads `RLIMIT_STACK` only past 1 MB of stack (every
+  time, since `ulimit -s` can change it), keeping 256 KB spare. It is checked where nesting recurses:
+  `run_list_exit` (functions, `eval`, `.`, traps, compound commands), `expand_parts` and `arith_text` (nested
+  words), `arith.rs`'s `expr` and `unary`, the parser's `parse_command`, and the lexer's `read_dollar` (nested
+  `$(`, `${` and `$((`, which don't go through `parse_command`). The error is `nested too deeply`, status 2. It
+  costs a comparison per list, word and `$`, which the benchmarks don't show. A release build parses about 4000
+  levels of `( ... )` with 8 MB of stack, a debug build about 600, and a debug build runs out before 1000 function
+  calls (so `exec/recursion_limit.sh` raises `ulimit -s`). Tests: `exec/recursion_limit.sh`,
+  `exec/stack_guard.sh`.
 
 ### Jobs (`jobs.rs`, `builtins/jobs.rs`)
 
@@ -484,6 +498,7 @@ truncates when it relocates the package.
 | `emacs` option | `options/interactive_c.sh` |
 | Command cache | `path_cache` in `tests/interactive.rs` |
 | Command-line options | `options/command_line.sh` |
+| Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |
 | `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `tests/plugins/complete.sh` |
 | Startup files | `misc/startup_cache.sh`, `misc/config_toml.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |

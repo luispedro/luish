@@ -653,6 +653,11 @@ impl Parser {
 
     /// At a `$`. Returns `None` if the `$` is literal.
     fn read_dollar(&mut self, ctx: Ctx) -> PResult<Option<WordPart>> {
+        // Nested `$(`, `${` and `$((` recurse through here, `$(` without
+        // reaching parse_command.
+        if !crate::stack::ok() {
+            return self.err(crate::stack::TOO_DEEP);
+        }
         let ate = self.eat_bnl(1);
         let Some(c) = self.at(1) else {
             if ate && !self.source_eof {

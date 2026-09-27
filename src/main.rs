@@ -27,6 +27,7 @@ mod plugins;
 mod prompt;
 mod shell;
 mod signals;
+mod stack;
 mod startcache;
 mod state;
 mod sys;
@@ -130,6 +131,7 @@ impl Invocation {
 #[cfg(not(test))]
 #[unsafe(no_mangle)]
 extern "C" fn main(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_int {
+    stack::init();
     let args = (0..argc.max(0) as usize)
         // SAFETY: the C runtime passes `argc` valid NUL-terminated strings.
         .map(|i| unsafe { std::ffi::CStr::from_ptr(*argv.add(i)) }.to_bytes().to_vec())

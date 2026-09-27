@@ -27,6 +27,8 @@ impl Shell {
     /// Runs a list. `exit` means that the shell exits right after it (dash's
     /// `EV_EXIT`), so its last command may replace the shell process.
     pub fn run_list_exit(&mut self, list: &List, exit: bool) -> ExecResult {
+        // Every function, `eval`, `.`, trap and nested command comes here.
+        self.check_stack()?;
         let mut status = 0;
         for (i, cc) in list.iter().enumerate() {
             status = self.run_complete(cc, exit && i + 1 == list.len())?;
@@ -371,9 +373,25 @@ impl Shell {
         }
     }
 
+    /// Fails (as a shell error) if the stack is nearly used up: nesting
+    /// that deep would otherwise crash the shell (`stack.rs`).
+    #[inline]
+    pub fn check_stack(&self) -> Result<(), Flow> {
+        if crate::stack::ok() {
+            return Ok(());
+        }
+        self.error(crate::stack::TOO_DEEP);
+        Err(Flow::Error(2))
+    }
+
     /// Calls a shell function with the given arguments (`argv[0]` is the
     /// function name).
     pub fn call_function(&mut self, body: &FunctionBody, argv: &[Vec<u8>]) -> ExecResult {
+        if self.func_depth >= crate::stack::MAX_FUNC_DEPTH {
+            let max = crate::stack::MAX_FUNC_DEPTH;
+            self.error(format!("Maximum function recursion depth ({max}) reached"));
+            return Err(Flow::Error(2));
+        }
         let saved_pos = std::mem::replace(&mut self.positional, argv[1..].to_vec());
         let saved_getopts = (self.optind, self.optoff);
         self.reset_getopts();

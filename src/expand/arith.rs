@@ -163,6 +163,11 @@ impl<'a> Arith<'a> {
     }
 
     fn expr(&mut self) -> Result<i64, String> {
+        // Parentheses and assignments nest through here, unary operators
+        // through unary().
+        if !crate::stack::ok() {
+            return Err(crate::stack::TOO_DEEP.into());
+        }
         self.skip_ws();
         let save = self.pos;
         if self.pos < self.s.len() && is_name_start(self.s[self.pos]) {
@@ -277,6 +282,9 @@ impl<'a> Arith<'a> {
             _ => return self.primary(),
         };
         self.pos += 1;
+        if !crate::stack::ok() {
+            return Err(crate::stack::TOO_DEEP.into());
+        }
         let v = self.unary()?;
         Ok(match op {
             Op::Bin(Bin::Add) => v,

@@ -1,0 +1,27 @@
+--- eval
+1: nested too deeply
+status 2
+--- .
+1: nested too deeply
+status 2
+--- a trap
+1: nested too deeply
+status 2
+--- nested subshells
+1: nested too deeply
+status 2
+--- nested command substitutions
+1: nested too deeply
+status 2
+--- nested parameter expansions
+1: nested too deeply
+status 2
+--- nested arithmetic
+1: nested too deeply
+status 2
+1: nested too deeply
+status 2
+--- an interactive shell goes back to the prompt, and can still call functions
+1: Maximum function recursion depth (1000) reached
+3: nested too deeply
+3
