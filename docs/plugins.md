@@ -1,59 +1,14 @@
 # Plugins
 
-A **plugin** adds to luish. It is one of:
-
-1. a directory of files with special names, in shell and Rhai (see [below](#plugin-directories)), not all of which
-   need to be there;
-2. a single Rhai file, `NAME.rhai`, which is the same as a directory that holds only that file, as `extension.rhai`;
-3. a single shell file, `NAME.lsh`, which is the same as a directory that holds only that file, as `init.lsh`.
-
-The Rhai part of a plugin is its **extension**: code in [Rhai](https://rhai.rs), a small scripting language designed
-for embedding, that runs inside the shell and registers hooks and completers. A plugin written only in shell, as zsh
-plugins are, has no extension. Plugins are opt-in: nothing is loaded unless you ask for it, and a shell that loads no
-plugins pays nothing for them.
-
-Plugin support is new. For now, an extension can run code whenever the current directory changes (the `chpwd` hook)
-or once the startup files have run (the `post-rc` hook),
-provide variables for the prompt (the `prompt-vars` hook, as a plugin's `prompt-vars.lsh` file can) or rewrite it
-entirely (the `prompt-rewrite` hook), provide Tab completion for the arguments of commands, query files (the `fs`
-module), and ask about git repositories (the `vcs` module).
-
-## Loading plugins
-
-```sh
-plugin load NAME|PATH...   # load plugins (loading one again reloads it)
-plugin list-loaded         # print the names of the loaded plugins
-plugin list-available      # print the names of the plugins that plugin load finds by name, less the loaded ones
-plugin unload NAME...      # remove plugins and their hooks (NAME as listed, or as loaded)
-plugin sync [-q]                # fetch the plugins that config.toml lists, and write plugins.lock
-plugin update [-q] [SOURCE...]  # the same, with the newest commits of git sources
-plugin check                    # say which git sources have newer commits, changing nothing
-```
-
-`plugin` is a built-in only in interactive shells, so that scripts find the same commands as in other shells. In a
-script, use `__luish_internal plugin` instead.
-
-`plugin load greet` loads the first of `greet.rhai`, `greet.lsh` and the directory `greet/` in
-`~/.config/luish/plugins` (or `$XDG_CONFIG_HOME/luish/plugins` if `XDG_CONFIG_HOME` is set). An argument that contains
-a `/`, such as `./greet.lsh` or `./greet/`, is a path: a file whose name ends in `.lsh` is shell, and any other file
-is Rhai. A plugin's name is its file name without `.rhai` or `.lsh`, or its directory's name.
-
-`plugin load SOURCE/NAME` loads the plugin `NAME` of a source that `config.toml` names (see
-[below](#installing-plugins-with-configtoml)), such as `plugin load std/git-completion`, and `plugin load SOURCE` a
-source that is one plugin. A plugin's dependencies (listed in its `plugin.toml`) are loaded first, unless they are
-already loaded.
-
-The simplest way to load plugins in every interactive shell is to list them in `config.toml`, as below. They can
-also be loaded from `~/.config/luish/luishrc`, which interactive shells read at startup, or from the cached startup
-files in `rc.d/`: the cache records which plugins were loaded and loads them again (but what the plugin changed in
-the shell is cached with the rest). Start luish with `--no-plugins` to load no plugins and make `plugin load` do
-nothing, for example to check whether a problem comes from a plugin.
+A plugin adds functionality to luish. In it general format, it includes
+configuration, shell scripts, and extensions.
 
 ## Installing plugins with `config.toml`
 
-The `[plugins]` table of `~/.config/luish/config.toml` lists plugins in two tables: `plugins.enabled`, the plugins
-that every interactive shell loads when it starts (with their dependencies), and `plugins.available`, sources of
-plugins that `plugin load` can then load by name.
+The simplest way to load plugins in every interactive shell is to list them in
+`config.toml`. The `[plugins.enabled]` table lists plugins that will be loaded
+when luish starts, while `plugins.available` lists plugins that can be loaded
+by name.
 
 ```toml
 [plugins.available]
@@ -69,10 +24,6 @@ greet = "*"                    # ~/.config/luish/plugins/greet.rhai, greet.lsh o
 z = { gh = "bob/luish-z" }     # a source of its own
 ```
 
-A **source** is where plugins come from, and is either one plugin (if it has an `init.lsh`, `extension.rhai`,
-`rc.lsh`, `post-rc.lsh`, `prompt-vars.lsh` or `login.lsh` at its top) or a **collection** of plugins, laid out like the plugin
-directory: each `NAME.rhai`, `NAME.lsh` and directory `NAME/` in it is a plugin called `NAME`.
-
 | Key | Meaning |
 |---|---|
 | `gh = "OWNER/REPO"` | A repository on GitHub, the same as `git = "https://github.com/OWNER/REPO.git"` |
@@ -82,21 +33,9 @@ directory: each `NAME.rhai`, `NAME.lsh` and directory `NAME/` in it is a plugin 
 | `subdir = "DIR"` | Where in the repository (or `path`) the plugin or collection is |
 | `plugin = "NAME"` | In `plugins.enabled`: which plugin of a collection. By default the one with the entry's name, or the only one |
 
-**`plugins.enabled`**: each entry is `NAME = "*"`, `SOURCE.NAME = "*"` (or `"SOURCE/NAME" = "*"`, which TOML
-needs quoted because of the `/`), or `NAME = { ... }` with a source. `NAME` alone is the source called `NAME` in
-`plugins.available`, or else the plugin `NAME` in the plugin directory. `"*"` means any version; it is the only
-version requirement for now. Plugins load in the order of the file, each after its dependencies, and each once.
-
-**`plugins.available`**: each entry names a source, `NAME = { ... }`. `std` is always available: it is the
-[collection in luish's repository](#plugins-in-luish-std-plugins), as released with the version of luish that
-runs it (`{ gh = "luispedro/luish", subdir = "luish-std-plugins", tag = "vVERSION" }`), unless `plugins.available`
-has a `std` of its own.
-
 ### Fetching plugins: `plugin sync` and `plugins.lock`
 
-Plugins from git are fetched by `plugin sync`, never when a shell starts. It fetches every git source that the enabled
-plugins and their dependencies need, and those of `plugins.available` (so that `plugin load` can load them, and
-their dependencies, at any time), and records in `~/.config/luish/plugins.lock` the commit it used for each.
+Plugins need to be fetch explicitly, by running `plugin sync`.
 
 ```console
 $ plugin sync
@@ -107,13 +46,10 @@ Locking smarty-prompt at 8a1c0de
 2 git sources locked, 2 plugins enabled: git-completion, smarty-prompt
 ```
 
-It says what it fetches, the sources it locks or moves to another commit, and what the lock then holds; with `-q`
-(or `--quiet`) it prints only errors.
-
-After that, shells use the commits in `plugins.lock`: `plugin sync` fetches only what is missing (new entries, an
-entry whose `branch`, `tag` or `rev` changed, or files that were removed), and never moves a source to a newer
-commit. `plugin update` does, for all the git sources or for those named (a source's name in `plugins.available`, or
-an entry's name for a source of its own):
+The first time `plugin sync` runs, it will create a `plugins.lock` file, which
+records the commit of each git source that was fetched. You can update plugins
+later with `plugin update`, which fetches the newest commit of the source
+and updates `plugins.lock`. Specify a plugin name to update only that one:
 
 ```console
 $ plugin update smarty-prompt
@@ -122,40 +58,18 @@ Updating smarty-prompt 8a1c0de..3f00c2d
 2 git sources locked, 2 plugins enabled: git-completion, smarty-prompt
 ```
 
-`plugin check` asks each git source (with `git ls-remote`) for its newest commit, and says which ones `plugin update`
-would move, and which sources `plugin sync` still has to fetch. It changes nothing, and fetches nothing:
+`plugin check` asks each git source (with `git ls-remote`) for its newest
+commit and reports whether there are newer commits, but it does not change
+anything.
 
-```console
-$ plugin check
-Update available: smarty-prompt 3f00c2d..9b41e7a
-1 of 2 git sources can be updated (run plugin update)
-```
+A source pinned with `rev` never has anything newer. The exit status is 0
+unless a source couldn't be checked.
 
-A source pinned with `rev` never has anything newer. The exit status is 0 unless a source couldn't be checked.
-
-Keep `config.toml` and `plugins.lock` together (in version control, for example): another machine then gets the
-same plugins at the same commits with `plugin sync`. luish writes `plugins.lock` itself; don't edit it. A shell that
-starts with plugins that aren't fetched yet says so, once, and loads the others:
-
-```text
-luish: plugin sources not installed: std (run plugin sync)
-```
-
-luish runs `git` (found in `PATH`) to fetch, so git's own settings apply (credentials, SSH keys, proxies). It keeps
-a bare repository for each URL in `~/.cache/luish/plugins/git/` (or `$XDG_CACHE_HOME/luish/plugins/git/`), which can
-be removed at any time, and the files of each commit, which shells load, in `~/.local/share/luish/plugins/` (or
-`$XDG_DATA_HOME/luish/plugins/`); if these are removed, `plugin sync` fetches them again. Fetches are shallow when they can be. Nothing runs when a plugin is fetched (no git
-hooks); a plugin's code runs only when a shell loads it.
-
-The plugins enabled in `config.toml` load before the files in `rc.d`, so that these can use and adjust what the plugins
-set, and their effects are cached with them (see [Cached startup files](usage.md#cached-startup-files)), even if
-there is no `rc.d`. The cache is used as long as `config.toml`, `plugins.lock` and the local plugins' files are
-unchanged. Plugins that need to see your settings can do that part in `post-rc.lsh` or a `post-rc` hook (see
-[below](#after-the-startup-files-post-rc)).
+luish runs `git` to fetch, so git's own settings apply (credentials, SSH keys, proxies).
 
 ### Dependencies, options, aliases and key bindings: `plugin.toml`
 
-A directory plugin can have a file `plugin.toml`, which lists the plugins it needs (which luish loads first):
+A directory plugin can have a file `plugin.toml`, which can list dependencies:
 
 ```toml
 # ~/src/work-plugins/proxy/plugin.toml
@@ -167,13 +81,12 @@ std.git-completion = "*"              # a plugin of a source that luish knows
 fzf = { gh = "bob/luish-fzf" }        # a source of its own
 ```
 
-The entries are as in `plugins.enabled`, but `NAME` alone is a plugin of the same collection. Dependencies can have
-dependencies of their own; a plugin that ends up depending on itself is an error, as are two different plugins with
-the same name.
 
-`plugin.toml` can also set options and define aliases and key bindings, in `[options]`, `[alias]` and `[bindkey]`
-tables as in `config.toml` (see [Settings in config.toml](usage.md#settings-in-configtoml)). A plugin can so package a
-set of options that go together; they override those in `config.toml`, which is read first.
+`plugin.toml` can also set options and define aliases and key bindings, in
+`[options]`, `[alias]` and `[bindkey]` tables as in `config.toml` (see
+[Settings in config.toml](usage.md#settings-in-configtoml)). A plugin can so
+package a set of options that go together; they override those in
+`config.toml`, which is read first.
 
 ```toml
 [options]
@@ -193,63 +106,40 @@ pdf = "evince"
 "Ctrl-X Ctrl-G" = "undo"
 ```
 
-As `rc.lsh`, these are only for interactive shells, and they are defined just before `rc.lsh` runs (after
-`extension.rhai`, and not if it fails), so `rc.lsh` can change them, as can the files in `rc.d` for plugins that
-`config.toml` enables. An unknown setting, a value of the wrong type, or a key or widget that `bindkey` doesn't take
-is reported with its line and skipped. Other keys in `plugin.toml`, such as `description`,
-are ignored for now.
-
-`plugin load` runs the plugin's files, in the order below. The top level of its extension runs once, and registers
-its hooks and completers. If the extension has an error, it is reported with its file and line, nothing from the
-plugin stays loaded, and the status is 1.
-
 ## Plugin directories
 
-A plugin directory holds files in shell and in Rhai. luish runs these files in it, if they exist:
+A plugin directory can have multiple files which luish uses the following ways:
 
-| File | When it runs |
+| File | Meaning |
 |---|---|
-| `init.lsh` | First, when the plugin is loaded, in the current shell (as with `.`). A `NAME.lsh` plugin is this file |
-| `extension.rhai` | Next: the plugin's extension. A `NAME.rhai` plugin is this file |
-| `rc.lsh` | Next, as with `.`, but only in interactive shells (and their subshells), and not if `extension.rhai` fails. The options, aliases and key bindings in `plugin.toml` come just before it, in the same shells |
+| `plugin.toml` | Parsed first, to load dependencies and set options, aliases and key bindings. |
+| `init.lsh` | Next: sourced in the current shell (as with `.`). |
+| `extension.rhai` | Next: the plugin's extension is loaded and run. |
+| `rc.lsh` | Next, as with `.`, but only in interactive shells (and their subshells). |
 | `post-rc.lsh` | Last, as `rc.lsh`, but after the startup files in `rc.d` (see [below](#after-the-startup-files-post-rc)) |
 | `prompt-vars.lsh` | Before each prompt, to set variables for `PS1` (see [below](#variables-for-the-prompt-prompt-vars)) |
 
-A directory needs at least one of them (or a `login.lsh`, which luish will run in login shells in a later version).
-Put what scripts need too, such as functions, in `init.lsh`, and what is only for typing commands, such as aliases, in
-`rc.lsh` (or, for options, aliases and key bindings, in `plugin.toml`). `extension.rhai` runs after `init.lsh`, so it
-can use what `init.lsh` set, and before `rc.lsh`, so that `rc.lsh` can use what the extension set. Put what depends on
-your own settings in `post-rc.lsh`, which runs after them.
+A directory needs at least one of them.
 
-Other files in the directory are read only when these files ask for them. In Rhai, `import "util" as u;` loads
-`util.rhai` from the plugin's directory, and loading the plugin again reads it again. In shell, use
-`$LUISH_PLUGIN_DIR`:
+While `init.lsh`, `extension.rhai`, `rc.lsh` and `prompt-vars.lsh` run,
+`LUISH_PLUGIN_DIR` is the plugin's directory (an absolute path) and
+`LUISH_PLUGIN_NAME` its name. Afterwards they get back the values they had
+before.
 
-```sh
-# ~/.config/luish/plugins/work/init.lsh
-. "$LUISH_PLUGIN_DIR/functions.lsh"
-work_dir=$LUISH_PLUGIN_DIR   # for functions that need it later
-```
+In Rhai, `sh::plugin_dir()` gives the directory at any time, also in hooks. For
+a single-file plugin it is the directory of the file.
 
-```sh
-# ~/.config/luish/plugins/work/rc.lsh
-alias gs='git status'
-```
+`plugin unload` removes what the extension registered (hooks), but it can't
+undo what the shell files did (aliases, functions, variables).
 
-While `init.lsh`, `extension.rhai`, `rc.lsh` and `prompt-vars.lsh` run, `LUISH_PLUGIN_DIR` is the plugin's directory
-(an absolute path) and `LUISH_PLUGIN_NAME` its name. Afterwards they get back the values they had before. In Rhai,
-`sh::plugin_dir()` gives the directory at any time, also in hooks. For a single-file plugin it is the directory of the
-file.
+## Plugin formats
 
-A plugin written only in shell doesn't start Rhai at all. When it is loaded from the cached startup files in
-`rc.d`, what its shell files did is cached with the rest, so it costs no more than the same lines in `rc.d`: a later
-shell loads the plugin's extension again but doesn't rerun `init.lsh` or `rc.lsh` (or a `NAME.lsh` plugin's file).
-Changing any of these files makes the next shell run `rc.d` again.
+1. a directory of files with special names, in shell and Rhai (see [above](#plugin-directories)), not all of which
+   need to be there;
+2. a single Rhai file, `NAME.rhai`, which is the same as a directory that holds only that file, as `extension.rhai`;
+3. a single shell file, `NAME.lsh`, which is the same as a directory that holds only that file, as `init.lsh`.
 
-`plugin unload` removes what the extension registered (hooks), but it can't undo what the shell files did (aliases,
-functions, variables).
-
-## Example: a personal plugin
+## Suggestion: a personal plugin
 
 A plugin doesn't have to be for others. Packaging your own configuration as a plugin in a git repository is a good
 way to keep the same options, aliases, key bindings and functions on every machine: each one needs only a line in
@@ -315,11 +205,6 @@ Each machine enables it in `~/.config/luish/config.toml`:
 personal = { gh = "luispedro/luish-personal-plugin" }
 ```
 
-and runs `plugin sync` once (and `plugin update personal` after changing the repository). While editing the plugin,
-a `path` source (`personal = { path = "~/luish-personal-plugin" }`) uses a local checkout, so that changes take
-effect in the next shell without `plugin sync`. What differs between machines, such as `PATH`, stays in each machine's
-`rc.d`, which runs after the plugin and can override what it sets.
-
 ## Example: running code when the directory changes
 
 ```rhai
@@ -374,8 +259,10 @@ A plugin loaded later (in `luishrc`, or at the prompt) runs its `post-rc.lsh` an
 Plugins can change the prompt (`PS1`; `PS2`, for the continuation lines of a command, is unchanged) in two ways:
 
 - **`prompt-vars`** (start here): a plugin computes values, such as the git branch, and gives them to `PS1` as
-  variables. You keep writing the prompt in `PS1`, and the variables exist only while the prompt is built.
-- **`prompt-rewrite`** (advanced): an extension writes the whole prompt itself, and `PS1` is ignored or passed to it.
+  variables.
+- **`prompt-rewrite`** (advanced): an extension writes the whole prompt itself,
+  and can replace what other plugins did. It is easy to get wrong, so use it
+  only if you know what you are doing.
 
 ### Variables for the prompt: `prompt-vars`
 
@@ -398,8 +285,8 @@ plugin load branch
 PS1='$PWD$git_branch\$ '
 ```
 
-The same can be written in shell, in a directory plugin's `prompt-vars.lsh`. Every variable it sets is available to
-`PS1`:
+The same can be written in shell, in a directory plugin's `prompt-vars.lsh`.
+Every variable it sets is available to `PS1`:
 
 ```sh
 # ~/.config/luish/plugins/branch/prompt-vars.lsh
@@ -409,25 +296,24 @@ git_branch=$(git branch --show-current 2>/dev/null)
 
 Before each prompt, luish:
 
-1. runs the `prompt-vars` hooks and `prompt-vars.lsh` files, plugin by plugin in the order the plugins were loaded
-   (a plugin's hooks before its file), each setting its variables;
+1. runs the `prompt-vars` hooks and `prompt-vars.lsh` files, plugin by plugin
+   in the order the plugins were loaded.
 2. expands `PS1` with those variables (parameter expansion, then `%` expansion under `prompt.percent`);
 3. puts every variable they changed back as it was (or unsets it).
 
-So the variables don't leak into the shell: after the prompt, `echo $git_branch` prints what it printed before, and
-the commands you run don't see them. A plugin loaded later sees the variables of the ones loaded before it, and can
-change them. Each hook and file sees `$?` of the last command (read it first thing in `prompt-vars.lsh`, before
-another command changes it), and `$?` is the same after the prompt as before.
+A hook's map gives each variable a string, a number or a boolean (which become
+text, such as `42` or `true`), or `()` to unset the variable while the prompt
+is built. A hook can also return `()` to set nothing. A bad entry (not a valid
+name, a readonly variable, another type of value) is reported and skipped, and
+a hook that fails is reported; the other hooks and files still run.
 
-A hook's map gives each variable a string, a number or a boolean (which become text, such as `42` or `true`), or
-`()` to unset the variable while the prompt is built. A hook can also return `()` to set nothing. A bad entry (not a
-valid name, a readonly variable, another type of value) is reported and skipped, and a hook that fails is reported;
-the other hooks and files still run.
-
-`prompt-vars.lsh` runs in the current shell, as with `.`, so it can use the shell's functions and variables. Only
-variables are put back afterwards: don't `cd`, define functions or aliases, or change options in it. Its commands run
-before every prompt, so keep them fast; prefer the `vcs` and `fs` modules in a `prompt-vars` hook to running `git` in
-shell, when you can.
+`prompt-vars.lsh` runs in the current shell, as with `.`, so it can use the
+shell's functions and variables. Prompt variable don't leak into the shell, but
+if multiple plugins are enabled, later ones can see the variables of the ones
+loaded before them. Note, however, that other side effects of a
+`prompt-vars.lsh` file (changing the directory, defining functions or aliases,
+changing options) are not undone so be careful with them. Also, avoid slow
+commands as these are run before every prompt.
 
 ### Rewriting the prompt: `prompt-rewrite`
 
@@ -461,11 +347,12 @@ The order of operations matters:
    string or `()`) is reported, and the next one is tried.
 3. The prompt a hook returns doesn't go through parameter expansion, so `$x` in it stays as it is. It does go through
    `%` expansion if the `prompt.percent` option is on (`setopt prompt.percent`, see [](usage.md)), as in the example.
-4. The variables set by `prompt-vars` are put back. What a `prompt-rewrite` hook itself changes, with `sh::setvar` or
-   `sh::run`, stays.
+4. The variables set by `prompt-vars` are put back. What a `prompt-rewrite`
+   hook itself changes, with `sh::setvar` or `sh::run`, stays.
 
-`$?` is the same after the hooks as before them, and each hook sees that of the last command (but `sh::run` changes
-it for the rest of the hook, so read `sh::last_status()` first).
+`$?` is the same after the hooks as before them, and each hook sees that of the
+last command (but `sh::run` changes it for the rest of the hook, so read
+`sh::last_status()` first).
 
 A hook that takes a parameter is given the previous prompt: the one the hooks registered before it give, or else
 `PS1` (after parameter expansion, with the `prompt-vars` variables, but before `%` expansion, which is done on the
@@ -479,95 +366,11 @@ sh::hook("prompt-rewrite", |prev| {
 });
 ```
 
-Returning `()` from such a hook, or failing, keeps the previous prompt. A hook without a parameter doesn't run the
-hooks before it at all, so it costs nothing to have them loaded, but it also discards them: loading a plugin with a
-`prompt-rewrite` hook that takes no parameter hides the prompt of every plugin loaded before it, and `PS1`. The hook
-must be defined in the extension's own file (not in a module it imports), as a closure or a named function
-(`fn prompt(prev) { ... }`).
 
-## Example: completing a command's arguments
+## Standard plugins
 
-```rhai
-// ~/.config/luish/plugins/git.rhai
-
-sh::completer("git", |words, i| {
-    if i == 1 {
-        return [
-            #{value: "add", desc: "Add file contents to the index"},
-            #{value: "commit", desc: "Record changes to the repository"},
-            #{value: "switch", desc: "Switch branches"},
-            #{value: "--git-dir=", suffix: ""},
-        ];
-    }
-    if words[1] == "switch" {
-        let r = sh::capture("git branch --format='%(refname:short)' 2>/dev/null");
-        return if r.status == 0 { r.out.split("\n") } else { [] };
-    }
-    ()   // the default: filenames
-});
-```
-
-A completer is called when Tab is pressed on an argument of its command (also after `sudo`, `env` and the like, and
-through an alias: with `alias g='git -C ~/src'`, `g ` calls the completer for `git` with the words `git`, `-C`
-and `~/src` first). It gets the words of the command, unquoted, starting with the command name, and the index of the
-word being completed. That word ends at the cursor, and may be empty; the words after it (if the cursor is not at the
-end of the command) come after it in the array. It returns an array of candidates, or `()` to complete the word as if
-there were no completer.
-
-A candidate is a string, or a map with a `value` and optionally a `desc`, shown next to it in the completion menu,
-and a `suffix`, added after the value when it is the only match (a space by default; `""` for none). luish keeps
-the candidates that start with the word typed, and quotes what it adds. So a completer can simply return everything
-that could come next.
-
-To complete only the end of the word, such as what follows `=` in `--format=`, a completer returns a map with the
-candidates and the start of the word they leave alone, which must be a prefix of the word:
-
-```rhai
-if words[i].starts_with("--format=") {
-    return #{prefix: "--format=", candidates: ["json", "yaml"]};
-}
-```
-
-The completer registered for `-default-` (as in zsh's `compdef`) is called for the commands that have no completer of
-their own and whose arguments luish doesn't complete itself (as it does for `cd`, `kill` or `unset`). It is given the
-words of the command as any other completer is.
-
-A completer registered for a command replaces any earlier one. If a completer fails, the error is shown below the
-command line. A completer that runs for more than 2 seconds is stopped (while it runs a command, the time is only
-checked when the command has finished).
-
-To see what Tab offers for a command line without typing it, for example while writing a completer or in a test, use
-`__luish_internal complete LINE`, which prints each match on a line of its own (the text that replaces the word, then
-a tab and the description), in any shell:
-
-```sh
-$ __luish_internal complete 'git sw'
-switch 	Switch branches
-```
-
-Commands that a completer runs are not jobs: like those of `$(...)`, they can't be stopped with Ctrl-Z, and Ctrl-C
-does not reach them (the terminal is in the line editor's mode). Their output goes to the terminal, over the command
-line, so use `sh::capture` or redirect it.
-
-## Example: programs that complete themselves
-
-Many programs can list the completions of their own arguments. Those built with the Go library
-[Cobra](https://cobra.dev), such as `gh`, `docker`, `kubectl` and `helm`, do it when run as
-`prog __complete ARGS...`. luish doesn't run programs to ask them (a program that doesn't know the convention might
-do something else), but an extension can, for the programs it names:
-
-```{literalinclude} examples/cobra.rhai
-:language: rhai
-```
-
-Save it as `~/.config/luish/plugins/cobra.rhai`, change the list of programs at the end, and load it with
-`plugin load cobra`.
-
-## Plugins in luish-std-plugins
-
-The luish repository has a collection of plugins, in its `luish-std-plugins` directory, which is also an example of
-how a collection of plugins is laid out (see its `README.md`). It is the source `std`: enable its plugins in
-`config.toml`, and run `plugin sync` to fetch them:
+Luish includes a standard collection of plugins, called `std`. It is not
+enabled by default, but you can enable it in `config.toml`:
 
 ```toml
 [plugins.enabled]
@@ -575,37 +378,31 @@ std.completion = "*"        # common commands, and git (git-completion)
 std.bash-completion = "*"
 ```
 
-`std` comes from the tag of the luish release that runs it (`v0.1.0` for luish 0.1.0), so its plugins are those
-released with your luish, and `plugin update` doesn't move it. After upgrading luish, run `plugin sync` to fetch the
-plugins of the new version: until then, shells start without them, and say so. To follow the newest plugins instead,
-which may need a newer luish than yours, name the source yourself:
+The `std` library is tied to the version of luish, so it is not affected by
+`plugin update`.
 
-```toml
-[plugins.available]
-std = { gh = "luispedro/luish", subdir = "luish-std-plugins", branch = "main" }
-```
-
-- **`completion`** (a directory) completes the options of about 70 common commands, with their descriptions, the
-  values of the options (`ls --sort=`, `cp -t DIR`, `tar --format=`, `dd conv=`, ...) and their other arguments:
-  coreutils (`ls`, `cp`, `mv`, `rm`, `mkdir` (directories), `chmod` (modes), `chown` (users and groups), `sort`,
-  `tail`, `date`, `dd`, ...), grep, diff, cmp, tar (the files in the archive, for `tar -xf ARCHIVE`), make (the
-  targets of the makefile, also with `-C DIR` and `-f FILE`), rsync, man (the pages, in the section given), ssh, scp
-  and sftp (the hosts of `~/.ssh/config`, with the files it includes, and of `/etc/hosts`, also after `USER@`), and
-  pkill, pgrep and killall (the running processes). Short options can be combined: `ls -la` offers the options that
-  can follow. It loads `git-completion` too. Its modules are compiled on the first Tab (a few milliseconds), so
-  loading it costs little.
-- **`git-completion`** (`git-completion.rhai`) completes git's commands, with their descriptions, and aliases; the
-  options of each command, as git lists them; and each command's arguments: branches, tags, the end of a range
-  (`main..`), remotes, stashes, worktrees, and the files the command can act on (modified and untracked files for
-  `git add`, staged ones for `git restore --staged`, ...), one directory at a time. It runs git with the options of
-  the command line that choose the repository, so `alias g='git -C ~/src'` completes in `~/src`.
-- **`bash-completion`** (a directory) uses [bash-completion](https://github.com/scop/bash-completion), which
-  completes the arguments of about a thousand commands, and for which many programs install completion files. Its
-  extension is a default completer that runs, in bash (with `bridge.bash`), the function that bash-completion has for
-  the command, and gives luish what it returns. The commands that have completers of their own (such as git with
-  `git-completion`) keep them. bash-completion is looked for in the usual places; set `BASH_COMPLETION_SCRIPT` to the
-  path of its `bash_completion` script if it is elsewhere. Each Tab takes about 50 ms, as bash loads bash-completion
-  again, and bash-completion gives no descriptions.
+- **`completion`** (a directory) completes the options of about 70 common
+  commands, with their descriptions, the values of the options (`ls --sort=`,
+  `cp -t DIR`, `tar --format=`, `dd conv=`, ...) and their other arguments. It includes
+  coreutils (`ls`, `cp`, `mv`, `rm`, `mkdir`, `tail`, `date`, `dd`, ...), grep,
+  diff, cmp, tar (the files in the archive, for `tar -xf ARCHIVE`), make (the
+  targets of the makefile, also with `-C DIR` and `-f FILE`), rsync, man (the
+  pages, in the section given), ssh, scp and sftp (the hosts of
+  `~/.ssh/config`, with the files it includes, and of `/etc/hosts`, also after
+  `USER@`), and pkill, pgrep and killall (the running processes). Short options
+  can be combined: `ls -la` offers the options that
+  can follow. It loads `git-completion` too. Its modules are compiled on the
+  first Tab (a few milliseconds), so loading it costs little.
+- **`git-completion`** (`git-completion.rhai`) completes git's commands, with
+  their descriptions, and aliases. It completes arguments, branches, tags, the
+  end of a range (`main..`), remotes, stashes, worktrees, and the files the
+  command can act on (modified and untracked files for `git add`, staged ones
+  for `git restore --staged`, ...).
+- **`bash-completion`** uses
+  [bash-completion](https://github.com/scop/bash-completion), which completes
+  the arguments of about a thousand commands, and for which many programs
+  install completion files. This requires bash-completion to be installed and
+  runs bash to ask for the completions, and it does not provide descriptions.
 
 ## The `sh` module
 
@@ -662,12 +459,13 @@ things with `timestamp()` and `.elapsed`.
 
 ## The `vcs` module
 
-The `vcs` module tells an extension about the version-control repository around a directory, as zsh's `vcs_info` does.
-Only git is supported for now.
+The `vcs` module tells an extension about the version-control repository around
+a directory, as zsh's `vcs_info` does. Only git is supported for now.
 
-`vcs::info()` (or `vcs::info(dir)`) finds the repository from the current directory (or `dir`) by reading the
-repository's files, without running git, so it is cheap enough to call often. It returns `()` outside a repository,
-and otherwise a map:
+`vcs::info()` (or `vcs::info(dir)`) finds the repository from the current
+directory (or `dir`) by reading the repository's files, without running git, so
+it is cheap enough to call often. It returns `()` outside a repository, and
+otherwise a map:
 
 | Field | Description | `vcs_info` |
 |---|---|---|
@@ -706,17 +504,17 @@ time.
 sh::hook("prompt-vars", || {
     let i = vcs::info();
     if i == () {
-        return #{vcs_info: ""};     // outside a repository
+        return #{branch_info: ""};     // outside a repository
     }
     let branch = i.branch ?? i.head?.sub_string(0, 7) ?? "?";
     let action = if i.action == () { "" } else { `|${i.action}` };
     let dirty = if vcs::status()?.clean ?? true { "" } else { "*" };
-    #{vcs_info: `(${i.vcs})-[${branch}${action}${dirty}] `}
+    #{branch_info: `(${i.vcs})-[${branch}${action}${dirty}] `}
 });
 ```
 
 ```sh
-PS1='$vcs_info$PWD\$ '
+PS1='$branch_info$PWD\$ '
 ```
 
 `vcs::info` is cheap enough to call before every prompt; `vcs::status` runs git, which can be slow in a large
@@ -729,7 +527,73 @@ unchanged. Each byte that is not part of valid UTF-8 becomes one of the characte
 back into that byte when the string goes back to the shell. So a directory name that isn't valid UTF-8 survives a
 round trip through an extension. A string containing a NUL character can't be stored in a shell variable.
 
-## Interrupting extensions
+## Example: completing a command's arguments
 
-Ctrl-C stops extension code that is running, just as it stops a command. An extension stopped this way gives status
-130.
+Plugins can register completers for specific commands. A completer is called
+when Tab is pressed on an argument of its command (also after `sudo`, `env` and
+the like, and through an alias: with `alias g='git -C ~/src'`, `g ` calls the
+completer for `git` with the words `git`, `-C` and `~/src` first).
+
+A completer receives the words of the command, unquoted, starting with the
+command name, and the index of the word being completed. That word ends at the
+cursor, and may be empty; the words after it (if the cursor is not at the end
+of the command) come after it in the array.
+
+A completer should return an array of candidates or `()`.
+
+A candidate is a string, or a map with a `value` and optionally a `desc`, shown
+next to it in the completion menu, and a `suffix`, added after the value when
+it is the only match (a space by default; `""` for none).
+
+luish keeps the candidates that start with the word typed, and quotes what it
+adds. So a completer can simply return everything that could come next.
+
+To complete only the end of the word, such as what follows `=` in `--format=`,
+a completer returns a map with the candidates and the start of the word they
+leave alone, which must be a prefix of the word:
+
+```rhai
+if words[i].starts_with("--format=") {
+    return #{prefix: "--format=", candidates: ["json", "yaml"]};
+}
+```
+
+The completer registered for `-default-` (as in zsh's `compdef`) is called for
+the commands that have no completer of their own and whose arguments luish
+doesn't complete itself.
+
+To see what Tab offers for a command line without typing it, for example while
+writing a completer or in a test, use `__luish_internal complete LINE`, which
+prints each match on a line of its own (the text that replaces the word, then a
+tab and the description), in any shell:
+
+```sh
+$ __luish_internal complete 'git sw'
+switch 	Switch branches
+```
+
+Commands that a completer runs are not jobs: like those of `$(...)`, they can't
+be stopped with Ctrl-Z, and Ctrl-C does not reach them (the terminal is in the
+line editor's mode). Their output goes to the terminal, over the command
+line, so use `sh::capture` or redirect it.
+
+```rhai
+// ~/.config/luish/plugins/git.rhai
+
+sh::completer("git", |words, i| {
+    if i == 1 {
+        return [
+            #{value: "add", desc: "Add file contents to the index"},
+            #{value: "commit", desc: "Record changes to the repository"},
+            #{value: "switch", desc: "Switch branches"},
+            #{value: "--git-dir=", suffix: ""},
+        ];
+    }
+    if words[1] == "switch" {
+        let r = sh::capture("git branch --format='%(refname:short)' 2>/dev/null");
+        return if r.status == 0 { r.out.split("\n") } else { [] };
+    }
+    ()   // the default: filenames
+});
+```
+

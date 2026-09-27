@@ -15,7 +15,7 @@ exit status is 1 if one of the names isn't an alias.
 An alias takes effect from the next line that is read, not on the line that
 defines it.
 
-The options are zsh's:
+The options are based on `zsh`'s `alias` command:
 
 - `-g` defines a **global** alias, which is expanded wherever it is a word
   of its own, not only as a command name: after `alias -g G='| grep'`,

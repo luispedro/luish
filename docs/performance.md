@@ -1,14 +1,17 @@
 # Performance
 
-luish is meant to be as fast as dash, the fastest of the common POSIX shells, for scripts and `sh -c`, and it is:
-work inside the shell is as fast as in dash or faster, and scripts that start many programs take at most 10% longer.
-bash and zsh are up to five times slower on the same scripts. What luish adds to dash (plugins, the interactive
-features, luish's own options) is opt-in, and costs scripts nothing.
+luish is meant to be as fast as dash, the fastest of the common POSIX shells,
+for scripts and `sh -c`.
+
+bash and zsh are up to five times slower on the same scripts. What luish adds
+to dash (plugins, the interactive features, luish's own options) is opt-in, and
+costs scripts nothing.
 
 ## Scripts
 
-These are the script benchmarks in the repository's `bench/` directory: realistic scripts of a few hundred lines, each
-mixing parsing, expansion, function calls, built-ins and forks, rather than microbenchmarks. All shells print the same
+These are the script benchmarks in the repository's `bench/` directory:
+scripts of a few hundred lines, each mixing parsing, expansion, function calls,
+built-ins and forks, rather than microbenchmarks. All shells print the same
 output for each of them.
 
 | Benchmark | What it does |
@@ -80,13 +83,15 @@ dash, which is most of the difference in sourcing it without the cache.
 
 ## Running the benchmarks
 
-The benchmarks need [pixi](https://pixi.sh), and [hyperfine](https://github.com/sharkdp/hyperfine) if it is installed.
-In a checkout of luish:
+The benchmarks need [pixi](https://pixi.sh), and
+[hyperfine](https://github.com/sharkdp/hyperfine) if it is installed. In a
+checkout of luish:
 
 ```sh
 pixi run bench                     # release build, then all benchmarks with every shell installed
 bench/run.sh -n 4 -r 10 arith      # one benchmark, 4 times the work, 10 runs per shell
 ```
 
-`bench/README.md` describes the options and the scripts. Absolute times depend on the machine and its load, so
-compare shells within one run.
+`bench/README.md` describes the options and the scripts. Absolute times depend
+on the machine and its load, so compare shells within one run.
+

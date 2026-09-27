@@ -1,11 +1,15 @@
 # Compatibility
 
-luish treats [dash](http://gondor.apana.org.au/~herbert/dash/) as its reference: scripts should behave as they do
-under dash, including where POSIX leaves the behaviour open. This page lists where luish deliberately differs, and
-what isn't implemented yet. Where luish goes beyond dash, zsh is the preferred model, since luish is meant to replace
-it as an interactive shell; some older differences follow bash instead.
+luish generally treats [dash](http://gondor.apana.org.au/~herbert/dash/) as its
+reference: scripts should behave as they do under dash, including where POSIX
+leaves the behaviour open.
 
-The system dash on Debian and Ubuntu has patches of its own. Where they matter, luish follows upstream dash.
+This page lists where luish deliberately differs, and what isn't implemented
+yet.
+
+Where luish goes beyond dash, zsh is the preferred model, since luish is meant
+to replace it as an interactive shell; some older differences follow bash
+instead.
 
 ## Differences from dash
 

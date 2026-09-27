@@ -63,17 +63,13 @@ history entry that starts with the text before the cursor),
 `up-history`, `up-line-or-history`, `yank` and `yank-pop`.
 
 The word widgets take as words the letters and digits and the characters
-in `$WORDCHARS` (zsh's default, `*?_-.[]~=/&;!#$%^(){}<>`, when it is
-unset), so with `WORDCHARS` not holding `/`, Ctrl-W removes one component
-of a path.
+in `$WORDCHARS` (default: `*?_-.[]~=/&;!#$%^(){}<>`).
 
 The default bindings are zsh's for emacs mode, except that Up and Down
 (`^[[A` and `^[[B`) are bound to `history-beginning-search-backward` and
 `-forward`: with an empty line they go through the history as usual.
 
-`bindkey` is a built-in only in interactive shells (and their subshells).
-Anywhere, `__luish_internal bindkey` does the same. The exit status is 1 if
-a key sequence or a widget is not valid, or a key can't be typed (such as
-`Ctrl-Tab`, which terminals send as Tab).
+The exit status is 1 if a key sequence or a widget is not valid, or a key can't
+be typed (such as `Ctrl-Tab`, which terminals send as Tab).
 
 Key bindings can also be set in `config.toml`, in its `bindkey` table.

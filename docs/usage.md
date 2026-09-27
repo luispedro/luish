@@ -9,15 +9,11 @@ luish -s [args...]                # read commands from stdin
 luish                             # interactive when stdin is a terminal
 ```
 
-Options can be given as letters (`-e`, `-x`, ...) or with `-o name` / `+o name`. In the shell, `set` takes the
-same options, and `setopt` and `unsetopt` set them by name as in zsh, together with luish's own options, which `set`
-doesn't show so that it stays as in dash. luish's own options are named in groups, such as `history.share` or
-`glob.star`; zsh's names for them (`share_history`) work too. `setopt` also sets luish's settings that have a value,
-as in `setopt history.file=~/.histfile`. `setopt -p GROUP` sets several settings of a group, as in `setopt -p history
-share file=~/.histfile`, and without names lists the group's settings (see `help setopt`).
+Options can be given as letters (`-e`, `-x`, ...) or with `-o name` / `+o name`.
 
-On the command line, `-o` and `+o` take any option named as for `setopt`, including luish's own: case and `_` don't
-matter, and a `no` prefix inverts it (`-o err_exit`, `-o no_glob`, `-o prompt_percent`; `+o glob` is the same as
+On the command line, `-o` and `+o` take any option named as for `setopt`. Case
+and `_` don't matter, and a `no` prefix inverts it (`-o err_exit`, `-o
+no_glob`, `-o prompt_percent`; `+o glob` is the same as
 `-o noglob`). luish also has these long options:
 
 | Option | Effect |
@@ -34,9 +30,8 @@ Options end at the first operand, or at `--` or `-`.
 
 ## Getting help
 
-In an interactive shell, `help` lists the built-in commands, and `help NAME` shows the help for one of them (the
-same text as in [](builtins.md)). `help` is not a built-in in scripts, so that they find the same commands as in
-other shells; there, `__luish_internal help` does the same.
+In an interactive shell, `help` lists the built-in commands, and `help NAME` shows the help for any of them (the
+same text as in [](builtins.md)).
 
 ## Prompts
 
@@ -48,7 +43,7 @@ With the `prompt.percent` option (`setopt prompt.percent`), they then also expan
 
 ```sh
 setopt prompt.percent
-PS1='%F{blue}%~%f %(?..%F{red}[%?]%f )%# '
+PS1='%[fg:blue]%[dir]%[fg_off] %([status]..%[fg:red][%[status]]%[fg_off] )%[prompt_char] '
 ```
 
 This shows the current directory (with `~` for `$HOME`) in blue, then the exit status of the last command in red if
@@ -83,11 +78,7 @@ relative to the terminal's width, aren't supported.
 The long names are luish's own (zsh has none): `%[name]` is the same as the short sequence, easier to read in a long
 prompt. The argument of a sequence goes after a `:`, as a number or as the text in braces: `%[dir:2]` is `%2~`,
 `%[fg:red]` is `%F{red}` and `%[date:%H:%M]` is `%D{%H:%M}` (a `\` quotes a `]`). The number can also come first, as
-in `%2[dir]`. Case, `_` and `-` don't matter, so `%[HostName]` is `%[hostname]`. The example above becomes:
-
-```sh
-PS1='%[fg:blue]%[dir]%[fg_off] %([status]..%[fg:red][%[status]]%[fg_off] )%[prompt_char] '
-```
+in `%2[dir]`. Case, `_` and `-` don't matter, so `%[HostName]` is `%[hostname]`.
 
 The conditions of `%(...)` have long names too, in brackets, with their number after a `:`: `%([status:1].yes.no)`
 is `%(1?.yes.no)`. They are `status` (`?`), `root` (`!`), `uid` (`#`), `gid` (`g`), `jobs` (`j`), `shlvl` (`L`),
@@ -149,12 +140,7 @@ and bindings can also go in `config.toml` (see below).
 
 ## Syntax highlighting
 
-The line editor colours the command line as it is typed: reserved words, command names (in another colour when no
-built-in, function, alias or program has that name, except while the cursor is on them, since they may be
-unfinished), quoted strings, parameter and arithmetic expansions, command substitutions (whose contents are
-highlighted as commands), operators, redirections, here-document bodies, comments and the `NAME=` of assignments. A
-continuation line is highlighted in the context of the lines before it, so an open quote or here-document carries
-over.
+The line editor colours the command line as it is typed.
 
 `$LUISH_HIGHLIGHT` sets the colours, as a list of `class=SGR` entries separated by `:` (as in `GREP_COLORS`), where
 SGR is the parameters of a terminal escape sequence. Its entries replace these defaults:
@@ -168,51 +154,47 @@ uncoloured. `LUISH_HIGHLIGHT=none`, or a non-empty `$NO_COLOR`, turns highlighti
 
 ## History
 
-An interactive shell keeps the last `HISTSIZE` commands (1000 by default) in its history, where the line editor
-(Up and Down, Ctrl-R, Alt-.) and `fc` find them. A command the same as the one before it is not added again. The history is
-saved to the file `HISTFILE`, by default `$XDG_STATE_HOME/luish/history` (`~/.local/state/luish/history` if
-`XDG_STATE_HOME` isn't set); set `HISTFILE` to an empty value to keep no file. The file is read after the startup
-files, so `HISTFILE` and `HISTSIZE` can be set there (or in `luishrc`). `setopt` sets them too, as the settings
-`history.file`, `history.size` and `history.save_size` (for `SAVEHIST`).
+An interactive shell keeps the last `HISTSIZE` commands (1000 by default) in
+its history, where the line editor (Up and Down, Ctrl-R, Alt-.) and `fc` find
+them.
 
-The file is in zsh's format, with the time of each command, so luish and zsh can use the same file:
+A command the same as the one before it is not added again. By default, history
+is saved to `$XDG_STATE_HOME/luish/history`; set `HISTFILE` to a different
+value to change that or to an empty value to keep no file.
 
-```sh
-setopt -p history file=~/.histfile save_size=10000 share ignore_space reduce_blanks
-```
-
-In zsh's words, which luish also accepts, this is:
+You can set the history options in `config.toml` (see [Settings in
+config.toml](#settings-in-configtoml)), or with
 
 ```sh
-HISTFILE=~/.histfile
-SAVEHIST=10000
-setopt share_history hist_ignore_space hist_reduce_blanks
+setopt -p history \
+    file=~/.histfile \
+    save_size=10000 \
+    share \
+    ignore_space \
+    reduce_blanks
 ```
 
-The file keeps up to `SAVEHIST` commands (by default as many as `HISTSIZE`). New commands are added to the end of it
-when the shell exits, so several shells don't overwrite each other's commands, and when it has grown to more than
-20% over `SAVEHIST` the oldest commands are dropped. Some options change this, as in zsh (see `help setopt`; zsh's
-names are in parentheses):
+The above example also demonstrates the `-p` option of `setopt` (for prefix),
+which enables setting options in a group. It is equivalent to
 
-- `history.inc_append` (`inc_append_history`) adds each command to the file as soon as it is run;
-- `history.share` (`share_history`) does too, and also reads the commands that other shells have added before each prompt, so that
-  commands typed in one terminal can be recalled in all of them;
-- `history.ignore_space` (`hist_ignore_space`) keeps commands that start with a space out of the file (the next command replaces them in
-  memory as well), which is useful for commands with passwords;
-- `history.reduce_blanks` (`hist_reduce_blanks`) removes superfluous blanks from commands;
-- `history.save_no_dups` (`hist_save_no_dups`) drops older copies of repeated commands when the file is trimmed.
+```
+setopt history.file=~/.histfile
+setopt history.save_size=10000
+setopt history.share
+setopt history.ignore_space
+setopt history.reduce_blanks
+```
 
-Unlike zsh, luish saves the history by default: zsh keeps no file unless `HISTFILE` and `SAVEHIST` are set.
+
+Unlike zsh, luish saves the history by default: zsh keeps no file unless
+`HISTFILE` and `SAVEHIST` are set.
 
 ## Tab completion
 
-In an interactive shell, Tab completes the word under the cursor: a command name (a built-in, function, alias or
-program in `PATH`) at the start of a command, a variable name after `$` or `${`, a user's home directory after `~`,
-and a filename elsewhere, also after the `=` or `:` of an assignment and the `=` of a `--option=`. After commands
-that run another command, such as `sudo`, `env`, `nohup`, `time` and `xargs`, the command they run (after their
-options) completes as a command name. With `setopt cd.auto`, a command name also completes to directories (see
-`help setopt`). Some commands complete their arguments differently:
+In an interactive shell, Tab starts completion.
 
+
+- `$` completes variable names, and `${` also function names;
 - `cd`, `pushd` and `rmdir` complete directories; for `cd` and `pushd`, when none in the current directory match,
   the directories in `CDPATH` complete instead (listed with the `CDPATH` directory they are in), as in zsh;
 - `export`, `local`, `readonly`, `unset`, `read` (except the prompt after `-p`), `getopts` (after the option
@@ -222,22 +204,13 @@ options) completes as a command name. With `setopt cd.auto`, a command name also
 - `fg`, `bg`, `jobs`, `wait` and `kill` complete job specs such as `%1`, listed with their commands (after `%` and
   a letter, they complete the command names instead, such as `%vim`);
 - `kill -` and `kill -s` complete signal names, as do the arguments of `trap` after its action;
-- `setopt` completes the options that are off and `unsetopt` those that are on, as in zsh (after `no`, also the
-  others with `no` in front, as `history.no_share`), both complete the settings that have a value, and `setopt`
-  completes filenames after `history.file=`;
+- `setopt` completes the options that are off and `unsetopt` those that are on,
+  as in zsh.
 - `plugin load` completes the plugins in the plugin directory, and `plugin unload` the loaded ones.
 
-Plugins, through their extensions, can provide completion for other commands (see [Plugins](plugins.md)). Aliases are followed: if `g` is an
-alias for `git`, then `g ` completes as `git ` does.
-
-The first Tab completes as much as is common to all the matches. When there is nothing more to add, it opens a menu
-of the matches below the line (see below). What is added is quoted as needed: a file called `my file` is completed as `my\ file`, or as `'my file'` after a `'`. A directory is completed
-with a `/`, so Tab can go on into it; any other single match gets a space (and the closing quote).
-
-The matches are the names that start with the text typed. If there are none, case is ignored (smart case: a
-lowercase letter matches either case, but an uppercase one only itself), so `mak` completes to `Makefile`. If there
-are still none, the names that contain the text are used, so `conf` completes to `my.config`. Either way, the text
-typed is replaced.
+Plugins, through their extensions, can provide completion for other commands
+(see [Plugins](plugins.md)). Aliases are followed: if `g` is an alias for
+`git`, then `g ` completes as `git ` does.
 
 ### The completion menu
 
@@ -257,39 +230,12 @@ Any other key keeps the match, closes the menu and does what it usually does, so
 match is selected, Down, Ctrl-N and Shift-Tab also start selecting (Shift-Tab from the last match), but the other keys
 do what they usually do: Enter runs the command, and Up goes back in the history.
 
-Esc on its own takes effect after 0.4 seconds in emacs mode (0.1 seconds in vi mode), since until then it could be
-the start of a Meta key (`Esc` then `b` is Meta-B). In vi mode, a second Esc goes to command mode. The selected match is shown in reverse video, and descriptions in grey. They can be
-changed with the `select` and `desc` entries of `$LUISH_HIGHLIGHT`, a list of `class=SGR` entries separated by `:`,
-where SGR is the parameters of a terminal escape sequence (`select=1;33:desc=` shows the selection in bold yellow
-and the descriptions uncoloured).
-
-## Saving and restoring the shell's state
-
-luish's own commands are subcommands of the `__luish_internal` built-in. `__luish_internal savestate` prints shell
-commands that recreate the current state of the shell: the working directory, the file mode mask (`umask`),
-variables (with their `export` and `readonly` attributes), traps, functions, aliases and options. Reading them back with `.` restores that state, in the same shell or in another:
-
-```sh
-__luish_internal savestate > ~/saved.sh
-luish -c '. ~/saved.sh; myfunction'
-```
-
-Restoring adds to the current state: variables, functions and aliases defined since are kept. A variable that is
-already `readonly` can't be restored, so reading the state back into the shell that saved it fails if it has any.
-In `eval "$(__luish_internal savestate)"`, traps are lost, because a command substitution resets them.
-
-## The version of luish
-
-`__luish_internal print-git-rev` prints the git revision luish was built from, and `__luish_internal
-print-git-rev-short` the same with the abbreviated hash. A build from sources with uncommitted changes adds `-dirty`,
-and a build outside a git checkout prints `unknown`.
 
 ## Settings in `config.toml`
 
-luish's own settings can also be set in `~/.config/luish/config.toml` (or `$XDG_CONFIG_HOME/luish/config.toml`), a
-[TOML](https://toml.io) file. Each table under `options` is a group of settings, and each key in it means the same as
-`setopt -p GROUP KEY=VALUE` (see `help setopt` for the settings). A key directly under `options` is a setting by the
-name that `setopt` knows it by:
+luish's settings can also be set in `~/.config/luish/config.toml` (or
+`$XDG_CONFIG_HOME/luish/config.toml`), a [TOML](https://toml.io) file.
+
 
 ```toml
 [options]
@@ -305,11 +251,13 @@ ignore_space = true
 star = true
 ```
 
-The values have TOML's types: `true` or `false` for an option, an integer for a number, and a string for text, where
-a leading `~` is expanded to the home directory (nothing else in it is expanded).
+The values have TOML's types: `true` or `false` for an option, an integer for a
+number, and a string for text, where a leading `~` is expanded to the home
+directory (nothing else in it is expanded).
 
-Aliases go in the `alias` table, each as `NAME = "VALUE"`, the same as `alias NAME=VALUE`. Global and suffix aliases
-(`alias -g` and `alias -s`, see `help alias`) go in its `global` and `suffix` tables:
+Aliases go in the `alias` table, each as `NAME = "VALUE"`, the same as `alias
+NAME=VALUE`. Global and suffix aliases (`alias -g` and `alias -s`, see `help
+alias`) go in its `global` and `suffix` tables:
 
 ```toml
 [alias]
@@ -324,11 +272,12 @@ G = "| grep"              # ls G foo runs ls | grep foo
 pdf = "evince"            # notes.pdf runs evince notes.pdf
 ```
 
-A string named `global` or `suffix` in `[alias]` is an ordinary alias with that name (but TOML doesn't allow it in
-the same file as the table of that name). Values are used as they are, with no `~` expansion.
+A string named `global` or `suffix` in `[alias]` is an ordinary alias with that
+name (but TOML doesn't allow it in the same file as the table of that name).
+Values are used as they are, with no `~` expansion.
 
-Key bindings go in the `bindkey` table, each as `KEY = "WIDGET"`, the same as `bindkey KEY WIDGET` (see
-`help bindkey`):
+Key bindings can be set in the `bindkey` table, each as `KEY = "WIDGET"`, the
+same as `bindkey KEY WIDGET` (see `help bindkey`):
 
 ```toml
 [bindkey]
@@ -338,34 +287,37 @@ Down = "down-line-or-history"
 "^[[1;5C" = "forward-word"   # Ctrl-Right, as zsh writes it
 ```
 
-A key that isn't a setting, a value of the wrong type, an alias name with `=` in it or a key or widget that `bindkey`
-doesn't take is reported with its line and
-skipped; a file that isn't valid TOML is reported and ignored.
+A key that isn't a setting, a value of the wrong type, an alias name with `=`
+in it or a key or widget that `bindkey` doesn't take is reported with its line
+and skipped; a file that isn't valid TOML is reported and ignored.
 
-Only interactive shells read it (not scripts or `luish -c`), first, before `rc.d` (see below), so that a file in
-`rc.d` can change what it sets (and use its aliases). The plugins it enables load next, also before `rc.d`. Its effects are cached with those of `rc.d` (even if there is no `rc.d`), so a new
-shell doesn't read it again until it changes.
+You also [install plugins in
+config.toml](plugins.md#installing-plugins-with-configtoml)).
 
-Its `[plugins]` table lists the plugins to load in every interactive shell, and where they come from (see
-[Installing plugins with config.toml](plugins.md#installing-plugins-with-configtoml)). To keep the same settings on
-several machines, put them in a plugin of your own (see [a personal plugin](plugins.md#example-a-personal-plugin)).
+To keep the same settings on several machines, put them in a plugin of your own
+(see [a personal plugin](plugins.md#example-a-personal-plugin)) and share that
+across them with git or another tool.
 
 ## Cached startup files
 
-luish can cache the effects of your startup files, so that a new shell restores their result instead of running
-them, which is much faster when they run slow commands. The files go in two directories, each used only if it exists
+luish caches the effects of your startup files, so that a new shell can restore
+their result instead of running them, which is much faster when they run slow
+commands. The files go in two directories, each used only if it exists
 (they work like zsh's `.zshrc` and `.zlogin`):
 
-- `~/.config/luish/rc.d/` (or `$XDG_CONFIG_HOME/luish/rc.d/`): for every interactive shell, after `config.toml`.
-  This is the place for what isn't inherited by the shells you start: aliases, functions and options. Scripts and
-  `luish -c` don't read it.
-- `~/.config/luish/login.d/`: for login shells, after `rc.d`. Its files replace `/etc/profile` and `~/.profile`. This
-  is the place for the environment: exported variables such as `PATH`, which the programs and shells you start
+- `~/.config/luish/rc.d/` (or `$XDG_CONFIG_HOME/luish/rc.d/`): for every
+  interactive shell, after `config.toml`. This is the place for what isn't
+  inherited by the shells you start: aliases, functions and options. Scripts
+  and `luish -c` don't read it.
+- `~/.config/luish/login.d/`: for login shells, after `rc.d`. Its files replace
+  `/etc/profile` and `~/.profile`. This is the place for the environment:
+  exported variables such as `PATH`, which the programs and shells you start
   inherit.
 
-In each directory, the files whose names end in `.lsh` run in byte order. luish remembers what they did: the variables
-they set, exported or unset, and their functions, aliases, options, traps and `umask`. An interactive shell then
-reads `$ENV` and `luishrc`, uncached, as usual.
+In each directory, the files whose names end in `.lsh` run in byte order. luish
+remembers what they did: the variables they set, exported or unset, and their
+functions, aliases, options, traps and `umask`. An interactive shell then reads
+`$ENV` and `luishrc`, uncached, as usual.
 
 ```sh
 mkdir -p ~/.config/luish/login.d ~/.config/luish/rc.d
@@ -374,24 +326,58 @@ echo 'export PATH=$HOME/bin:$PATH EDITOR=vim' > ~/.config/luish/login.d/10-env.l
 echo "alias ll='ls -l'" > ~/.config/luish/rc.d/aliases.lsh
 ```
 
-The caches are `~/.cache/luish/rc-HOST` and `~/.cache/luish/login-HOST` (or under `$XDG_CACHE_HOME`). A cache is
-used as long as the `.lsh` files, the files they read with `.` and (for `rc.d`) `config.toml`, `plugins.lock` and the
+The caches are `~/.cache/luish/rc-HOST` and `~/.cache/luish/login-HOST` (or
+under `$XDG_CACHE_HOME`). A cache is used as long as the `.lsh` files, the
+files they read with `.` and (for `rc.d`) `config.toml`, `plugins.lock` and the
 plugins it loads are unchanged, and luish itself is the same build.
-When one of them changes (luish compares their size and modification time), or after luish is upgraded, the next
-shell reruns the files and updates the cache.
 
-The cache directory holds nothing that can't be rebuilt: it can be removed at any time. luish marks it with a
-`CACHEDIR.TAG` file, so that backup tools that honour the [convention](https://bford.info/cachedir/) skip it.
+When one of them changes (luish compares their size and modification time), or
+after luish is upgraded, the next shell reruns the files and updates the cache.
 
-Some things belong in a directory's `_uncached.lsh`, which runs every time, after that directory's cached state is
-restored:
+The cache directory holds nothing that can't be rebuilt: it can be removed at
+any time. luish marks it with a `CACHEDIR.TAG` file, so that backup tools that
+honour the [convention](https://bford.info/cachedir/) skip it.
+
+For elements that cannot be cached, put them into a file called
+`_uncached.lsh`, which runs every time, after that directory's cached state is
+restored. For example:
 
 - anything with side effects, such as starting `ssh-agent` or printing a message;
 - values that differ between shells, such as `GPG_TTY=$(tty)`;
-- anything that depends on the environment the shell was started in, such as `$SSH_CONNECTION` or `$DISPLAY`. The
-  cached values are those from when the cache was built, so, for example, `PATH=$HOME/bin:$PATH` keeps the rest of
-  the `PATH` that the shell had then. For the same reason, a file in `rc.d` shouldn't use variables set in
-  `login.d` (in a login shell, `rc.d` runs before them; in the shells started from it, they are inherited).
+- anything that depends on the environment the shell was started in, such as
+  `$SSH_CONNECTION` or `$DISPLAY`. The cached values are those from when the
+  cache was built, so, for example, `PATH=$HOME/bin:$PATH` keeps the rest of
+  the `PATH` that the shell had then.
 
-Changes that luish can't see, such as newly installed software, the output of commands, or files tested with `[`,
-don't refresh the caches: remove the cache files (or touch a `.lsh` file) after such changes.
+The system is not perfect: luish can't see what a command does, so it can't
+know whether it changed the environment. In the future, luish may use more
+sophisticated ways to detect changes, but for now, it only checks the files it
+reads.
+
+
+## Internals
+
+luish's own commands are subcommands of the `__luish_internal` built-in.
+
+### Saving and restoring the shell's state
+
+`__luish_internal savestate` prints shell commands that recreate the current
+state of the shell: the working directory, the file mode mask (`umask`),
+variables (with their `export` and `readonly` attributes), traps, functions,
+aliases and options. Reading them back with `.` restores that state, in the
+same shell or in another:
+
+```sh
+__luish_internal savestate > ~/saved.sh
+luish -c '. ~/saved.sh; myfunction'
+```
+
+Restoring adds to the current state: variables, functions and aliases defined since are kept. A variable that is
+already `readonly` can't be restored, so reading the state back into the shell that saved it fails if it has any.
+In `eval "$(__luish_internal savestate)"`, traps are lost, because a command substitution resets them.
+
+### The version of luish
+
+`__luish_internal print-git-rev` prints the git revision luish was built from, and `__luish_internal
+print-git-rev-short` the same with the abbreviated hash. A build from sources with uncommitted changes adds `-dirty`,
+and a build outside a git checkout prints `unknown`.
