@@ -1,17 +1,23 @@
 # luish
 
-luish is a POSIX `sh` for Linux, written in Rust. The long-term aim is a shell that can replace zsh as a daily
-driver, built on a core that is as fast as dash.
+luish is a POSIX `sh` for Linux, written in Rust, meant to replace zsh as a daily driver, built on a core that is as
+fast as [dash](http://gondor.apana.org.au/~herbert/dash/).
 
 - **POSIX first.** luish implements the POSIX Shell Command Language and its required built-ins, plus `local`.
-  Where POSIX is ambiguous, luish matches [dash](http://gondor.apana.org.au/~herbert/dash/).
-- **As fast as dash** for scripts and `sh -c`, both at startup and while running.
-- **Pay only for what you use.** Anything beyond POSIX is opt-in and costs nothing when it is not used.
-- **Usable interactively**: line editing, history (with `fc`), tab completion, and job control.
+  Where POSIX is ambiguous, luish matches dash.
+- **As fast as dash, with zsh's features.** Scripts run as fast as under dash (faster on arithmetic and function
+  calls), and up to five times faster than under bash or zsh. Interactively: zsh's keys, syntax highlighting,
+  autosuggestions, shared history in zsh's format, completion with a menu, zsh's prompts and glob qualifiers.
+- **A modern plugin architecture**: plugins in shell and [Rhai](https://rhai.rs), listed in `config.toml`, fetched
+  from git and pinned in a lock file. Anything beyond POSIX is opt-in and costs nothing when it is not used.
+- **Instant startup**: luish caches the effect of your startup files, so a shell starts in milliseconds even with
+  `conda`, `nvm` and the like set up.
+- **Modern configuration** in a TOML file, with options named in groups (`history.share`) and settings in layers
+  (`config.toml`, plugins, your own startup files).
 
-luish is at an early stage. Most of POSIX is implemented, but expect rough edges. The user documentation is in
-[docs/](docs/index.md); [docs/compatibility.md](docs/compatibility.md) lists the known limitations, and
-[DEVELOPING.md](DEVELOPING.md) has what is implemented, how it is tested, and benchmark numbers.
+luish is usable as a daily shell. The user documentation is in [docs/](docs/index.md), with the benchmarks in
+[docs/performance.md](docs/performance.md); [docs/compatibility.md](docs/compatibility.md) lists the differences
+from dash and the known limitations, and [DEVELOPING.md](DEVELOPING.md) has how luish is implemented and tested.
 
 ## Building
 

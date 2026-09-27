@@ -170,7 +170,7 @@ rewritten in POSIX sh. That is configuration, not luish work, but each item abov
 
 zsh's `autoload` parses a function's body on its first call. The startup cache saves functions as source text,
 parsed again at every startup: on the author's setup this adds about 11 ms to a warm start, 9 ms of it parsing nvm
-functions that are rarely called (timings in `DEVELOPING.md`).
+functions that are rarely called (timings in `docs/performance.md`).
 
 When replaying the cache, define each function as a stub holding its byte range in the cache text (kept in memory,
 not re-read by path, since another shell may replace the cache), and parse the body on its first call. `type`, the

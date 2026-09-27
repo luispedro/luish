@@ -499,53 +499,27 @@ Checked on 2026-09-26 (the scripts are not in the repository):
 
 ## Performance
 
-Release build, 2026-09-26. Loops are best of 3, on a loaded machine; compare only within a table.
+The timings (script benchmarks against dash, bash, zsh and BusyBox, startup, and the startup cache) are in the user
+docs, `docs/performance.md`; update them there after rerunning `bench/run.sh` or the startup measurements. What
+follows is what they came from and what is left.
 
-| Benchmark | luish | dash |
-|---|---|---|
-| `-c true` (average of 200 runs) | 1.19 ms | 0.90 ms |
-| `-c /bin/true` (average of 200 runs) | 1.88 ms | 1.78 ms |
-| `while` loop, 100k `$((i+1))` iterations | 0.09 s | 0.09 s |
-| Loop running `/bin/true` 3000 times | 1.80 s | 1.81 s |
-| Loop running `x=$(echo hi)` 3000 times | 0.92 s | 0.90 s |
+Per external command, luish makes the same syscalls as dash (before `posix_spawn`, a loop running `/bin/true` 3000
+times took 2.42 s, now 1.80 s as in dash). Startup makes 56 syscalls to dash's 49 (it made 140 before `#![no_main]`,
+lazy signal-disposition lookup, and looking up the executable's path only when a script without `#!` needs it). The
+remaining startup gap (about 1.5 ms to dash's 1.15 ms per `-c :` from a loop) is the dynamic loader: relocating a 3 MB
+binary and loading `libm` (for Rhai's floats) and `libgcc_s`. The `plugins` feature accounts for about 250 µs,
+accepted while it stays under 1 ms. A build without it takes 1.34 ms, and a static one
+(`-C target-feature=+crt-static`) 1.09 ms, but static glibc looks users up (`~user`) through NSS modules loaded at
+run time.
 
-Per external command, luish makes the same syscalls as dash (before `posix_spawn`, the `/bin/true` loop took
-2.42 s). Startup makes 56 syscalls to dash's 49 (it made 140 before `#![no_main]`, lazy signal-disposition lookup,
-and looking up the executable's path only when a script without `#!` needs it). The remaining startup gap (about
-1.5 ms to dash's 1.15 ms per `-c :` from a loop) is the dynamic loader: relocating a 3 MB binary and loading `libm`
-(for Rhai's floats) and `libgcc_s`. The `plugins` feature accounts for about 250 µs, accepted while it stays under
-1 ms. A build without it takes 1.34 ms, and a static one (`-C target-feature=+crt-static`) 1.09 ms, but static glibc
-looks users up (`~user`) through NSS modules loaded at run time.
+Profiled with callgrind, the in-shell gap in the script benchmarks came from `$((...))` comparing the text with each
+of 35 operator strings, SipHash on every variable lookup, `${x#pat}` trying every prefix or suffix (and copying),
+`case` compiling literal patterns, and needless copies. Work inside the shell is now as fast as dash or faster; the
+fork-heavy scripts are within 4%, mostly startup. Most of the remaining in-shell time is `malloc` and `free`, since
+expansion builds `Vec`s where dash uses its stack allocator.
 
-Script benchmarks (`bench/run.sh`, see `bench/README.md`), release build, 2026-09-27, scale 1, mean of 10 runs on a
-4-core machine; Ubuntu's dash 0.5.12, bash 5.2 (`--posix`), zsh 5.9 (`--emulate sh`) and BusyBox 1.36. Seconds (ratio
-to dash); all shells print the same output:
-
-| Benchmark | dash | luish | bash | zsh | busybox |
-|---|---|---|---|---|---|
-| arith | 0.320 (1.00) | 0.196 (0.61) | 0.929 (2.90) | 0.553 (1.72) | 0.549 (1.71) |
-| build | 1.039 (1.00) | 1.086 (1.04) | 1.228 (1.18) | 1.236 (1.19) | 1.050 (1.01) |
-| configure | 1.149 (1.00) | 1.162 (1.01) | 1.453 (1.27) | 1.375 (1.20) | 1.265 (1.10) |
-| functions | 0.205 (1.00) | 0.158 (0.77) | 0.919 (4.49) | 0.992 (4.84) | 0.271 (1.32) |
-| strings | 0.260 (1.00) | 0.254 (0.98) | 0.893 (3.43) | 0.747 (2.87) | 0.427 (1.64) |
-| textproc | 0.203 (1.00) | 0.207 (1.02) | 0.513 (2.52) | 0.728 (3.58) | 0.320 (1.57) |
-
-Profiled with callgrind, the in-shell gap came from `$((...))` comparing the text with each of 35 operator strings,
-SipHash on every variable lookup, `${x#pat}` trying every prefix or suffix (and copying), `case` compiling literal
-patterns, and needless copies. Work inside the shell is now as fast as dash or faster; the fork-heavy scripts are
-within 4%, mostly startup. Most of the remaining in-shell time is `malloc` and `free`, since expansion builds `Vec`s
-where dash uses its stack allocator.
-
-The warm startup cache on the author's setup (164 KB, 114 of its 120 functions from nvm), over 100 runs:
-
-| Run | luish | dash | zsh `-f` |
-|---|---|---|---|
-| `-c true` | 3.1 ms | 2.2 ms | 6.2 ms |
-| `-n` on the cache (parse only) | 12.1 ms | 6.4 ms | 39 ms |
-| Running the cache | 14.2 ms | | 50 ms |
-
-luish parses this file about twice as slowly as dash, which is worth profiling (and see lazy function parsing in
-`PLAN.md`).
+luish parses the warm startup cache about twice as slowly as dash parses the same file (the `-n` row of the startup
+cache table), which is worth profiling (and see lazy function parsing in `PLAN.md`).
 
 ## Known gaps for developers
 

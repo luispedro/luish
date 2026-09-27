@@ -15,8 +15,8 @@ features is fine, as long as the prompt and line editor stay fast.
 - `PLAN.md`: what is still to be built, by phase (the phase numbers are used throughout the other documents),
   starting with the next steps in priority order.
 - `DEVELOPING.md`: developer documentation: design decisions, implementation notes by area with the tests that cover
-  them, deviations and their tests, dash's quirks, conformance and performance results. **Update it (and the user
-  docs) in the same commit as any change in behaviour.**
+  them, deviations and their tests, dash's quirks, conformance results and performance notes (the timings themselves
+  are in `docs/performance.md`). **Update it (and the user docs) in the same commit as any change in behaviour.**
 - `docs/compatibility.md`: deliberate differences from dash, grouped by what luish follows instead (zsh is preferred
   beyond POSIX), and the known limitations. Each deviation needs a test (a `# reference: zsh` case, or else a
   `.expected` one), listed in `DEVELOPING.md`.
