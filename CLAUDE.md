@@ -41,6 +41,7 @@ pixi run cargo test --bin luish parser::   # unit tests in one module
 pixi run luish -c 'echo hi'       # run the shell
 pixi run release                  # release build (LTO, panic=abort), used for benchmarks
 pixi run bench                    # release build, then the script benchmarks in bench/ (see bench/README.md)
+pixi run dist                     # release packages in target/dist/ (DEVELOPING.md, Releases); needs rustup for musl
 pixi run docs                     # build the user docs into docs/_build/html (warnings are errors)
 ```
 

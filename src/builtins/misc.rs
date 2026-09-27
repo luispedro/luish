@@ -459,7 +459,13 @@ pub fn hash(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     Ok(status)
 }
 
-const LIMITS: &[(u8, libc::__rlimit_resource_t, u64, &str)] = &[
+/// The type of `getrlimit`'s resource argument, which differs between glibc and musl.
+#[cfg(target_env = "gnu")]
+type Resource = libc::__rlimit_resource_t;
+#[cfg(not(target_env = "gnu"))]
+type Resource = libc::c_int;
+
+const LIMITS: &[(u8, Resource, u64, &str)] = &[
     (b't', libc::RLIMIT_CPU, 1, "time(seconds)"),
     (b'f', libc::RLIMIT_FSIZE, 512, "file(blocks)"),
     (b'd', libc::RLIMIT_DATA, 1024, "data(kbytes)"),

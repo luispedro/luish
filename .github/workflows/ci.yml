@@ -17,7 +17,12 @@ jobs:
   check:
     # The differential tests compare against the system dash, which must be
     # Debian's (as on the developers' machines), so pin the Ubuntu release.
-    runs-on: ubuntu-24.04
+    # Both architectures that releases are built for.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
 

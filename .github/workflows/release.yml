@@ -1,0 +1,91 @@
+name: Release
+
+# Builds the release packages (scripts/dist.sh) on x86_64 and aarch64 and tests
+# install.sh with them. On a v* tag, publishes them, with install.sh, as a
+# GitHub release, where install.sh downloads them from.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - install.sh
+      - scripts/dist.sh
+      - scripts/test-install.sh
+      - build.rs
+      - Cargo.toml
+      - Cargo.lock
+      - pixi.toml
+      - pixi.lock
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: prefix-dev/setup-pixi@v0.10.2
+        with:
+          cache: true
+          locked: true
+          environments: dist
+
+      # The musl build uses rustup (conda-forge has no musl Rust library).
+      - name: Install rustup
+        run: |
+          if ! command -v rustup >/dev/null; then
+            curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+            echo "$HOME/.cargo/bin" >>"$GITHUB_PATH"
+          fi
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: pixi run dist
+
+      - name: Test install.sh
+        run: sh scripts/test-install.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.runner }}
+          path: target/dist/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag against the version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "The tag $GITHUB_REF_NAME doesn't match Cargo.toml's version, $version" >&2
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "luish ${GITHUB_REF_NAME#v}" --generate-notes dist/* install.sh

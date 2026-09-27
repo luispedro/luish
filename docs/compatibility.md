@@ -109,3 +109,13 @@ Interactive use:
 - Extensions have only the `chpwd`, `prompt-vars` and `prompt-rewrite` hooks and completers: no built-ins of their
   own, no `precmd`, `preexec` or `exit` hooks, and no time limit except for completers, so a slow prompt hook or
   `prompt-vars.lsh` delays the prompt. Completers can't be interrupted with Ctrl-C, only by their time limit.
+
+The static musl build (see [](installation.md)) differs from the usual build, which uses glibc as dash does:
+
+- musl reserves signals 32 to 34, so its real-time signals start at 35 rather than 34: `RTMIN+n` is signal
+  `35+n`, one more than in dash, `kill -l 34` prints `34`, and signals 32 to 34 can't be trapped.
+- Some error messages take musl's wording, such as `Symbolic link loop` for glibc's `Too many levels of symbolic
+  links`, `Filename too long` for `File name too long`, and `Arithmetic exception` for a process killed by
+  `SIGFPE`.
+- `~user` only finds users in `/etc/passwd`, not those from other sources such as LDAP (through NSS).
+- Scripts that do much work inside the shell take up to twice as long, since musl's `malloc` is slower.

@@ -1,0 +1,161 @@
+#!/bin/sh
+# Installs luish from its GitHub releases, for Linux on x86_64 or aarch64:
+#
+#   curl -fsSL https://raw.githubusercontent.com/luispedro/luish/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/luispedro/luish/main/install.sh | sh -s -- --musl
+#
+# Options, each also settable with an environment variable:
+#
+#   --dir DIR        LUISH_INSTALL_DIR  where to put `luish` (default: ~/.local/bin)
+#   --version TAG    LUISH_VERSION      a release tag such as v0.1.0 (default: the latest release)
+#   --gnu, --musl    LUISH_LIBC         which build: gnu (dynamically linked against glibc 2.17 or later) or musl
+#                                       (static, runs anywhere but is slower); by default gnu where it can run
+#
+# LUISH_DOWNLOAD_URL replaces the release's download URL (for testing, e.g. file:///path/to/target/dist).
+
+set -eu
+
+repo=luispedro/luish
+
+say() {
+    echo "install.sh: $*" >&2
+}
+
+die() {
+    say "$*"
+    exit 1
+}
+
+usage() {
+    cat <<'END'
+usage: install.sh [--dir DIR] [--version TAG] [--gnu | --musl]
+
+  --dir DIR      where to put luish (default: ~/.local/bin; or LUISH_INSTALL_DIR)
+  --version TAG  a release tag such as v0.1.0 (default: the latest; or LUISH_VERSION)
+  --gnu          the build linked against glibc 2.17 or later (the default where it runs)
+  --musl         the static build, which runs anywhere but is slower (or LUISH_LIBC=gnu/musl)
+END
+}
+
+# Whether the glibc build can run: glibc 2.17 or later, with its dynamic loader
+# where the binary looks for it (NixOS and Alpine don't have it there).
+glibc_ok() {
+    case $arch in
+    x86_64) [ -e /lib64/ld-linux-x86-64.so.2 ] || return 1 ;;
+    aarch64) [ -e /lib/ld-linux-aarch64.so.1 ] || return 1 ;;
+    esac
+    v=$(getconf GNU_LIBC_VERSION 2>/dev/null) || v=
+    v=${v#glibc }
+    if [ -z "$v" ]; then
+        # glibc's ldd prints "ldd (GNU libc) 2.17" or "ldd (Ubuntu GLIBC 2.39-0ubuntu8) 2.39"; musl's has no version.
+        line=$(ldd --version 2>&1 | head -n 1) || line=
+        case $line in *GLIBC* | *"GNU libc"*) v=${line##* } ;; esac
+    fi
+    major=${v%%.*}
+    minor=${v#*.}
+    minor=${minor%%.*}
+    case $major$minor in '' | *[!0-9]*) return 1 ;; esac
+    [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 17 ]; }
+}
+
+download() { # url file
+    if command -v curl >/dev/null; then
+        curl -fsSL -o "$2" "$1"
+    elif command -v wget >/dev/null; then
+        wget -q -O "$2" "$1"
+    else
+        die "neither curl nor wget is installed"
+    fi
+}
+
+# Downloads, checks and unpacks the $libc build into $tmp/$name.
+fetch() {
+    name=luish-$arch-linux-$libc
+    say "downloading $base/$name.tar.gz"
+    download "$base/$name.tar.gz" "$tmp/$name.tar.gz" || die "download failed: $base/$name.tar.gz"
+    download "$base/$name.tar.gz.sha256" "$tmp/$name.tar.gz.sha256" || die "download failed: $base/$name.tar.gz.sha256"
+    if command -v sha256sum >/dev/null; then
+        (cd "$tmp" && sha256sum -c "$name.tar.gz.sha256" >/dev/null 2>&1) || die "checksum mismatch for $name.tar.gz"
+    elif command -v shasum >/dev/null; then
+        (cd "$tmp" && shasum -a 256 -c "$name.tar.gz.sha256" >/dev/null 2>&1) || die "checksum mismatch for $name.tar.gz"
+    else
+        say "warning: no sha256sum or shasum, so the download is not verified"
+    fi
+    tar -xzf "$tmp/$name.tar.gz" -C "$tmp"
+}
+
+main() {
+    dir=${LUISH_INSTALL_DIR:-${HOME:?}/.local/bin}
+    version=${LUISH_VERSION:-latest}
+    libc=${LUISH_LIBC:-}
+    while [ $# -gt 0 ]; do
+        case $1 in
+        --dir) [ $# -ge 2 ] || die "--dir needs a directory"; dir=$2; shift ;;
+        --dir=*) dir=${1#*=} ;;
+        --version) [ $# -ge 2 ] || die "--version needs a tag"; version=$2; shift ;;
+        --version=*) version=${1#*=} ;;
+        --gnu | --glibc) libc=gnu ;;
+        --musl) libc=musl ;;
+        -h | --help) usage; exit 0 ;;
+        *) die "unknown option: $1 (see --help)" ;;
+        esac
+        shift
+    done
+
+    [ "$(uname -s)" = Linux ] || die "luish's releases are for Linux; on $(uname -s), build it from source"
+    case $(uname -m) in
+    x86_64 | amd64) arch=x86_64 ;;
+    aarch64 | arm64) arch=aarch64 ;;
+    *) die "there is no release for $(uname -m); build luish from source" ;;
+    esac
+    auto=
+    case $libc in
+    '')
+        auto=1
+        if glibc_ok; then libc=gnu; else libc=musl; fi
+        ;;
+    glibc) libc=gnu ;;
+    gnu | musl) ;;
+    *) die "unknown build: $libc (gnu or musl)" ;;
+    esac
+
+    if [ -n "${LUISH_DOWNLOAD_URL:-}" ]; then
+        base=$LUISH_DOWNLOAD_URL
+    elif [ "$version" = latest ]; then
+        base=https://github.com/$repo/releases/latest/download
+    else
+        base=https://github.com/$repo/releases/download/$version
+    fi
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    fetch
+    if ! "$tmp/$name/luish" -c : 2>/dev/null; then
+        # Such as on NixOS, whose /lib64/ld-linux-x86-64.so.2 only prints an error.
+        [ -n "$auto" ] && [ "$libc" = gnu ] || die "the $libc build doesn't run on this system"
+        say "the gnu build doesn't run on this system, so using the musl build"
+        libc=musl
+        fetch
+        "$tmp/$name/luish" -c : 2>/dev/null || die "the musl build doesn't run on this system"
+    fi
+
+    # Replace any existing luish by renaming, so that running shells keep theirs.
+    mkdir -p "$dir"
+    cp "$tmp/$name/luish" "$dir/.luish.new.$$"
+    chmod 755 "$dir/.luish.new.$$"
+    mv -f "$dir/.luish.new.$$" "$dir/luish"
+    say "installed $("$dir/luish" --version) ($libc build) as $dir/luish"
+
+    case :$PATH: in
+    *:"$dir":*) ;;
+    *) say "$dir is not in your PATH; add it in your shell's startup file: export PATH=\"$dir:\$PATH\"" ;;
+    esac
+    if ! grep -qx "$dir/luish" /etc/shells 2>/dev/null; then
+        say "to make luish your login shell:"
+        say "  echo $dir/luish | sudo tee -a /etc/shells && chsh -s $dir/luish"
+    fi
+}
+
+main "$@"

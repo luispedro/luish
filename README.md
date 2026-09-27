@@ -19,6 +19,16 @@ luish is usable as a daily shell. The user documentation is in [docs/](docs/inde
 [docs/performance.md](docs/performance.md); [docs/compatibility.md](docs/compatibility.md) lists the differences
 from dash and the known limitations, and [DEVELOPING.md](DEVELOPING.md) has how luish is implemented and tested.
 
+## Installing
+
+Releases have binaries for Linux on x86_64 and aarch64. This installs the right one in `~/.local/bin`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/luispedro/luish/main/install.sh | sh
+```
+
+[docs/installation.md](docs/installation.md) has its options, such as the static musl build (`sh -s -- --musl`).
+
 ## Building
 
 luish uses [pixi](https://pixi.sh) to provide the Rust toolchain:

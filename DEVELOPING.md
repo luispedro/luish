@@ -75,6 +75,8 @@ tests/
 ├── compare.rs          # the differential harness
 └── interactive.rs      # pty tests
 bench/                  # script benchmarks (see bench/README.md)
+scripts/                # dist.sh (release packages), test-install.sh (tests install.sh with them)
+install.sh              # the `curl | sh` installer, which downloads a release
 docs/                   # user documentation; docs/builtins/ is compiled into `help`; docs/examples/ has example plugins
 luish-std-plugins/      # a collection of plugins (git-completion, bash-completion), see its README.md
 ```
@@ -524,6 +526,36 @@ expansion builds `Vec`s where dash uses its stack allocator.
 
 luish parses the warm startup cache about twice as slowly as dash parses the same file (the `-n` row of the startup
 cache table), which is worth profiling (and see lazy function parsing in `PLAN.md`).
+
+## Releases
+
+Releases are built by `.github/workflows/release.yml`, on GitHub's x86_64 and arm64 Ubuntu runners: each runs
+`pixi run dist` (`scripts/dist.sh`), which builds and checks two binaries and packages them in `target/dist/` as
+`luish-ARCH-linux-LIBC.tar.gz` with a `.sha256` file each, then `scripts/test-install.sh`, which runs `install.sh`
+against those packages (with `LUISH_DOWNLOAD_URL=file://...`) under dash, bash and the packaged luish: each
+build, a reinstall over the running binary, a corrupt or missing download, and the fallback to musl when the gnu
+build doesn't run. The workflow also runs on pull requests that change any of these, without publishing. To make a
+release, set the version in `Cargo.toml` and push a tag `vVERSION`: the workflow checks that the two agree and
+publishes the packages and `install.sh` as a GitHub release. `install.sh` downloads from the latest release's URLs
+(`releases/latest/download/NAME`), so the packages' names must not change.
+
+- **gnu**: linked against glibc 2.17 with conda-forge's `sysroot_linux-64` (or `-aarch64`) and `gcc_linux-*` as the
+  linker, from the `dist` environment in `pixi.toml`. glibc is backward compatible: a binary runs on any glibc at
+  least as new as the one it was linked against, and luish needs nothing newer than 2.17 (Rust's own minimum), so
+  it runs on any distribution from 2014 on. `dist.sh` checks that no symbol needs a newer version. It is as fast as a
+  build linked against the system's glibc, and passes the same tests.
+- **musl**: static, for systems without glibc or without its dynamic loader in the usual place (Alpine, NixOS).
+  conda-forge has no musl Rust standard library, so `dist.sh` builds it with rustup's toolchain of the same Rust
+  version as pixi's. It is a fallback, and its differences are listed in `docs/compatibility.md` (Known
+  limitations). The only code it needed is the type of `getrlimit`'s argument (`builtins/misc.rs`). It passes the
+  test suite except `builtins/kill_trap_signals.sh` (its real-time signals start at 35). It starts in about 0.8 ms
+  (1.5 ms for the gnu build, whose time goes to the dynamic loader), but runs the in-shell benchmarks (arith,
+  functions, strings, textproc) 1.3 to 1.9 times as slowly as dash, as musl's `malloc` is slow. With mimalloc as
+  the global allocator it was within 5% to 20% of dash (and started in 1.2 ms), at the cost of C code in the build
+  and a musl C compiler to build it.
+
+A static glibc build (`-C target-feature=+crt-static`) would be the fastest, but glibc loads the NSS modules that
+look users up (for `~user`) at run time, and they must come from the same glibc version it was linked against.
 
 ## Known gaps for developers
 
