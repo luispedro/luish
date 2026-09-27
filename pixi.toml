@@ -22,6 +22,8 @@ fmt-check = "cargo fmt --check"
 lint = "cargo clippy --all-targets -- -D warnings"
 check = { depends-on = ["fmt-check", "lint", "test"] }
 luish = "cargo run --quiet --"
+# Script benchmarks against dash and other shells (see bench/README.md).
+bench = { cmd = "sh bench/run.sh", depends-on = ["release"] }
 
 # User documentation (docs/), published on Read the Docs, which installs from
 # docs/requirements.txt: keep the two in step.

@@ -63,7 +63,7 @@ pass**.
 | 9 Options and `set -e` | Done |
 | 10 Interactive / job control | Done (prompt loop, history and `fc`, job control, completion), with the gaps listed below |
 | 11 Plugins | Started: the `plugin` built-in, the Rhai host with a small `sh` module, the `chpwd` and `prompt` hooks and completers (see Plugins below) |
-| 12 Conformance / performance | Started: autoconf `configure` scripts and the Oils spec tests (see Conformance below), benchmark baseline |
+| 12 Conformance / performance | Started: autoconf `configure` scripts and the Oils spec tests (see Conformance below), benchmark baseline, script benchmarks in `bench/` |
 
 ## Implemented behaviour
 
@@ -877,3 +877,27 @@ lazy) and HashMap seeding. Deferred for now by decision.
 Before `posix_spawn`, the `/bin/true` loop took 2.42 s. The system dash
 (Debian) forks for the last command of `-c`; luish execs it, like upstream
 dash.
+
+### Script benchmarks
+
+`bench/run.sh` (see `bench/README.md`) runs script-sized workloads under
+several shells, checks that their outputs agree, and times them with
+hyperfine. Release build, 2026-09-27, scale 1, mean of at least 5 runs on a
+4-core machine; Ubuntu's dash 0.5.12, bash 5.2 (`--posix`), zsh 5.9
+(`--emulate sh`) and BusyBox 1.36 `sh`. Times in seconds, with the ratio to
+dash. All shells print the same output for every script.
+
+| Benchmark | dash | luish | bash | zsh | busybox |
+|---|---|---|---|---|---|
+| arith | 0.332 (1.00) | 0.479 (1.44) | 0.937 (2.82) | 0.565 (1.70) | 0.552 (1.66) |
+| build | 1.008 (1.00) | 1.068 (1.06) | 1.208 (1.20) | 1.199 (1.19) | 1.055 (1.05) |
+| configure | 1.137 (1.00) | 1.211 (1.06) | 1.452 (1.28) | 1.435 (1.26) | 1.274 (1.12) |
+| functions | 0.208 (1.00) | 0.245 (1.18) | 0.945 (4.54) | 1.013 (4.86) | 0.280 (1.35) |
+| strings | 0.278 (1.00) | 0.375 (1.35) | 0.920 (3.31) | 0.753 (2.71) | 0.410 (1.48) |
+| textproc | 0.196 (1.00) | 0.261 (1.33) | 0.506 (2.58) | 0.696 (3.55) | 0.310 (1.58) |
+
+The fork-heavy scripts (`build`, `configure`) are within 6% of dash, but
+work done inside the shell (arithmetic, string expansion, `read` loops) is
+1.2 to 1.45 times slower, although a bare `$((i+1))` loop is not: the gap
+is in paths the loop benchmarks above don't reach. Not yet profiled.
+

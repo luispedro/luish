@@ -167,7 +167,7 @@ luish/
 │   ├── interactive.rs      # pty tests
 │   └── plugins/            # Rhai plugin tests
 ├── fuzz/                   # (planned) cargo-fuzz targets (lexer, parser, arith, pattern)
-└── bench/                  # (planned) hyperfine scripts
+├── bench/                  # benchmark scripts and their runner (hyperfine)
 ```
 
 There is no separate `LineEditor` trait: the separation is kept by giving
@@ -640,6 +640,10 @@ the `Builtin` trait (step 1), plugin built-ins, the other hooks (`precmd`,
   - A loop of 1M arithmetic increments.
   - String-heavy parameter expansion.
   - A fork-heavy pipeline loop.
+  - Script-sized workloads (`bench/scripts/`: arithmetic, strings, text
+    processing, functions, an autoconf-style `configure`, a make-like
+    build), run under dash, bash, zsh and busybox too, whose outputs must
+    agree before their times are compared.
 - **Optimisations**, applied only where profiling shows a need:
   - Cache `PATH` lookups (`hash`).
   - Avoid allocations in the expansion of plain literal words.
@@ -650,12 +654,14 @@ the `Builtin` trait (step 1), plugin built-ins, the other hooks (`precmd`,
 
 **Status:** GNU hello and sed `configure` give the same results as under
 dash; 43 of 1620 Oils spec cases differ, mostly deliberate deviations. The
-PATH cache and `posix_spawn` are done, and loops run as fast as under dash.
+PATH cache and `posix_spawn` are done, and simple loops run as fast as under
+dash, but the script benchmarks in `bench/` are 1.2 to 1.45 times slower on
+work done inside the shell.
 Still to do: the startup gap (about 185 syscalls to dash's 85: signal
 dispositions queried eagerly, Rust runtime start-up that `#![no_main]`
 would avoid, `readlink /proc/self/exe`; deferred by decision), larger
 `configure` scripts (coreutils), the smoosh and modernish suites, the fuzz
-targets, and `bench/`.
+targets, and closing the gaps that `bench/` shows (see STATUS.md).
 
 ### Phase 13 — Replacing zsh (Stage 1, current focus)
 

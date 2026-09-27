@@ -35,6 +35,7 @@ LUISH_CASE=expand/ pixi run test  # only differential cases whose path contains 
 pixi run cargo test --bin luish parser::   # unit tests in one module
 pixi run luish -c 'echo hi'       # run the shell
 pixi run release                  # release build (LTO, panic=abort), used for benchmarks
+pixi run bench                    # release build, then the script benchmarks in bench/ (see bench/README.md)
 pixi run docs                     # build the user docs into docs/_build/html (warnings are errors)
 ```
 
@@ -114,5 +115,5 @@ state on the `Shell` struct in `shell.rs`.
 
 - Error messages use dash's wording.
 - Performance matters: hot paths (e.g. `[ ... ]` in loops) must avoid needless syscalls. Compare against dash with a
-  release build when changing the executor or expansion.
+  release build when changing the executor or expansion (`bench/run.sh`).
 - Documentation commits are prefixed `DOC`.
