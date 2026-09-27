@@ -1,6 +1,6 @@
 //! Signal dispositions, pending-signal flags, and signal names.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 pub const NSIG: usize = 65;
 
@@ -23,6 +23,8 @@ pub enum Disposition {
 }
 
 pub fn set_disposition(sig: i32, d: Disposition) {
+    // Remember whether it was ignored before the shell first changes it.
+    ignored_on_entry(sig as usize);
     // SAFETY: plain sigaction with a handler that only touches atomics.
     unsafe {
         let mut sa: libc::sigaction = std::mem::zeroed();
@@ -38,22 +40,30 @@ pub fn set_disposition(sig: i32, d: Disposition) {
     }
 }
 
-/// Signals that were ignored when the shell started (these can't be trapped).
-pub fn ignored_on_entry() -> [bool; NSIG] {
-    let mut out = [false; NSIG];
-    for (sig, slot) in out.iter_mut().enumerate().skip(1) {
-        // SAFETY: querying the current action only.
-        unsafe {
-            let mut old: libc::sigaction = std::mem::zeroed();
-            if libc::sigaction(sig as i32, std::ptr::null(), &mut old) == 0 {
-                *slot = old.sa_sigaction == libc::SIG_IGN;
-            }
-        }
+/// Whether each signal was ignored when the shell started: 0 if not known
+/// yet, 1 if not, 2 if it was.
+static ENTRY: [AtomicU8; NSIG] = [const { AtomicU8::new(0) }; NSIG];
+
+/// Whether `sig` was ignored when the shell started (then it can't be
+/// trapped). As in dash, it is looked up when first needed, which is before
+/// the shell first changes it (see `set_disposition`), rather than for every
+/// signal at startup.
+pub fn ignored_on_entry(sig: usize) -> bool {
+    if sig == 0 || sig >= NSIG {
+        return false;
     }
-    // Rust ignores SIGPIPE before main() runs, so we can't tell whether it
-    // was ignored on entry. Assume it wasn't.
-    out[libc::SIGPIPE as usize] = false;
-    out
+    match ENTRY[sig].load(Ordering::Relaxed) {
+        0 => {
+            // SAFETY: querying the current action only.
+            let ignored = unsafe {
+                let mut old: libc::sigaction = std::mem::zeroed();
+                libc::sigaction(sig as i32, std::ptr::null(), &mut old) == 0 && old.sa_sigaction == libc::SIG_IGN
+            };
+            ENTRY[sig].store(if ignored { 2 } else { 1 }, Ordering::Relaxed);
+            ignored
+        }
+        v => v == 2,
+    }
 }
 
 /// Takes the set of signals that arrived since the last call.

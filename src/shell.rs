@@ -39,7 +39,6 @@ pub struct Shell {
     /// Trap actions by signal number (0 is EXIT). An empty action ignores
     /// the signal.
     pub traps: Vec<Option<Vec<u8>>>,
-    pub ignored_on_entry: [bool; NSIG],
     pub jobs: JobTable,
     /// The terminal, while job control is on (only in the main shell).
     pub jobctl: Option<Terminal>,
@@ -63,8 +62,6 @@ pub struct Shell {
     pub subst_status: Option<i32>,
     /// Saved variables for `local`, one frame per function call.
     pub locals: Vec<Vec<(Vec<u8>, Option<Var>)>>,
-    /// Path of this executable, used to run scripts without `#!`.
-    pub self_exe: Vec<u8>,
     /// Position inside a group of options for `getopts`.
     /// Writing a built-in's output failed (checked after it returns).
     pub out_failed: std::cell::Cell<bool>,
@@ -122,12 +119,6 @@ impl Shell {
             let _ = vars.set(b"PWD", c.clone());
         }
         vars.entry(b"PWD").exported = true;
-        let self_exe = std::env::current_exe()
-            .map(|p| {
-                use std::os::unix::ffi::OsStrExt;
-                p.as_os_str().as_bytes().to_vec()
-            })
-            .unwrap_or_else(|_| b"/proc/self/exe".to_vec());
         Shell {
             vars,
             positional: Vec::new(),
@@ -138,7 +129,6 @@ impl Shell {
             functions: HashMap::default(),
             aliases: Rc::new(AliasMap::default()),
             traps: vec![None; NSIG],
-            ignored_on_entry: signals::ignored_on_entry(),
             jobs: JobTable::default(),
             jobctl: None,
             job_warning: 0,
@@ -154,7 +144,6 @@ impl Shell {
             pid,
             subst_status: None,
             locals: Vec::new(),
-            self_exe,
             optind: 1,
             optoff: None,
             curdir,
@@ -167,6 +156,16 @@ impl Shell {
             plugins: None,
             no_plugins: false,
         }
+    }
+
+    /// Path of this executable, used to run scripts without `#!`.
+    pub fn self_exe(&self) -> Vec<u8> {
+        std::env::current_exe()
+            .map(|p| {
+                use std::os::unix::ffi::OsStrExt;
+                p.as_os_str().as_bytes().to_vec()
+            })
+            .unwrap_or_else(|_| b"/proc/self/exe".to_vec())
     }
 
     pub fn opt(&self, o: Opt) -> bool {

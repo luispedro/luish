@@ -84,7 +84,7 @@ pub fn trap(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         if sig >= NSIG {
             continue;
         }
-        if sig != 0 && sh.ignored_on_entry[sig] && !sh.interactive {
+        if sig != 0 && crate::signals::ignored_on_entry(sig) && !sh.interactive {
             continue;
         }
         sh.traps[sig] = action.clone();

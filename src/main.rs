@@ -1,5 +1,14 @@
 //! luish: a POSIX shell.
 
+// The C `main` below replaces Rust's runtime start-up, which would cost
+// a shell started for each command a dozen syscalls: it reads
+// /proc/self/maps and sets up an alternate stack to report stack overflows,
+// polls fds 0 to 2 to reopen them on /dev/null if closed (dash leaves them
+// closed), and ignores SIGPIPE (which a shell must leave as it found it).
+// The arguments are taken from `argv` rather than `std::env::args`, which
+// without it would be empty on some libcs (musl).
+#![cfg_attr(not(test), no_main)]
+
 mod ast;
 mod builtins;
 mod cmdtext;
@@ -24,12 +33,11 @@ mod unparse;
 mod vars;
 
 use std::ffi::OsStr;
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::os::unix::ffi::OsStrExt;
 
 use input::Input;
 use options::Opt;
 use shell::Shell;
-use signals::Disposition;
 
 fn usage_error(sh: &Shell, msg: &str) -> ! {
     sh.error(msg);
@@ -118,11 +126,18 @@ impl Invocation {
     }
 }
 
-fn main() {
-    // Rust ignores SIGPIPE; a shell (and its children) must not.
-    signals::set_disposition(libc::SIGPIPE, Disposition::Default);
+#[cfg(not(test))]
+#[unsafe(no_mangle)]
+extern "C" fn main(argc: libc::c_int, argv: *const *const libc::c_char) -> libc::c_int {
+    let args = (0..argc.max(0) as usize)
+        // SAFETY: the C runtime passes `argc` valid NUL-terminated strings.
+        .map(|i| unsafe { std::ffi::CStr::from_ptr(*argv.add(i)) }.to_bytes().to_vec())
+        .collect();
+    run(args)
+}
 
-    let args: Vec<Vec<u8>> = std::env::args_os().map(|a| a.into_vec()).collect();
+#[cfg_attr(test, allow(dead_code))]
+fn run(args: Vec<Vec<u8>>) -> ! {
     let mut sh = Shell::new();
     sh.arg0 = args.first().cloned().unwrap_or_else(|| b"luish".to_vec());
     let mut inv = Invocation {
@@ -226,7 +241,7 @@ fn main() {
             sh.options.set(Opt::Monitor, true);
         }
         for sig in [libc::SIGINT, libc::SIGQUIT, libc::SIGTERM] {
-            if !sh.ignored_on_entry[sig as usize] {
+            if !signals::ignored_on_entry(sig as usize) {
                 signals::set_disposition(sig, sh.default_disposition(sig));
             }
         }

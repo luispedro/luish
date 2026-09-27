@@ -283,7 +283,7 @@ impl Shell {
             let r = sys::spawn(path, argv, &env);
             if r == Err(libc::ENOEXEC) {
                 // A script without `#!`: run it with this shell.
-                return sys::spawn(&sh.self_exe, &sh.script_args(path, argv), &env);
+                return sys::spawn(&sh.self_exe(), &sh.script_args(path, argv), &env);
             }
             r
         });
@@ -352,7 +352,7 @@ impl Shell {
             let mut e = sys::execve(path, argv, &env);
             if e == libc::ENOEXEC {
                 // A script without `#!`: run it with this shell.
-                e = sys::execve(&sh.self_exe, &sh.script_args(path, argv), &env);
+                e = sys::execve(&sh.self_exe(), &sh.script_args(path, argv), &env);
             }
             Err(e)
         });

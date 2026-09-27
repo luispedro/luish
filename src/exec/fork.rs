@@ -110,7 +110,7 @@ impl Shell {
         self.traps[0] = None;
         if self.interactive {
             for sig in [libc::SIGINT, libc::SIGQUIT, libc::SIGTERM] {
-                if !self.ignored_on_entry[sig as usize] && self.traps[sig as usize].is_none() {
+                if !signals::ignored_on_entry(sig as usize) && self.traps[sig as usize].is_none() {
                     signals::set_disposition(sig, Disposition::Default);
                 }
             }
