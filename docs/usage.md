@@ -167,6 +167,8 @@ options) completes as a command name. With `setopt autocd`, a command name also 
 - `fg`, `bg`, `jobs`, `wait` and `kill` complete job specs such as `%1`, listed with their commands (after `%` and
   a letter, they complete the command names instead, such as `%vim`);
 - `kill -` and `kill -s` complete signal names, as do the arguments of `trap` after its action;
+- `setopt` completes the options that are off and `unsetopt` those that are on, as in zsh (after `no`, also the
+  others with `no` in front);
 - `plugin load` completes the plugins in the plugin directory, and `plugin unload` the loaded ones.
 
 Plugins can provide completion for other commands (see [Plugins](plugins.md)). Aliases are followed: if `g` is an

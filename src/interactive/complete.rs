@@ -54,6 +54,9 @@ pub struct Names {
     pub cdpath: Vec<u8>,
     /// `setopt autocd`: directories are commands too.
     pub autocd: bool,
+    /// The options `setopt` and `unsetopt` can change, named as they list
+    /// them, and whether each is on.
+    pub options: Vec<(&'static str, bool)>,
 }
 
 /// Runs the completer for a command (in `Names::completers`), given the
@@ -181,6 +184,8 @@ enum Args {
     For,
     /// Widget names after the key sequence.
     Bindkey,
+    /// Option names: those that are off for `setopt`, on for `unsetopt`.
+    Setopt(bool),
 }
 
 const ARGS: &[(&[u8], Args)] = &[
@@ -208,6 +213,8 @@ const ARGS: &[(&[u8], Args)] = &[
     (b"getopts", Args::Getopts),
     (b"for", Args::For),
     (b"bindkey", Args::Bindkey),
+    (b"setopt", Args::Setopt(true)),
+    (b"unsetopt", Args::Setopt(false)),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1057,6 +1064,20 @@ impl ShellHelper {
                         }
                         0
                     }
+                    Some(Args::Setopt(on)) => {
+                        // As in zsh: the options the command would change,
+                        // and after `no` the others inverted.
+                        let no = w.text.get(..2).is_some_and(|p| p.eq_ignore_ascii_case(b"no"));
+                        for &(name, state) in &self.names.options {
+                            if state != on {
+                                out.push(Candidate::word(name.as_bytes()));
+                            } else if no {
+                                let name = name.as_bytes();
+                                out.push(Candidate::word(&[b"no", name].concat()));
+                            }
+                        }
+                        0
+                    }
                     Some(Args::Dirs) => files(Files::Dirs, &mut out),
                     Some(Args::Cd) if w.text[w.split..].starts_with(b"~") => files(Files::Dirs, &mut out),
                     Some(Args::Cd) => {
@@ -1527,6 +1548,7 @@ mod tests {
                 plugin_dir: Some(dir.join("plugins").as_os_str().as_bytes().to_vec()),
                 cdpath: format!("/nonexistent::{d}").into_bytes(),
                 autocd: false,
+                options: vec![("noglob", false), ("globstar", true), ("autocd", false)],
             },
             ask: Some(fake_git),
             ..Default::default()
@@ -1578,6 +1600,11 @@ mod tests {
         assert_eq!(complete(&h, "getopts HOM"), Vec::<String>::new());
         assert_eq!(complete(&h, "getopts ab: HOM"), ["HOME "]);
         assert_eq!(complete(&h, "getopts -- ab: HOM"), ["HOME "]);
+        assert_eq!(complete(&h, "setopt "), ["autocd ", "noglob "]);
+        assert_eq!(complete(&h, "setopt glob"), ["noglob "]);
+        assert_eq!(complete(&h, "setopt no"), ["noglob ", "noglobstar "]);
+        assert_eq!(complete(&h, "unsetopt "), ["globstar "]);
+        assert_eq!(complete(&h, "unsetopt noau"), ["noautocd "]);
         assert_eq!(complete(&h, "for HOM"), ["HOME "]);
         assert_eq!(complete(&h, "for x "), ["in "]);
         assert_eq!(complete(&h, "for x in ~/f"), ["~/file\\ one "]);

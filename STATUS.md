@@ -540,7 +540,9 @@ pass**.
   `export`, `local`, `readonly`, `unset` (function names after
   `unset -f`), `read` (not after `-p`), `getopts` (after the option
   string) and `for` (then `in`), aliases for `alias` and `unalias`, widget
-  names for `bindkey`, command names for
+  names for `bindkey`, option names for `setopt` (those that are off) and
+  `unsetopt` (those that are on; after `no`, also the others inverted, as
+  in zsh), command names for
   `hash`, `type` and `which`, built-ins for `help`, job specs (described by
   their commands; after `%` and a letter, the command names that give one
   job, as `%vim`) for `fg`, `bg`, `jobs`, `wait` and `kill`, signal names

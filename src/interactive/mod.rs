@@ -182,6 +182,10 @@ fn names(sh: &Shell) -> Names {
         plugin_dir: crate::plugins::plugin_dir(sh),
         cdpath: sh.get_var(b"CDPATH").unwrap_or_default(),
         autocd: sh.opt(crate::options::Opt::Autocd),
+        options: crate::options::Options::all_names()
+            .filter(|o| !matches!(o.0, crate::options::Opt::Interactive | crate::options::Opt::Stdin))
+            .map(|(o, name)| (name, sh.opt(o)))
+            .collect(),
     }
 }
 
