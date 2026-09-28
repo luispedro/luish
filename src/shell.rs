@@ -253,6 +253,7 @@ impl Shell {
             value: Some(value),
             exported: attrs.is_some_and(|v| v.exported),
             readonly: attrs.is_some_and(|v| v.readonly),
+            integer: attrs.is_some_and(|v| v.integer),
         })
     }
 
@@ -305,6 +306,11 @@ impl Shell {
         if name == b"OPTIND" && crate::builtins::parse_uint(&value).is_none() {
             return Err(format!("Illegal number: {}", String::from_utf8_lossy(&value)));
         }
+        let value = if self.vars.is_integer(name) {
+            self.integer(&value)?
+        } else {
+            value
+        };
         if self.vars.set(name, value).is_err() {
             return Err(format!("{}: is read only", String::from_utf8_lossy(name)));
         }
@@ -315,12 +321,43 @@ impl Shell {
         Ok(())
     }
 
+    /// The value to store in an integer variable (`typeset -i`): `value`
+    /// evaluated as an arithmetic expression, in decimal.
+    fn integer(&mut self, value: &[u8]) -> Result<Vec<u8>, String> {
+        Ok(crate::expand::arith::eval(self, value)?.to_string().into_bytes())
+    }
+
+    /// Evaluates the elements to assign to `name`, if it is an integer
+    /// variable.
+    fn integer_elements(&mut self, name: &[u8], mut elements: Vec<Vec<u8>>) -> Result<Vec<Vec<u8>>, Flow> {
+        if self.vars.is_integer(name) {
+            for e in &mut elements {
+                *e = self.integer(e).map_err(|msg| self.fail(msg))?;
+            }
+        }
+        Ok(elements)
+    }
+
+    /// Reports an error that exits a non-interactive shell.
+    pub fn fail(&self, msg: impl AsRef<[u8]>) -> Flow {
+        self.error(msg);
+        Flow::Error(2)
+    }
+
     /// Assigns a whole value (an array), reporting an error if the variable
     /// is readonly.
     pub fn set_var_value(&mut self, name: &[u8], value: Value) -> Result<(), Flow> {
-        if let Value::Str(s) = value {
-            return self.set_var(name, s);
-        }
+        let value = match value {
+            Value::Str(s) => return self.set_var(name, s),
+            Value::Array(a) if self.vars.is_integer(name) => Value::Array(Box::new(self.integer_elements(name, *a)?)),
+            Value::Assoc(mut h) if self.vars.is_integer(name) => {
+                for v in h.values_mut() {
+                    *v = self.integer(v).map_err(|msg| self.fail(msg))?;
+                }
+                Value::Assoc(h)
+            }
+            v => v,
+        };
         if matches!(value, Value::Array(_))
             && let Some(s) = self.tied(name)
         {
@@ -336,6 +373,23 @@ impl Shell {
     /// Assigns to (or with `append`, appends to) an element of an array: an
     /// index counts from the end if it is negative.
     pub fn set_element(&mut self, name: &[u8], sub: &Subscript, value: Vec<u8>, append: bool) -> Result<(), Flow> {
+        let (value, append) = if self.vars.is_integer(name) {
+            let mut n = crate::expand::arith::eval(self, &value).map_err(|msg| self.fail(msg))?;
+            if append {
+                let old = match (self.vars.get_value(name), sub) {
+                    (Some(Value::Assoc(h)), Subscript::Key(k)) => h.get(k),
+                    (Some(v), &Subscript::Index(i)) => {
+                        let e = v.elements();
+                        e.get(if i < 0 { i + e.len() as i64 } else { i } as usize)
+                    }
+                    _ => None,
+                };
+                n = n.wrapping_add(old.and_then(|o| crate::expand::arith::parse_number(o)).unwrap_or(0));
+            }
+            (n.to_string().into_bytes(), false)
+        } else {
+            (value, append)
+        };
         let r = match sub {
             Subscript::Index(i) if let Some(s) = self.tied(name) => {
                 let mut a = Some(Value::Array(Box::new(self.tied_elements(s))));
@@ -370,7 +424,7 @@ impl Shell {
         };
         if self.vars.is_assoc(name) {
             let keyed = items.iter().filter(|i| i.key.is_some()).count();
-            let pairs = if keyed == items.len() {
+            let pairs: Vec<(Vec<u8>, Vec<u8>)> = if keyed == items.len() {
                 items.into_iter().map(|i| (i.key.unwrap(), i.value)).collect()
             } else if keyed > 0 {
                 return Err(bad(self, "bad [key]=value syntax for associative array"));
@@ -379,6 +433,12 @@ impl Shell {
             } else {
                 let mut items = items.into_iter();
                 std::iter::from_fn(|| Some((items.next()?.value, items.next()?.value))).collect()
+            };
+            let pairs = if self.vars.is_integer(name) {
+                let (keys, values): (Vec<_>, Vec<_>) = pairs.into_iter().unzip();
+                keys.into_iter().zip(self.integer_elements(name, values)?).collect()
+            } else {
+                pairs
             };
             if self.vars.set_pairs(name, pairs, append).is_err() {
                 return Err(self.readonly_error(name));
@@ -419,6 +479,7 @@ impl Shell {
 
     /// Appends elements to an array (`a+=(x y)`).
     pub fn append_elements(&mut self, name: &[u8], items: Vec<Vec<u8>>) -> Result<(), Flow> {
+        let items = self.integer_elements(name, items)?;
         if let Some(s) = self.tied(name) {
             let mut a = self.tied_elements(s);
             a.extend(items);
@@ -432,8 +493,7 @@ impl Shell {
     }
 
     fn readonly_error(&self, name: &[u8]) -> Flow {
-        self.error(format!("{}: is read only", String::from_utf8_lossy(name)));
-        Flow::Error(2)
+        self.fail(format!("{}: is read only", String::from_utf8_lossy(name)))
     }
 
     fn after_assign(&mut self, name: &[u8]) {

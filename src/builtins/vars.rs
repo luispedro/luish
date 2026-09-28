@@ -501,12 +501,13 @@ pub fn typeset(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     declare(sh, argv, false)
 }
 
-/// The attributes that `typeset` and `local` set (`-a`, `-A`, `-r`, `-x`)
-/// and remove (`+r`, `+x`).
+/// The attributes that `typeset` and `local` set (`-a`, `-A`, `-i`, `-r`,
+/// `-x`) and remove (`+i`, `+r`, `+x`).
 #[derive(Default)]
 struct Attrs {
     array: bool,
     assoc: bool,
+    integer: Option<bool>,
     readonly: Option<bool>,
     export: Option<bool>,
 }
@@ -537,6 +538,7 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
                 b'a' if on => (attrs.array, attrs.assoc) = (true, false),
                 b'A' if on => (attrs.array, attrs.assoc) = (false, true),
                 b'g' if on && !keep => global = true,
+                b'i' => attrs.integer = Some(on),
                 b'p' if on => print = true,
                 b'r' => attrs.readonly = Some(on),
                 b'x' => attrs.export = Some(on),
@@ -567,6 +569,10 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
             sh.locals.last_mut().unwrap().push((name.to_vec(), old));
             if !keep {
                 sh.restore_var(name.to_vec(), None);
+            } else if sh.vars.is_integer(name) {
+                // `local` keeps the value, but not the integer attribute
+                // (zsh and bash keep neither).
+                sh.vars.set_integer(name, false);
             }
             // A local `path` or `dirstack` is an ordinary variable (unset,
             // as in dash), which doesn't change `PATH` (zsh makes `PATH`
@@ -610,6 +616,19 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
             }
             Ok(Some(v)) => sh.set_var_value(name, v)?,
             Ok(None) => {}
+        }
+        // Set first, so that the value is evaluated. A value that the
+        // variable already has is evaluated too, as in zsh (bash keeps it).
+        if let Some(on) = attrs.integer
+            && on != sh.vars.is_integer(name)
+        {
+            sh.vars.set_integer(name, on);
+            if on
+                && value.is_none()
+                && let Some(v) = sh.vars.get_value(name)
+            {
+                sh.set_var_value(name, v.clone())?;
+            }
         }
         let value = match value {
             // `typeset -a a=x` is `a=(x)`, `typeset -A h=x` `h=([0]=x)`.
@@ -656,6 +675,7 @@ fn print_declarations(sh: &Shell, cmd: &[u8], names: &[Vec<u8>], attrs: &Attrs) 
             let is_assoc = matches!(var.value, Some(Value::Assoc(_)));
             if (!attrs.array || is_array)
                 && (!attrs.assoc || is_assoc)
+                && attrs.integer.is_none_or(|i| i == var.integer)
                 && attrs.readonly.is_none_or(|r| r == var.readonly)
                 && attrs.export.is_none_or(|x| x == var.exported)
             {
@@ -682,6 +702,7 @@ fn declaration(out: &mut Vec<u8>, name: &[u8], var: &crate::vars::Var) {
     let flags = [
         (matches!(var.value, Some(Value::Array(_))), b'a'),
         (matches!(var.value, Some(Value::Assoc(_))), b'A'),
+        (var.integer, b'i'),
         (var.readonly, b'r'),
         (var.exported, b'x'),
     ];

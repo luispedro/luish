@@ -1,8 +1,8 @@
 # `typeset`
 
 ```text
-typeset [-aAgrx] [+rx] name[=value]... name=(value...)...
-typeset -p [-aArx] [name...]
+typeset [-aAgirx] [+irx] name[=value]... name=(value...)...
+typeset -p [-aAirx] [name...]
 declare ...
 ```
 
@@ -31,6 +31,15 @@ another name for `typeset`.
 : In a function, change the variables outside it rather than make local
   ones.
 
+`-i`
+: Give the variables the integer attribute: each value assigned to them
+  (also by `read`, `for` or `local`) is evaluated as an arithmetic
+  expression, and stored in decimal, and `name+=expr` adds. A value they
+  already have is evaluated too. For an array, each element is evaluated.
+  An error in the expression is an error of the assignment. The attribute
+  is removed by `+i` and `unset`, and doesn't apply to a local made by
+  `local` or to an assignment before a command (`x=1+1 cmd`).
+
 `-p`
 : Print the variables named, or all those that have the attributes given
   (all of them without other options), as `typeset` commands that can be
@@ -49,7 +58,8 @@ another name for `typeset`.
 ```sh
 f() {
     typeset -a files=(*.txt)
-    typeset -g count=${#files[@]}
+    typeset -gi count=${#files[@]}
+    count+=1
     typeset -A seen=([.]=1 [..]=1)
 }
 ```

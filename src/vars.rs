@@ -10,6 +10,8 @@ pub struct Var {
     pub value: Option<Value>,
     pub exported: bool,
     pub readonly: bool,
+    /// `typeset -i`: assignments are evaluated as arithmetic expressions.
+    pub integer: bool,
 }
 
 /// The value of a variable: a string, or an array of them (as in zsh and
@@ -76,6 +78,10 @@ impl Assoc {
 
     pub fn values(&self) -> &[Vec<u8>] {
         &self.values
+    }
+
+    pub fn values_mut(&mut self) -> &mut [Vec<u8>] {
+        &mut self.values
     }
 }
 
@@ -146,6 +152,9 @@ impl From<ReadonlyError> for AssignError {
 pub struct Vars {
     map: HashMap<Vec<u8>, Var>,
     specials: Specials,
+    /// Whether any variable was ever given the integer attribute, so that
+    /// assignments don't look for it otherwise.
+    integers: bool,
 }
 
 /// zsh's special parameters that are computed when they are read. They are
@@ -313,11 +322,15 @@ impl Vars {
                 Var {
                     value: Some(Value::Str(v.as_bytes().to_vec())),
                     exported: true,
-                    readonly: false,
+                    ..Var::default()
                 },
             );
         }
-        Vars { map, specials }
+        Vars {
+            map,
+            specials,
+            integers: false,
+        }
     }
 
     /// The special parameter `name` names, if it is set.
@@ -425,6 +438,17 @@ impl Vars {
 
     pub fn var(&self, name: &[u8]) -> Option<&Var> {
         self.map.get(name)
+    }
+
+    /// Whether `name` has the integer attribute (`typeset -i`).
+    pub fn is_integer(&self, name: &[u8]) -> bool {
+        self.integers && self.map.get(name).is_some_and(|v| v.integer)
+    }
+
+    /// Gives `name` the integer attribute, or removes it.
+    pub fn set_integer(&mut self, name: &[u8], on: bool) {
+        self.integers |= on;
+        self.entry(name).integer = on;
     }
 
     pub fn is_assoc(&self, name: &[u8]) -> bool {
@@ -633,6 +657,7 @@ impl Vars {
         Vars {
             map: self.map.clone(),
             specials: self.specials.clone(),
+            integers: self.integers,
         }
     }
 

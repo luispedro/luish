@@ -209,6 +209,12 @@ impl Shell {
                 ));
                 Err(Flow::Error(2))
             }
+            (None, AssignValue::Str(v)) if a.append && self.vars.is_integer(&a.name) => {
+                // `x+=expr` adds, as in zsh and bash.
+                let old = self.vars.get(&a.name).and_then(crate::expand::arith::parse_number);
+                let n = crate::expand::arith::eval(self, &v).map_err(|msg| self.fail(msg))?;
+                self.set_var(&a.name, n.wrapping_add(old.unwrap_or(0)).to_string().into_bytes())
+            }
             (None, AssignValue::Str(v)) if a.append => {
                 let mut old = self.get_var(&a.name).unwrap_or_default();
                 old.extend(v);
@@ -404,6 +410,11 @@ impl Shell {
             }
             let tied = tied == Some(Special::Path);
             let old = self.vars.save(&n);
+            // The value isn't evaluated for an integer variable, as in zsh
+            // and bash.
+            if self.vars.is_integer(&n) {
+                self.vars.set_integer(&n, false);
+            }
             let set = self.assign(a);
             if set.is_ok() {
                 self.vars.entry(if tied { b"PATH" } else { &n }).exported = true;

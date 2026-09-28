@@ -221,8 +221,7 @@ shell tracks the current file as well as the line, for provenance and for error 
   `Parser::bareglobqual`). Indexed and associative arrays are done, always on (see `DEVELOPING.md`), with bash's
   `${!a[@]}` for the keys; still to do for them: zsh's `${(k)a}` (which needs parameter flags), and the special
   arrays (`pipestatus`, `path` and `dirstack`, and `match` and `BASH_REMATCH` for `=~`, are done). `typeset` and
-  `declare` are done, but for
-  `-i` (integers), `-f` (functions) and zsh's `-U`, `-l`, `-u`.
+  `declare` are done (with `-i`), but for `-f` (functions) and zsh's `-U`, `-l`, `-u`.
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL
   around the prompt and command output. Unicode width handling and bracketed paste belong to the line editor.
 - **Scripting**: error messages with file, line and function stack (from call frames), a predictable strict mode,

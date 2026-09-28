@@ -113,6 +113,9 @@ The operators apply to the values as they do to the elements of an array. The va
 luish, the order in which the keys were added, until one is removed; zsh and bash use another). As in bash, `$h` is
 `${h[0]}`, the value at key `0`, and `h=value` assigns to it. `read -A` reads pairs of keys and values into one.
 
+`typeset -i` gives variables the integer attribute, as in zsh and bash: what is assigned to them is evaluated as an
+arithmetic expression (for an array, each element), so `typeset -i n=2*3` sets `n` to `6`, and `n+=1` adds.
+
 ## Getting help
 
 In an interactive shell, `help` lists the built-in commands, and `help NAME` shows the help for any of them (the
