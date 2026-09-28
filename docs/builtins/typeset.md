@@ -1,8 +1,8 @@
 # `typeset`
 
 ```text
-typeset [-agrx] [+rx] name[=value]... name=(value...)...
-typeset -p [-arx] [name...]
+typeset [-aAgrx] [+rx] name[=value]... name=(value...)...
+typeset -p [-aArx] [name...]
 declare ...
 ```
 
@@ -19,6 +19,13 @@ another name for `typeset`.
 `-a`
 : Make the variables arrays: a string becomes an array of one element, and
   a variable that isn't set becomes an empty array.
+
+`-A`
+: Make the variables associative arrays: a string becomes the value at key
+  `0`, and a variable that isn't set becomes an empty associative array.
+  Their values are given as `name=([key]=value...)`, or as pairs of keys
+  and values, `name=(key value...)`. An array can't become an associative
+  one, nor the other way around.
 
 `-g`
 : In a function, change the variables outside it rather than make local
@@ -40,5 +47,6 @@ another name for `typeset`.
 f() {
     typeset -a files=(*.txt)
     typeset -g count=${#files[@]}
+    typeset -A seen=([.]=1 [..]=1)
 }
 ```

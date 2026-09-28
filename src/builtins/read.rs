@@ -3,7 +3,7 @@
 use crate::lexer::is_valid_name;
 use crate::shell::{ExecResult, Shell};
 use crate::sys;
-use crate::vars::Value;
+use crate::vars::Item;
 
 /// Reads one line from fd 0 a byte at a time, so that nothing after the
 /// newline is consumed. Returns the bytes (each with an "escaped" flag) and
@@ -152,7 +152,11 @@ pub fn read(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         while pos < line.len() {
             fields.push(next_field(&mut pos));
         }
-        sh.set_var_value(&names[0], Value::Array(Box::new(fields)))?;
+        sh.assign_items(
+            &names[0],
+            fields.into_iter().map(|value| Item { key: None, value }).collect(),
+            false,
+        )?;
         return Ok(if eof { 1 } else { 0 });
     }
     for (k, name) in names.iter().enumerate() {

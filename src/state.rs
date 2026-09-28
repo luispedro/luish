@@ -124,6 +124,11 @@ impl Shell {
                 continue;
             }
             let mut t = Vec::new();
+            if let Some(crate::vars::Value::Assoc(_)) = var.value {
+                t.extend_from_slice(b"typeset -gA ");
+                t.extend_from_slice(name);
+                t.push(b'\n');
+            }
             if var.exported {
                 t.extend_from_slice(b"export ");
             }

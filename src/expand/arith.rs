@@ -2,7 +2,7 @@
 
 use crate::lexer::{is_name_char, is_name_start};
 use crate::shell::Shell;
-use crate::vars::AssignError;
+use crate::vars::{AssignError, Subscript};
 
 /// A binary operator (also the operator of a compound assignment, and `+`
 /// and `-` as unary operators).
@@ -185,7 +185,7 @@ impl<'a> Arith<'a> {
             if let Some((Op::Assign(bin), len)) = self.peek_op() {
                 let after = self.pos + len;
                 let index = match end {
-                    Some(end) => Some(self.index(bracket, end)?),
+                    Some(end) => Some(self.subscript(name, bracket, end)?),
                     None => None,
                 };
                 self.pos = after;
@@ -193,8 +193,8 @@ impl<'a> Arith<'a> {
                 let v = match bin {
                     None => rhs,
                     Some(bin) => {
-                        let lhs = match index {
-                            Some(i) => self.element(name, i)?,
+                        let lhs = match &index {
+                            Some(sub) => self.element(name, sub)?,
                             None => self.var(name)?,
                         };
                         self.apply(bin, lhs, rhs)?
@@ -202,8 +202,8 @@ impl<'a> Arith<'a> {
                 };
                 if self.noeval == 0 {
                     let value = v.to_string().into_bytes();
-                    let r = match index {
-                        Some(i) => self.sh.vars.set_element(name, i, value, false),
+                    let r = match &index {
+                        Some(sub) => self.sh.vars.set_element(name, sub, value, false),
                         None => self.sh.vars.set(name, value).map_err(Into::into),
                     };
                     match r {
@@ -212,8 +212,8 @@ impl<'a> Arith<'a> {
                             return Err(format!("{}: is read only", String::from_utf8_lossy(name)));
                         }
                         Err(AssignError::BadSubscript) => {
-                            let i = index.unwrap_or_default();
-                            return Err(format!("{}[{i}]: bad array subscript", String::from_utf8_lossy(name)));
+                            let sub = index.unwrap_or(Subscript::Index(0));
+                            return Err(format!("{}[{sub}]: bad array subscript", String::from_utf8_lossy(name)));
                         }
                     }
                 }
@@ -242,9 +242,14 @@ impl<'a> Arith<'a> {
         self.syntax("expecting ']'")
     }
 
-    /// Evaluates the index between the `[` at `open` and the `]` before
-    /// `end`, leaving the position at `end`.
-    fn index(&mut self, open: usize, end: usize) -> Result<i64, String> {
+    /// The subscript of `name` between the `[` at `open` and the `]` before
+    /// `end`, leaving the position at `end`: for an associative array, the
+    /// text is the key (as in zsh and bash), otherwise it is evaluated.
+    fn subscript(&mut self, name: &[u8], open: usize, end: usize) -> Result<Subscript, String> {
+        if self.sh.vars.is_assoc(name) {
+            self.pos = end;
+            return Ok(Subscript::Key(self.s[open + 1..end - 1].to_vec()));
+        }
         self.pos = open + 1;
         let i = self.expr()?;
         self.skip_ws();
@@ -252,15 +257,15 @@ impl<'a> Arith<'a> {
             return self.syntax("expecting ']'");
         }
         self.pos = end;
-        Ok(i)
+        Ok(Subscript::Index(i))
     }
 
     /// The value of an array element, as [`Arith::var`].
-    fn element(&mut self, name: &[u8], i: i64) -> Result<i64, String> {
+    fn element(&mut self, name: &[u8], sub: &Subscript) -> Result<i64, String> {
         if self.noeval > 0 {
             return Ok(0);
         }
-        match self.sh.element(name, i) {
+        match self.sh.element(name, sub) {
             None => Ok(0),
             Some(v) if v.trim_ascii().is_empty() => Ok(0),
             Some(v) => parse_number(&v).ok_or_else(|| format!("Illegal number: {}", String::from_utf8_lossy(&v))),
@@ -420,8 +425,8 @@ impl<'a> Arith<'a> {
             if self.s.get(self.pos) == Some(&b'[') {
                 let open = self.pos;
                 let end = self.closing_bracket(open)?;
-                let i = self.index(open, end)?;
-                return self.element(name, i);
+                let sub = self.subscript(name, open, end)?;
+                return self.element(name, &sub);
             }
             return self.var(name);
         }

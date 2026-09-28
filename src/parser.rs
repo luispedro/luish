@@ -650,14 +650,14 @@ impl Parser {
     }
 
     /// The elements of an array, `(a b c)`, which can span lines.
-    fn parse_array(&mut self) -> PResult<Vec<Word>> {
+    fn parse_array(&mut self) -> PResult<Vec<ArrayItem>> {
         self.next()?;
         let mut items = Vec::new();
         loop {
             let t = self.next()?;
             match t.tok {
                 Tok::Newline => {}
-                Tok::Word(w) => items.push(w),
+                Tok::Word(w) => items.push(array_item(w)),
                 Tok::Op(Op::RParen) => return Ok(items),
                 _ => return self.unexpected(&t, Some(")")),
             }
@@ -792,7 +792,7 @@ pub(crate) fn split_assignment_with(w: &Word, is_name: fn(&[u8]) -> bool) -> Opt
     let Some(WordPart::Literal(s)) = w.0.first() else {
         return None;
     };
-    let assign = |name: &[u8], index, append, rest: &[u8], tail: &[WordPart]| {
+    let assign = |name: &[u8], append, rest: &[u8], tail: &[WordPart]| {
         let mut parts = Vec::new();
         if !rest.is_empty() {
             parts.push(WordPart::Literal(rest.to_vec()));
@@ -800,25 +800,37 @@ pub(crate) fn split_assignment_with(w: &Word, is_name: fn(&[u8]) -> bool) -> Opt
         parts.extend(tail.iter().cloned());
         Some(Assign {
             name: name.to_vec(),
-            index,
+            index: None,
             append,
             value: Word(crate::lexer::mark_assignment_tildes(parts)),
         })
     };
     if let Some(eq) = s.iter().position(|&c| c == b'=') {
         if is_name(&s[..eq]) {
-            return assign(&s[..eq], None, false, &s[eq + 1..], &w.0[1..]);
+            return assign(&s[..eq], false, &s[eq + 1..], &w.0[1..]);
         }
         if eq > 0 && s[eq - 1] == b'+' && is_valid_name(&s[..eq - 1]) {
-            return assign(&s[..eq - 1], None, true, &s[eq + 1..], &w.0[1..]);
+            return assign(&s[..eq - 1], true, &s[eq + 1..], &w.0[1..]);
         }
     }
     let n = s.iter().position(|&c| !is_name_char(c)).unwrap_or(s.len());
     if n == 0 || s.get(n) != Some(&b'[') || !is_valid_name(&s[..n]) {
         return None;
     }
-    // `NAME[index]=`: the index runs to the matching `]`, which must be
-    // unquoted text followed by `=` or `+=`.
+    let (index, append, value) = split_subscript(w, n + 1)?;
+    Some(Assign {
+        name: s[..n].to_vec(),
+        index: Some(index),
+        append,
+        value,
+    })
+}
+
+/// Splits `[index]=value` (or `+=`), where the `[` is just before byte
+/// `from` of the word (which starts with unquoted text): the index runs to
+/// the matching `]`, which must be unquoted text followed by `=` or `+=`.
+/// Returns the index, whether it is `+=`, and the value.
+fn split_subscript(w: &Word, from: usize) -> Option<(Word, bool, Word)> {
     let mut index = Vec::new();
     let mut depth = 0usize;
     let mut lit = Vec::new();
@@ -830,7 +842,7 @@ pub(crate) fn split_assignment_with(w: &Word, is_name: fn(&[u8]) -> bool) -> Opt
             index.push(part.clone());
             continue;
         };
-        let from = if k == 0 { n + 1 } else { 0 };
+        let from = if k == 0 { from } else { 0 };
         for (i, &c) in text.iter().enumerate().skip(from) {
             match c {
                 b'[' => depth += 1,
@@ -845,7 +857,13 @@ pub(crate) fn split_assignment_with(w: &Word, is_name: fn(&[u8]) -> bool) -> Opt
                     if !lit.is_empty() {
                         index.push(WordPart::Literal(std::mem::take(&mut lit)));
                     }
-                    return assign(&s[..n], Some(Word(index)), append, rest, &w.0[k + 1..]);
+                    let mut parts = Vec::new();
+                    if !rest.is_empty() {
+                        parts.push(WordPart::Literal(rest.to_vec()));
+                    }
+                    parts.extend(w.0[k + 1..].iter().cloned());
+                    let value = Word(crate::lexer::mark_assignment_tildes(parts));
+                    return Some((Word(index), append, value));
                 }
                 _ => {}
             }
@@ -853,6 +871,17 @@ pub(crate) fn split_assignment_with(w: &Word, is_name: fn(&[u8]) -> bool) -> Opt
         }
     }
     None
+}
+
+/// An element of an array, `x` or `[key]=value` (bash; also zsh's).
+fn array_item(w: Word) -> ArrayItem {
+    if let Some(WordPart::Literal(s)) = w.0.first()
+        && s.first() == Some(&b'[')
+        && let Some((key, false, value)) = split_subscript(&w, 1)
+    {
+        return ArrayItem { key: Some(key), value };
+    }
+    ArrayItem { key: None, value: w }
 }
 
 #[cfg(test)]
@@ -908,6 +937,13 @@ mod tests {
         let s = simple(&l);
         assert!(matches!(s.words[2].0.last(), Some(WordPart::Array(items)) if items.len() == 2));
         assert!(matches!(s.words[3].0.last(), Some(WordPart::Array(items)) if items.is_empty()));
+        // `[key]=value` elements; `[x` and `[k]` alone are elements.
+        let l = parse("a=([k]=v [$i]= [\"x y\"]=w [x [k] [a]=b]=c)\n");
+        let items = simple(&l).assigns[0].array().unwrap();
+        let keys: Vec<_> = items.iter().map(|i| i.key.as_ref().map(|k| k.0.len())).collect();
+        assert_eq!(keys, [Some(1), Some(1), Some(1), None, None, Some(1)]);
+        assert_eq!(items[1].value, Word(vec![]));
+        assert_eq!(items[5].value, Word(vec![WordPart::Literal(b"b]=c".to_vec())]));
         // `(` after a blank, or after other words, is a syntax error.
         assert!(parse_err("a= (x)\n").msg.contains("\"(\" unexpected"));
         assert!(parse_err("echo a=(x)\n").msg.contains("\"(\" unexpected"));

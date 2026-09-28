@@ -69,7 +69,7 @@ pub struct Assign {
 
 impl Assign {
     /// The elements of an array assignment.
-    pub fn array(&self) -> Option<&[Word]> {
+    pub fn array(&self) -> Option<&[ArrayItem]> {
         match self.value.0.as_slice() {
             [WordPart::Array(items)] => Some(items),
             _ => None,
@@ -291,7 +291,15 @@ pub enum WordPart {
     /// The elements of an array, `(a b c)`: the value of an array
     /// assignment, also as an argument of a declaration command (`local
     /// a=(x y)`), where it is the last part of a word after `name=`.
-    Array(Vec<Word>),
+    Array(Vec<ArrayItem>),
+}
+
+/// An element of an array, `(x [key]=value)`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ArrayItem {
+    /// The key (or index) of `[key]=value`.
+    pub key: Option<Word>,
+    pub value: Word,
 }
 
 #[derive(Debug, Clone, PartialEq)]

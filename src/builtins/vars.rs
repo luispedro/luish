@@ -1,10 +1,11 @@
 //! `export`, `readonly`, `unset`, `set`, `shift`, `local`, `typeset`.
 
 use super::illegal_number;
+use crate::exec::AssignValue;
 use crate::lexer::is_valid_name;
 use crate::options::{EXTENDED, Kind, OPTIONS, Opt, Options, Setting, VALUES, find_group, group_of, parse_bool};
 use crate::shell::{ExecResult, Flow, Shell};
-use crate::vars::Value;
+use crate::vars::{Item, Subscript, Value};
 
 /// Single-quotes a value for output that can be read back by the shell.
 /// dash's `single_quote`: the text in single quotes, with each run of
@@ -32,38 +33,72 @@ pub fn single_quote(s: &[u8]) -> Vec<u8> {
     }
 }
 
-/// A value quoted so that the shell reads it back: an array as `('a' 'b')`.
+/// A value quoted so that the shell reads it back: an array as `('a' 'b')`,
+/// and an associative array as `(['k']='v')`.
 pub fn quote_value(v: &Value) -> Vec<u8> {
-    let Value::Array(items) = v else {
-        return single_quote(v.scalar());
-    };
     let mut out = vec![b'('];
-    for (i, item) in items.iter().enumerate() {
-        if i > 0 {
-            out.push(b' ');
+    match v {
+        Value::Str(s) => return single_quote(s),
+        Value::Array(items) => {
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(b' ');
+                }
+                out.extend(single_quote(item));
+            }
         }
-        out.extend(single_quote(item));
+        Value::Assoc(h) => {
+            for (i, (k, v)) in h.keys().iter().zip(h.values()).enumerate() {
+                if i > 0 {
+                    out.push(b' ');
+                }
+                out.push(b'[');
+                out.extend(single_quote(k));
+                out.extend_from_slice(b"]=");
+                out.extend(single_quote(v));
+            }
+        }
     }
     out.push(b')');
     out
 }
 
 /// Splits a `name=value` argument. A declaration command's argument
-/// `name=(x y)` comes as `name=`, a NUL, and each element followed by a
-/// NUL (`expand_command_words`): an argument can't otherwise have a NUL.
-pub fn split_arg(a: &[u8]) -> (&[u8], Option<Value>) {
+/// `name=(x [k]=y)` comes as `name=`, a NUL, and each element as `=x`, with
+/// a key before it as `[k`, each followed by a NUL (`expand_command_words`):
+/// an argument can't otherwise have a NUL.
+pub fn split_arg(a: &[u8]) -> (&[u8], Option<AssignValue>) {
     let Some(i) = a.iter().position(|&c| c == b'=') else {
         return (a, None);
     };
     let value = match a[i + 1..].split_first() {
         Some((0, rest)) => {
-            let mut items: Vec<_> = rest.split(|&c| c == 0).map(<[u8]>::to_vec).collect();
-            items.pop();
-            Value::Array(Box::new(items))
+            let mut items = Vec::new();
+            let mut key = None;
+            for field in rest.split(|&c| c == 0) {
+                match field.split_first() {
+                    Some((b'[', k)) => key = Some(k.to_vec()),
+                    Some((_, v)) => items.push(Item {
+                        key: key.take(),
+                        value: v.to_vec(),
+                    }),
+                    // After the last NUL.
+                    None => {}
+                }
+            }
+            AssignValue::Items(items)
         }
-        _ => Value::Str(a[i + 1..].to_vec()),
+        _ => AssignValue::Str(a[i + 1..].to_vec()),
     };
     (&a[..i], Some(value))
+}
+
+/// Assigns the value of a declaration command's argument.
+fn assign_arg(sh: &mut Shell, name: &[u8], value: AssignValue) -> Result<(), Flow> {
+    match value {
+        AssignValue::Str(s) => sh.set_var(name, s),
+        AssignValue::Items(items) => sh.assign_items(name, items, false),
+    }
 }
 
 fn bad_name(sh: &Shell, cmd: &[u8], name: &[u8]) -> Flow {
@@ -109,7 +144,7 @@ fn set_attr(sh: &mut Shell, argv: &[Vec<u8>], export: bool) -> ExecResult {
             return Err(bad_name(sh, cmd, name));
         }
         if let Some(v) = value {
-            sh.set_var_value(name, v)?;
+            assign_arg(sh, name, v)?;
         }
         let var = sh.vars.entry(name);
         if export {
@@ -182,15 +217,26 @@ pub fn unset(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     Ok(0)
 }
 
-/// `unset 'name[index]'`: empties the element, if there is one.
+/// `unset 'name[index]'`: empties the element, if there is one, or
+/// removes the key of an associative array.
 fn unset_element(sh: &mut Shell, cmd: &[u8], name: &[u8], index: &[u8]) -> Result<(), Flow> {
+    if sh.vars.is_assoc(name) {
+        if sh.vars.var(name).is_some_and(|v| v.readonly) {
+            sh.berr(cmd, format!("{}: is read only", String::from_utf8_lossy(name)));
+            return Err(Flow::Error(2));
+        }
+        if let Some(Value::Assoc(h)) = sh.vars.get_value_mut(name) {
+            h.remove(index);
+        }
+        return Ok(());
+    }
     let i = crate::expand::arith::eval(sh, index).map_err(|msg| {
         sh.berr(cmd, msg);
         Flow::Error(2)
     })?;
     let len = sh.vars.get_value(name).map_or(0, |v| v.elements().len()) as i64;
     if (-len..len).contains(&i) {
-        sh.set_element(name, i, Vec::new(), false)?;
+        sh.set_element(name, &Subscript::Index(i), Vec::new(), false)?;
     }
     Ok(())
 }
@@ -451,11 +497,12 @@ pub fn typeset(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     declare(sh, argv, false)
 }
 
-/// The attributes that `typeset` and `local` set (`-a`, `-r`, `-x`) and
-/// remove (`+r`, `+x`).
+/// The attributes that `typeset` and `local` set (`-a`, `-A`, `-r`, `-x`)
+/// and remove (`+r`, `+x`).
 #[derive(Default)]
 struct Attrs {
     array: bool,
+    assoc: bool,
     readonly: Option<bool>,
     export: Option<bool>,
 }
@@ -483,7 +530,8 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
         }
         for &c in &a[1..] {
             match c {
-                b'a' if on => attrs.array = true,
+                b'a' if on => (attrs.array, attrs.assoc) = (true, false),
+                b'A' if on => (attrs.array, attrs.assoc) = (false, true),
                 b'g' if on && !keep => global = true,
                 b'p' if on => print = true,
                 b'r' => attrs.readonly = Some(on),
@@ -501,6 +549,7 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
         return Ok(print_declarations(sh, cmd, args, &attrs));
     }
     let local = !global && !sh.locals.is_empty();
+    let mut status = 0;
     for a in args {
         let (name, value) = split_arg(a);
         if name == b"-" && keep {
@@ -516,23 +565,48 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
                 sh.restore_var(name.to_vec(), None);
             }
         }
-        let value = match value {
-            Some(Value::Str(s)) if attrs.array => Some(Value::Array(Box::new(vec![s]))),
-            None if attrs.array => {
-                // A string becomes an array of one element (bash; zsh
-                // empties it).
-                let old = sh.vars.get_value(name);
-                match old {
-                    Some(Value::Array(_)) => None,
-                    _ => Some(Value::Array(Box::new(
-                        old.map(|v| v.elements().to_vec()).unwrap_or_default(),
-                    ))),
-                }
+        // A string becomes an array of one element, or an associative
+        // array with the key `0` (bash; zsh empties it). An array can't
+        // become the other kind (bash; zsh empties it).
+        let old = if attrs.array || attrs.assoc {
+            sh.vars.get_value(name)
+        } else {
+            None
+        };
+        let converted = match old {
+            Some(Value::Array(_)) if attrs.assoc => Err("indexed to associative"),
+            Some(Value::Assoc(_)) if attrs.array => Err("associative to indexed"),
+            Some(Value::Str(s)) if attrs.assoc => {
+                let mut h = crate::vars::Assoc::default();
+                h.insert(b"0", s.clone());
+                Ok(Some(Value::Assoc(Box::new(h))))
             }
+            None if attrs.assoc => Ok(Some(Value::Assoc(Box::default()))),
+            Some(Value::Str(_)) | None if attrs.array => Ok(Some(Value::Array(Box::new(
+                old.map(|v| v.elements().to_vec()).unwrap_or_default(),
+            )))),
+            _ => Ok(None),
+        };
+        match converted {
+            Err(how) => {
+                let name = String::from_utf8_lossy(name);
+                sh.berr(cmd, format!("{name}: cannot convert {how} array"));
+                status = 1;
+                continue;
+            }
+            Ok(Some(v)) => sh.set_var_value(name, v)?,
+            Ok(None) => {}
+        }
+        let value = match value {
+            // `typeset -a a=x` is `a=(x)`, `typeset -A h=x` `h=([0]=x)`.
+            Some(AssignValue::Str(s)) if attrs.array || attrs.assoc => Some(AssignValue::Items(vec![Item {
+                key: attrs.assoc.then(|| b"0".to_vec()),
+                value: s,
+            }])),
             v => v,
         };
         match value {
-            Some(v) => sh.set_var_value(name, v)?,
+            Some(v) => assign_arg(sh, name, v)?,
             None => {
                 sh.vars.entry(name);
             }
@@ -550,7 +624,7 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
             _ => {}
         }
     }
-    Ok(0)
+    Ok(status)
 }
 
 /// `typeset -p`: prints the variables `names`, or without names all those
@@ -561,7 +635,9 @@ fn print_declarations(sh: &Shell, cmd: &[u8], names: &[Vec<u8>], attrs: &Attrs) 
     if names.is_empty() {
         for (name, var) in sh.vars.sorted() {
             let is_array = matches!(var.value, Some(Value::Array(_)));
+            let is_assoc = matches!(var.value, Some(Value::Assoc(_)));
             if (!attrs.array || is_array)
+                && (!attrs.assoc || is_assoc)
                 && attrs.readonly.is_none_or(|r| r == var.readonly)
                 && attrs.export.is_none_or(|x| x == var.exported)
             {
@@ -587,6 +663,7 @@ fn declaration(out: &mut Vec<u8>, name: &[u8], var: &crate::vars::Var) {
     out.extend_from_slice(b"typeset ");
     let flags = [
         (matches!(var.value, Some(Value::Array(_))), b'a'),
+        (matches!(var.value, Some(Value::Assoc(_))), b'A'),
         (var.readonly, b'r'),
         (var.exported, b'x'),
     ];

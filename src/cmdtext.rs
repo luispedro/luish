@@ -244,11 +244,16 @@ fn push_part(out: &mut Vec<u8>, p: &WordPart) {
         }
         WordPart::Array(items) => {
             out.push(b'(');
-            for (i, w) in items.iter().enumerate() {
+            for (i, item) in items.iter().enumerate() {
                 if i > 0 {
                     out.push(b' ');
                 }
-                push_word(out, w);
+                if let Some(k) = &item.key {
+                    out.push(b'[');
+                    push_word(out, k);
+                    out.extend_from_slice(b"]=");
+                }
+                push_word(out, &item.value);
             }
             out.push(b')');
         }

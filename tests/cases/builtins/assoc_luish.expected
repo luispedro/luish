@@ -1,0 +1,19 @@
+[] 0
+xy xy 1 2
+str
+status 1 2
+status 1 1
+v
+status 2
+typeset -A p=(['a']='1' ['b c']='it'"'"'s' ['d']='')
+typeset -A e=()
+p=(['a']='1' ['b c']='it'"'"'s' ['d']='')
+typeset -A e=()
+typeset -A h=(['a']='1' ['0']='xy')
+typeset -A p=(['a']='1' ['b c']='it'"'"'s' ['d']='')
+typeset -A s=(['0']='str')
+typeset -A p=(['a']='1' ['b c']='it'"'"'s' ['d']='')
+typeset -A p=(['a']='1' ['b c']='it'"'"'s' ['d']='')
++ p['a b']=2
++ p=( [k]=v ['a b']=w )
++ p+=( x y )

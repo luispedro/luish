@@ -22,31 +22,106 @@ pub enum Value {
     /// string one.
     #[allow(clippy::box_collection)]
     Array(Box<Vec<Vec<u8>>>),
+    /// An associative array (`typeset -A`).
+    Assoc(Box<Assoc>),
 }
 
-impl Value {
-    /// The value as a string: an array's first element (nothing if it is
-    /// empty), as `$a` is in ksh, bash and zsh's sh emulation.
-    #[inline]
-    pub fn scalar(&self) -> &[u8] {
-        match self {
-            Value::Str(s) => s,
-            Value::Array(a) => a.first().map_or(&[], |s| s),
+/// An associative array. The keys keep the order in which they were added,
+/// except that removing one moves the last into its place (zsh and bash
+/// use their hash order, so scripts can't rely on any).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Assoc {
+    keys: Vec<Vec<u8>>,
+    values: Vec<Vec<u8>>,
+    /// The position of each key.
+    index: HashMap<Vec<u8>, usize>,
+}
+
+impl Assoc {
+    pub fn get(&self, key: &[u8]) -> Option<&Vec<u8>> {
+        self.index.get(key).map(|&i| &self.values[i])
+    }
+
+    /// The value at `key`, added empty if there is none.
+    pub fn entry(&mut self, key: &[u8]) -> &mut Vec<u8> {
+        let i = match self.index.get(key) {
+            Some(&i) => i,
+            None => {
+                self.index.insert(key.to_vec(), self.keys.len());
+                self.keys.push(key.to_vec());
+                self.values.push(Vec::new());
+                self.keys.len() - 1
+            }
+        };
+        &mut self.values[i]
+    }
+
+    pub fn insert(&mut self, key: &[u8], value: Vec<u8>) {
+        *self.entry(key) = value;
+    }
+
+    pub fn remove(&mut self, key: &[u8]) {
+        if let Some(i) = self.index.remove(key) {
+            self.keys.swap_remove(i);
+            self.values.swap_remove(i);
+            if let Some(moved) = self.keys.get(i) {
+                *self.index.get_mut(moved).unwrap() = i;
+            }
         }
     }
 
-    /// The value as a list: a string is an array of one element.
+    pub fn keys(&self) -> &[Vec<u8>] {
+        &self.keys
+    }
+
+    pub fn values(&self) -> &[Vec<u8>] {
+        &self.values
+    }
+}
+
+/// The subscript of an array element: an index, or the key of an
+/// associative array.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Subscript {
+    Index(i64),
+    Key(Vec<u8>),
+}
+
+impl std::fmt::Display for Subscript {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Subscript::Index(i) => write!(f, "{i}"),
+            Subscript::Key(k) => write!(f, "{}", String::from_utf8_lossy(k)),
+        }
+    }
+}
+
+/// An element of an array assignment after expansion, `x` or
+/// `[key]=x`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Item {
+    pub key: Option<Vec<u8>>,
+    pub value: Vec<u8>,
+}
+
+impl Value {
+    /// The value as a list: a string is an array of one element, and an
+    /// associative array gives its values.
     pub fn elements(&self) -> &[Vec<u8>] {
         match self {
             Value::Str(s) => std::slice::from_ref(s),
             Value::Array(a) => a,
+            Value::Assoc(h) => h.values(),
         }
     }
 
-    /// The value as an array, converting a string to one.
+    /// The value as an array, converting a string (or the values of an
+    /// associative array) to one.
     pub fn make_array(&mut self) -> &mut Vec<Vec<u8>> {
-        if let Value::Str(s) = self {
-            *self = Value::Array(Box::new(vec![std::mem::take(s)]));
+        match self {
+            Value::Str(s) => *self = Value::Array(Box::new(vec![std::mem::take(s)])),
+            Value::Assoc(h) => *self = Value::Array(Box::new(h.values().to_vec())),
+            Value::Array(_) => {}
         }
         let Value::Array(a) = self else { unreachable!() };
         a
@@ -269,7 +344,20 @@ impl Vars {
         match self.map.get(name)?.value.as_ref()? {
             Value::Str(s) => Some(s),
             Value::Array(a) => a.first().map(|s| &s[..]),
+            Value::Assoc(h) => h.get(b"0").map(|s| &s[..]),
         }
+    }
+
+    pub fn get_value_mut(&mut self, name: &[u8]) -> Option<&mut Value> {
+        self.map.get_mut(name).and_then(|v| v.value.as_mut())
+    }
+
+    pub fn var(&self, name: &[u8]) -> Option<&Var> {
+        self.map.get(name)
+    }
+
+    pub fn is_assoc(&self, name: &[u8]) -> bool {
+        matches!(self.get_value(name), Some(Value::Assoc(_)))
     }
 
     pub fn get_value(&self, name: &[u8]) -> Option<&Value> {
@@ -290,11 +378,18 @@ impl Vars {
         Ok(())
     }
 
-    /// Assigns to element `i` of an array (counting from the end if it is
-    /// negative), making the variable an array. The elements between the
-    /// end and `i` are made empty. With `append`, the value is appended to
-    /// the element.
-    pub fn set_element(&mut self, name: &[u8], i: i64, value: Vec<u8>, append: bool) -> Result<(), AssignError> {
+    /// Assigns to an element of an array. With an index, `i`, (counting
+    /// from the end if it is negative), the variable is made an array, and
+    /// the elements between the end and `i` are made empty. With a key, it
+    /// is made an associative array. With `append`, the value is appended
+    /// to the element.
+    pub fn set_element(
+        &mut self,
+        name: &[u8],
+        sub: &Subscript,
+        value: Vec<u8>,
+        append: bool,
+    ) -> Result<(), AssignError> {
         if let Some(s) = Special::from_name(name) {
             self.specials.active &= !s.bit();
         }
@@ -302,6 +397,24 @@ impl Vars {
         if var.readonly {
             return Err(AssignError::Readonly);
         }
+        let i = match sub {
+            Subscript::Index(i) => *i,
+            Subscript::Key(k) => {
+                if !matches!(var.value, Some(Value::Assoc(_))) {
+                    var.value = Some(Value::Assoc(Box::default()));
+                }
+                let Some(Value::Assoc(h)) = &mut var.value else {
+                    unreachable!()
+                };
+                let v = h.entry(k);
+                if append {
+                    v.extend_from_slice(&value);
+                } else {
+                    *v = value;
+                }
+                return Ok(());
+            }
+        };
         let len = var.value.as_ref().map_or(0, |v| v.elements().len());
         let i = if i < 0 { i + len as i64 } else { i };
         if i < 0 {
@@ -341,6 +454,33 @@ impl Vars {
         Ok(())
     }
 
+    /// Assigns the pairs of keys and values to an associative array, or
+    /// with `append` adds them to it.
+    pub fn set_pairs(
+        &mut self,
+        name: &[u8],
+        pairs: Vec<(Vec<u8>, Vec<u8>)>,
+        append: bool,
+    ) -> Result<(), ReadonlyError> {
+        if let Some(s) = Special::from_name(name) {
+            self.specials.active &= !s.bit();
+        }
+        let var = self.entry(name);
+        if var.readonly {
+            return Err(ReadonlyError);
+        }
+        if !append || !matches!(var.value, Some(Value::Assoc(_))) {
+            var.value = Some(Value::Assoc(Box::default()));
+        }
+        let Some(Value::Assoc(h)) = &mut var.value else {
+            unreachable!()
+        };
+        for (k, v) in pairs {
+            h.insert(&k, v);
+        }
+        Ok(())
+    }
+
     pub fn set(&mut self, name: &[u8], value: Vec<u8>) -> Result<(), ReadonlyError> {
         if let Some(s) = Special::from_name(name)
             && (self.specials.active & s.bit() != 0 || matches!(s, Special::Random | Special::Seconds))
@@ -359,6 +499,7 @@ impl Vars {
                 match &mut v.value {
                     Some(Value::Array(a)) if a.is_empty() => a.push(value),
                     Some(Value::Array(a)) => a[0] = value,
+                    Some(Value::Assoc(h)) => h.insert(b"0", value),
                     _ => v.value = Some(Value::Str(value)),
                 }
                 Ok(())

@@ -10,7 +10,7 @@ use crate::lexer::{AliasMap, ParseError, Parser};
 use crate::options::{Opt, Options};
 use crate::signals::{self, NSIG};
 use crate::sys;
-use crate::vars::{AssignError, Special, Value, Var, Vars};
+use crate::vars::{AssignError, Item, Special, Subscript, Value, Var, Vars};
 
 /// Non-local control flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,20 +255,78 @@ impl Shell {
         Ok(())
     }
 
-    /// Assigns to (or with `append`, appends to) element `i` of an array,
-    /// counting from the end if `i` is negative.
-    pub fn set_element(&mut self, name: &[u8], i: i64, value: Vec<u8>, append: bool) -> Result<(), Flow> {
-        match self.vars.set_element(name, i, value, append) {
+    /// Assigns to (or with `append`, appends to) an element of an array: an
+    /// index counts from the end if it is negative.
+    pub fn set_element(&mut self, name: &[u8], sub: &Subscript, value: Vec<u8>, append: bool) -> Result<(), Flow> {
+        match self.vars.set_element(name, sub, value, append) {
             Ok(()) => {
                 self.after_assign(name);
                 Ok(())
             }
             Err(AssignError::Readonly) => Err(self.readonly_error(name)),
             Err(AssignError::BadSubscript) => {
-                self.error(format!("{}[{i}]: bad array subscript", String::from_utf8_lossy(name)));
+                self.error(format!("{}[{sub}]: bad array subscript", String::from_utf8_lossy(name)));
                 Err(Flow::Error(2))
             }
         }
+    }
+
+    /// Assigns (or with `append`, adds) the elements of `name=(...)`. To an
+    /// associative array, they are pairs of keys and values, or all
+    /// `[key]=value` (as in zsh). Otherwise `[i]=` gives the index of an
+    /// element, and those that follow come after it (as in zsh and bash).
+    pub fn assign_items(&mut self, name: &[u8], items: Vec<Item>, append: bool) -> Result<(), Flow> {
+        let bad = |sh: &Shell, msg: &str| {
+            sh.error(format!("{}: {msg}", String::from_utf8_lossy(name)));
+            Flow::Error(2)
+        };
+        if self.vars.is_assoc(name) {
+            let keyed = items.iter().filter(|i| i.key.is_some()).count();
+            let pairs = if keyed == items.len() {
+                items.into_iter().map(|i| (i.key.unwrap(), i.value)).collect()
+            } else if keyed > 0 {
+                return Err(bad(self, "bad [key]=value syntax for associative array"));
+            } else if !items.len().is_multiple_of(2) {
+                return Err(bad(self, "bad set of key/value pairs for associative array"));
+            } else {
+                let mut items = items.into_iter();
+                std::iter::from_fn(|| Some((items.next()?.value, items.next()?.value))).collect()
+            };
+            if self.vars.set_pairs(name, pairs, append).is_err() {
+                return Err(self.readonly_error(name));
+            }
+            self.after_assign(name);
+            return Ok(());
+        }
+        if items.iter().all(|i| i.key.is_none()) {
+            let values = items.into_iter().map(|i| i.value).collect();
+            return if append {
+                self.append_elements(name, values)
+            } else {
+                self.set_var_value(name, Value::Array(Box::new(values)))
+            };
+        }
+        let mut a = match self.vars.get_value(name) {
+            Some(v) if append => v.elements().to_vec(),
+            _ => Vec::new(),
+        };
+        let mut pos = a.len();
+        for item in items {
+            if let Some(key) = item.key {
+                let i = crate::expand::arith::eval(self, &key).map_err(|msg| bad(self, &msg))?;
+                let i = if i < 0 { i + a.len() as i64 } else { i };
+                if i < 0 {
+                    return Err(bad(self, "bad array subscript"));
+                }
+                pos = i as usize;
+            }
+            if pos >= a.len() {
+                a.resize(pos + 1, Vec::new());
+            }
+            a[pos] = item.value;
+            pos += 1;
+        }
+        self.set_var_value(name, Value::Array(Box::new(a)))
     }
 
     /// Appends elements to an array (`a+=(x y)`).

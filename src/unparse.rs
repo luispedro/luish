@@ -406,11 +406,19 @@ impl<'a> Printer<'a> {
                 }
                 WordPart::Array(items) => {
                     self.w(b"(");
-                    for (i, w) in items.iter().enumerate() {
+                    for (i, item) in items.iter().enumerate() {
                         if i > 0 {
                             self.w(b" ");
                         }
-                        self.word(w);
+                        match &item.key {
+                            Some(k) => {
+                                self.w(b"[");
+                                self.parts(&k.0);
+                                self.w(b"]=");
+                                self.parts(&item.value.0);
+                            }
+                            None => self.word(&item.value),
+                        }
                     }
                     self.w(b")");
                 }
@@ -568,7 +576,10 @@ mod tests {
                 WordPart::DoubleQuoted(ps) => ps.iter_mut().for_each(part),
                 WordPart::CmdSubst(l) => strip_lines(std::rc::Rc::make_mut(l)),
                 WordPart::Arith(w) => word(w),
-                WordPart::Array(items) => words(items),
+                WordPart::Array(items) => items.iter_mut().for_each(|item| {
+                    item.key.iter_mut().for_each(word);
+                    word(&mut item.value);
+                }),
                 WordPart::Param(pe) => match &mut pe.op {
                     ParamOp::Plain | ParamOp::Length => {}
                     ParamOp::Default(w)

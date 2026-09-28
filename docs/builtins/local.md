@@ -1,7 +1,7 @@
 # `local`
 
 ```text
-local [-arx] [+rx] name[=value]... name=(value...)...
+local [-aArx] [+rx] name[=value]... name=(value...)...
 ```
 
 Make variables local to a function.

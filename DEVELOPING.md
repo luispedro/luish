@@ -20,7 +20,7 @@ behaviour listed here must stay covered by the tests named with it.
 | Line editing | rustyline, kept inside `interactive/` | Mature, with vi and emacs modes. The completer and highlighter get a plain-data snapshot (`Names`) instead of `Shell`, which keeps the editor separable for the SSH mode of Stage 3 |
 | Plugins | Rhai, behind the `plugins` cargo feature, with the engine created on the first extension loaded | Pure Rust, so no system dependency. No threads, global state or signal handlers, so it is safe across `fork`. Scripts can be interrupted and resource-limited |
 | Reference behaviour | dash (upstream for intent), then zsh beyond POSIX | See `docs/compatibility.md` |
-| Arrays | Always on, with ksh/bash syntax and zsh's sh-emulation semantics (from 0, `$a` is `${a[0]}`) | Their syntax is an error in dash (`a=(`, `${a[i]}`), so no POSIX script changes, except that `a[i]=x` and `x+=y` stop being command names. zsh's native forms (`$a[1]`, 1-based) would change the meaning of POSIX scripts. `zsh --emulate sh` is then a reference for tests |
+| Arrays | Always on (associative ones too, made with `typeset -A`), with ksh/bash syntax and zsh's sh-emulation semantics (from 0, `$a` is `${a[0]}`) | Their syntax is an error in dash (`a=(`, `${a[i]}`), so no POSIX script changes, except that `a[i]=x` and `x+=y` stop being command names. zsh's native forms (`$a[1]`, 1-based) would change the meaning of POSIX scripts. `zsh --emulate sh` is then a reference for tests |
 
 **Why Rhai.** The first plan used Python (through PyO3), dropped because linking libpython makes the dynamic loader
 map it at every startup and makes the login shell depend on the system Python; an initialized interpreter
@@ -120,7 +120,10 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   token positions, so `a= (x)` stays an error) into a lone `WordPart::Array`. After `local`, `export`, `readonly`,
   `typeset` and `declare` (also after `command` or `builtin`), a `name=` argument followed by `(` gets the array as
   its last part (`is_declaration`): this is decided when parsing, as in bash. Under `glob.bare_qualifiers`, `(` after
-  `name=` is not a qualifier. `${a[index]}` is `ParamExp::index`. Tests: unit tests in `parser.rs` and `unparse.rs`.
+  `name=` is not a qualifier. `${a[index]}` is `ParamExp::index`. An element of `(...)` is an `ast::ArrayItem`: one
+  that starts with unquoted `[` and has `]=` (`split_subscript`, shared with `NAME[index]=`) has a key, which stays a
+  word until the assignment decides whether it is an index or a key. Tests: unit tests in `parser.rs` and
+  `unparse.rs`.
 - `Parser::started` tells a buffer of blank lines apart from a real incomplete command. The lexer reads a trailing
   `(...)` as `WordPart::GlobQual` only under `glob.bare_qualifiers`: the only place it depends on an option.
 - Unit tests in `parser.rs`. No `insta` snapshots or fuzz target yet.
@@ -148,7 +151,17 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   element followed by a NUL (`builtins::vars::split_arg`), since an argument can't otherwise hold a NUL. Arithmetic
   reads `a[i]`, and evaluates the index of `a[i] = v` only once it has seen the assignment operator. `unset 'a[i]'`
   empties the element (`unset_element`). `quote_value` writes arrays for `set`, `-p` listings and `savestate`.
+  Elements `[i]=v` of a list (`Shell::assign_items`) are evaluated as arithmetic when the list is assigned.
   Tests: `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh`.
+- Associative arrays (`vars::Value::Assoc`, boxed): `vars::Assoc` keeps the keys in insertion order, with a hash map
+  from key to position (removal is `swap_remove`). Whether a subscript is a key or an index is decided when it is
+  expanded, from the variable's type (`Shell::subscript`, giving a `vars::Subscript`): a key is expanded as a string,
+  an index as arithmetic; in arithmetic (`Arith::subscript`), a key is the text between the brackets, after the
+  `$((...))` text was expanded. `Value::elements` gives the values, so `${h[@]}` and its operators need nothing more,
+  and `Vars::get` gives the value at key `0`, as bash does. `Shell::assign_items` makes `h=(...)`, `read -A` and
+  declaration arguments: pairs, or `[key]=value` (declaration arguments encode a key as `[key` and a NUL before the
+  element's `=value`). `savestate` writes `typeset -gA name` before the value. Tests: `builtins/assoc.sh` (zsh),
+  `builtins/assoc_luish.sh`.
 - Arithmetic: a variable holding only blanks is 0. Quotes and backslashes inside `$((...))` are kept, so they are
   errors, as in dash. Test: `expand/arith_quotes.sh`.
 - Command substitution drops NUL bytes (so does `read`) and sets `$?` only for commands of assignments alone (so
@@ -311,8 +324,9 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
 - `typeset` and `declare` (`vars::typeset`) share `vars::declare` with `local`, which differs in keeping the value
   (dash) where `typeset` starts a local unset (zsh and bash), in rejecting `-g`, and in being special. Outside a
   function, `typeset x` puts a `Var` without a value in the map, so `typeset -p` finds it. A local made by `typeset`
-  hides a read-only variable, as in zsh (bash refuses). `-p` prints `typeset -arx name=value` with `quote_value`.
-  Not implemented: `-A` (associative arrays), `-i`, `-f`, `-U` and zsh's other options. Tests:
+  hides a read-only variable, as in zsh (bash refuses). `-p` prints `typeset -aArx name=value` with `quote_value`.
+  `-a` and `-A` convert a string, and refuse to convert one kind of array to the other (status 1, as in bash, and
+  the other names are still declared). Not implemented: `-i`, `-f`, `-U` and zsh's other options. Tests:
   `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`.
 - `read -A` (zsh) and `read -a NAME` (bash) split the line with the same `next_field` as `read` uses for all names
   but the last, so there is no empty element after a trailing delimiter (bash; zsh has one). Tests:
@@ -591,6 +605,7 @@ truncates when it relocates the package.
 | Suffix aliases | `parse/alias_suffix.sh` (zsh), `builtins/alias_deviations.sh` (`command -v`) |
 | `RANDOM`, `SECONDS` and the other specials | `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
+| Associative arrays | `builtins/assoc.sh` (zsh), `builtins/assoc_luish.sh` |
 | `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh` |
 | `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |

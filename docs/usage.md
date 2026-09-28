@@ -86,7 +86,26 @@ read -A words                        # read the fields of a line (bash: read -a 
 
 Arrays have no holes: assigning past the end fills the gap with empty elements, and `unset 'a[i]'` makes an element
 empty, as in zsh. A string is an array of one element, so `${s[0]}` is `$s`. Arrays aren't exported to commands.
-Arithmetic expressions can use elements, as in `$((a[i] + 1))` and `a[i] += 2`.
+Arithmetic expressions can use elements, as in `$((a[i] + 1))` and `a[i] += 2`. In a list, `[i]=value` gives the
+index of an element, and those that follow come after it: `a=([2]=x y)` is `('' '' x y)`.
+
+An associative array, made with `typeset -A` (or `local -A`), maps keys to values. A key is any string: the subscript
+is expanded as a word is in an assignment, not evaluated as arithmetic.
+
+```sh
+typeset -A size                      # an empty associative array
+size[small]=1                        # assign a value
+size=([small]=1 [big]=10)            # replace them all (also as pairs: size=(small 1 big 10))
+size+=([huge]=100)                   # add keys
+echo "${size[big]}" "${#size[@]}"    # a value, and the number of keys
+for v in "${size[@]}"; do ...; done  # the values
+echo $((size[small] + size[big]))    # in arithmetic, the text of the subscript is the key
+unset 'size[huge]'                   # remove a key
+```
+
+The operators apply to the values as they do to the elements of an array. The values come in no particular order (in
+luish, the order in which the keys were added, until one is removed; zsh and bash use another). As in bash, `$h` is
+`${h[0]}`, the value at key `0`, and `h=value` assigns to it. `read -A` reads pairs of keys and values into one.
 
 ## Getting help
 

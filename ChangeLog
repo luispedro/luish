@@ -1,4 +1,6 @@
 Unreleased
+    * Associative arrays (`typeset -A`), as in zsh and bash
+    * `a=([i]=x)` assigns to an index, as in zsh and bash
     * `typeset` and `declare`, as in zsh and bash
     * `read -A` (zsh) and `read -a NAME` (bash) read into an array
     * An empty array reads as unset, as in zsh and bash

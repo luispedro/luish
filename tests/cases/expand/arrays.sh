@@ -100,3 +100,23 @@ echo "${g[1]}"
 env | grep '^g='
 readonly h=(1 2)
 echo "${h[@]}"
+# `[i]=value` gives the index of an element, and those that follow come
+# after it; the elements in between are empty. The value is expanded as in
+# an assignment.
+x='1 2'
+a=([2]=x [0]=$x)
+printf '<%s>' "${a[@]}"
+echo
+a=([1]=x y z)
+printf '<%s>' "${a[@]}"
+echo
+i=1
+a+=([i+4]=q r)
+printf '<%s>' "${a[@]}"
+echo
+f() {
+  local a=([1]=p "q r")
+  printf '<%s>' "${a[@]}"
+  echo
+}
+f

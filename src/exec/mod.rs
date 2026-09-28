@@ -7,9 +7,9 @@ pub mod redirect;
 mod simple;
 
 pub use fork::{ForkKind, report_signaled, signal_description};
-pub use simple::CommandKind;
 #[cfg(feature = "plugins")]
 pub use simple::shell_quote;
+pub use simple::{AssignValue, CommandKind};
 
 use std::rc::Rc;
 

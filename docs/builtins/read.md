@@ -26,7 +26,8 @@ backslash at the end of the line continues it on the next line.
 `-A`
 : Read the fields into the array `name` (not POSIX; as in zsh). The line
   is split as for several names, but the last field ends at the next
-  delimiter too; an empty line gives an empty array.
+  delimiter too; an empty line gives an empty array. An associative array
+  gets pairs of keys and values.
 
 `-a name`
 : The same as `-A` (as in bash).

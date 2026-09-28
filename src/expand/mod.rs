@@ -11,6 +11,7 @@ use crate::ast::*;
 use crate::options::Opt;
 use crate::shell::{Flow, Shell};
 use crate::sys;
+use crate::vars::{Item, Subscript, Value};
 use pattern::{Trim, has_meta};
 use split::{Fields, IfsSet, XChar, XField, bytes};
 
@@ -65,12 +66,19 @@ impl Shell {
                 } = a;
                 arg.push(b'=');
                 match value.0.as_slice() {
-                    // Passed as a NUL and each element followed by a NUL
-                    // (see `builtins::vars::split_arg`).
+                    // Passed as a NUL and each element, `=value`, with its
+                    // key before it as `[key`, each followed by a NUL (see
+                    // `builtins::vars::split_arg`).
                     [WordPart::Array(items)] => {
                         arg.push(0);
-                        for v in self.expand_words(items)? {
-                            arg.extend(v);
+                        for item in self.expand_items(items)? {
+                            if let Some(k) = item.key {
+                                arg.push(b'[');
+                                arg.extend(k);
+                                arg.push(0);
+                            }
+                            arg.push(b'=');
+                            arg.extend(item.value);
                             arg.push(0);
                         }
                     }
@@ -82,6 +90,38 @@ impl Shell {
             }
         }
         Ok(out)
+    }
+
+    /// The elements of an array, `(x [key]=value)`: an element is expanded
+    /// as a command word (giving any number of them), and `[key]=value` as
+    /// an assignment.
+    pub fn expand_items(&mut self, items: &[ArrayItem]) -> EResult<Vec<Item>> {
+        let mut out = Vec::with_capacity(items.len());
+        let mut words = Vec::new();
+        for item in items {
+            match &item.key {
+                Some(k) => out.push(Item {
+                    key: Some(self.expand_word_str(k)?),
+                    value: self.expand_word_str(&item.value)?,
+                }),
+                None => {
+                    self.expand_word_into(&item.value, &mut words)?;
+                    out.extend(words.drain(..).map(|value| Item { key: None, value }));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// The subscript of `name[w]`: a key (`w` expanded as a string) if
+    /// `name` is an associative array, otherwise an index (`w` expanded
+    /// and evaluated as arithmetic).
+    pub fn subscript(&mut self, name: &[u8], w: &Word) -> EResult<Subscript> {
+        if self.vars.is_assoc(name) {
+            Ok(Subscript::Key(self.expand_word_str(w)?))
+        } else {
+            Ok(Subscript::Index(self.arith_word(w)?))
+        }
     }
 
     fn expand_word_into(&mut self, w: &Word, out: &mut Vec<Vec<u8>>) -> EResult<()> {
@@ -205,11 +245,17 @@ impl Shell {
             // Only in an argument of a declaration command, handled in
             // `expand_command_words`; elsewhere the elements as text.
             WordPart::Array(items) => {
-                for (i, w) in items.iter().enumerate() {
+                for (i, item) in items.iter().enumerate() {
                     if i > 0 {
                         f.push_quoted(b" ");
                     }
-                    let v = self.expand_word_str(w)?;
+                    if let Some(k) = &item.key {
+                        let k = self.expand_word_str(k)?;
+                        f.push_quoted(b"[");
+                        f.push_quoted(&k);
+                        f.push_quoted(b"]=");
+                    }
+                    let v = self.expand_word_str(&item.value)?;
                     f.push_quoted(&v);
                 }
             }
@@ -331,17 +377,17 @@ impl Shell {
         let (val, element) = match (&pe.index, &pe.name) {
             (None, _) => (self.param_value(&pe.name), None),
             (Some(Index::Expr(w)), ParamName::Var(name)) => {
-                let i = self.arith_word(w)?;
-                (self.element(name, i), Some(i))
+                let sub = self.subscript(name, w)?;
+                (self.element(name, &sub), Some(sub))
             }
             (Some(index), ParamName::Var(name)) => {
                 return self.expand_array(pe, name, *index == Index::At, quoted, f);
             }
             _ => unreachable!(),
         };
-        let unset_error = |sh: &Shell, msg: &str| match element {
-            Some(i) => {
-                sh.error(format!("{}[{i}]: {msg}", param_display(&pe.name)));
+        let unset_error = |sh: &Shell, msg: &str| match &element {
+            Some(sub) => {
+                sh.error(format!("{}[{sub}]: {msg}", param_display(&pe.name)));
                 Flow::Error(2)
             }
             None => sh.unset_error(&pe.name, msg),
@@ -419,8 +465,8 @@ impl Shell {
                         return Err(Flow::Error(2));
                     };
                     let v = self.expand_word_str(w)?;
-                    match element {
-                        Some(i) => self.set_element(name, i, v.clone(), false)?,
+                    match &element {
+                        Some(sub) => self.set_element(name, sub, v.clone(), false)?,
                         None => self.set_var(name, v.clone())?,
                     }
                     push_result(&v, quoted, f);
@@ -463,9 +509,16 @@ impl Shell {
         Ok(())
     }
 
-    /// Element `i` of an array (counting from the end if it is negative); a
-    /// string is an array of one element.
-    pub fn element(&self, name: &[u8], i: i64) -> Option<Vec<u8>> {
+    /// An element of an array: an index counts from the end if it is
+    /// negative, and a string is an array of one element.
+    pub fn element(&self, name: &[u8], sub: &Subscript) -> Option<Vec<u8>> {
+        let i = match sub {
+            Subscript::Index(i) => *i,
+            Subscript::Key(k) => match self.vars.get_value(name) {
+                Some(Value::Assoc(h)) => return h.get(k).cloned(),
+                _ => return None,
+            },
+        };
         let one;
         let items = match self.vars.get_value(name) {
             Some(v) => v.elements(),
