@@ -254,10 +254,12 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   Words are expanded as `case` expands them (`expand_word_str`, and `expand_pattern` for the right side of `=`),
   only when evaluated; the `set -x` trace is built during evaluation, so it shows only those parts. File tests reuse
   `builtins/test.rs`. `=~` uses `regcomp`/`regexec` (`REG_EXTENDED`), without `setlocale`, so it matches bytes, as
-  patterns do. An error in an arithmetic operand is a shell error (status 2, as for `$((...))`; zsh uses 1). Like
+  patterns do. The number of groups is `re_nsub`, which the `libc` crate keeps private, so `re_nsub` in `cond.rs`
+  reads it at its offset (glibc or musl, unit test `exec::cond::tests::groups`); `match`, `mbegin` and `mend` are set
+  only if there are groups, and `BASH_REMATCH` always, all as ordinary arrays. An error in an arithmetic operand is a shell error (status 2, as for `$((...))`; zsh uses 1). Like
   a simple command, `[[` exits under `set -e` on its own status (`run_pipeline`). The highlighter paints the
   expression's operators, and `]]` as a keyword (`After::Cond`). Tests: `parse/cond.sh` (zsh),
-  `parse/cond_regex_bash.sh` and `parse/cond_xtrace.sh` (`.expected`), unit tests `parser::tests::cond` and
+  `parse/cond_regex_match.sh` (zsh), `parse/cond_regex_rematch.sh` (`zsh -o bashrematch`), `parse/cond_regex_bash.sh` and `parse/cond_xtrace.sh` (`.expected`), unit tests `parser::tests::cond` and
   `unparse::tests::layout`.
 - Recursion (`stack.rs`): as in Debian's dash (its patch 0009, for Debian bug 579815), a function call when 1000 are
   running is a shell error, `Maximum function recursion depth (1000) reached`; unlike dash, `func_depth` also goes
@@ -625,7 +627,7 @@ truncates when it relocates the package.
 | fd numbers in redirections | `exec/redirect_big_fd.sh` |
 | `exec -- cmd` | `exec/exec_dashdash.sh` |
 | `cd -e` | `builtins/cd_e.sh` |
-| `[[ ... ]]` | `parse/cond.sh` (zsh), `parse/cond_regex_bash.sh`, `parse/cond_xtrace.sh`, `parser::tests::cond` |
+| `[[ ... ]]` | `parse/cond.sh` (zsh), `parse/cond_regex_match.sh` (zsh), `parse/cond_regex_rematch.sh` (zsh), `parse/cond_regex_bash.sh`, `parse/cond_xtrace.sh`, `parser::tests::cond` |
 | `set -o pipefail` | `options/pipefail.sh` (zsh), `options/pipefail_async.sh`, `pipefail_job_control` in `tests/interactive.rs` |
 | `set -o` / `set +o` list | `options/set_o_hashall.sh`, `options/setopt_list.sh` |
 | `set -x` output | `options/xtrace.sh` |

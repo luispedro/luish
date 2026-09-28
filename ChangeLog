@@ -1,4 +1,6 @@
 Unreleased
+    * `[[ =~ ]]` sets `match`, `mbegin` and `mend` (zsh) and `BASH_REMATCH`
+      (bash)
     * `pipestatus` (zsh) and `PIPESTATUS` (bash): the statuses of the
       last pipeline's commands
     * `${!a[@]}` gives the indices or keys of an array, as in bash
