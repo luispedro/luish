@@ -1,4 +1,6 @@
 Unreleased
+    * `typeset -l` and `-u` (lower and upper case), and `typeset -U` (zsh:
+      unique arrays, as in `typeset -U path`)
     * `typeset -i`: integer variables, as in zsh and bash
     * `typeset -p` prints special variables (`path`, `pipestatus`, `UID`)
     * `dirstack` (zsh): the directory stack as an array, which

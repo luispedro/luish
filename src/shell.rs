@@ -10,7 +10,7 @@ use crate::lexer::{AliasMap, ParseError, Parser};
 use crate::options::{Opt, Options};
 use crate::signals::{self, NSIG};
 use crate::sys;
-use crate::vars::{AssignError, Item, Saved, Special, Subscript, Value, Var, Vars};
+use crate::vars::{AssignError, Item, Saved, Special, Subscript, Transform, Value, Var, Vars};
 
 /// Non-local control flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -253,7 +253,7 @@ impl Shell {
             value: Some(value),
             exported: attrs.is_some_and(|v| v.exported),
             readonly: attrs.is_some_and(|v| v.readonly),
-            integer: attrs.is_some_and(|v| v.integer),
+            transform: attrs.map(|v| v.transform).unwrap_or_default(),
         })
     }
 
@@ -306,10 +306,19 @@ impl Shell {
         if name == b"OPTIND" && crate::builtins::parse_uint(&value).is_none() {
             return Err(format!("Illegal number: {}", String::from_utf8_lossy(&value)));
         }
-        let value = if self.vars.is_integer(name) {
-            self.integer(&value)?
-        } else {
-            value
+        let value = match self.vars.transform(name) {
+            t if t.unique && name == b"PATH" => {
+                // `typeset -U PATH` removes repeated directories, as in zsh.
+                let mut dirs = self
+                    .convert(t, value)?
+                    .split(|&c| c == b':')
+                    .map(<[u8]>::to_vec)
+                    .collect();
+                crate::vars::dedupe(&mut dirs);
+                dirs.join(&b':')
+            }
+            t if t.any() => self.convert(t, value)?,
+            _ => value,
         };
         if self.vars.set(name, value).is_err() {
             return Err(format!("{}: is read only", String::from_utf8_lossy(name)));
@@ -321,21 +330,31 @@ impl Shell {
         Ok(())
     }
 
-    /// The value to store in an integer variable (`typeset -i`): `value`
-    /// evaluated as an arithmetic expression, in decimal.
-    fn integer(&mut self, value: &[u8]) -> Result<Vec<u8>, String> {
-        Ok(crate::expand::arith::eval(self, value)?.to_string().into_bytes())
+    /// The value to store in a variable (or an element of one) with the
+    /// attributes `t`: for an integer variable (`typeset -i`), `value`
+    /// evaluated as an arithmetic expression, in decimal; with `-l` or `-u`,
+    /// in lower or upper case.
+    fn convert(&mut self, t: Transform, mut value: Vec<u8>) -> Result<Vec<u8>, String> {
+        if t.integer {
+            value = crate::expand::arith::eval(self, &value)?.to_string().into_bytes();
+        }
+        if t.lower {
+            value.make_ascii_lowercase();
+        } else if t.upper {
+            value.make_ascii_uppercase();
+        }
+        Ok(value)
     }
 
-    /// Evaluates the elements to assign to `name`, if it is an integer
-    /// variable.
-    fn integer_elements(&mut self, name: &[u8], mut elements: Vec<Vec<u8>>) -> Result<Vec<Vec<u8>>, Flow> {
-        if self.vars.is_integer(name) {
-            for e in &mut elements {
-                *e = self.integer(e).map_err(|msg| self.fail(msg))?;
+    /// Converts elements to assign with the attributes `t` (see `convert`),
+    /// but doesn't remove repeated ones (`-U`).
+    fn convert_all<'a>(&mut self, t: Transform, elements: impl Iterator<Item = &'a mut Vec<u8>>) -> Result<(), Flow> {
+        if t.any() {
+            for e in elements {
+                *e = self.convert(t, std::mem::take(e)).map_err(|msg| self.fail(msg))?;
             }
         }
-        Ok(elements)
+        Ok(())
     }
 
     /// Reports an error that exits a non-interactive shell.
@@ -347,13 +366,18 @@ impl Shell {
     /// Assigns a whole value (an array), reporting an error if the variable
     /// is readonly.
     pub fn set_var_value(&mut self, name: &[u8], value: Value) -> Result<(), Flow> {
+        let t = self.vars.transform(name);
         let value = match value {
             Value::Str(s) => return self.set_var(name, s),
-            Value::Array(a) if self.vars.is_integer(name) => Value::Array(Box::new(self.integer_elements(name, *a)?)),
-            Value::Assoc(mut h) if self.vars.is_integer(name) => {
-                for v in h.values_mut() {
-                    *v = self.integer(v).map_err(|msg| self.fail(msg))?;
+            Value::Array(mut a) if t.any() => {
+                self.convert_all(t, a.iter_mut())?;
+                if t.unique {
+                    crate::vars::dedupe(&mut a);
                 }
+                Value::Array(a)
+            }
+            Value::Assoc(mut h) if t.any() => {
+                self.convert_all(t, h.values_mut().iter_mut())?;
                 Value::Assoc(h)
             }
             v => v,
@@ -373,20 +397,32 @@ impl Shell {
     /// Assigns to (or with `append`, appends to) an element of an array: an
     /// index counts from the end if it is negative.
     pub fn set_element(&mut self, name: &[u8], sub: &Subscript, value: Vec<u8>, append: bool) -> Result<(), Flow> {
-        let (value, append) = if self.vars.is_integer(name) {
-            let mut n = crate::expand::arith::eval(self, &value).map_err(|msg| self.fail(msg))?;
-            if append {
-                let old = match (self.vars.get_value(name), sub) {
-                    (Some(Value::Assoc(h)), Subscript::Key(k)) => h.get(k),
-                    (Some(v), &Subscript::Index(i)) => {
-                        let e = v.elements();
-                        e.get(if i < 0 { i + e.len() as i64 } else { i } as usize)
-                    }
-                    _ => None,
-                };
-                n = n.wrapping_add(old.and_then(|o| crate::expand::arith::parse_number(o)).unwrap_or(0));
-            }
-            (n.to_string().into_bytes(), false)
+        let t = self.vars.transform(name);
+        let (value, append) = if t.any() {
+            let old = match (self.vars.get_value(name), sub) {
+                _ if !append => None,
+                (Some(Value::Assoc(h)), Subscript::Key(k)) => h.get(k),
+                (Some(v), &Subscript::Index(i)) => {
+                    let e = v.elements();
+                    e.get(if i < 0 { i + e.len() as i64 } else { i } as usize)
+                }
+                _ => None,
+            };
+            let value = match old {
+                // `a[i]+=expr` adds.
+                Some(o) if t.integer => {
+                    let o = crate::expand::arith::parse_number(o).unwrap_or(0);
+                    let n = crate::expand::arith::eval(self, &value).map_err(|msg| self.fail(msg))?;
+                    n.wrapping_add(o).to_string().into_bytes()
+                }
+                Some(o) => {
+                    let mut o = o.clone();
+                    o.extend(value);
+                    self.convert(t, o).map_err(|msg| self.fail(msg))?
+                }
+                None => self.convert(t, value).map_err(|msg| self.fail(msg))?,
+            };
+            (value, false)
         } else {
             (value, append)
         };
@@ -394,7 +430,13 @@ impl Shell {
             Subscript::Index(i) if let Some(s) = self.tied(name) => {
                 let mut a = Some(Value::Array(Box::new(self.tied_elements(s))));
                 match crate::vars::set_index(&mut a, *i, value, append) {
-                    Ok(()) => return self.assign_tied(s, a.unwrap().elements().to_vec()),
+                    Ok(()) => {
+                        let mut a = a.unwrap().elements().to_vec();
+                        if t.unique {
+                            crate::vars::dedupe(&mut a);
+                        }
+                        return self.assign_tied(s, a);
+                    }
                     Err(e) => Err(e),
                 }
             }
@@ -402,6 +444,11 @@ impl Shell {
         };
         match r {
             Ok(()) => {
+                if t.unique
+                    && let Some(Value::Array(a)) = self.vars.get_value_mut(name)
+                {
+                    crate::vars::dedupe(a);
+                }
                 self.after_assign(name);
                 Ok(())
             }
@@ -434,12 +481,8 @@ impl Shell {
                 let mut items = items.into_iter();
                 std::iter::from_fn(|| Some((items.next()?.value, items.next()?.value))).collect()
             };
-            let pairs = if self.vars.is_integer(name) {
-                let (keys, values): (Vec<_>, Vec<_>) = pairs.into_iter().unzip();
-                keys.into_iter().zip(self.integer_elements(name, values)?).collect()
-            } else {
-                pairs
-            };
+            let mut pairs = pairs;
+            self.convert_all(self.vars.transform(name), pairs.iter_mut().map(|(_, v)| v))?;
             if self.vars.set_pairs(name, pairs, append).is_err() {
                 return Err(self.readonly_error(name));
             }
@@ -478,15 +521,24 @@ impl Shell {
     }
 
     /// Appends elements to an array (`a+=(x y)`).
-    pub fn append_elements(&mut self, name: &[u8], items: Vec<Vec<u8>>) -> Result<(), Flow> {
-        let items = self.integer_elements(name, items)?;
+    pub fn append_elements(&mut self, name: &[u8], mut items: Vec<Vec<u8>>) -> Result<(), Flow> {
+        let t = self.vars.transform(name);
+        self.convert_all(t, items.iter_mut())?;
         if let Some(s) = self.tied(name) {
             let mut a = self.tied_elements(s);
             a.extend(items);
+            if t.unique {
+                crate::vars::dedupe(&mut a);
+            }
             return self.assign_tied(s, a);
         }
         if self.vars.append_elements(name, items).is_err() {
             return Err(self.readonly_error(name));
+        }
+        if t.unique
+            && let Some(Value::Array(a)) = self.vars.get_value_mut(name)
+        {
+            crate::vars::dedupe(a);
         }
         self.after_assign(name);
         Ok(())

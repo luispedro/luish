@@ -5,7 +5,7 @@ use crate::exec::AssignValue;
 use crate::lexer::is_valid_name;
 use crate::options::{EXTENDED, Kind, OPTIONS, Opt, Options, Setting, VALUES, find_group, group_of, parse_bool};
 use crate::shell::{ExecResult, Flow, Shell};
-use crate::vars::{Item, Special, Subscript, Value};
+use crate::vars::{Item, Special, Subscript, Transform, Value};
 
 /// Single-quotes a value for output that can be read back by the shell.
 /// dash's `single_quote`: the text in single quotes, with each run of
@@ -501,15 +501,35 @@ pub fn typeset(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     declare(sh, argv, false)
 }
 
-/// The attributes that `typeset` and `local` set (`-a`, `-A`, `-i`, `-r`,
-/// `-x`) and remove (`+i`, `+r`, `+x`).
+/// The attributes that `typeset` and `local` set (`-a`, `-A`, `-i`, `-l`,
+/// `-r`, `-u`, `-U`, `-x`) and remove (`+i`, `+l`...).
 #[derive(Default)]
 struct Attrs {
     array: bool,
     assoc: bool,
     integer: Option<bool>,
+    lower: Option<bool>,
+    upper: Option<bool>,
+    unique: Option<bool>,
     readonly: Option<bool>,
     export: Option<bool>,
+}
+
+impl Attrs {
+    /// The attributes that change values, `old` changed by these. `-l` and
+    /// `-u` replace each other, and together give neither (zsh and bash).
+    fn transform(&self, old: Transform) -> Transform {
+        let mut t = old;
+        t.integer = self.integer.unwrap_or(t.integer);
+        t.unique = self.unique.unwrap_or(t.unique);
+        match (self.lower, self.upper) {
+            (Some(true), Some(true)) => (t.lower, t.upper) = (false, false),
+            (Some(true), _) => (t.lower, t.upper) = (true, false),
+            (_, Some(true)) => (t.lower, t.upper) = (false, true),
+            (l, u) => (t.lower, t.upper) = (l.unwrap_or(t.lower), u.unwrap_or(t.upper)),
+        }
+        t
+    }
 }
 
 /// `local` and `typeset`. In a function (unless `-g`), each variable is made
@@ -539,8 +559,11 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
                 b'A' if on => (attrs.array, attrs.assoc) = (false, true),
                 b'g' if on && !keep => global = true,
                 b'i' => attrs.integer = Some(on),
+                b'l' => attrs.lower = Some(on),
                 b'p' if on => print = true,
                 b'r' => attrs.readonly = Some(on),
+                b'u' => attrs.upper = Some(on),
+                b'U' => attrs.unique = Some(on),
                 b'x' => attrs.export = Some(on),
                 _ => {
                     sh.berr(cmd, format!("Illegal option {}{}", a[0] as char, c as char));
@@ -569,10 +592,10 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
             sh.locals.last_mut().unwrap().push((name.to_vec(), old));
             if !keep {
                 sh.restore_var(name.to_vec(), None);
-            } else if sh.vars.is_integer(name) {
-                // `local` keeps the value, but not the integer attribute
+            } else if sh.vars.transform(name).any() {
+                // `local` keeps the value, but not `-i`, `-l`, `-u` or `-U`
                 // (zsh and bash keep neither).
-                sh.vars.set_integer(name, false);
+                sh.vars.set_transform(name, Default::default());
             }
             // A local `path` or `dirstack` is an ordinary variable (unset,
             // as in dash), which doesn't change `PATH` (zsh makes `PATH`
@@ -617,17 +640,21 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
             Ok(Some(v)) => sh.set_var_value(name, v)?,
             Ok(None) => {}
         }
-        // Set first, so that the value is evaluated. A value that the
-        // variable already has is evaluated too, as in zsh (bash keeps it).
-        if let Some(on) = attrs.integer
-            && on != sh.vars.is_integer(name)
-        {
-            sh.vars.set_integer(name, on);
-            if on
+        // Set first, so that the value is converted. A value that the
+        // variable already has is converted too, as in zsh (bash keeps it).
+        let old = sh.vars.transform(name);
+        let t = attrs.transform(old);
+        if t != old {
+            sh.vars.set_transform(name, t);
+            let current = match tied {
+                true => sh.special_elements(name).map(|a| Value::Array(Box::new(a))),
+                false => sh.vars.get_value(name).cloned(),
+            };
+            if t.any()
                 && value.is_none()
-                && let Some(v) = sh.vars.get_value(name)
+                && let Some(v) = current
             {
-                sh.set_var_value(name, v.clone())?;
+                sh.set_var_value(name, v)?;
             }
         }
         let value = match value {
@@ -675,7 +702,10 @@ fn print_declarations(sh: &Shell, cmd: &[u8], names: &[Vec<u8>], attrs: &Attrs) 
             let is_assoc = matches!(var.value, Some(Value::Assoc(_)));
             if (!attrs.array || is_array)
                 && (!attrs.assoc || is_assoc)
-                && attrs.integer.is_none_or(|i| i == var.integer)
+                && attrs.integer.is_none_or(|i| i == var.transform.integer)
+                && attrs.lower.is_none_or(|l| l == var.transform.lower)
+                && attrs.upper.is_none_or(|u| u == var.transform.upper)
+                && attrs.unique.is_none_or(|u| u == var.transform.unique)
                 && attrs.readonly.is_none_or(|r| r == var.readonly)
                 && attrs.export.is_none_or(|x| x == var.exported)
             {
@@ -702,7 +732,10 @@ fn declaration(out: &mut Vec<u8>, name: &[u8], var: &crate::vars::Var) {
     let flags = [
         (matches!(var.value, Some(Value::Array(_))), b'a'),
         (matches!(var.value, Some(Value::Assoc(_))), b'A'),
-        (var.integer, b'i'),
+        (var.transform.integer, b'i'),
+        (var.transform.lower, b'l'),
+        (var.transform.upper, b'u'),
+        (var.transform.unique, b'U'),
         (var.readonly, b'r'),
         (var.exported, b'x'),
     ];

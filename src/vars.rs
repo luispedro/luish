@@ -10,8 +10,28 @@ pub struct Var {
     pub value: Option<Value>,
     pub exported: bool,
     pub readonly: bool,
-    /// `typeset -i`: assignments are evaluated as arithmetic expressions.
+    /// How the values assigned are changed (`typeset -i`, `-l`, `-u`, `-U`).
+    pub transform: Transform,
+}
+
+/// The attributes that change the values assigned to a variable (to each
+/// element of an array).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Transform {
+    /// `typeset -i`: values are evaluated as arithmetic expressions.
     pub integer: bool,
+    /// `typeset -l`: ASCII letters are made lower case.
+    pub lower: bool,
+    /// `typeset -u`: ASCII letters are made upper case.
+    pub upper: bool,
+    /// `typeset -U` (zsh): an array keeps only the first of equal elements.
+    pub unique: bool,
+}
+
+impl Transform {
+    pub fn any(self) -> bool {
+        self != Transform::default()
+    }
 }
 
 /// The value of a variable: a string, or an array of them (as in zsh and
@@ -26,6 +46,12 @@ pub enum Value {
     Array(Box<Vec<Vec<u8>>>),
     /// An associative array (`typeset -A`).
     Assoc(Box<Assoc>),
+}
+
+/// Removes the elements equal to an earlier one (`typeset -U`).
+pub fn dedupe(a: &mut Vec<Vec<u8>>) {
+    let mut seen = crate::hash::HashSet::default();
+    a.retain(|e| seen.insert(e.clone()));
 }
 
 /// An associative array. The keys keep the order in which they were added,
@@ -152,9 +178,9 @@ impl From<ReadonlyError> for AssignError {
 pub struct Vars {
     map: HashMap<Vec<u8>, Var>,
     specials: Specials,
-    /// Whether any variable was ever given the integer attribute, so that
-    /// assignments don't look for it otherwise.
-    integers: bool,
+    /// Whether any variable was ever given a `Transform` attribute, so that
+    /// assignments don't look for them otherwise.
+    transforms: bool,
 }
 
 /// zsh's special parameters that are computed when they are read. They are
@@ -329,7 +355,7 @@ impl Vars {
         Vars {
             map,
             specials,
-            integers: false,
+            transforms: false,
         }
     }
 
@@ -440,15 +466,23 @@ impl Vars {
         self.map.get(name)
     }
 
-    /// Whether `name` has the integer attribute (`typeset -i`).
-    pub fn is_integer(&self, name: &[u8]) -> bool {
-        self.integers && self.map.get(name).is_some_and(|v| v.integer)
+    /// How the values assigned to `name` are changed.
+    pub fn transform(&self, name: &[u8]) -> Transform {
+        match self.transforms {
+            true => self.map.get(name).map(|v| v.transform).unwrap_or_default(),
+            false => Transform::default(),
+        }
     }
 
-    /// Gives `name` the integer attribute, or removes it.
-    pub fn set_integer(&mut self, name: &[u8], on: bool) {
-        self.integers |= on;
-        self.entry(name).integer = on;
+    /// Whether `name` has the integer attribute (`typeset -i`).
+    pub fn is_integer(&self, name: &[u8]) -> bool {
+        self.transform(name).integer
+    }
+
+    /// Sets the attributes that change the values assigned to `name`.
+    pub fn set_transform(&mut self, name: &[u8], t: Transform) {
+        self.transforms |= t.any();
+        self.entry(name).transform = t;
     }
 
     pub fn is_assoc(&self, name: &[u8]) -> bool {
@@ -657,7 +691,7 @@ impl Vars {
         Vars {
             map: self.map.clone(),
             specials: self.specials.clone(),
-            integers: self.integers,
+            transforms: self.transforms,
         }
     }
 

@@ -410,10 +410,10 @@ impl Shell {
             }
             let tied = tied == Some(Special::Path);
             let old = self.vars.save(&n);
-            // The value isn't evaluated for an integer variable, as in zsh
-            // and bash.
-            if self.vars.is_integer(&n) {
-                self.vars.set_integer(&n, false);
+            // The value isn't evaluated for an integer variable, nor
+            // converted by `-l`, `-u` or `-U`, as in zsh and bash.
+            if self.vars.transform(&n).any() {
+                self.vars.set_transform(&n, Default::default());
             }
             let set = self.assign(a);
             if set.is_ok() {

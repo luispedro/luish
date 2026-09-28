@@ -161,7 +161,7 @@ Still to build, in this order:
 
 Not planned, because the history shows they aren't used or they are easy to rewrite in POSIX sh: the `:h`/`:t`
 modifiers, `builtin` (`command cd` works), zsh's two-argument `cd old new`, `vared`, `zmv`, `mmv`, `zed`, `zcalc`,
-`noglob`, zsh-history-substring-search, zsh-nvm, zplug, `fpath`/`compinit`, and `typeset -U`.
+`noglob`, zsh-history-substring-search, zsh-nvm, zplug, and `fpath`/`compinit`.
 
 The user's config (`~/.config/luish/rc.d`) also needs porting: `setopt prompt.percent` and `PS1`, `CDPATH`,
 `setopt cd.auto`, the history settings (`setopt -p history file=~/.histfile size=1000 save_size=1000 share
@@ -221,7 +221,7 @@ shell tracks the current file as well as the line, for provenance and for error 
   `Parser::bareglobqual`). Indexed and associative arrays are done, always on (see `DEVELOPING.md`), with bash's
   `${!a[@]}` for the keys; still to do for them: zsh's `${(k)a}` (which needs parameter flags), and the special
   arrays (`pipestatus`, `path` and `dirstack`, and `match` and `BASH_REMATCH` for `=~`, are done). `typeset` and
-  `declare` are done (with `-i`), but for `-f` (functions) and zsh's `-U`, `-l`, `-u`.
+  `declare` are done (with `-i`, `-l`, `-u` and zsh's `-U`), but for `-f` (functions).
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL
   around the prompt and command output. Unicode width handling and bracketed paste belong to the line editor.
 - **Scripting**: error messages with file, line and function stack (from call frames), a predictable strict mode,

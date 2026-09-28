@@ -1,0 +1,16 @@
+ab cdef gh
+XYW Z
+abc
+typeset -alU a=('ab' 'cdef' 'gh')
+typeset -Au h=(['k']='XYW' ['j']='Z')
+typeset x='abc'
+typeset -u y='Q'
+typeset -Au h=(['k']='XYW' ['j']='Z')
+typeset -u y='Q'
+typeset -alU a=('ab' 'cdef' 'gh')
+/a:/b
+/a:/b:/c
+/c:/b
+typeset -aU path=('/c' '/b')
+/d:/d
+/e:/f

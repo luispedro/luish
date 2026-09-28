@@ -1,8 +1,8 @@
 # `typeset`
 
 ```text
-typeset [-aAgirx] [+irx] name[=value]... name=(value...)...
-typeset -p [-aAirx] [name...]
+typeset [-aAgilruUx] [+ilruUx] name[=value]... name=(value...)...
+typeset -p [-aAilruUx] [name...]
 declare ...
 ```
 
@@ -40,6 +40,11 @@ another name for `typeset`.
   is removed by `+i` and `unset`, and doesn't apply to a local made by
   `local` or to an assignment before a command (`x=1+1 cmd`).
 
+`-l`
+: Convert the values assigned to the variables (each element of an array)
+  to lower case, as `-i` evaluates them: ASCII letters only. `-l` and `-u`
+  replace each other.
+
 `-p`
 : Print the variables named, or all those that have the attributes given
   (all of them without other options), as `typeset` commands that can be
@@ -52,6 +57,14 @@ another name for `typeset`.
 : Make the variables read-only (see `readonly`). A read-only variable can't
   lose the attribute, but a local one hides it until the function returns.
 
+`-u`
+: Convert the values assigned to upper case, as `-l` does to lower case.
+
+`-U`
+: Keep only the first of equal elements in arrays (zsh), whenever they are
+  assigned. On `path`, this removes repeated directories from `PATH` (so
+  does `-U` on `PATH` when it is assigned).
+
 `-x`
 : Export the variables (see `export`). `+x` stops exporting them.
 
@@ -62,4 +75,6 @@ f() {
     count+=1
     typeset -A seen=([.]=1 [..]=1)
 }
+typeset -U path
+path=(~/bin "${path[@]}")
 ```

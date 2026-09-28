@@ -350,16 +350,24 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   `path` and `dirstack` (which reads back as an array assignment, so `path` stays tied), but a listing without
   names includes only the specials that have attributes (as `set` doesn't list them).
   `-a` and `-A` convert a string, and refuse to convert one kind of array to the other (status 1, as in bash, and
-  the other names are still declared). Not implemented: `-f`, `-U` and zsh's other options. Tests:
+  the other names are still declared). Not implemented: `-f` and zsh's other options. Tests:
   `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`.
-- `typeset -i` sets `Var::integer`, and `Vars::integers` records that some variable ever had it, so that
-  `Vars::is_integer` costs a flag test when no script uses it. `Shell::try_set_var` (hence `set_var`, `read`, `for`),
-  `set_var_value`, `set_element`, `assign_items` and `append_elements` evaluate the value (each element) with
-  `arith::eval` and store it in decimal; `x+=v` (`exec::assign`) and `a[i]+=v` add. Arithmetic assignments
-  (`$((x=1))`) store numbers already, through `Vars::set`. As in zsh and bash, `local` (which keeps the value, as
-  in dash) and temporary assignments before a command (`with_temp_assigns`) drop the attribute, and `unset` removes
-  it. Setting it evaluates the current value (zsh). Tests: `builtins/typeset_integer.sh` (zsh),
-  `builtins/typeset_integer_luish.sh` (arrays, `typeset -p`, decimal output).
+- `typeset -i`, `-l`, `-u` and `-U` set `Var::transform` (a `vars::Transform`), and `Vars::transforms` records that
+  some variable ever had one, so that `Vars::transform` costs a flag test when no script uses them.
+  `Shell::try_set_var` (hence `set_var`, `read`, `for`), `set_var_value`, `set_element`, `assign_items` and
+  `append_elements` convert the value (each element) with `Shell::convert`: `-i` evaluates it with `arith::eval`
+  and stores it in decimal, `-l` and `-u` change the case of ASCII letters (as `${x:l}` does). `x+=v`
+  (`exec::assign`) and `a[i]+=v` add for `-i`, and convert the joined string otherwise. Arithmetic assignments
+  (`$((x=1))`) store numbers already, through `Vars::set`. `-U` removes repeated elements (`vars::dedupe`) after
+  each array assignment, and from `PATH` when it is set as a string (zsh does it for its other colon-separated
+  specials too). On a tied `path`, `-U` dedupes before `assign_tied` sets `PATH`, which then applies `PATH`'s own
+  attributes, so `-U` on `PATH` applies to `path` assignments too (zsh keeps the two apart). As in zsh and bash,
+  `local` (which keeps the value, as in dash) and temporary assignments before a command (`with_temp_assigns`) drop
+  the attributes, and `unset` removes them. Setting one converts the current value (zsh). Values are converted when
+  assigned, as bash does, where zsh converts `-l` and `-u` ones when they are read (so after `typeset +l` zsh shows
+  the original); that costs nothing on reads. Tests: `builtins/typeset_integer.sh` (zsh),
+  `builtins/typeset_integer_luish.sh` (arrays, `typeset -p`, decimal output), `builtins/typeset_case.sh` (zsh),
+  `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh` (arrays, `+l`, `typeset -p`, `path`).
 - `read -A` (zsh) and `read -a NAME` (bash) split the line with the same `next_field` as `read` uses for all names
   but the last, so there is no empty element after a trailing delimiter (bash; zsh has one). Tests:
   `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh`.
@@ -642,7 +650,7 @@ truncates when it relocates the package.
 | Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
 | Associative arrays | `builtins/assoc.sh` (zsh), `builtins/assoc_luish.sh` |
 | `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |
-| `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh` |
+| `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh`, `builtins/typeset_case.sh` (zsh), `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh` |
 | `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |
 | `SHLVL` | `misc/shlvl.sh`, `histcmd_shlvl` in `tests/interactive.rs` |

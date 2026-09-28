@@ -115,6 +115,8 @@ luish, the order in which the keys were added, until one is removed; zsh and bas
 
 `typeset -i` gives variables the integer attribute, as in zsh and bash: what is assigned to them is evaluated as an
 arithmetic expression (for an array, each element), so `typeset -i n=2*3` sets `n` to `6`, and `n+=1` adds.
+Likewise, `typeset -l` and `typeset -u` convert what is assigned to lower or upper case, and zsh's `typeset -U` keeps
+only the first of equal elements in an array: `typeset -U path` keeps `PATH` free of repeated directories.
 
 ## Getting help
 

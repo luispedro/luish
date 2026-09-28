@@ -55,6 +55,7 @@ impl Hasher for FastHasher {
 }
 
 pub type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<FastHasher>>;
+pub type HashSet<K> = std::collections::HashSet<K, BuildHasherDefault<FastHasher>>;
 
 #[cfg(test)]
 mod tests {
