@@ -1,5 +1,6 @@
 //! The executor: walks the AST and runs commands.
 
+mod cond;
 mod fork;
 mod not_found;
 pub mod redirect;
@@ -110,14 +111,14 @@ impl Shell {
             return Ok((status == 0) as i32);
         }
         self.last_status = status;
-        // As in dash, only simple commands, subshells and pipelines exit on
-        // their own status; a compound command's status comes from commands
-        // inside it that have been checked already (or were exempt, as on
-        // the left of `&&`).
+        // As in dash, only simple commands, subshells and pipelines (and
+        // `[[`, as in zsh) exit on their own status; a compound command's
+        // status comes from commands inside it that have been checked
+        // already (or were exempt, as on the left of `&&`).
         if p.cmds.len() > 1
             || matches!(
                 p.cmds[0],
-                Command::Simple(_) | Command::Compound(CompoundCommand::Subshell(_), _)
+                Command::Simple(_) | Command::Compound(CompoundCommand::Subshell(_) | CompoundCommand::Cond { .. }, _)
             )
         {
             self.check_errexit(status)?;
@@ -373,6 +374,7 @@ impl Shell {
                 }
                 Ok(0)
             }
+            CompoundCommand::Cond { expr, lineno } => self.run_cond(expr, *lineno),
         }
     }
 

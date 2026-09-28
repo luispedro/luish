@@ -340,6 +340,14 @@ impl<'a> Printer<'a> {
                 self.nl();
                 self.w(b"esac");
             }
+            CompoundCommand::Cond { expr, .. } => {
+                self.w(b"[[ ");
+                expr.write(&mut |p| match p {
+                    CondPiece::Text(t) => self.w(t),
+                    CondPiece::Word(w) => self.word(w),
+                });
+                self.w(b" ]]");
+            }
         }
     }
 
@@ -578,6 +586,10 @@ mod tests {
                         strip_lines(&mut a.body);
                     }
                 }
+                CompoundCommand::Cond { expr, lineno } => {
+                    *lineno = 0;
+                    expr.words_mut(&mut |w| word(w));
+                }
             }
         }
         for cc in list {
@@ -636,6 +648,15 @@ mod tests {
             "f() (\n    cd /\n    ls\n) >out 2>&1\n"
         );
         assert_eq!(round_trip("f() echo hi"), "f() {\n    echo hi\n}\n");
+        assert_eq!(
+            round_trip("f() { [[ -f $1 && ( $2 = a* || ! $3 =~ ^(a|b c)$ ) ]] >/dev/null; }"),
+            "f() {\n    [[ -f $1 && ( $2 == a* || ! $3 =~ ^(a|b c)$ ) ]] >/dev/null\n}\n"
+        );
+        assert_eq!(
+            round_trip("f() { [[ a && (b || c) ]]; }"),
+            "f() {\n    [[ -n a && ( -n b || -n c ) ]]\n}\n"
+        );
+        assert_eq!(round_trip("f() [[ \"<\" < '>' ]]"), "f() [[ \"<\" < '>' ]]\n");
         // Names that only `function` can define.
         assert_eq!(round_trip("function a-b { :; }"), "function a-b {\n    :\n}\n");
         assert_eq!(round_trip("function if { :; }"), "function if {\n    :\n}\n");

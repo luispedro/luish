@@ -86,7 +86,165 @@ pub enum CompoundCommand {
         arms: Vec<CaseArm>,
         lineno: u32,
     },
+    /// `[[ ... ]]`, as in zsh and bash.
+    Cond {
+        expr: CondExpr,
+        lineno: u32,
+    },
 }
+
+/// The expression of `[[ ... ]]`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CondExpr {
+    Not(Box<CondExpr>),
+    And(Box<CondExpr>, Box<CondExpr>),
+    Or(Box<CondExpr>, Box<CondExpr>),
+    /// `-f word` and the like, by the operator's letter. A lone word is
+    /// `-n word`.
+    Unary(u8, Word),
+    Binary(CondOp, Word, Word),
+}
+
+impl CondExpr {
+    /// How tightly the expression binds: `||`, then `&&`, then the rest.
+    /// An operand that binds less tightly than its operator is written in
+    /// parentheses.
+    pub fn prec(&self) -> u8 {
+        match self {
+            CondExpr::Or(..) => 0,
+            CondExpr::And(..) => 1,
+            _ => 2,
+        }
+    }
+
+    /// Writes the expression as it reads back (without `[[` and `]]`),
+    /// passing text and words to `f`.
+    pub fn write(&self, f: &mut dyn FnMut(CondPiece<'_>)) {
+        let operand = |e: &CondExpr, f: &mut dyn FnMut(CondPiece<'_>)| {
+            if e.prec() < self.prec() {
+                f(CondPiece::Text(b"( "));
+                e.write(f);
+                f(CondPiece::Text(b" )"));
+            } else {
+                e.write(f);
+            }
+        };
+        match self {
+            CondExpr::Not(a) => {
+                f(CondPiece::Text(b"! "));
+                operand(a, f);
+            }
+            CondExpr::And(a, b) | CondExpr::Or(a, b) => {
+                operand(a, f);
+                f(CondPiece::Text(if matches!(self, CondExpr::And(..)) {
+                    b" && "
+                } else {
+                    b" || "
+                }));
+                operand(b, f);
+            }
+            CondExpr::Unary(op, w) => {
+                f(CondPiece::Text(&[b'-', *op, b' ']));
+                f(CondPiece::Word(w));
+            }
+            CondExpr::Binary(op, a, b) => {
+                f(CondPiece::Word(a));
+                f(CondPiece::Text(b" "));
+                f(CondPiece::Text(op.text().as_bytes()));
+                f(CondPiece::Text(b" "));
+                f(CondPiece::Word(b));
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub fn words_mut(&mut self, f: &mut dyn FnMut(&mut Word)) {
+        match self {
+            CondExpr::Not(a) => a.words_mut(f),
+            CondExpr::And(a, b) | CondExpr::Or(a, b) => {
+                a.words_mut(f);
+                b.words_mut(f);
+            }
+            CondExpr::Unary(_, w) => f(w),
+            CondExpr::Binary(_, a, b) => {
+                f(a);
+                f(b);
+            }
+        }
+    }
+}
+
+/// A piece of the text of a `[[ ... ]]` expression (`CondExpr::write`).
+pub enum CondPiece<'a> {
+    Text(&'a [u8]),
+    Word(&'a Word),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CondOp {
+    /// `=` or `==`: the right side is a pattern.
+    Match,
+    NoMatch,
+    /// `=~`: the right side is an extended regular expression.
+    Regex,
+    Less,
+    Greater,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Nt,
+    Ot,
+    Ef,
+}
+
+impl CondOp {
+    pub fn from_text(s: &[u8]) -> Option<CondOp> {
+        Some(match s {
+            b"=" | b"==" => CondOp::Match,
+            b"!=" => CondOp::NoMatch,
+            b"=~" => CondOp::Regex,
+            b"<" => CondOp::Less,
+            b">" => CondOp::Greater,
+            b"-eq" => CondOp::Eq,
+            b"-ne" => CondOp::Ne,
+            b"-lt" => CondOp::Lt,
+            b"-le" => CondOp::Le,
+            b"-gt" => CondOp::Gt,
+            b"-ge" => CondOp::Ge,
+            b"-nt" => CondOp::Nt,
+            b"-ot" => CondOp::Ot,
+            b"-ef" => CondOp::Ef,
+            _ => return None,
+        })
+    }
+
+    pub fn text(self) -> &'static str {
+        match self {
+            CondOp::Match => "==",
+            CondOp::NoMatch => "!=",
+            CondOp::Regex => "=~",
+            CondOp::Less => "<",
+            CondOp::Greater => ">",
+            CondOp::Eq => "-eq",
+            CondOp::Ne => "-ne",
+            CondOp::Lt => "-lt",
+            CondOp::Le => "-le",
+            CondOp::Gt => "-gt",
+            CondOp::Ge => "-ge",
+            CondOp::Nt => "-nt",
+            CondOp::Ot => "-ot",
+            CondOp::Ef => "-ef",
+        }
+    }
+}
+
+/// The letters of the unary operators of `[[ ... ]]`: `test`'s, and zsh's
+/// `-a` (as `-e`), `-o` (an option is on), `-v` (a variable is set) and
+/// `-N` (modified since last read).
+pub const COND_UNARY: &[u8] = b"abcdefghknoprstuvwxzLOGSN";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CaseArm {

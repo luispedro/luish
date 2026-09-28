@@ -9,6 +9,8 @@ const RESERVED: &[&[u8]] = &[
     b"!",
     b"{",
     b"}",
+    b"[[",
+    b"]]",
     b"case",
     b"do",
     b"done",
@@ -242,7 +244,7 @@ impl Parser {
         }
         if let Some(w) = self.peek_literal()? {
             match w.as_slice() {
-                b"{" | b"if" | b"while" | b"until" | b"for" | b"case" => {
+                b"{" | b"if" | b"while" | b"until" | b"for" | b"case" | b"[[" => {
                     let cmd = self.parse_compound()?;
                     let redirs = self.parse_redirects()?;
                     return Ok(Command::Compound(cmd, redirs));
@@ -315,7 +317,122 @@ impl Parser {
             }
             b"for" => self.parse_for(t.lineno),
             b"case" => self.parse_case(t.lineno),
+            b"[[" => {
+                let expr = self.parse_cond_or()?;
+                self.skip_newlines()?;
+                let end = self.next()?;
+                if !matches!(&end.tok, Tok::Word(w) if w.as_literal() == Some(b"]]")) {
+                    return self.unexpected(&end, Some("]]"));
+                }
+                Ok(CompoundCommand::Cond { expr, lineno: t.lineno })
+            }
             _ => self.unexpected(&t, None),
+        }
+    }
+
+    // `[[ ... ]]`, as in zsh and bash. Its words aren't alias-expanded, and
+    // newlines can come between any two of them, as in zsh. `<`, `>`, `(`,
+    // `)`, `&&` and `||` are the lexer's operators; the rest are words,
+    // recognized as operators only if unquoted.
+
+    fn parse_cond_or(&mut self) -> PResult<CondExpr> {
+        let mut e = self.parse_cond_and()?;
+        loop {
+            self.skip_newlines()?;
+            if self.peek_op()? != Some(Op::OrIf) {
+                return Ok(e);
+            }
+            self.next()?;
+            e = CondExpr::Or(Box::new(e), Box::new(self.parse_cond_and()?));
+        }
+    }
+
+    fn parse_cond_and(&mut self) -> PResult<CondExpr> {
+        let mut e = self.parse_cond_not()?;
+        loop {
+            self.skip_newlines()?;
+            if self.peek_op()? != Some(Op::AndIf) {
+                return Ok(e);
+            }
+            self.next()?;
+            e = CondExpr::And(Box::new(e), Box::new(self.parse_cond_not()?));
+        }
+    }
+
+    fn parse_cond_not(&mut self) -> PResult<CondExpr> {
+        self.skip_newlines()?;
+        if self.peek_is_kw(b"!")? {
+            self.next()?;
+            return Ok(CondExpr::Not(Box::new(self.parse_cond_not()?)));
+        }
+        let t = self.next()?;
+        let w = match t.tok {
+            Tok::Op(Op::LParen) => {
+                let e = self.parse_cond_or()?;
+                self.skip_newlines()?;
+                self.expect_op(Op::RParen)?;
+                return Ok(e);
+            }
+            Tok::Word(w) if w.as_literal() != Some(b"]]") => w,
+            _ => return self.unexpected(&t, None),
+        };
+        let unary = match w.as_literal() {
+            Some([b'-', op]) if COND_UNARY.contains(op) => Some(*op),
+            _ => None,
+        };
+        self.skip_newlines()?;
+        let op = match &self.peek()?.tok {
+            Tok::Op(Op::Less) => Some(CondOp::Less),
+            Tok::Op(Op::Great) => Some(CondOp::Greater),
+            Tok::Word(o) if unary.is_none() => o.as_literal().and_then(CondOp::from_text),
+            _ => None,
+        };
+        if let Some(u) = unary
+            && op.is_none()
+        {
+            // A unary operator takes the next word (so `[[ -n ]]` is an
+            // error), unless it is a binary operator with a word after it:
+            // as in zsh, `[[ -n = x ]]` compares strings.
+            let x = self.cond_operand(false)?;
+            if let Some(op) = x.as_literal().and_then(CondOp::from_text)
+                && let Some(rhs) = self.cond_operand_opt(op == CondOp::Regex)?
+            {
+                return Ok(CondExpr::Binary(op, w, rhs));
+            }
+            return Ok(CondExpr::Unary(u, x));
+        }
+        let Some(op) = op else {
+            return Ok(CondExpr::Unary(b'n', w));
+        };
+        self.next()?;
+        let rhs = self.cond_operand(op == CondOp::Regex)?;
+        Ok(CondExpr::Binary(op, w, rhs))
+    }
+
+    /// The word after an operator. After `=~` (`regex`), `(` and `|` are
+    /// part of the word, and so are blanks and `<`, `>`, `;` and `&`
+    /// inside parentheses, as in bash, so `[[ $x =~ ^(a|b c)$ ]]` needs
+    /// no quotes.
+    fn cond_operand(&mut self, regex: bool) -> PResult<Word> {
+        match self.cond_operand_opt(regex)? {
+            Some(w) => Ok(w),
+            None => {
+                let t = self.next()?;
+                self.unexpected(&t, None)
+            }
+        }
+    }
+
+    fn cond_operand_opt(&mut self, regex: bool) -> PResult<Option<Word>> {
+        self.regex_word = regex;
+        let r = self.skip_newlines().and_then(|_| self.peek().cloned());
+        self.regex_word = false;
+        match r?.tok {
+            Tok::Word(w) if w.as_literal() != Some(b"]]") => {
+                self.next()?;
+                Ok(Some(w))
+            }
+            _ => Ok(None),
         }
     }
 
@@ -786,6 +903,78 @@ mod tests {
     }
 
     #[test]
+    fn cond() {
+        let cond = |s: &str| match parse(s).remove(0).list.first.cmds.remove(0) {
+            Command::Compound(CompoundCommand::Cond { expr, .. }, _) => expr,
+            c => panic!("not [[: {c:?}"),
+        };
+        let lit = |s: &str| Word(vec![WordPart::Literal(s.as_bytes().to_vec())]);
+        let un = |op, s| CondExpr::Unary(op, lit(s));
+        assert_eq!(cond("[[ a ]]\n"), un(b'n', "a"));
+        assert_eq!(cond("[[ -f a ]]\n"), un(b'f', "a"));
+        // A unary operator takes the next word, whatever it is.
+        assert_eq!(cond("[[ -n -z ]]\n"), un(b'n', "-z"));
+        assert_eq!(cond("[[ -f = ]]\n"), un(b'f', "="));
+        assert_eq!(
+            cond("[[ -n = && a ]]\n"),
+            CondExpr::And(Box::new(un(b'n', "=")), Box::new(un(b'n', "a")))
+        );
+        // Unless the word is a binary operator with a word after it.
+        assert_eq!(
+            cond("[[ -n = -n ]]\n"),
+            CondExpr::Binary(CondOp::Match, lit("-n"), lit("-n"))
+        );
+        assert_eq!(
+            cond("[[ -f < a ]]\n"),
+            CondExpr::Binary(CondOp::Less, lit("-f"), lit("a"))
+        );
+        assert_eq!(cond("[[ a<b ]]\n"), CondExpr::Binary(CondOp::Less, lit("a"), lit("b")));
+        assert_eq!(
+            cond("[[ a == b ]]\n"),
+            CondExpr::Binary(CondOp::Match, lit("a"), lit("b"))
+        );
+        // `&&` binds more tightly than `||`, and `!` than both.
+        assert_eq!(
+            cond("[[ ! a || b && ( c ) ]]\n"),
+            CondExpr::Or(
+                Box::new(CondExpr::Not(Box::new(un(b'n', "a")))),
+                Box::new(CondExpr::And(Box::new(un(b'n', "b")), Box::new(un(b'n', "c"))))
+            )
+        );
+        // Newlines anywhere, as in zsh.
+        assert_eq!(cond("[[\n a\n =\n b\n ]]\n"), cond("[[ a = b ]]\n"));
+        assert_eq!(cond("[[ a &&\n b ]]\n"), cond("[[ a && b ]]\n"));
+        // After `=~`, `(` and `|` are part of the word, and so is anything
+        // inside parentheses.
+        assert_eq!(
+            cond("[[ a =~ ^(x|y z)+|w$ ]]\n"),
+            CondExpr::Binary(CondOp::Regex, lit("a"), lit("^(x|y z)+|w$"))
+        );
+        assert!(matches!(cond("[[ a =~ (x) && b ]]\n"), CondExpr::And(..)));
+        // Only unquoted operators are recognized.
+        assert_eq!(
+            parse_err("[[ a '=' b ]]\n").msg,
+            "Syntax error: \"'='\" unexpected (expecting \"]]\")"
+        );
+        // Only as a command name, and not after an alias.
+        assert_eq!(simple(&parse("echo [[ a ]]\n")).words.len(), 4);
+        for (src, msg) in [
+            ("[[ ]]\n", "Syntax error: \"]]\" unexpected"),
+            ("[[ -n ]]\n", "Syntax error: \"]]\" unexpected"),
+            ("[[ ! ]]\n", "Syntax error: \"]]\" unexpected"),
+            ("[[ a b ]]\n", "Syntax error: \"b\" unexpected (expecting \"]]\")"),
+            ("[[ a = ]]\n", "Syntax error: \"]]\" unexpected"),
+            ("[[ a ]]x\n", "Syntax error: \"]]x\" unexpected (expecting \"]]\")"),
+            ("[[ a -a b ]]\n", "Syntax error: \"-a\" unexpected (expecting \"]]\")"),
+            ("[[ ( a ]]\n", "Syntax error: \"]]\" unexpected (expecting \")\")"),
+            ("[[ a | b ]]\n", "Syntax error: \"|\" unexpected (expecting \"]]\")"),
+            ("]]\n", "Syntax error: \"]]\" unexpected"),
+        ] {
+            assert_eq!(parse_err(src).msg, msg, "{src}");
+        }
+    }
+
+    #[test]
     fn errors() {
         assert!(parse_err("if true; then\n").msg.contains("end of file"));
         assert_eq!(parse_err("echo ;; x").msg, "Syntax error: \";;\" unexpected");
@@ -794,7 +983,17 @@ mod tests {
 
     #[test]
     fn incomplete() {
-        for s in ["if x", "echo 'a", "echo \\", "cat <<E\nx\n", "f() {", "a &&"] {
+        for s in [
+            "if x",
+            "echo 'a",
+            "echo \\",
+            "cat <<E\nx\n",
+            "f() {",
+            "a &&",
+            "[[ a",
+            "[[ a &&\n",
+            "[[ a =~ (b",
+        ] {
             let mut p = Parser::new(s.as_bytes().to_vec(), 1, false);
             let e = p.parse_next(&Rc::new(AliasMap::default())).unwrap_err();
             assert!(e.incomplete, "{s:?}: {e:?}");

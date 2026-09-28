@@ -249,6 +249,9 @@ pub struct Parser {
     /// The next word is a here-document delimiter, which isn't expanded
     /// as a global alias.
     raw_word: bool,
+    /// The next word is the right side of `=~` in `[[ ... ]]`, where `(`
+    /// and `|` are part of the word (`read_word`).
+    pub(crate) regex_word: bool,
     /// End of the text of the last alias expanded, if that text ended in a
     /// blank: the word after it is checked for aliases too.
     pub(crate) alias_blank_end: Option<usize>,
@@ -301,6 +304,7 @@ impl Parser {
             active_aliases: Vec::new(),
             alias_blank_end: None,
             raw_word: false,
+            regex_word: false,
             splice_delta: 0,
             started: false,
             bareglobqual: false,
@@ -452,6 +456,7 @@ impl Parser {
                 }
                 Ok(mk(Tok::Newline, end))
             }
+            b'(' | b'|' if self.regex_word => self.lex_word(start, lineno),
             b'|' if self.at(1) == Some(b'|') => op(self, Op::OrIf, 2),
             b'|' => op(self, Op::Pipe, 1),
             b'&' if self.at(1) == Some(b'&') => op(self, Op::AndIf, 2),
@@ -473,18 +478,28 @@ impl Parser {
                 Some(b'|') => op(self, Op::Clobber, 2),
                 _ => op(self, Op::Great, 1),
             },
-            _ => {
-                let word = self.read_word()?;
-                if let Some(lit) = word.as_literal()
-                    && lit.iter().all(|c| c.is_ascii_digit())
-                    && matches!(self.at(0), Some(b'<' | b'>'))
-                    && let Ok(n) = std::str::from_utf8(lit).unwrap().parse::<u32>()
-                {
-                    return Ok(mk(Tok::IoNumber(n), self.pos));
-                }
-                Ok(mk(Tok::Word(word), self.pos))
-            }
+            _ => self.lex_word(start, lineno),
         }
+    }
+
+    fn lex_word(&mut self, start: usize, lineno: u32) -> PResult<Token> {
+        let word = self.read_word()?;
+        let tok = match word.as_literal() {
+            Some(lit)
+                if lit.iter().all(|c| c.is_ascii_digit())
+                    && matches!(self.at(0), Some(b'<' | b'>'))
+                    && let Ok(n) = std::str::from_utf8(lit).unwrap().parse::<u32>() =>
+            {
+                Tok::IoNumber(n)
+            }
+            _ => Tok::Word(word),
+        };
+        Ok(Token {
+            tok,
+            start,
+            end: self.pos,
+            lineno,
+        })
     }
 
     // ------------------------------------------------------------------
@@ -494,13 +509,29 @@ impl Parser {
         let mut parts = Vec::new();
         let mut lit = Vec::new();
         let mut qual = None;
+        // Unclosed `(` in a regular expression (`regex_word`).
+        let mut depth = 0;
         while let Some(c) = self.at(0) {
             match c {
-                b'(' if self.bareglobqual && !(parts.is_empty() && lit.is_empty()) => {
+                b'(' if self.bareglobqual && !self.regex_word && !(parts.is_empty() && lit.is_empty()) => {
                     qual = self.read_glob_qualifier();
                     break;
                 }
-                b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'<' | b'>' | b'(' | b')' => break,
+                b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'<' | b'>' | b'(' | b')' => {
+                    if !self.regex_word {
+                        break;
+                    }
+                    match c {
+                        b'(' => depth += 1,
+                        b')' if depth > 0 => depth -= 1,
+                        b'|' => {}
+                        _ if depth == 0 => break,
+                        b'\n' => self.lineno += 1,
+                        _ => {}
+                    }
+                    lit.push(c);
+                    self.pos += 1;
+                }
                 _ => self.read_word_char(c, &mut parts, &mut lit, Ctx::Unquoted)?,
             }
         }

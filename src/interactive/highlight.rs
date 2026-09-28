@@ -120,6 +120,9 @@ enum After {
     CaseWord,
     /// The names after `function`.
     Function,
+    /// Inside `[[ ... ]]`, where `<`, `>`, `(`, `)`, `&&` and `||` are
+    /// operators of the expression.
+    Cond,
 }
 
 struct Scan<'a> {
@@ -181,6 +184,20 @@ impl Scan<'_> {
             let c = s[i];
             if Some(c) == end && !(pattern && c == b')') {
                 return i;
+            }
+            if after == After::Cond && matches!(c, b'<' | b'>' | b'(' | b')' | b'&' | b'|' | b'0'..=b'9') {
+                let len = match s.get(i + 1) {
+                    Some(&n) if n == c && matches!(c, b'&' | b'|') => 2,
+                    _ if c.is_ascii_digit() => 0,
+                    _ => 1,
+                };
+                if len > 0 {
+                    self.paint(i, i + len, Class::Op);
+                    i += len;
+                } else {
+                    i = self.command_word(i, &mut cmd, &mut precommand, &mut after, &mut pattern);
+                }
+                continue;
             }
             match c {
                 b' ' | b'\t' => i += 1,
@@ -297,6 +314,13 @@ impl Scan<'_> {
                 return e;
             }
             After::Function => *after = After::None,
+            After::Cond => {
+                if plain && text == b"]]" {
+                    self.paint(start, e, Class::Keyword);
+                    *after = After::None;
+                }
+                return e;
+            }
             After::ForName if plain && text == b"do" => {
                 self.paint(start, e, Class::Keyword);
                 *after = After::None;
@@ -315,9 +339,10 @@ impl Scan<'_> {
                 b"for" => *after = After::For,
                 b"case" => *after = After::Case,
                 b"function" => *after = After::Function,
+                b"[[" => *after = After::Cond,
                 _ => {}
             }
-            *cmd = !matches!(text, b"for" | b"case" | b"fi" | b"done" | b"esac" | b"}");
+            *cmd = !matches!(text, b"for" | b"case" | b"fi" | b"done" | b"esac" | b"}" | b"[[");
             *precommand = false;
         } else if let Some(eq) = raw.iter().position(|&c| c == b'=')
             && crate::lexer::is_valid_name(&raw[..eq])
@@ -734,6 +759,12 @@ mod tests {
         assert_eq!(classes("f() { ls; }"), "coo.k.cco.k");
         assert_eq!(classes("function a-b c { ls; }"), "kkkkkkkk.ccc.c.k.cco.k");
         assert_eq!(classes("function f()\n{ nope; }"), "kkkkkkkk.coo.k.uuuuo.k");
+        assert_eq!(
+            classes("[[ -f a && ( b<c || 1 -lt 2 ) ]] >x && ls"),
+            "kk......oo.o..o..oo.........o.kk.r..oo.cc"
+        );
+        assert_eq!(classes("[[ $x = \"y\" ]]"), "kk.vv...sss.kk");
+        assert_eq!(classes("echo [[ ]]"), "cccc......");
         assert_eq!(classes("! ls"), "k.cc");
         assert_eq!(classes("(ls)"), "occo");
         assert_eq!(classes("e\"ch\"o"), "cssssc");

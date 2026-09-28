@@ -8,7 +8,7 @@ struct Test<'a> {
     pos: usize,
 }
 
-type TResult = Result<bool, String>;
+pub(crate) type TResult = Result<bool, String>;
 
 fn is_unary(op: &[u8]) -> bool {
     matches!(
@@ -48,7 +48,7 @@ fn file_type(path: &[u8], kind: u32) -> bool {
     sys::stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == kind)
 }
 
-fn unary(op: &[u8], a: &[u8]) -> TResult {
+pub(crate) fn unary(op: &[u8], a: &[u8]) -> TResult {
     let st = || sys::stat(a);
     Ok(match op {
         b"-n" => !a.is_empty(),
@@ -99,7 +99,7 @@ fn mtime(st: &libc::stat) -> (i64, i64) {
     (st.st_mtime, st.st_mtime_nsec)
 }
 
-fn binary(a: &[u8], op: &[u8], b: &[u8]) -> TResult {
+pub(crate) fn binary(a: &[u8], op: &[u8], b: &[u8]) -> TResult {
     Ok(match op {
         b"=" => a == b,
         b"!=" => a != b,

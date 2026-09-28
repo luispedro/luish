@@ -157,7 +157,7 @@ luish as they are, and can be copied into `rc.d`.
 zsh's names for options work too, so `setopt share_history hist_ignore_space` needs no change.
 
 Code that uses bash's or zsh's extensions to the
-shell language, such as arrays, `[[ ... ]]`, `shopt` or `zstyle`, doesn't work yet, though.
+shell language, such as arrays, `shopt` or `zstyle`, doesn't work yet, though (`[[ ... ]]`, `function` and `let` do).
 
 If you have [bash-completion](https://github.com/scop/bash-completion)
 installed, as most distributions do, the `std.bash-completion` plugin can use

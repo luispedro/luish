@@ -1,4 +1,5 @@
 Unreleased
+    * `[[ ... ]]` conditions, as in zsh and bash
     * `function NAME { ... }` definitions, as in zsh and bash
     * `__luish_internal check-cache` reruns the startup files to check
       their caches, which record when they were built

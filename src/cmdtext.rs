@@ -158,6 +158,14 @@ fn push_compound(out: &mut Vec<u8>, cc: &CompoundCommand) {
             }
             out.extend_from_slice(b"esac");
         }
+        CompoundCommand::Cond { expr, .. } => {
+            out.extend_from_slice(b"[[ ");
+            expr.write(&mut |p| match p {
+                CondPiece::Text(t) => out.extend_from_slice(t),
+                CondPiece::Word(w) => push_word(out, w),
+            });
+            out.extend_from_slice(b" ]]");
+        }
     }
 }
 

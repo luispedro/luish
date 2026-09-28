@@ -200,6 +200,22 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   `function` (`f()` wouldn't read back). A second name that opens a compound command (`if`, `for`, ...) starts a
   bash-style body instead; zsh would take it as a name. Tests: `parse/function_keyword.sh` (zsh),
   `parse/function_keyword_bash.sh` (`.expected`; zsh's sh emulation rejects these bodies).
+- `[[ ... ]]` (`CompoundCommand::Cond`, parsed by `parse_cond_or` and evaluated in `exec/cond.rs`): `[[` and `]]`
+  are reserved words, and inside the lexer's tokens are used as they are: `<`, `>`, `(`, `)`, `&&` and `||` are
+  operators, and a word is an operator only as an unquoted literal, so no new token kinds are needed. Operators are
+  recognized by position, as in zsh: after a unary operator comes its operand, unless that is a binary operator with
+  a word after it (`-n = x`). The right side of `=~` is lexed with `Parser::regex_word`, which makes `(` and `|` word
+  characters and keeps anything inside parentheses in the word (bash's rule); `read_word` checks it only at a
+  delimiter, so other words don't pay for it. A lone word is kept as `-n word`, which is how `unparse.rs` and
+  `cmdtext.rs` write it (`CondExpr::write`, which adds the parentheses that precedence needs; `=` is written `==`).
+  Words are expanded as `case` expands them (`expand_word_str`, and `expand_pattern` for the right side of `=`),
+  only when evaluated; the `set -x` trace is built during evaluation, so it shows only those parts. File tests reuse
+  `builtins/test.rs`. `=~` uses `regcomp`/`regexec` (`REG_EXTENDED`), without `setlocale`, so it matches bytes, as
+  patterns do. An error in an arithmetic operand is a shell error (status 2, as for `$((...))`; zsh uses 1). Like
+  a simple command, `[[` exits under `set -e` on its own status (`run_pipeline`). The highlighter paints the
+  expression's operators, and `]]` as a keyword (`After::Cond`). Tests: `parse/cond.sh` (zsh),
+  `parse/cond_regex_bash.sh` and `parse/cond_xtrace.sh` (`.expected`), unit tests `parser::tests::cond` and
+  `unparse::tests::layout`.
 - Recursion (`stack.rs`): as in Debian's dash (its patch 0009, for Debian bug 579815), a function call when 1000 are
   running is a shell error, `Maximum function recursion depth (1000) reached`; unlike dash, `func_depth` also goes
   down when the error unwinds. Other deep nesting would overflow the stack, which kills the shell with SIGSEGV
@@ -547,6 +563,7 @@ truncates when it relocates the package.
 | fd numbers in redirections | `exec/redirect_big_fd.sh` |
 | `exec -- cmd` | `exec/exec_dashdash.sh` |
 | `cd -e` | `builtins/cd_e.sh` |
+| `[[ ... ]]` | `parse/cond.sh` (zsh), `parse/cond_regex_bash.sh`, `parse/cond_xtrace.sh`, `parser::tests::cond` |
 | `set -o pipefail` | `options/pipefail.sh` (zsh), `options/pipefail_async.sh`, `pipefail_job_control` in `tests/interactive.rs` |
 | `set -o` / `set +o` list | `options/set_o_hashall.sh`, `options/setopt_list.sh` |
 | `set -x` output | `options/xtrace.sh` |

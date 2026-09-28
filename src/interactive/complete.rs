@@ -143,6 +143,7 @@ struct PathCache {
 }
 
 pub(super) const RESERVED: &[&[u8]] = &[
+    b"[[",
     b"case",
     b"do",
     b"done",

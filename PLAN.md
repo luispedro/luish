@@ -159,7 +159,7 @@ Still to build, in this order:
    comes with this, as a `__luish_internal` subcommand or a `print` built-in in interactive shells.
 3. **Lazy function parsing for the startup cache**, below.
 
-Not planned, because the history shows they aren't used or they are easy to rewrite in POSIX sh: `[[`, the `:h`/`:t`
+Not planned, because the history shows they aren't used or they are easy to rewrite in POSIX sh: the `:h`/`:t`
 modifiers, `builtin` (`command cd` works), zsh's two-argument `cd old new`, `vared`, `zmv`, `mmv`, `zed`, `zcalc`,
 `noglob`, zsh-history-substring-search, zsh-nvm, zplug, `fpath`/`compinit`, and `typeset -U`.
 
@@ -215,7 +215,7 @@ shell tracks the current file as well as the line, for provenance and for error 
 
 ### Stage 2: beyond POSIX
 
-- **Extensions** (arrays, associative arrays, process substitution, `[[ ]]`, brace expansion) behind options, as
+- **Extensions** (arrays, associative arrays, process substitution, brace expansion) behind options, as
   `glob.star` and `glob.bare_qualifiers` are. With them off, POSIX scripts must parse and behave exactly as before
   and run as fast. The lexer checks such options in one place (as it does `Parser::bareglobqual`).
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL

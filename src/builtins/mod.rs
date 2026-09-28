@@ -10,7 +10,7 @@ mod jobs;
 pub(crate) mod misc;
 mod printf;
 mod read;
-mod test;
+pub(crate) mod test;
 mod trap;
 mod vars;
 
