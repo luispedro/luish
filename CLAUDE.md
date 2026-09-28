@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 luish is a POSIX `sh` for Linux, written in Rust, meant eventually to replace zsh as a daily-driver shell. dash is the
 reference implementation: where POSIX is ambiguous, match dash. It must be as fast as dash, and anything beyond POSIX
-must be opt-in and cost nothing when unused. That is strict for scripts and `-c` (time and memory). Interactive shells
-are judged on responsiveness and functionality instead: a few bytes per variable or history entry for interactive
-features is fine, as long as the prompt and line editor stay fast.
+must cost nothing when unused. That is strict for scripts and `-c` (time and memory). Interactive shells are judged on
+responsiveness and functionality instead: a few bytes per variable or history entry for interactive features is fine,
+as long as the prompt and line editor stay fast. A change in behaviour must be opt-in; a pure extension (giving a
+meaning to what is an error in dash, such as `a=(x y)`) may be always on.
 
 ## Project documents
 

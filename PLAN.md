@@ -307,5 +307,5 @@ The line editor runs on the local client, so typing is instant, while commands r
 |---|---|
 | An extension hanging or slowing the prompt | Ctrl-C interrupts extension code; hooks that run before the prompt get a time budget (Phase 11) |
 | Few people know Rhai, and it has no library ecosystem | Keep the API small, ship example extensions, provide what extensions need (commands, files, JSON) |
-| Scope creep into later stages | No Stage 2 or 3 features beyond what the daily driver needs until M4. Keep extensions behind options |
+| Scope creep into later stages | No Stage 2 or 3 features beyond what the daily driver needs until M4. Keep extensions that change behaviour behind options |
 | Plugin support adding startup cost | Engine created on the first extension; feature flag; benchmark `-c true` with and without it |

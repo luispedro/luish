@@ -1,8 +1,9 @@
 # Goals for luish
 
 The long-term aim is for luish to replace zsh as my default shell. The core is
-a POSIX `sh` that is as fast as dash. Extensions that go beyond POSIX are
-opt-in and cost nothing when unused.
+a POSIX `sh` that is as fast as dash. Extensions that go beyond POSIX cost
+nothing when unused. Those that change behaviour are opt-in; those that only
+give a meaning to what was an error may be always on.
 
 Goals are grouped into stages. Each stage builds on the one before, and work
 on a later stage does not start until the earlier one is usable. When goals
@@ -21,8 +22,8 @@ conflict, the earlier stage wins.
 ## Stage 2: Beyond POSIX
 
 - **Plugins**, loaded lazily so that they add no cost unless used.
-- **Modern shell features** behind an opt-in: arrays, associative arrays and
-  process substitution.
+- **Modern shell features**: arrays, associative arrays and process
+  substitution (behind an opt-in where they would change behaviour).
 - **Modern terminal features**: correct Unicode width handling in the line
   editor, true color in prompts, semantic prompt markers (OSC 133), working
   directory reporting (OSC 7) and bracketed paste.
