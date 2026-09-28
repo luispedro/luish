@@ -242,6 +242,16 @@ fn push_part(out: &mut Vec<u8>, p: &WordPart) {
             out.extend_from_slice(q);
             out.push(b')');
         }
+        WordPart::Array(items) => {
+            out.push(b'(');
+            for (i, w) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(b' ');
+                }
+                push_word(out, w);
+            }
+            out.push(b')');
+        }
     }
 }
 
@@ -251,6 +261,16 @@ fn push_param(out: &mut Vec<u8>, pe: &ParamExp) {
         ParamName::Var(n) => out.extend_from_slice(n),
         ParamName::Positional(n) => out.extend_from_slice(n.to_string().as_bytes()),
         ParamName::Special(c) => out.push(*c),
+    }
+    match &pe.index {
+        None => {}
+        Some(Index::At) => out.extend_from_slice(b"[@]"),
+        Some(Index::Star) => out.extend_from_slice(b"[*]"),
+        Some(Index::Expr(w)) => {
+            out.push(b'[');
+            push_word(out, w);
+            out.push(b']');
+        }
     }
     let (op, w): (&[u8], _) = match &pe.op {
         ParamOp::Plain | ParamOp::Length => (b"", None),

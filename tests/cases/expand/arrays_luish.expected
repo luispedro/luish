@@ -1,0 +1,15 @@
+abc [unset] 1 abc
+<abc><q>
+status 2
+status 2
+unset
+x y
+in f: R y
+x y
+x y
+x Q
+x y
+b=('1' '2 3')
+readonly b=('1' '2 3')
+<x><it's><><1><2 3>
+status 2

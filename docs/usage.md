@@ -59,6 +59,33 @@ Besides POSIX's forms (`${x:-word}`, `${x#pattern}`, `${#x}` and so on), luish h
 For `$@` and `$*`, `${@:offset:length}` selects positional parameters (offset 0 is `$0`), and `${@/pattern/rep}`
 replaces in each of them (`"${*/pattern/rep}"` replaces in the joined string, as in zsh).
 
+## Arrays
+
+As in zsh and bash, a variable can hold an array: a list of strings, indexed from 0 (as in zsh's `sh` emulation
+and bash; native zsh counts from 1).
+
+```sh
+files=(*.txt "my notes" ~/todo)      # the elements are expanded as command words
+files+=(extra)                       # append elements
+files[1]=other                       # assign an element (from the end if negative)
+echo "${files[0]}" "${files[-1]}"    # an element; the index is an arithmetic expression
+for f in "${files[@]}"; do ...; done # each element as a separate word, as "$@"
+echo "${#files[@]}"                  # the number of elements
+local list=(a b c)                   # also with local, export and readonly
+```
+
+| Form | Value |
+|---|---|
+| `${a[i]}` | Element `i` (counting from the end if `i` is negative). `$a` is `${a[0]}` |
+| `"${a[@]}"`, `"${a[*]}"` | The elements as separate words, or joined with the first character of `IFS`, as `"$@"` and `"$*"` |
+| `${#a[@]}`, `${#a[i]}` | The number of elements, the length of an element |
+| `${a[@]:offset:length}` | The elements from `offset` on (at most `length` of them) |
+| `${a[@]#pattern}`, `${a[@]/pattern/rep}`, ... | The operator applied to each element |
+
+Arrays have no holes: assigning past the end fills the gap with empty elements, and `unset 'a[i]'` makes an element
+empty, as in zsh. A string is an array of one element, so `${s[0]}` is `$s`. Arrays aren't exported to commands.
+Arithmetic expressions can use elements, as in `$((a[i] + 1))` and `a[i] += 2`.
+
 ## Getting help
 
 In an interactive shell, `help` lists the built-in commands, and `help NAME` shows the help for any of them (the

@@ -10,8 +10,20 @@ use crate::exec::redirect::RedirError;
 use crate::options::Opt;
 use crate::shell::{ExecResult, Flow, Shell};
 
-type EResult = Result<Vec<(Vec<u8>, Vec<u8>)>, Flow>;
+type EResult = Result<Vec<Assignment>, Flow>;
 use crate::sys;
+use crate::vars::Value;
+
+/// An assignment after expansion.
+#[derive(Clone)]
+pub struct Assignment {
+    pub name: Vec<u8>,
+    /// The element assigned to, `name[index]=`.
+    pub index: Option<i64>,
+    /// `name+=value`.
+    pub append: bool,
+    pub value: Value,
+}
 
 pub enum CommandKind {
     Special(BuiltinFn),
@@ -57,17 +69,31 @@ impl Shell {
     }
 
     /// Prints a `set -x` trace line to `fd`.
-    pub fn xtrace(&mut self, fd: i32, assigns: &[(Vec<u8>, Vec<u8>)], argv: &[Vec<u8>]) {
+    pub fn xtrace(&mut self, fd: i32, assigns: &[Assignment], argv: &[Vec<u8>]) {
         let mut line = self.expand_prompt(b"PS4");
         let mut first = true;
-        for (n, v) in assigns {
+        for a in assigns {
             if !first {
                 line.push(b' ');
             }
             first = false;
-            line.extend_from_slice(n);
-            line.push(b'=');
-            line.extend(shell_quote(v));
+            line.extend_from_slice(&a.name);
+            if let Some(i) = a.index {
+                line.extend_from_slice(format!("[{i}]").as_bytes());
+            }
+            line.extend_from_slice(if a.append { b"+=" } else { b"=" });
+            match &a.value {
+                Value::Str(v) => line.extend(shell_quote(v)),
+                // As zsh shows it.
+                Value::Array(items) => {
+                    line.extend_from_slice(b"( ");
+                    for v in items.iter() {
+                        line.extend(shell_quote(v));
+                        line.push(b' ');
+                    }
+                    line.push(b')');
+                }
+            }
         }
         for a in argv {
             if !first {
@@ -114,20 +140,66 @@ impl Shell {
         let keep = !now || self.opt(Opt::Xtrace);
         let mut assigns = Vec::with_capacity(if keep { cmd.assigns.len() } else { 0 });
         for a in &cmd.assigns {
-            let v = self.expand_word_str(&a.value)?;
-            if !now {
-                assigns.push((a.name.clone(), v));
-            } else if keep {
-                self.set_var(&a.name, v.clone())?;
-                assigns.push((a.name.clone(), v));
-            } else {
+            // The common case, `name=value`.
+            if now && !keep && a.index.is_none() && !a.append && a.array().is_none() {
+                let v = self.expand_word_str(&a.value)?;
                 self.set_var(&a.name, v)?;
+                continue;
+            }
+            let x = self.expand_assign(a)?;
+            if !now {
+                assigns.push(x);
+            } else if keep {
+                self.assign(x.clone())?;
+                assigns.push(x);
+            } else {
+                self.assign(x)?;
             }
         }
         Ok(assigns)
     }
 
-    fn trace(&mut self, fd: i32, assigns: &[(Vec<u8>, Vec<u8>)], argv: &[Vec<u8>]) {
+    /// Expands an assignment: an array's elements as command words, and an
+    /// index as an arithmetic expression.
+    pub fn expand_assign(&mut self, a: &Assign) -> Result<Assignment, Flow> {
+        let index = match &a.index {
+            Some(w) => Some(self.arith_word(w)?),
+            None => None,
+        };
+        let value = match a.array() {
+            Some(items) => Value::Array(Box::new(self.expand_words(items)?)),
+            None => Value::Str(self.expand_word_str(&a.value)?),
+        };
+        Ok(Assignment {
+            name: a.name.clone(),
+            index,
+            append: a.append,
+            value,
+        })
+    }
+
+    /// Makes an assignment.
+    pub fn assign(&mut self, a: Assignment) -> Result<(), Flow> {
+        match (a.index, a.value) {
+            (Some(i), Value::Str(v)) => self.set_element(&a.name, i, v, a.append),
+            (Some(i), Value::Array(_)) => {
+                self.error(format!(
+                    "{}[{i}]: can't assign an array to an element",
+                    String::from_utf8_lossy(&a.name)
+                ));
+                Err(Flow::Error(2))
+            }
+            (None, Value::Str(v)) if a.append => {
+                let mut old = self.get_var(&a.name).unwrap_or_default();
+                old.extend(v);
+                self.set_var(&a.name, old)
+            }
+            (None, Value::Array(items)) if a.append => self.append_elements(&a.name, *items),
+            (None, v) => self.set_var_value(&a.name, v),
+        }
+    }
+
+    fn trace(&mut self, fd: i32, assigns: &[Assignment], argv: &[Vec<u8>]) {
         // As in dash (`inps4`), commands run while `PS4` is expanded (in a
         // command substitution in it) aren't traced, so there is no loop.
         if self.opt(Opt::Xtrace) && !self.in_ps4 && (!argv.is_empty() || !assigns.is_empty()) && fd >= 0 {
@@ -292,16 +364,13 @@ impl Shell {
     }
 
     /// Runs `f` with variable assignments that only last for its duration.
-    fn with_temp_assigns(
-        &mut self,
-        assigns: Vec<(Vec<u8>, Vec<u8>)>,
-        f: impl FnOnce(&mut Shell) -> ExecResult,
-    ) -> ExecResult {
+    fn with_temp_assigns(&mut self, assigns: Vec<Assignment>, f: impl FnOnce(&mut Shell) -> ExecResult) -> ExecResult {
         let mut saved = Vec::with_capacity(assigns.len());
         let mut r = None;
-        for (n, v) in assigns {
+        for a in assigns {
+            let n = a.name.clone();
             let old = self.vars.take(&n);
-            let set = self.set_var(&n, v);
+            let set = self.assign(a);
             if set.is_ok() {
                 self.vars.entry(&n).exported = true;
             }

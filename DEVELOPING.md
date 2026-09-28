@@ -20,6 +20,7 @@ behaviour listed here must stay covered by the tests named with it.
 | Line editing | rustyline, kept inside `interactive/` | Mature, with vi and emacs modes. The completer and highlighter get a plain-data snapshot (`Names`) instead of `Shell`, which keeps the editor separable for the SSH mode of Stage 3 |
 | Plugins | Rhai, behind the `plugins` cargo feature, with the engine created on the first extension loaded | Pure Rust, so no system dependency. No threads, global state or signal handlers, so it is safe across `fork`. Scripts can be interrupted and resource-limited |
 | Reference behaviour | dash (upstream for intent), then zsh beyond POSIX | See `docs/compatibility.md` |
+| Arrays | Always on, with ksh/bash syntax and zsh's sh-emulation semantics (from 0, `$a` is `${a[0]}`) | Their syntax is an error in dash (`a=(`, `${a[i]}`), so no POSIX script changes, except that `a[i]=x` and `x+=y` stop being command names. zsh's native forms (`$a[1]`, 1-based) would change the meaning of POSIX scripts. `zsh --emulate sh` is then a reference for tests |
 
 **Why Rhai.** The first plan used Python (through PyO3), dropped because linking libpython makes the dynamic loader
 map it at every startup and makes the login shell depend on the system Python; an initialized interpreter
@@ -114,6 +115,12 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
 - Function bodies may be any command (`f() echo hi`), as in dash.
 - As in dash, a bad `${...}` (such as `${x^^}`) is an error only when expanded, and `$(` in a here-doc delimiter
   is a syntax error. Test: `parse/dash_lenient.sh`.
+- Arrays: `split_assignment_with` also takes `NAME+=` and `NAME[index]=` (the index up to the matching unquoted `]`,
+  across parts), and `parse_simple` reads `(...)` right after an assignment's `=` (`array_follows` compares the
+  token positions, so `a= (x)` stays an error) into a lone `WordPart::Array`. After `local`, `export`, `readonly`,
+  `typeset` and `declare` (also after `command` or `builtin`), a `name=` argument followed by `(` gets the array as
+  its last part (`is_declaration`): this is decided when parsing, as in bash. Under `glob.bare_qualifiers`, `(` after
+  `name=` is not a qualifier. `${a[index]}` is `ParamExp::index`. Tests: unit tests in `parser.rs` and `unparse.rs`.
 - `Parser::started` tells a buffer of blank lines apart from a real incomplete command. The lexer reads a trailing
   `(...)` as `WordPart::GlobQual` only under `glob.bare_qualifiers`: the only place it depends on an option.
 - Unit tests in `parser.rs`. No `insta` snapshots or fuzz target yet.
@@ -132,6 +139,16 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   longest first. For `$@` and `$*` they apply to the list (`push_list`, shared with `$@`) and to each element, except
   in `"${*/...}"`, which replaces in the joined string, as zsh does. Tests: `expand/substring.sh` (zsh),
   `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh`.
+- Arrays (`vars::Value::Array`, boxed so that `Var` stays 32 bytes): `Vars::get` gives an array's first element, so
+  everything that reads variables sees `$a`; `Value::elements` treats a string as one element. `a=x` sets element
+  0. `expand_array` handles `${a[@]}` and `${a[*]}` with every operator, through `push_list` (shared with `$@`);
+  `element` reads `${a[i]}`, which then goes through the scalar path. Assignments expand to `exec::simple::Assignment`
+  (the index evaluated, the elements expanded as command words), made by `Shell::assign`; temporary ones before a
+  command are saved and restored whole. A declaration command gets an array argument as `name=`, a NUL, and each
+  element followed by a NUL (`builtins::vars::split_arg`), since an argument can't otherwise hold a NUL. Arithmetic
+  reads `a[i]`, and evaluates the index of `a[i] = v` only once it has seen the assignment operator. `unset 'a[i]'`
+  empties the element (`unset_element`). `quote_value` writes arrays for `set`, `-p` listings and `savestate`.
+  Tests: `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh`.
 - Arithmetic: a variable holding only blanks is 0. Quotes and backslashes inside `$((...))` are kept, so they are
   errors, as in dash. Test: `expand/arith_quotes.sh`.
 - Command substitution drops NUL bytes (so does `read`) and sets `$?` only for commands of assignments alone (so
@@ -311,7 +328,7 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   in shells started with `-i` (which `set` can't change, so also their subshells). Unit tests check that every
   built-in has a page, that pages fit 80 columns and that `docs/builtins.md` includes them all. Tests:
   `builtins/help_noninteractive.sh`, `builtins/internal_help.sh`, `help_builtin` in `tests/interactive.rs`.
-- `local x` keeps the current value, as in dash.
+- `local x` keeps the current value, as in dash (also an array's).
 
 ### Options (`options.rs`)
 
@@ -564,6 +581,7 @@ truncates when it relocates the package.
 | Global aliases | `parse/alias_global.sh` (zsh), `builtins/alias_deviations.sh` (here-document delimiter), `builtins/internal_savestate_aliases.sh` |
 | Suffix aliases | `parse/alias_suffix.sh` (zsh), `builtins/alias_deviations.sh` (`command -v`) |
 | `RANDOM`, `SECONDS` and the other specials | `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
+| Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |
 | `SHLVL` | `misc/shlvl.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | Last command of `sh -c` | `exec/c_exec_last.sh` (zsh) |

@@ -10,7 +10,7 @@ use crate::lexer::{AliasMap, ParseError, Parser};
 use crate::options::{Opt, Options};
 use crate::signals::{self, NSIG};
 use crate::sys;
-use crate::vars::{Special, Var, Vars};
+use crate::vars::{AssignError, Special, Value, Var, Vars};
 
 /// Non-local control flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -240,6 +240,56 @@ impl Shell {
         }
         self.var_changed(name);
         Ok(())
+    }
+
+    /// Assigns a whole value (an array), reporting an error if the variable
+    /// is readonly.
+    pub fn set_var_value(&mut self, name: &[u8], value: Value) -> Result<(), Flow> {
+        if let Value::Str(s) = value {
+            return self.set_var(name, s);
+        }
+        if self.vars.set_value(name, value).is_err() {
+            return Err(self.readonly_error(name));
+        }
+        self.after_assign(name);
+        Ok(())
+    }
+
+    /// Assigns to (or with `append`, appends to) element `i` of an array,
+    /// counting from the end if `i` is negative.
+    pub fn set_element(&mut self, name: &[u8], i: i64, value: Vec<u8>, append: bool) -> Result<(), Flow> {
+        match self.vars.set_element(name, i, value, append) {
+            Ok(()) => {
+                self.after_assign(name);
+                Ok(())
+            }
+            Err(AssignError::Readonly) => Err(self.readonly_error(name)),
+            Err(AssignError::BadSubscript) => {
+                self.error(format!("{}[{i}]: bad array subscript", String::from_utf8_lossy(name)));
+                Err(Flow::Error(2))
+            }
+        }
+    }
+
+    /// Appends elements to an array (`a+=(x y)`).
+    pub fn append_elements(&mut self, name: &[u8], items: Vec<Vec<u8>>) -> Result<(), Flow> {
+        if self.vars.append_elements(name, items).is_err() {
+            return Err(self.readonly_error(name));
+        }
+        self.after_assign(name);
+        Ok(())
+    }
+
+    fn readonly_error(&self, name: &[u8]) -> Flow {
+        self.error(format!("{}: is read only", String::from_utf8_lossy(name)));
+        Flow::Error(2)
+    }
+
+    fn after_assign(&mut self, name: &[u8]) {
+        if self.opt(Opt::Allexport) {
+            self.vars.entry(name).exported = true;
+        }
+        self.var_changed(name);
     }
 
     /// Restarts `getopts` at the first argument (new positional parameters).

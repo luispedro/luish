@@ -57,10 +57,25 @@ impl Shell {
         for w in &words[i..] {
             if let Some(Some(is_name)) = decl
                 && let Some(a) = crate::parser::split_assignment_with(w, is_name)
+                && a.index.is_none()
+                && !a.append
             {
-                let mut arg = a.name;
+                let Assign {
+                    name: mut arg, value, ..
+                } = a;
                 arg.push(b'=');
-                arg.extend(self.expand_word_str(&a.value)?);
+                match value.0.as_slice() {
+                    // Passed as a NUL and each element followed by a NUL
+                    // (see `builtins::vars::split_arg`).
+                    [WordPart::Array(items)] => {
+                        arg.push(0);
+                        for v in self.expand_words(items)? {
+                            arg.extend(v);
+                            arg.push(0);
+                        }
+                    }
+                    _ => arg.extend(self.expand_word_str(&value)?),
+                }
                 out.push(arg);
             } else {
                 self.expand_word_into(w, &mut out)?;
@@ -187,12 +202,21 @@ impl Shell {
                 f.push_literal(q);
                 f.push_literal(b")");
             }
+            // Only in an argument of a declaration command, handled in
+            // `expand_command_words`; elsewhere the elements as text.
+            WordPart::Array(items) => {
+                for (i, w) in items.iter().enumerate() {
+                    if i > 0 {
+                        f.push_quoted(b" ");
+                    }
+                    let v = self.expand_word_str(w)?;
+                    f.push_quoted(&v);
+                }
+            }
             WordPart::DoubleQuoted(inner) => {
                 // A quoted word is a field even when it expands to nothing,
                 // except a lone "$@" with no positional parameters.
-                let lone_at = matches!(inner.as_slice(), [WordPart::Param(pe)]
-                    if pe.name == ParamName::Special(b'@')
-                        && matches!(pe.op, ParamOp::Plain | ParamOp::Substring(..) | ParamOp::Replace(..)));
+                let lone_at = matches!(inner.as_slice(), [WordPart::Param(pe)] if is_list(pe));
                 if !lone_at {
                     f.cur_exists = true;
                 }
@@ -218,8 +242,16 @@ impl Shell {
                 push_result(&out, quoted, f);
             }
             WordPart::Arith(w) => {
-                let v = self.arith_word(w)?;
-                push_result(v.to_string().as_bytes(), quoted, f);
+                // Not `arith_word`, which is slower here, out of line.
+                let mut s = Vec::new();
+                self.arith_text(&w.0, &mut s)?;
+                match arith::eval(self, &s) {
+                    Ok(v) => push_result(v.to_string().as_bytes(), quoted, f),
+                    Err(msg) => {
+                        self.error(msg);
+                        return Err(Flow::Error(2));
+                    }
+                }
             }
         }
         Ok(())
@@ -288,15 +320,33 @@ impl Shell {
     fn expand_param(&mut self, pe: &ParamExp, quoted: bool, f: &mut Fields) -> EResult<()> {
         // The common case, a plain `$name` that is set, without copying the
         // value.
-        if let (ParamName::Var(n), ParamOp::Plain) = (&pe.name, &pe.op)
+        if let (ParamName::Var(n), ParamOp::Plain, None) = (&pe.name, &pe.op, &pe.index)
             && n != b"LINENO"
             && let Some(v) = self.vars.get(n)
         {
             push_result(v, quoted, f);
             return Ok(());
         }
+        // `${a[i]}` is an element, `${a[@]}` and `${a[*]}` the list.
+        let (val, element) = match (&pe.index, &pe.name) {
+            (None, _) => (self.param_value(&pe.name), None),
+            (Some(Index::Expr(w)), ParamName::Var(name)) => {
+                let i = self.arith_word(w)?;
+                (self.element(name, i), Some(i))
+            }
+            (Some(index), ParamName::Var(name)) => {
+                return self.expand_array(pe, name, *index == Index::At, quoted, f);
+            }
+            _ => unreachable!(),
+        };
+        let unset_error = |sh: &Shell, msg: &str| match element {
+            Some(i) => {
+                sh.error(format!("{}[{i}]: {msg}", param_display(&pe.name)));
+                Flow::Error(2)
+            }
+            None => sh.unset_error(&pe.name, msg),
+        };
         let multi = matches!(pe.name, ParamName::Special(b'@' | b'*'));
-        let val = self.param_value(&pe.name);
         let nounset = self.opt(Opt::Nounset) && !multi;
         // dash: `$@` and `$*` always count as set; they are null when their
         // joined length (with separators, where there are any) is zero.
@@ -316,7 +366,7 @@ impl Shell {
             } else {
                 match &val {
                     Some(v) => v.len(),
-                    None if nounset => return Err(self.unset_error(&pe.name, "parameter not set")),
+                    None if nounset => return Err(unset_error(self, "parameter not set")),
                     None => 0,
                 }
             };
@@ -325,7 +375,7 @@ impl Shell {
         }
         if let ParamOp::Substring(..) | ParamOp::Replace(..) = pe.op {
             if val.is_none() && nounset {
-                return Err(self.unset_error(&pe.name, "parameter not set"));
+                return Err(unset_error(self, "parameter not set"));
             }
             return self.expand_slice_op(pe, val, multi, quoted, f);
         }
@@ -344,7 +394,7 @@ impl Shell {
         match &pe.op {
             ParamOp::Plain => {
                 if val.is_none() && nounset {
-                    return Err(self.unset_error(&pe.name, "parameter not set"));
+                    return Err(unset_error(self, "parameter not set"));
                 }
                 push_value(self, f);
             }
@@ -369,7 +419,10 @@ impl Shell {
                         return Err(Flow::Error(2));
                     };
                     let v = self.expand_word_str(w)?;
-                    self.set_var(name, v.clone())?;
+                    match element {
+                        Some(i) => self.set_element(name, i, v.clone(), false)?,
+                        None => self.set_var(name, v.clone())?,
+                    }
                     push_result(&v, quoted, f);
                 }
             }
@@ -386,7 +439,7 @@ impl Shell {
                     } else {
                         String::from_utf8_lossy(&self.expand_word_str(w)?).into_owned()
                     };
-                    return Err(self.unset_error(&pe.name, &msg));
+                    return Err(unset_error(self, &msg));
                 }
             }
             ParamOp::RemoveSmallestSuffix(w)
@@ -394,19 +447,127 @@ impl Shell {
             | ParamOp::RemoveSmallestPrefix(w)
             | ParamOp::RemoveLargestPrefix(w) => {
                 if val.is_none() && nounset {
-                    return Err(self.unset_error(&pe.name, "parameter not set"));
+                    return Err(unset_error(self, "parameter not set"));
                 }
-                let how = match &pe.op {
-                    ParamOp::RemoveSmallestSuffix(_) => Trim::SmallestSuffix,
-                    ParamOp::RemoveLargestSuffix(_) => Trim::LargestSuffix,
-                    ParamOp::RemoveSmallestPrefix(_) => Trim::SmallestPrefix,
-                    _ => Trim::LargestPrefix,
-                };
+                let how = trim_kind(&pe.op);
                 let pat = self.expand_pattern(w)?;
                 let v = val.unwrap_or_default();
                 push_result(pattern::trim(&v, &pat, how), quoted, f);
             }
             ParamOp::Length | ParamOp::Substring(..) | ParamOp::Replace(..) => unreachable!(),
+            ParamOp::Bad(_) => {
+                self.error("Bad substitution");
+                return Err(Flow::Error(2));
+            }
+        }
+        Ok(())
+    }
+
+    /// Element `i` of an array (counting from the end if it is negative); a
+    /// string is an array of one element.
+    pub fn element(&self, name: &[u8], i: i64) -> Option<Vec<u8>> {
+        let one;
+        let items = match self.vars.get_value(name) {
+            Some(v) => v.elements(),
+            None => {
+                one = [self.get_var(name)?];
+                &one[..]
+            }
+        };
+        let i = if i < 0 { i + items.len() as i64 } else { i };
+        usize::try_from(i).ok().and_then(|i| items.get(i)).cloned()
+    }
+
+    /// `${a[@]}` and `${a[*]}` (`at` tells which), with their operators,
+    /// which apply to the list or to each element. A string is an array of
+    /// one element.
+    fn expand_array(&mut self, pe: &ParamExp, name: &[u8], at: bool, quoted: bool, f: &mut Fields) -> EResult<()> {
+        let items = match self.vars.get_value(name) {
+            Some(v) => Some(v.elements().to_vec()),
+            None => self.get_var(name).map(|v| vec![v]),
+        };
+        let sep = self.ifs_first();
+        let unset = |sh: &Shell, msg: &str| {
+            sh.error(format!(
+                "{}[{}]: {msg}",
+                String::from_utf8_lossy(name),
+                if at { '@' } else { '*' }
+            ));
+            Flow::Error(2)
+        };
+        let conditional = matches!(
+            pe.op,
+            ParamOp::Default(_) | ParamOp::Alternative(_) | ParamOp::Assign(_) | ParamOp::Error(_)
+        );
+        if items.is_none() && !conditional && self.opt(Opt::Nounset) {
+            return Err(unset(self, "parameter not set"));
+        }
+        // As for `$@`, null when the joined elements are.
+        let is_set = items.as_ref().is_some_and(|items| {
+            !pe.colon || items.iter().map(|v| v.len()).sum::<usize>() + items.len().saturating_sub(1) > 0
+        });
+        let items = items.unwrap_or_default();
+        match &pe.op {
+            ParamOp::Plain => push_list(&items, at, quoted, sep, f),
+            ParamOp::Length => push_result(items.len().to_string().as_bytes(), quoted, f),
+            ParamOp::Default(w) => {
+                if is_set {
+                    push_list(&items, at, quoted, sep, f);
+                } else {
+                    self.expand_parts(&w.0, quoted, !quoted, f)?;
+                }
+            }
+            ParamOp::Alternative(w) => {
+                if is_set {
+                    self.expand_parts(&w.0, quoted, !quoted, f)?;
+                }
+            }
+            ParamOp::Error(w) if !is_set => {
+                let msg = if w.0.is_empty() {
+                    if pe.colon {
+                        "parameter null or not set"
+                    } else {
+                        "parameter not set"
+                    }
+                    .to_string()
+                } else {
+                    String::from_utf8_lossy(&self.expand_word_str(w)?).into_owned()
+                };
+                return Err(unset(self, &msg));
+            }
+            ParamOp::Error(_) => push_list(&items, at, quoted, sep, f),
+            ParamOp::Assign(_) if !is_set => {
+                self.error(format!("{}: bad variable name", String::from_utf8_lossy(name)));
+                return Err(Flow::Error(2));
+            }
+            ParamOp::Assign(_) => push_list(&items, at, quoted, sep, f),
+            ParamOp::RemoveSmallestSuffix(w)
+            | ParamOp::RemoveLargestSuffix(w)
+            | ParamOp::RemoveSmallestPrefix(w)
+            | ParamOp::RemoveLargestPrefix(w) => {
+                let how = trim_kind(&pe.op);
+                let pat = self.expand_pattern(w)?;
+                let items: Vec<_> = items.iter().map(|v| pattern::trim(v, &pat, how).to_vec()).collect();
+                push_list(&items, at, quoted, sep, f);
+            }
+            ParamOp::Substring(offset, len) => {
+                let offset = self.arith_word(offset)?;
+                let len = len.as_ref().map(|w| self.arith_word(w)).transpose()?;
+                let (start, end) = self.substring_range(items.len(), offset, len)?;
+                push_list(&items[start..end], at, quoted, sep, f);
+            }
+            ParamOp::Replace(how, pat, rep) => {
+                let pat = self.expand_pattern(pat)?;
+                let rep = self.expand_word_str(rep)?;
+                if quoted && !at {
+                    // As in zsh, `"${a[*]/x/y}"` replaces in the joined string.
+                    let sep: Vec<u8> = sep.into_iter().collect();
+                    push_result(&pattern::replace(&items.join(&sep[..]), &pat, *how, &rep), quoted, f);
+                } else {
+                    let items: Vec<_> = items.iter().map(|v| pattern::replace(v, &pat, *how, &rep)).collect();
+                    push_list(&items, at, quoted, sep, f);
+                }
+            }
             ParamOp::Bad(_) => {
                 self.error("Bad substitution");
                 return Err(Flow::Error(2));
@@ -503,7 +664,7 @@ impl Shell {
     }
 
     /// Evaluates a word as an arithmetic expression, as in `$((...))`.
-    fn arith_word(&mut self, w: &Word) -> EResult<i64> {
+    pub fn arith_word(&mut self, w: &Word) -> EResult<i64> {
         let mut s = Vec::new();
         self.arith_text(&w.0, &mut s)?;
         arith::eval(self, &s).map_err(|msg| {
@@ -580,7 +741,7 @@ fn declaration_command(argv: &[Vec<u8>]) -> Option<Option<NameTest>> {
         let name = argv.get(k)?;
         if name != b"command" {
             return Some(match &name[..] {
-                b"export" | b"readonly" | b"local" => Some(crate::lexer::is_valid_name),
+                b"export" | b"readonly" | b"local" | b"typeset" | b"declare" => Some(crate::lexer::is_valid_name),
                 b"setopt" => Some(crate::options::is_setting_name),
                 _ => None,
             });
@@ -601,6 +762,15 @@ fn declaration_command(argv: &[Vec<u8>]) -> Option<Option<NameTest>> {
             }
             k += 1;
         }
+    }
+}
+
+fn trim_kind(op: &ParamOp) -> Trim {
+    match op {
+        ParamOp::RemoveSmallestSuffix(_) => Trim::SmallestSuffix,
+        ParamOp::RemoveLargestSuffix(_) => Trim::LargestSuffix,
+        ParamOp::RemoveSmallestPrefix(_) => Trim::SmallestPrefix,
+        _ => Trim::LargestPrefix,
     }
 }
 
@@ -628,6 +798,29 @@ fn push_list(items: &[Vec<u8>], at: bool, quoted: bool, sep: Option<u8>, f: &mut
     push_result(&items.join(&sep[..]), quoted, f);
 }
 
+/// Whether `"${...}"` alone gives no field when there are no elements, as
+/// `"$@"` does: `$@` and `${a[@]}`, also with a substring or replacement
+/// (and a trim, for arrays).
+fn is_list(pe: &ParamExp) -> bool {
+    match (&pe.name, &pe.index) {
+        (ParamName::Special(b'@'), None) => {
+            matches!(pe.op, ParamOp::Plain | ParamOp::Substring(..) | ParamOp::Replace(..))
+        }
+        (_, Some(Index::At)) => matches!(
+            pe.op,
+            ParamOp::Plain
+                | ParamOp::Substring(..)
+                | ParamOp::Replace(..)
+                | ParamOp::RemoveSmallestSuffix(_)
+                | ParamOp::RemoveLargestSuffix(_)
+                | ParamOp::RemoveSmallestPrefix(_)
+                | ParamOp::RemoveLargestPrefix(_)
+        ),
+        _ => false,
+    }
+}
+
+#[inline(always)]
 fn push_result(s: &[u8], quoted: bool, f: &mut Fields) {
     if quoted {
         f.push_quoted(s);

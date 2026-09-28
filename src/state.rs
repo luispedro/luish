@@ -10,7 +10,7 @@
 //! doesn't remove what wasn't (such as variables set since).
 
 use crate::builtins::misc::alias_command;
-use crate::builtins::single_quote;
+use crate::builtins::{quote_value, single_quote};
 use crate::lexer::AliasKind;
 use crate::options::{EXTENDED, OPTIONS, Opt};
 use crate::shell::Shell;
@@ -130,7 +130,7 @@ impl Shell {
             t.extend_from_slice(name);
             if let Some(v) = &var.value {
                 t.push(b'=');
-                t.extend(single_quote(v));
+                t.extend(quote_value(v));
             }
             t.push(b'\n');
             add(Kind::Var, name, t);

@@ -277,6 +277,15 @@ pub fn is_name_char(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
 }
 
+/// Whether a word so far is `name=` or `name+=`, so that a `(` after it
+/// starts an array rather than a glob qualifier.
+fn is_array_start(lit: &[u8]) -> bool {
+    let Some(name) = lit.strip_suffix(b"=") else {
+        return false;
+    };
+    is_valid_name(name.strip_suffix(b"+").unwrap_or(name))
+}
+
 pub fn is_valid_name(s: &[u8]) -> bool {
     !s.is_empty() && is_name_start(s[0]) && s.iter().all(|&c| is_name_char(c))
 }
@@ -513,7 +522,10 @@ impl Parser {
         let mut depth = 0;
         while let Some(c) = self.at(0) {
             match c {
-                b'(' if self.bareglobqual && !self.regex_word && !(parts.is_empty() && lit.is_empty()) => {
+                b'(' if self.bareglobqual
+                    && !self.regex_word
+                    && !(parts.is_empty() && (lit.is_empty() || is_array_start(&lit))) =>
+                {
                     qual = self.read_glob_qualifier();
                     break;
                 }
@@ -699,6 +711,7 @@ impl Parser {
         let plain = |name| {
             Some(WordPart::Param(Box::new(ParamExp {
                 name,
+                index: None,
                 op: ParamOp::Plain,
                 colon: false,
             })))
@@ -791,11 +804,19 @@ impl Parser {
             let word = p.read_param_word(ctx)?;
             Ok(WordPart::Param(Box::new(ParamExp {
                 name,
+                index: None,
                 op: ParamOp::Bad(word),
                 colon,
             })))
         };
-        let mk = |name, op, colon| WordPart::Param(Box::new(ParamExp { name, op, colon }));
+        let mk = |name, op, colon| {
+            WordPart::Param(Box::new(ParamExp {
+                name,
+                index: None,
+                op,
+                colon,
+            }))
+        };
         self.eat_bnl(0);
         if self.at(0) == Some(b'#') {
             // `${#}`, `${#name}` (length), or `${#op...}` ($# with an operator)
@@ -805,11 +826,20 @@ impl Parser {
             }
             let save = self.pos;
             self.pos += 1;
-            if let Some(name) = self.read_param_name()
-                && self.at(0) == Some(b'}')
-            {
-                self.pos += 1;
-                return Ok(mk(name, ParamOp::Length, false));
+            if let Some(name) = self.read_param_name() {
+                let index = match self.at(0) {
+                    Some(b'[') if matches!(name, ParamName::Var(_)) => self.read_index()?,
+                    _ => None,
+                };
+                if self.at(0) == Some(b'}') {
+                    self.pos += 1;
+                    return Ok(WordPart::Param(Box::new(ParamExp {
+                        name,
+                        index,
+                        op: ParamOp::Length,
+                        colon: false,
+                    })));
+                }
             }
             self.pos = save;
         }
@@ -819,6 +849,63 @@ impl Parser {
             } else {
                 bad(self, ParamName::Var(Vec::new()), false)
             };
+        };
+        if matches!(name, ParamName::Var(_)) && self.at(0) == Some(b'[') {
+            let save = self.pos;
+            match self.read_index()? {
+                Some(index) => {
+                    let mut part = self.read_param_op(name, ctx)?;
+                    if let WordPart::Param(pe) = &mut part {
+                        pe.index = Some(index);
+                    }
+                    return Ok(part);
+                }
+                None => {
+                    self.pos = save;
+                    return bad(self, name, false);
+                }
+            }
+        }
+        self.read_param_op(name, ctx)
+    }
+
+    /// Reads `[index]` of `${name[index]}`, from the `[`. Returns `None`,
+    /// leaving the position anywhere, if there is no `]` before the `}`.
+    fn read_index(&mut self) -> PResult<Option<Index>> {
+        self.pos += 1;
+        match (self.at(0), self.at(1)) {
+            (Some(b'@'), Some(b']')) => {
+                self.pos += 2;
+                return Ok(Some(Index::At));
+            }
+            (Some(b'*'), Some(b']')) => {
+                self.pos += 2;
+                return Ok(Some(Index::Star));
+            }
+            _ => {}
+        }
+        let (w, closed) = self.read_param_word_to(Ctx::DQuote, Some(b']'))?;
+        Ok(closed.then_some(Index::Expr(w)))
+    }
+
+    /// The rest of `${name...}`, after the name (and the index).
+    fn read_param_op(&mut self, name: ParamName, ctx: Ctx) -> PResult<WordPart> {
+        let bad = |p: &mut Parser, name, colon| {
+            let word = p.read_param_word(ctx)?;
+            Ok(WordPart::Param(Box::new(ParamExp {
+                name,
+                index: None,
+                op: ParamOp::Bad(word),
+                colon,
+            })))
+        };
+        let mk = |name, op, colon| {
+            WordPart::Param(Box::new(ParamExp {
+                name,
+                index: None,
+                op,
+                colon,
+            }))
         };
         self.eat_bnl(0);
         let Some(c) = self.at(0) else {

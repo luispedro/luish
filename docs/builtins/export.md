@@ -1,7 +1,7 @@
 # `export`
 
 ```text
-export name[=value]...
+export name[=value]... name=(value...)...
 export -p
 ```
 
@@ -12,3 +12,6 @@ Arguments that look like assignments are expanded as assignments are (no
 field splitting or globbing), so `export PATH=$PATH:~/bin` needs no quotes.
 Without names, or with `-p`, `export` lists the exported variables as
 commands that can be read back.
+
+`export name=(a b c)` assigns an array, but arrays
+aren't passed to commands, as in zsh and bash.

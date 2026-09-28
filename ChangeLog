@@ -1,4 +1,6 @@
 Unreleased
+    * Arrays, as in zsh and bash: `a=(x y)`, `${a[i]}`, `"${a[@]}"`, `a+=(z)`
+    * `NAME+=value` appends to a variable
     * `${x:offset:length}` and `${x/pattern/replacement}`, as in zsh and bash
     * Syntax highlighting shows unset variables in a different colour
     * `[[ ... ]]` conditions, as in zsh and bash

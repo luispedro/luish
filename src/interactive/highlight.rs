@@ -153,6 +153,19 @@ struct Word {
     expanded: bool,
 }
 
+/// If a word is an assignment (`NAME=`, `NAME+=` or `NAME[...]=`), the end
+/// of the name and the position of the `=`.
+fn assignment(raw: &[u8]) -> Option<(usize, usize)> {
+    let eq = raw.iter().position(|&c| c == b'=')?;
+    let n = raw
+        .iter()
+        .position(|&c| !crate::lexer::is_name_char(c))
+        .unwrap_or(raw.len());
+    let name = raw[..eq].strip_suffix(b"+").unwrap_or(&raw[..eq]);
+    let ok = crate::lexer::is_valid_name(&raw[..n]) && (n == name.len() || raw[n] == b'[' && name.ends_with(b"]"));
+    ok.then_some((n, eq))
+}
+
 fn is_blank(c: u8) -> bool {
     c == b' ' || c == b'\t'
 }
@@ -295,11 +308,12 @@ impl Scan<'_> {
         let plain = !w.quoted && !w.expanded;
         let text = &w.text[..];
         let raw = &self.s[start..e];
-        if let Some(eq) = raw.iter().position(|&c| c == b'=')
-            && crate::lexer::is_valid_name(&raw[..eq])
-        {
-            self.assigned.push(raw[..eq].to_vec());
+        let assign = assignment(raw);
+        if let Some((name, _)) = assign {
+            self.assigned.push(raw[..name].to_vec());
         }
+        // An array, `a=(x y)`, also as an argument (`local a=(x y)`).
+        let array = assign.is_some_and(|(_, eq)| eq + 1 == raw.len()) && self.s.get(e) == Some(&b'(');
         if *pattern {
             if plain && text == b"esac" {
                 self.paint(start, e, Class::Keyword);
@@ -345,7 +359,7 @@ impl Scan<'_> {
             _ => {}
         }
         if !*cmd || (*precommand && text.starts_with(b"-")) {
-            return e;
+            return if array { self.array(e) } else { e };
         }
         if plain && (RESERVED.contains(&text) || text == b"{" || text == b"}" || text == b"!") {
             self.paint(start, e, Class::Keyword);
@@ -358,10 +372,11 @@ impl Scan<'_> {
             }
             *cmd = !matches!(text, b"for" | b"case" | b"fi" | b"done" | b"esac" | b"}" | b"[[");
             *precommand = false;
-        } else if let Some(eq) = raw.iter().position(|&c| c == b'=')
-            && crate::lexer::is_valid_name(&raw[..eq])
-        {
+        } else if let Some((_, eq)) = assign {
             self.paint(start, start + eq + 1, Class::Assign);
+            if array {
+                return self.array(e);
+            }
         } else if w.expanded {
             *cmd = false;
             *precommand = false;
@@ -377,6 +392,35 @@ impl Scan<'_> {
             *cmd = *precommand;
         }
         e
+    }
+
+    /// Scans the elements of an array, from its `(` to the `)`.
+    fn array(&mut self, open: usize) -> usize {
+        let s = self.s;
+        self.paint(open, open + 1, Class::Op);
+        let mut i = open + 1;
+        while i < s.len() {
+            match s[i] {
+                b' ' | b'\t' | b'\n' => i += 1,
+                b'#' => {
+                    let e = self.find(i, b'\n').unwrap_or(s.len());
+                    self.paint(i, e, Class::Comment);
+                    i = e;
+                }
+                b')' => {
+                    self.paint(i, i + 1, Class::Op);
+                    return i + 1;
+                }
+                _ => {
+                    let e = self.word(i).end;
+                    if e == i {
+                        return i;
+                    }
+                    i = e;
+                }
+            }
+        }
+        i
     }
 
     /// Scans a word, painting its quoted parts and expansions.
@@ -846,6 +890,11 @@ mod tests {
         assert_eq!(
             classes("for UNX in a; do echo $UNX; done"),
             "kkk.....kk..o.kk.cccc.vvvvo.kkkk"
+        );
+        // Arrays: the elements are arguments.
+        assert_eq!(
+            classes("a=(x \"y\" $x) b+=(1) c[1]=2 d[2]+=3; echo; sudo e=(ls #c\n)"),
+            "aao..sss.vvo.aaao.o.aaaaa..aaaaaa.o.cccco.cccc.aao...##.o"
         );
         // Nor while the cursor is on it.
         assert_eq!(classes_at("echo $UN", Some(8)), "cccc.vvv");

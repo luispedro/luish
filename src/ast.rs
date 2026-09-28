@@ -59,7 +59,22 @@ pub struct SimpleCommand {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Assign {
     pub name: Vec<u8>,
+    /// The subscript of `name[index]=value`.
+    pub index: Option<Word>,
+    /// `name+=value`: appends to the value (or to the array).
+    pub append: bool,
+    /// For an array, `name=(...)`, a lone [`WordPart::Array`].
     pub value: Word,
+}
+
+impl Assign {
+    /// The elements of an array assignment.
+    pub fn array(&self) -> Option<&[Word]> {
+        match self.value.0.as_slice() {
+            [WordPart::Array(items)] => Some(items),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -273,13 +288,30 @@ pub enum WordPart {
     /// The text inside a trailing `(...)` glob qualifier (only lexed under
     /// `setopt glob.bare_qualifiers`). Always the last part of a word.
     GlobQual(Vec<u8>),
+    /// The elements of an array, `(a b c)`: the value of an array
+    /// assignment, also as an argument of a declaration command (`local
+    /// a=(x y)`), where it is the last part of a word after `name=`.
+    Array(Vec<Word>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParamExp {
     pub name: ParamName,
+    /// The subscript of `${name[index]}`.
+    pub index: Option<Index>,
     pub op: ParamOp,
     pub colon: bool,
+}
+
+/// The subscript of an array parameter.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Index {
+    /// `[@]`: the elements, as `$@`.
+    At,
+    /// `[*]`: the elements, as `$*`.
+    Star,
+    /// An element: an arithmetic expression, expanded first as in `$((...))`.
+    Expr(Word),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -307,7 +339,7 @@ pub enum ParamOp {
     Substring(Word, Option<Word>),
     /// `${x/pattern/replacement}` and its variants.
     Replace(Replace, Word, Word),
-    /// Not a valid substitution (such as bash's `${x//a/b}`). As in dash,
+    /// Not a valid substitution (such as bash's `${x^^}`). As in dash,
     /// this is an error only when it is expanded; the word is the rest of
     /// the text up to `}`.
     Bad(Word),

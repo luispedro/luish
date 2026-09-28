@@ -4,6 +4,7 @@ use super::illegal_number;
 use crate::lexer::is_valid_name;
 use crate::options::{EXTENDED, Kind, OPTIONS, Opt, Options, Setting, VALUES, find_group, group_of, parse_bool};
 use crate::shell::{ExecResult, Flow, Shell};
+use crate::vars::Value;
 
 /// Single-quotes a value for output that can be read back by the shell.
 /// dash's `single_quote`: the text in single quotes, with each run of
@@ -29,6 +30,40 @@ pub fn single_quote(s: &[u8]) -> Vec<u8> {
             return out;
         }
     }
+}
+
+/// A value quoted so that the shell reads it back: an array as `('a' 'b')`.
+pub fn quote_value(v: &Value) -> Vec<u8> {
+    let Value::Array(items) = v else {
+        return single_quote(v.scalar());
+    };
+    let mut out = vec![b'('];
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+            out.push(b' ');
+        }
+        out.extend(single_quote(item));
+    }
+    out.push(b')');
+    out
+}
+
+/// Splits a `name=value` argument. A declaration command's argument
+/// `name=(x y)` comes as `name=`, a NUL, and each element followed by a
+/// NUL (`expand_command_words`): an argument can't otherwise have a NUL.
+pub fn split_arg(a: &[u8]) -> (&[u8], Option<Value>) {
+    let Some(i) = a.iter().position(|&c| c == b'=') else {
+        return (a, None);
+    };
+    let value = match a[i + 1..].split_first() {
+        Some((0, rest)) => {
+            let mut items: Vec<_> = rest.split(|&c| c == 0).map(<[u8]>::to_vec).collect();
+            items.pop();
+            Value::Array(Box::new(items))
+        }
+        _ => Value::Str(a[i + 1..].to_vec()),
+    };
+    (&a[..i], Some(value))
 }
 
 fn bad_name(sh: &Shell, cmd: &[u8], name: &[u8]) -> Flow {
@@ -60,7 +95,7 @@ fn set_attr(sh: &mut Shell, argv: &[Vec<u8>], export: bool) -> ExecResult {
                 out.extend_from_slice(name);
                 if let Some(v) = &var.value {
                     out.push(b'=');
-                    out.extend(single_quote(v));
+                    out.extend(quote_value(v));
                 }
                 out.push(b'\n');
             }
@@ -69,15 +104,12 @@ fn set_attr(sh: &mut Shell, argv: &[Vec<u8>], export: bool) -> ExecResult {
         return Ok(sh.out_status(&out));
     }
     for a in args {
-        let (name, value) = match a.iter().position(|&c| c == b'=') {
-            Some(i) => (&a[..i], Some(a[i + 1..].to_vec())),
-            None => (&a[..], None),
-        };
+        let (name, value) = split_arg(a);
         if !is_valid_name(name) {
             return Err(bad_name(sh, cmd, name));
         }
         if let Some(v) = value {
-            sh.set_var(name, v)?;
+            sh.set_var_value(name, v)?;
         }
         let var = sh.vars.entry(name);
         if export {
@@ -117,6 +149,22 @@ pub fn unset(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             sh.functions.remove(name);
             continue;
         }
+        // `unset 'a[i]'` empties an element, as in zsh (bash removes it,
+        // leaving a hole); `unset 'a[@]'` unsets the array, as in bash.
+        let name = match name.split_last() {
+            Some((b']', rest)) if let Some(open) = rest.iter().position(|&c| c == b'[') => {
+                let (base, index) = (&rest[..open], &rest[open + 1..]);
+                if !is_valid_name(base) {
+                    return Err(bad_name(sh, &argv[0], name));
+                }
+                if index != b"@" && index != b"*" {
+                    unset_element(sh, &argv[0], base, index)?;
+                    continue;
+                }
+                base
+            }
+            _ => &name[..],
+        };
         if !is_valid_name(name) {
             return Err(bad_name(sh, &argv[0], name));
         }
@@ -132,6 +180,19 @@ pub fn unset(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         sh.var_changed(name);
     }
     Ok(0)
+}
+
+/// `unset 'name[index]'`: empties the element, if there is one.
+fn unset_element(sh: &mut Shell, cmd: &[u8], name: &[u8], index: &[u8]) -> Result<(), Flow> {
+    let i = crate::expand::arith::eval(sh, index).map_err(|msg| {
+        sh.berr(cmd, msg);
+        Flow::Error(2)
+    })?;
+    let len = sh.vars.get_value(name).map_or(0, |v| v.elements().len()) as i64;
+    if (-len..len).contains(&i) {
+        sh.set_element(name, i, Vec::new(), false)?;
+    }
+    Ok(())
 }
 
 pub fn shift(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
@@ -157,7 +218,7 @@ fn print_vars(sh: &Shell) -> i32 {
         if let Some(v) = &var.value {
             out.extend_from_slice(name);
             out.push(b'=');
-            out.extend(single_quote(v));
+            out.extend(quote_value(v));
             out.push(b'\n');
         }
     }
@@ -383,10 +444,7 @@ pub fn local(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         return Err(Flow::Error(2));
     }
     for a in &argv[1..] {
-        let (name, value) = match a.iter().position(|&c| c == b'=') {
-            Some(i) => (&a[..i], Some(a[i + 1..].to_vec())),
-            None => (&a[..], None),
-        };
+        let (name, value) = split_arg(a);
         if name == b"-" {
             continue;
         }
@@ -403,7 +461,7 @@ pub fn local(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             sh.locals.last_mut().unwrap().push((name.to_vec(), old));
         }
         if let Some(v) = value {
-            sh.set_var(name, v)?;
+            sh.set_var_value(name, v)?;
         }
     }
     Ok(0)

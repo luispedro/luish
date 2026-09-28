@@ -182,7 +182,12 @@ impl<'a> Printer<'a> {
         for a in &sc.assigns {
             sep(self);
             self.w(&a.name);
-            self.w(b"=");
+            if let Some(index) = &a.index {
+                self.w(b"[");
+                self.parts(&index.0);
+                self.w(b"]");
+            }
+            self.w(if a.append { b"+=" } else { b"=" });
             self.word(&a.value);
         }
         for (i, w) in sc.words.iter().enumerate() {
@@ -399,36 +404,36 @@ impl<'a> Printer<'a> {
                     self.w(q);
                     self.w(b")");
                 }
+                WordPart::Array(items) => {
+                    self.w(b"(");
+                    for (i, w) in items.iter().enumerate() {
+                        if i > 0 {
+                            self.w(b" ");
+                        }
+                        self.word(w);
+                    }
+                    self.w(b")");
+                }
             }
         }
     }
 
     fn param(&mut self, pe: &ParamExp, joins: bool) {
-        let name = match &pe.name {
-            ParamName::Var(n) => n.clone(),
-            ParamName::Positional(n) => n.to_string().into_bytes(),
-            ParamName::Special(c) => vec![*c],
+        let short = match &pe.name {
+            _ if pe.index.is_some() => false,
+            ParamName::Var(_) => !joins,
+            ParamName::Positional(n) => *n < 10 && !joins,
+            ParamName::Special(_) => true,
         };
+        if pe.op == ParamOp::Plain && short {
+            self.w(b"$");
+            self.param_name(pe);
+            return;
+        }
+        self.w(if pe.op == ParamOp::Length { b"${#" } else { b"${" });
+        self.param_name(pe);
         let (op, word): (&[u8], _) = match &pe.op {
-            ParamOp::Plain => {
-                let short = match &pe.name {
-                    ParamName::Var(_) => !joins,
-                    ParamName::Positional(n) => *n < 10 && !joins,
-                    ParamName::Special(_) => true,
-                };
-                if short {
-                    self.w(b"$");
-                    self.w(&name);
-                } else {
-                    self.w(b"${");
-                    self.w(&name);
-                    self.w(b"}");
-                }
-                return;
-            }
-            ParamOp::Length => {
-                self.w(b"${#");
-                self.w(&name);
+            ParamOp::Plain | ParamOp::Length => {
                 self.w(b"}");
                 return;
             }
@@ -442,8 +447,6 @@ impl<'a> Printer<'a> {
             ParamOp::RemoveLargestPrefix(w) => (b"##", w),
             ParamOp::Bad(w) => (b"", w),
             ParamOp::Substring(offset, len) => {
-                self.w(b"${");
-                self.w(&name);
                 // The text of a negative offset starts with a space or `(`.
                 self.w(b":");
                 self.word(offset);
@@ -455,8 +458,6 @@ impl<'a> Printer<'a> {
                 return;
             }
             ParamOp::Replace(how, pat, rep) => {
-                self.w(b"${");
-                self.w(&name);
                 self.w(how.text());
                 self.word(pat);
                 self.w(b"/");
@@ -465,14 +466,31 @@ impl<'a> Printer<'a> {
                 return;
             }
         };
-        self.w(b"${");
-        self.w(&name);
         if pe.colon {
             self.w(b":");
         }
         self.w(op);
         self.word(word);
         self.w(b"}");
+    }
+
+    /// The name of a parameter expansion, with its subscript.
+    fn param_name(&mut self, pe: &ParamExp) {
+        match &pe.name {
+            ParamName::Var(n) => self.w(n),
+            ParamName::Positional(n) => self.w(n.to_string().as_bytes()),
+            ParamName::Special(c) => self.w(&[*c]),
+        }
+        match &pe.index {
+            None => {}
+            Some(Index::At) => self.w(b"[@]"),
+            Some(Index::Star) => self.w(b"[*]"),
+            Some(Index::Expr(w)) => {
+                self.w(b"[");
+                self.word(w);
+                self.w(b"]");
+            }
+        }
     }
 
     fn cmdsubst(&mut self, list: &List) {
@@ -550,6 +568,7 @@ mod tests {
                 WordPart::DoubleQuoted(ps) => ps.iter_mut().for_each(part),
                 WordPart::CmdSubst(l) => strip_lines(std::rc::Rc::make_mut(l)),
                 WordPart::Arith(w) => word(w),
+                WordPart::Array(items) => words(items),
                 WordPart::Param(pe) => match &mut pe.op {
                     ParamOp::Plain | ParamOp::Length => {}
                     ParamOp::Default(w)
@@ -712,6 +731,9 @@ mod tests {
             r#"f() { echo ${x:1} ${x: -1:$n} ${x:(-2)} "${@:2:1}" ${x/a/b} ${x//\//"*"} ${x/#a} "${x/%$p/~}"; }"#,
         );
         round_trip(r#"f() { echo $((1 + $x * (2 - y))) $(( $(echo 1) )) `echo a` "`echo \"b\"`"; }"#);
+        round_trip(
+            r#"f() { a=(x "y z" $(echo w)) b+=() c[$i+1]=q d[2]+=r e+=s; local g=(1 2); echo ${a[1]} "${a[@]}" ${#a[*]} ${a[i]:-x} ${a[@]/a/b}; }"#,
+        );
         round_trip("f() { x=$(a; b) y=$( (sub) ) z=$(case a in a) :;; esac); }");
         round_trip("f() { echo $(if a; then b; fi) \"$(for i in 1; do :; done)\"; }");
         round_trip("f() { ! a | b && c || { d; } & }");

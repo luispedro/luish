@@ -14,7 +14,7 @@ pub(crate) mod test;
 mod trap;
 mod vars;
 
-pub use vars::single_quote;
+pub use vars::{quote_value, single_quote};
 
 use crate::options::Opt;
 use crate::shell::{ExecResult, Flow, Shell};

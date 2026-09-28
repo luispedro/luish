@@ -364,7 +364,7 @@ pub(super) fn with_plugin_vars<R>(sh: &mut Shell, dir: &[u8], name: &[u8], f: im
     let saved = PLUGIN_VARS.map(|v| sh.vars.take(v));
     for (v, value) in PLUGIN_VARS.iter().zip([dir, name]) {
         let var = crate::vars::Var {
-            value: Some(value.to_vec()),
+            value: Some(crate::vars::Value::Str(value.to_vec())),
             ..Default::default()
         };
         sh.vars.restore(v.to_vec(), Some(var));

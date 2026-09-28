@@ -3,7 +3,7 @@
 use std::rc::Rc;
 
 use crate::ast::*;
-use crate::lexer::{AliasMap, Op, PResult, ParseError, Parser, Tok, Token, is_valid_name};
+use crate::lexer::{AliasMap, Op, PResult, ParseError, Parser, Tok, Token, is_name_char, is_valid_name};
 
 const RESERVED: &[&[u8]] = &[
     b"!",
@@ -602,11 +602,27 @@ impl Parser {
             if !matches!(self.peek()?.tok, Tok::Word(_)) {
                 break;
             }
-            let Tok::Word(w) = self.next()?.tok else { unreachable!() };
+            let t = self.next()?;
+            let end = t.end;
+            let Tok::Word(w) = t.tok else { unreachable!() };
             if words.is_empty()
-                && let Some(a) = split_assignment(&w)
+                && let Some(mut a) = split_assignment(&w)
             {
+                if a.index.is_none() && a.value.0.is_empty() && self.array_follows(end)? {
+                    a.value = Word(vec![WordPart::Array(self.parse_array()?)]);
+                }
                 assigns.push(a);
+                continue;
+            }
+            // `local a=(x y)`: the array is part of the argument.
+            if is_declaration(&words)
+                && let Some(lit) = w.as_literal()
+                && let Some(name) = lit.strip_suffix(b"=")
+                && is_valid_name(name)
+                && self.array_follows(end)?
+            {
+                let items = self.parse_array()?;
+                words.push(Word(vec![WordPart::Literal(lit.to_vec()), WordPart::Array(items)]));
                 continue;
             }
             if words.is_empty() && assigns.is_empty() && redirs.is_empty() && self.peek_op()? == Some(Op::LParen) {
@@ -624,6 +640,28 @@ impl Parser {
             redirs,
             lineno,
         }))
+    }
+
+    /// Whether a `(` follows right after the word that ends at `end`, as in
+    /// an array assignment, `a=(x y)`.
+    fn array_follows(&mut self, end: usize) -> PResult<bool> {
+        let t = self.peek()?;
+        Ok(t.tok == Tok::Op(Op::LParen) && t.start == end)
+    }
+
+    /// The elements of an array, `(a b c)`, which can span lines.
+    fn parse_array(&mut self) -> PResult<Vec<Word>> {
+        self.next()?;
+        let mut items = Vec::new();
+        loop {
+            let t = self.next()?;
+            match t.tok {
+                Tok::Newline => {}
+                Tok::Word(w) => items.push(w),
+                Tok::Op(Op::RParen) => return Ok(items),
+                _ => return self.unexpected(&t, Some(")")),
+            }
+        }
     }
 
     fn parse_function(&mut self, name: Word) -> PResult<Command> {
@@ -728,29 +766,93 @@ impl Parser {
     }
 }
 
+/// Whether the command whose words have been parsed so far is `local`,
+/// `export`, `readonly`, `typeset` or `declare` (also after `command` or
+/// `builtin`), whose arguments can be arrays, `a=(x y)`.
+fn is_declaration(words: &[Word]) -> bool {
+    let mut names = words.iter().map(|w| w.as_literal());
+    loop {
+        match names.next() {
+            Some(Some(b"command" | b"builtin")) => {}
+            Some(Some(b"local" | b"export" | b"readonly" | b"typeset" | b"declare")) => return true,
+            _ => return false,
+        }
+    }
+}
+
 /// Splits `NAME=value` into an assignment, if the word has that form.
 pub(crate) fn split_assignment(w: &Word) -> Option<Assign> {
     split_assignment_with(w, is_valid_name)
 }
 
 /// [`split_assignment`] with another test for the name (for `setopt`).
+/// Besides `NAME=value`, `NAME+=value` and `NAME[index]=value` (and `+=`)
+/// are assignments when the name is a variable name.
 pub(crate) fn split_assignment_with(w: &Word, is_name: fn(&[u8]) -> bool) -> Option<Assign> {
     let Some(WordPart::Literal(s)) = w.0.first() else {
         return None;
     };
-    let eq = s.iter().position(|&c| c == b'=')?;
-    if !is_name(&s[..eq]) {
+    let assign = |name: &[u8], index, append, rest: &[u8], tail: &[WordPart]| {
+        let mut parts = Vec::new();
+        if !rest.is_empty() {
+            parts.push(WordPart::Literal(rest.to_vec()));
+        }
+        parts.extend(tail.iter().cloned());
+        Some(Assign {
+            name: name.to_vec(),
+            index,
+            append,
+            value: Word(crate::lexer::mark_assignment_tildes(parts)),
+        })
+    };
+    if let Some(eq) = s.iter().position(|&c| c == b'=') {
+        if is_name(&s[..eq]) {
+            return assign(&s[..eq], None, false, &s[eq + 1..], &w.0[1..]);
+        }
+        if eq > 0 && s[eq - 1] == b'+' && is_valid_name(&s[..eq - 1]) {
+            return assign(&s[..eq - 1], None, true, &s[eq + 1..], &w.0[1..]);
+        }
+    }
+    let n = s.iter().position(|&c| !is_name_char(c)).unwrap_or(s.len());
+    if n == 0 || s.get(n) != Some(&b'[') || !is_valid_name(&s[..n]) {
         return None;
     }
-    let mut parts = Vec::new();
-    if eq + 1 < s.len() {
-        parts.push(WordPart::Literal(s[eq + 1..].to_vec()));
+    // `NAME[index]=`: the index runs to the matching `]`, which must be
+    // unquoted text followed by `=` or `+=`.
+    let mut index = Vec::new();
+    let mut depth = 0usize;
+    let mut lit = Vec::new();
+    for (k, part) in w.0.iter().enumerate() {
+        let WordPart::Literal(text) = part else {
+            if !lit.is_empty() {
+                index.push(WordPart::Literal(std::mem::take(&mut lit)));
+            }
+            index.push(part.clone());
+            continue;
+        };
+        let from = if k == 0 { n + 1 } else { 0 };
+        for (i, &c) in text.iter().enumerate().skip(from) {
+            match c {
+                b'[' => depth += 1,
+                b']' if depth > 0 => depth -= 1,
+                b']' => {
+                    let rest = &text[i + 1..];
+                    let (append, rest) = match rest {
+                        [b'=', rest @ ..] => (false, rest),
+                        [b'+', b'=', rest @ ..] => (true, rest),
+                        _ => return None,
+                    };
+                    if !lit.is_empty() {
+                        index.push(WordPart::Literal(std::mem::take(&mut lit)));
+                    }
+                    return assign(&s[..n], Some(Word(index)), append, rest, &w.0[k + 1..]);
+                }
+                _ => {}
+            }
+            lit.push(c);
+        }
     }
-    parts.extend(w.0[1..].iter().cloned());
-    Some(Assign {
-        name: s[..eq].to_vec(),
-        value: Word(crate::lexer::mark_assignment_tildes(parts)),
-    })
+    None
 }
 
 #[cfg(test)]
@@ -780,6 +882,36 @@ mod tests {
         let s = simple(&l);
         assert_eq!(s.words.len(), 4);
         assert_eq!(s.words[2], Word(vec![WordPart::SingleQuoted(b"b c".to_vec())]));
+    }
+
+    #[test]
+    fn arrays() {
+        let l = parse("a=(x \"y z\"\n $w) b+=(v) c[$i+1]=q d[2]+=r e+=s f[x]\n");
+        let s = simple(&l);
+        let a = &s.assigns[0];
+        assert_eq!(
+            (a.name.as_slice(), a.index.is_none(), a.append),
+            (&b"a"[..], true, false)
+        );
+        assert_eq!(a.array().unwrap().len(), 3);
+        assert!(s.assigns[1].append && s.assigns[1].array().is_some());
+        let c = &s.assigns[2];
+        assert_eq!(c.name, b"c");
+        assert_eq!(c.index.as_ref().unwrap().0.len(), 2);
+        assert_eq!(c.value, Word(vec![WordPart::Literal(b"q".to_vec())]));
+        assert!(s.assigns[3].append && s.assigns[3].index.is_some());
+        assert!(s.assigns[4].append && s.assigns[4].index.is_none());
+        // Not an assignment: a command word.
+        assert_eq!(s.words[0].as_literal(), Some(&b"f[x]"[..]));
+        // Declaration commands take arrays as arguments.
+        let l = parse("command local a=(x y) b=()\n");
+        let s = simple(&l);
+        assert!(matches!(s.words[2].0.last(), Some(WordPart::Array(items)) if items.len() == 2));
+        assert!(matches!(s.words[3].0.last(), Some(WordPart::Array(items)) if items.is_empty()));
+        // `(` after a blank, or after other words, is a syntax error.
+        assert!(parse_err("a= (x)\n").msg.contains("\"(\" unexpected"));
+        assert!(parse_err("echo a=(x)\n").msg.contains("\"(\" unexpected"));
+        assert!(parse_err("a=(x;)\n").msg.contains("\";\" unexpected"));
     }
 
     #[test]
@@ -832,6 +964,10 @@ mod tests {
             "(echo *)\n",
             "case x in (*) :;; esac\n",
         ] {
+            assert_eq!(qual(src).unwrap(), parse(src), "{src}");
+        }
+        // Arrays are not qualifiers.
+        for src in ["a=(x y)\n", "a+=(x)\n", "local a=(x)\n"] {
             assert_eq!(qual(src).unwrap(), parse(src), "{src}");
         }
         // Not at the end of the word, or with a blank inside: an error.
@@ -993,6 +1129,9 @@ mod tests {
             "[[ a",
             "[[ a &&\n",
             "[[ a =~ (b",
+            "a=(x",
+            "a=(x\n",
+            "local a=(x",
         ] {
             let mut p = Parser::new(s.as_bytes().to_vec(), 1, false);
             let e = p.parse_next(&Rc::new(AliasMap::default())).unwrap_err();

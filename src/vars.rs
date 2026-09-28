@@ -7,9 +7,64 @@ use std::ffi::CString;
 pub struct Var {
     /// `None` for a variable that has attributes (export, readonly) but no
     /// value.
-    pub value: Option<Vec<u8>>,
+    pub value: Option<Value>,
     pub exported: bool,
     pub readonly: bool,
+}
+
+/// The value of a variable: a string, or an array of them (as in zsh and
+/// bash).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Value {
+    Str(Vec<u8>),
+    /// Indexed from 0, as in zsh's sh emulation and bash. Unlike bash's,
+    /// arrays have no holes. Boxed, so that a `Var` is no larger than a
+    /// string one.
+    #[allow(clippy::box_collection)]
+    Array(Box<Vec<Vec<u8>>>),
+}
+
+impl Value {
+    /// The value as a string: an array's first element (nothing if it is
+    /// empty), as `$a` is in ksh, bash and zsh's sh emulation.
+    #[inline]
+    pub fn scalar(&self) -> &[u8] {
+        match self {
+            Value::Str(s) => s,
+            Value::Array(a) => a.first().map_or(&[], |s| s),
+        }
+    }
+
+    /// The value as a list: a string is an array of one element.
+    pub fn elements(&self) -> &[Vec<u8>] {
+        match self {
+            Value::Str(s) => std::slice::from_ref(s),
+            Value::Array(a) => a,
+        }
+    }
+
+    /// The value as an array, converting a string to one.
+    pub fn make_array(&mut self) -> &mut Vec<Vec<u8>> {
+        if let Value::Str(s) = self {
+            *self = Value::Array(Box::new(vec![std::mem::take(s)]));
+        }
+        let Value::Array(a) = self else { unreachable!() };
+        a
+    }
+}
+
+/// Why assigning to an array element failed.
+#[derive(Debug)]
+pub enum AssignError {
+    Readonly,
+    /// A negative index before the start of the array.
+    BadSubscript,
+}
+
+impl From<ReadonlyError> for AssignError {
+    fn from(_: ReadonlyError) -> AssignError {
+        AssignError::Readonly
+    }
 }
 
 #[derive(Debug, Default)]
@@ -112,7 +167,7 @@ impl Vars {
             map.insert(
                 k,
                 Var {
-                    value: Some(v.as_bytes().to_vec()),
+                    value: Some(Value::Str(v.as_bytes().to_vec())),
                     exported: true,
                     readonly: false,
                 },
@@ -208,8 +263,78 @@ impl Vars {
             .map(|&(n, _)| n)
     }
 
+    /// The value of a variable as a string (an array's first element).
     pub fn get(&self, name: &[u8]) -> Option<&[u8]> {
-        self.map.get(name).and_then(|v| v.value.as_deref())
+        self.map.get(name).and_then(|v| v.value.as_ref()).map(Value::scalar)
+    }
+
+    pub fn get_value(&self, name: &[u8]) -> Option<&Value> {
+        self.map.get(name).and_then(|v| v.value.as_ref())
+    }
+
+    /// Assigns a whole value (an array), replacing the old one.
+    pub fn set_value(&mut self, name: &[u8], value: Value) -> Result<(), ReadonlyError> {
+        let var = self.entry(name);
+        if var.readonly {
+            return Err(ReadonlyError);
+        }
+        var.value = Some(value);
+        // A special such as `RANDOM` becomes an ordinary variable.
+        if let Some(s) = Special::from_name(name) {
+            self.specials.active &= !s.bit();
+        }
+        Ok(())
+    }
+
+    /// Assigns to element `i` of an array (counting from the end if it is
+    /// negative), making the variable an array. The elements between the
+    /// end and `i` are made empty. With `append`, the value is appended to
+    /// the element.
+    pub fn set_element(&mut self, name: &[u8], i: i64, value: Vec<u8>, append: bool) -> Result<(), AssignError> {
+        if let Some(s) = Special::from_name(name) {
+            self.specials.active &= !s.bit();
+        }
+        let var = self.entry(name);
+        if var.readonly {
+            return Err(AssignError::Readonly);
+        }
+        let len = var.value.as_ref().map_or(0, |v| v.elements().len());
+        let i = if i < 0 { i + len as i64 } else { i };
+        if i < 0 {
+            return Err(AssignError::BadSubscript);
+        }
+        let i = i as usize;
+        let a = var
+            .value
+            .get_or_insert_with(|| Value::Array(Box::default()))
+            .make_array();
+        if i >= a.len() {
+            a.resize(i + 1, Vec::new());
+        }
+        if append {
+            a[i].extend_from_slice(&value);
+        } else {
+            a[i] = value;
+        }
+        Ok(())
+    }
+
+    /// Appends elements to an array (`a+=(x y)`), making the variable an
+    /// array.
+    pub fn append_elements(&mut self, name: &[u8], items: Vec<Vec<u8>>) -> Result<(), ReadonlyError> {
+        if let Some(s) = Special::from_name(name) {
+            self.specials.active &= !s.bit();
+        }
+        let var = self.entry(name);
+        if var.readonly {
+            return Err(ReadonlyError);
+        }
+        let a = var
+            .value
+            .get_or_insert_with(|| Value::Array(Box::default()))
+            .make_array();
+        a.extend(items);
+        Ok(())
     }
 
     pub fn set(&mut self, name: &[u8], value: Vec<u8>) -> Result<(), ReadonlyError> {
@@ -226,14 +351,19 @@ impl Vars {
         match self.map.get_mut(name) {
             Some(v) if v.readonly => Err(ReadonlyError),
             Some(v) => {
-                v.value = Some(value);
+                // As in ksh and bash, `a=x` sets the first element of an array.
+                match &mut v.value {
+                    Some(Value::Array(a)) if a.is_empty() => a.push(value),
+                    Some(Value::Array(a)) => a[0] = value,
+                    _ => v.value = Some(Value::Str(value)),
+                }
                 Ok(())
             }
             None => {
                 self.map.insert(
                     name.to_vec(),
                     Var {
-                        value: Some(value),
+                        value: Some(Value::Str(value)),
                         ..Var::default()
                     },
                 );
@@ -322,7 +452,10 @@ impl Vars {
             .iter()
             .filter(|(_, v)| v.exported)
             .filter_map(|(k, v)| {
-                let value = v.value.as_ref()?;
+                // Arrays aren't exported, as in zsh and bash.
+                let Some(Value::Str(value)) = v.value.as_ref() else {
+                    return None;
+                };
                 let mut s = Vec::with_capacity(k.len() + value.len() + 1);
                 s.extend_from_slice(k);
                 s.push(b'=');

@@ -2,6 +2,7 @@
 
 use crate::lexer::{is_name_char, is_name_start};
 use crate::shell::Shell;
+use crate::vars::AssignError;
 
 /// A binary operator (also the operator of a compound assignment, and `+`
 /// and `-` as unary operators).
@@ -172,24 +173,98 @@ impl<'a> Arith<'a> {
         let save = self.pos;
         if self.pos < self.s.len() && is_name_start(self.s[self.pos]) {
             let name = self.ident();
+            // An array element, `a[i] = v`: the index is evaluated only if
+            // an assignment follows.
+            let bracket = self.pos;
+            let end = if self.s.get(self.pos) == Some(&b'[') {
+                self.pos = self.closing_bracket(bracket)?;
+                Some(self.pos)
+            } else {
+                None
+            };
             if let Some((Op::Assign(bin), len)) = self.peek_op() {
-                self.pos += len;
+                let after = self.pos + len;
+                let index = match end {
+                    Some(end) => Some(self.index(bracket, end)?),
+                    None => None,
+                };
+                self.pos = after;
                 let rhs = self.expr()?;
                 let v = match bin {
                     None => rhs,
                     Some(bin) => {
-                        let lhs = self.var(name)?;
+                        let lhs = match index {
+                            Some(i) => self.element(name, i)?,
+                            None => self.var(name)?,
+                        };
                         self.apply(bin, lhs, rhs)?
                     }
                 };
-                if self.noeval == 0 && self.sh.vars.set(name, v.to_string().into_bytes()).is_err() {
-                    return Err(format!("{}: is read only", String::from_utf8_lossy(name)));
+                if self.noeval == 0 {
+                    let value = v.to_string().into_bytes();
+                    let r = match index {
+                        Some(i) => self.sh.vars.set_element(name, i, value, false),
+                        None => self.sh.vars.set(name, value).map_err(Into::into),
+                    };
+                    match r {
+                        Ok(()) => {}
+                        Err(AssignError::Readonly) => {
+                            return Err(format!("{}: is read only", String::from_utf8_lossy(name)));
+                        }
+                        Err(AssignError::BadSubscript) => {
+                            let i = index.unwrap_or_default();
+                            return Err(format!("{}[{i}]: bad array subscript", String::from_utf8_lossy(name)));
+                        }
+                    }
                 }
                 return Ok(v);
             }
             self.pos = save;
         }
         self.conditional()
+    }
+
+    /// The position after the `]` that closes the `[` at `open`.
+    fn closing_bracket(&self, open: usize) -> Result<usize, String> {
+        let mut depth = 0;
+        for (i, &c) in self.s.iter().enumerate().skip(open) {
+            match c {
+                b'[' => depth += 1,
+                b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Ok(i + 1);
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.syntax("expecting ']'")
+    }
+
+    /// Evaluates the index between the `[` at `open` and the `]` before
+    /// `end`, leaving the position at `end`.
+    fn index(&mut self, open: usize, end: usize) -> Result<i64, String> {
+        self.pos = open + 1;
+        let i = self.expr()?;
+        self.skip_ws();
+        if self.pos != end - 1 {
+            return self.syntax("expecting ']'");
+        }
+        self.pos = end;
+        Ok(i)
+    }
+
+    /// The value of an array element, as [`Arith::var`].
+    fn element(&mut self, name: &[u8], i: i64) -> Result<i64, String> {
+        if self.noeval > 0 {
+            return Ok(0);
+        }
+        match self.sh.element(name, i) {
+            None => Ok(0),
+            Some(v) if v.trim_ascii().is_empty() => Ok(0),
+            Some(v) => parse_number(&v).ok_or_else(|| format!("Illegal number: {}", String::from_utf8_lossy(&v))),
+        }
     }
 
     fn conditional(&mut self) -> Result<i64, String> {
@@ -342,6 +417,12 @@ impl<'a> Arith<'a> {
         }
         if is_name_start(c) {
             let name = self.ident();
+            if self.s.get(self.pos) == Some(&b'[') {
+                let open = self.pos;
+                let end = self.closing_bracket(open)?;
+                let i = self.index(open, end)?;
+                return self.element(name, i);
+            }
             return self.var(name);
         }
         self.syntax("expecting primary")
