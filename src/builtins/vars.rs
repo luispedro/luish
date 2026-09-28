@@ -1,4 +1,4 @@
-//! `export`, `readonly`, `unset`, `set`, `shift`, `local`.
+//! `export`, `readonly`, `unset`, `set`, `shift`, `local`, `typeset`.
 
 use super::illegal_number;
 use crate::lexer::is_valid_name;
@@ -443,26 +443,162 @@ pub fn local(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         sh.berr(&argv[0], "not in a function");
         return Err(Flow::Error(2));
     }
-    for a in &argv[1..] {
+    declare(sh, argv, true)
+}
+
+/// `typeset` and `declare` (not POSIX; as in zsh and bash).
+pub fn typeset(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    declare(sh, argv, false)
+}
+
+/// The attributes that `typeset` and `local` set (`-a`, `-r`, `-x`) and
+/// remove (`+r`, `+x`).
+#[derive(Default)]
+struct Attrs {
+    array: bool,
+    readonly: Option<bool>,
+    export: Option<bool>,
+}
+
+/// `local` and `typeset`. In a function (unless `-g`), each variable is made
+/// local: `local` keeps its value, as in dash, while `typeset` starts it
+/// unset, as in zsh and bash. `-p`, or no names with `typeset`, prints the
+/// variables as `typeset` commands.
+fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
+    let cmd = &argv[0];
+    let (mut attrs, mut global, mut print) = (Attrs::default(), false, false);
+    let mut i = 1;
+    while let Some(a) = argv.get(i) {
+        let on = match a.first() {
+            Some(b'-') => true,
+            Some(b'+') => false,
+            _ => break,
+        };
+        if a.len() < 2 {
+            break;
+        }
+        i += 1;
+        if a == b"--" {
+            break;
+        }
+        for &c in &a[1..] {
+            match c {
+                b'a' if on => attrs.array = true,
+                b'g' if on && !keep => global = true,
+                b'p' if on => print = true,
+                b'r' => attrs.readonly = Some(on),
+                b'x' => attrs.export = Some(on),
+                _ => {
+                    sh.berr(cmd, format!("Illegal option {}{}", a[0] as char, c as char));
+                    // `local` is a special built-in.
+                    return if keep { Err(Flow::Error(2)) } else { Ok(2) };
+                }
+            }
+        }
+    }
+    let args = &argv[i..];
+    if print || (args.is_empty() && !keep) {
+        return Ok(print_declarations(sh, cmd, args, &attrs));
+    }
+    let local = !global && !sh.locals.is_empty();
+    for a in args {
         let (name, value) = split_arg(a);
-        if name == b"-" {
+        if name == b"-" && keep {
             continue;
         }
         if !is_valid_name(name) {
-            sh.berr(
-                &argv[0],
-                format!("{}: bad variable name", String::from_utf8_lossy(name)),
-            );
-            return Err(Flow::Error(2));
+            return Err(bad_name(sh, cmd, name));
         }
-        let frame = sh.locals.last().unwrap();
-        if !frame.iter().any(|(n, _)| n == name) {
+        if local && !sh.locals.last().unwrap().iter().any(|(n, _)| n == name) {
             let old = sh.vars.take(name);
             sh.locals.last_mut().unwrap().push((name.to_vec(), old));
+            if !keep {
+                sh.restore_var(name.to_vec(), None);
+            }
         }
-        if let Some(v) = value {
-            sh.set_var_value(name, v)?;
+        let value = match value {
+            Some(Value::Str(s)) if attrs.array => Some(Value::Array(Box::new(vec![s]))),
+            None if attrs.array => {
+                // A string becomes an array of one element (bash; zsh
+                // empties it).
+                let old = sh.vars.get_value(name);
+                match old {
+                    Some(Value::Array(_)) => None,
+                    _ => Some(Value::Array(Box::new(
+                        old.map(|v| v.elements().to_vec()).unwrap_or_default(),
+                    ))),
+                }
+            }
+            v => v,
+        };
+        match value {
+            Some(v) => sh.set_var_value(name, v)?,
+            None => {
+                sh.vars.entry(name);
+            }
+        }
+        let var = sh.vars.entry(name);
+        if let Some(on) = attrs.export {
+            var.exported = on;
+        }
+        match attrs.readonly {
+            Some(true) => var.readonly = true,
+            Some(false) if var.readonly => {
+                sh.berr(cmd, format!("{}: is read only", String::from_utf8_lossy(name)));
+                return Err(Flow::Error(2));
+            }
+            _ => {}
         }
     }
     Ok(0)
+}
+
+/// `typeset -p`: prints the variables `names`, or without names all those
+/// with the attributes in `attrs`, as `typeset` commands.
+fn print_declarations(sh: &Shell, cmd: &[u8], names: &[Vec<u8>], attrs: &Attrs) -> i32 {
+    let mut out = Vec::new();
+    let mut status = 0;
+    if names.is_empty() {
+        for (name, var) in sh.vars.sorted() {
+            let is_array = matches!(var.value, Some(Value::Array(_)));
+            if (!attrs.array || is_array)
+                && attrs.readonly.is_none_or(|r| r == var.readonly)
+                && attrs.export.is_none_or(|x| x == var.exported)
+            {
+                declaration(&mut out, name, var);
+            }
+        }
+    }
+    for name in names {
+        match sh.vars.take(name) {
+            Some(var) => declaration(&mut out, name, &var),
+            None => {
+                sh.berr(cmd, format!("no such variable: {}", String::from_utf8_lossy(name)));
+                status = 1;
+            }
+        }
+    }
+    sh.out(&out);
+    status
+}
+
+/// A `typeset` command that recreates the variable `name`.
+fn declaration(out: &mut Vec<u8>, name: &[u8], var: &crate::vars::Var) {
+    out.extend_from_slice(b"typeset ");
+    let flags = [
+        (matches!(var.value, Some(Value::Array(_))), b'a'),
+        (var.readonly, b'r'),
+        (var.exported, b'x'),
+    ];
+    if flags.iter().any(|f| f.0) {
+        out.push(b'-');
+        out.extend(flags.iter().filter(|f| f.0).map(|f| f.1));
+        out.push(b' ');
+    }
+    out.extend_from_slice(name);
+    if let Some(v) = &var.value {
+        out.push(b'=');
+        out.extend(quote_value(v));
+    }
+    out.push(b'\n');
 }

@@ -1,0 +1,20 @@
+typeset -a a=('x' 'y z' 'it'"'"'s')
+typeset s='a b'
+typeset -a e=()
+typeset -r r='1'
+typeset -rx ex='2'
+typeset u
+typeset -a a=('x' 'y z' 'it'"'"'s')
+typeset -a a=('x' 'y z' 'it'"'"'s')
+typeset -a e=()
+typeset -rx ex='2'
+typeset -r r='1'
+typeset -a x=('1')
+typeset -a y=('2')
+typeset -a s=('a b')
+status 2
+status 2
+status 2
+status 2
+status 1
+status 2

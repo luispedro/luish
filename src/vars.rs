@@ -263,9 +263,13 @@ impl Vars {
             .map(|&(n, _)| n)
     }
 
-    /// The value of a variable as a string (an array's first element).
+    /// The value of a variable as a string: an array's first element, so
+    /// an empty array is unset, as in zsh's sh emulation and bash.
     pub fn get(&self, name: &[u8]) -> Option<&[u8]> {
-        self.map.get(name).and_then(|v| v.value.as_ref()).map(Value::scalar)
+        match self.map.get(name)?.value.as_ref()? {
+            Value::Str(s) => Some(s),
+            Value::Array(a) => a.first().map(|s| &s[..]),
+        }
     }
 
     pub fn get_value(&self, name: &[u8]) -> Option<&Value> {

@@ -71,6 +71,8 @@ builtins! {
     (b"cd", cd::cd, false),
     (b"chdir", cd::cd, false),
     (b"command", misc::command, false),
+    // Not POSIX: as in zsh and bash.
+    (b"declare", vars::typeset, false),
     // Not POSIX: as in zsh.
     (b"dirs", dirstack::dirs, false),
     (b"echo", echo::echo, false),
@@ -92,6 +94,8 @@ builtins! {
     (b"test", test::test, false),
     (b"true", colon, false),
     (b"type", misc::type_, false),
+    // Not POSIX: as in zsh and bash.
+    (b"typeset", vars::typeset, false),
     (b"ulimit", misc::ulimit, false),
     (b"umask", misc::umask, false),
     (b"unalias", misc::unalias, false),

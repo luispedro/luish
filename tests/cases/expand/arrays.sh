@@ -53,6 +53,9 @@ echo $x $y
 e=()
 echo ${#e[@]} "[${e[*]}]" "[${e[@]:-empty}]"
 for x in "${e[@]}"; do echo never; done
+# `$e` is `${e[0]}`, which an empty array doesn't have.
+echo "[${e+set}] [${e-unset}] [${e:-e}] [${#e}] [${e[@]+set}]"
+(set -u; echo "$e"; echo never)
 # Operators apply to each element; `"${a[*]/...}"` to the joined string.
 a=(ab cb)
 echo ${a[@]/b/X} ${a[@]#?} ${a[@]%b} "${a[*]/b/X}" ${a[*]#?} "${a[@]//b}"

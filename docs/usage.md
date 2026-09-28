@@ -71,7 +71,8 @@ files[1]=other                       # assign an element (from the end if negati
 echo "${files[0]}" "${files[-1]}"    # an element; the index is an arithmetic expression
 for f in "${files[@]}"; do ...; done # each element as a separate word, as "$@"
 echo "${#files[@]}"                  # the number of elements
-local list=(a b c)                   # also with local, export and readonly
+local list=(a b c)                   # also with local, export, readonly and typeset
+typeset -a empty                     # an empty array (typeset -p prints variables)
 ```
 
 | Form | Value |

@@ -167,6 +167,10 @@ and `help NAME` shows the same text as here in the terminal.
 :heading-offset: 1
 ```
 
+```{include} builtins/typeset.md
+:heading-offset: 1
+```
+
 ```{include} builtins/ulimit.md
 :heading-offset: 1
 ```

@@ -140,7 +140,7 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   in `"${*/...}"`, which replaces in the joined string, as zsh does. Tests: `expand/substring.sh` (zsh),
   `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh`.
 - Arrays (`vars::Value::Array`, boxed so that `Var` stays 32 bytes): `Vars::get` gives an array's first element, so
-  everything that reads variables sees `$a`; `Value::elements` treats a string as one element. `a=x` sets element
+  everything that reads variables sees `$a` (an empty array is unset); `Value::elements` treats a string as one element. `a=x` sets element
   0. `expand_array` handles `${a[@]}` and `${a[*]}` with every operator, through `push_list` (shared with `$@`);
   `element` reads `${a[i]}`, which then goes through the scalar path. Assignments expand to `exec::simple::Assignment`
   (the index evaluated, the elements expanded as command words), made by `Shell::assign`; temporary ones before a
@@ -288,7 +288,7 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   Test: `builtins/write_errors.sh`.
 - `set -x` doesn't trace commands run while `PS4` is expanded (`in_ps4`, dash's `inps4`), which used to loop forever.
   Test: `options/xtrace_ps4_subst.sh`.
-- `export`, `readonly`, `local` and `setopt` expand assignment-like arguments as assignments, as dash 0.5.12 does,
+- `export`, `readonly`, `local`, `typeset`, `declare` and `setopt` expand assignment-like arguments as assignments, as dash 0.5.12 does,
   also through `command` and when the name comes from an expansion (`declaration_command` in `expand/mod.rs`). Test:
   `builtins/declaration_args.sh`.
 - `cd` and `pwd` use the logical directory (dash's `curdir`); a valid `$PWD` at startup is used without `getcwd`. Tests:
@@ -308,6 +308,12 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
 - `let` (`misc::let_`) evaluates each argument with `arith::eval`, as zsh does: status 1 if the last value is zero,
   or on an error, which stops at that argument (with the `$((...))` message, but no exit). No arguments is an error
   (status 1) and a leading `--` is skipped, as in zsh. Test: `builtins/let.sh` (zsh).
+- `typeset` and `declare` (`vars::typeset`) share `vars::declare` with `local`, which differs in keeping the value
+  (dash) where `typeset` starts a local unset (zsh and bash), in rejecting `-g`, and in being special. Outside a
+  function, `typeset x` puts a `Var` without a value in the map, so `typeset -p` finds it. A local made by `typeset`
+  hides a read-only variable, as in zsh (bash refuses). `-p` prints `typeset -arx name=value` with `quote_value`.
+  Not implemented: `-A` (associative arrays), `-i`, `-f`, `-U` and zsh's other options. Tests:
+  `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`.
 - `__luish_internal` (`internal.rs`) holds luish's own commands, so they don't take names from the command
   namespace; a missing or unknown subcommand is status 2. `print-git-rev` is set at compile time by `build.rs`
   (`-dirty` if `src/`, `build.rs`, `Cargo.toml` or `Cargo.lock` differ). Test: `builtins/internal_git_rev.sh`.
@@ -328,7 +334,7 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   in shells started with `-i` (which `set` can't change, so also their subshells). Unit tests check that every
   built-in has a page, that pages fit 80 columns and that `docs/builtins.md` includes them all. Tests:
   `builtins/help_noninteractive.sh`, `builtins/internal_help.sh`, `help_builtin` in `tests/interactive.rs`.
-- `local x` keeps the current value, as in dash (also an array's).
+- `local x` keeps the current value, as in dash (also an array's, and with `-a`).
 
 ### Options (`options.rs`)
 
@@ -582,6 +588,7 @@ truncates when it relocates the package.
 | Suffix aliases | `parse/alias_suffix.sh` (zsh), `builtins/alias_deviations.sh` (`command -v`) |
 | `RANDOM`, `SECONDS` and the other specials | `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
+| `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |
 | `SHLVL` | `misc/shlvl.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | Last command of `sh -c` | `exec/c_exec_last.sh` (zsh) |
