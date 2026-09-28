@@ -18,3 +18,7 @@ c 'echo ${s['
 c 'echo ${nosuch['
 # Special arrays too.
 c 'echo ${pipestatus['
+# Indices are in numeric order, not sorted as text.
+l=(a b c d e f g h i j k l)
+__luish_internal complete 'echo ${l['
+__luish_internal complete 'echo ${l[1'

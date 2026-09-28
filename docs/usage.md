@@ -285,8 +285,8 @@ Unlike zsh, luish saves the history by default: zsh keeps no file unless
 In an interactive shell, Tab starts completion.
 
 
-- `$` and `${` complete variable names, and `${name[` the indices of the array (or the keys of an associative array),
-  listed with their values;
+- `$` and `${` complete variable names, and `${name[` the indices of the array (in numeric order) or the keys of an
+  associative array, listed with their values;
 - `cd`, `pushd` and `rmdir` complete directories; for `cd` and `pushd`, when none in the current directory match,
   the directories in `CDPATH` complete instead (listed with the `CDPATH` directory they are in), as in zsh;
 - `export`, `local`, `readonly`, `unset`, `read` (except the prompt after `-p`), `getopts` (after the option

@@ -457,7 +457,8 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   After `${name[` (`subscript`), the word is the subscript, unquoted as the lexer's `read_index` does, and
   `Quote::Subscript` escapes `$`, backquote, `"`, `\`, `]` and `}` in what is inserted; the candidates come from the
   `subscripts` callback in `interactive/mod.rs` (through the `SHELL` pointer, as `ask`), called only then, so the
-  `Names` snapshot taken before each prompt doesn't copy arrays. Tests: `builtins/internal_complete_subscript.sh`,
+  `Names` snapshot taken before each prompt doesn't copy arrays. `items` lists subscripts that are numbers first, in
+  numeric order (as zsh does for indices), then the others. Tests: `builtins/internal_complete_subscript.sh`,
   `subscripts` in `complete.rs`.
 - **Expansion on Tab** (zsh's `expand-or-complete`, `ShellHelper::expansion`): a word ending at the cursor, outside
   quotes, with `*?[$` or a backquote in it, is parsed as the argument of `:` and expanded by the shell (the `expand`

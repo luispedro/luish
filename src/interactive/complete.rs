@@ -865,19 +865,30 @@ impl Target<'_> {
 }
 
 /// The candidates as the menu's items, sorted and without duplicates.
+/// Subscripts that are numbers come first, in numeric order (as zsh lists
+/// an array's indices).
 fn items(cands: &[Candidate], t: &Target) -> Vec<Item> {
-    let mut out: Vec<Item> = (cands.iter())
+    let mut out: Vec<(Option<&[u8]>, Item)> = (cands.iter())
         .filter_map(|c| {
-            Some(Item {
+            let number = t.w.kind == Kind::Subscript && !c.value.is_empty() && c.value.iter().all(u8::is_ascii_digit);
+            let item = Item {
                 display: printable(c.display.as_ref().unwrap_or(&c.value)),
                 desc: c.desc.as_deref().map(printable),
                 replacement: String::from_utf8(t.replacement(c)).ok()?,
-            })
+            };
+            Some((number.then_some(&c.value[..]), item))
         })
         .collect();
-    out.sort_unstable_by(|a, b| a.replacement.cmp(&b.replacement));
-    out.dedup_by(|a, b| a.replacement == b.replacement);
-    out
+    // Numbers compare as (length, digits); the replacement breaks ties, so
+    // equal items are next to each other.
+    out.sort_unstable_by(|(a, x), (b, y)| {
+        (a.is_none().cmp(&b.is_none()))
+            .then_with(|| a.map(<[u8]>::len).cmp(&b.map(<[u8]>::len)))
+            .then_with(|| a.cmp(b))
+            .then_with(|| x.replacement.cmp(&y.replacement))
+    });
+    out.dedup_by(|a, b| a.1.replacement == b.1.replacement);
+    out.into_iter().map(|(_, i)| i).collect()
 }
 
 /// `s` as text to show, with control characters as `?`.
@@ -2152,7 +2163,11 @@ mod tests {
     }
 
     fn fake_subscripts(name: &[u8]) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
+        if name == b"long" {
+            return Some((0..12).map(|i| (i.to_string().into_bytes(), b"x".to_vec())).collect());
+        }
         let pairs: &[(&[u8], &[u8])] = match name {
+            b"mixed" => &[(b"b", b""), (b"10", b""), (b"9", b""), (b"1a", b""), (b"a", b"")],
             b"h" => &[(b"apple", b"1"), (b"a]b", b"2"), (b"$x", b"3")],
             b"a" => &[(b"0", b"x"), (b"1", b"y")],
             _ => return None,
@@ -2172,6 +2187,12 @@ mod tests {
         assert_eq!(complete(&h, "echo ${h[a\\]"), ["a\\]b]}"]);
         assert_eq!(complete(&h, "echo \"x${h[\\$"), ["\\$x]}"]);
         assert_eq!(complete(&h, "echo ${a["), ["0]}", "1]}"]);
+        // Numbers are in numeric order, and before other keys.
+        assert_eq!(complete(&h, "echo ${long[1"), ["1]}", "10]}", "11]}"]);
+        let all = complete(&h, "echo ${long[");
+        assert_eq!(all[..3], ["0]}", "1]}", "2]}"]);
+        assert_eq!(all[9..], ["9]}", "10]}", "11]}"]);
+        assert_eq!(complete(&h, "echo ${mixed["), ["9]}", "10]}", "1a]}", "a]}", "b]}"]);
         let (_, items) = h.complete_bytes(b"echo ${a[1", b"");
         assert_eq!(items[0].desc.as_deref(), Some("y"));
         // Not a subscript: escaped, closed, or with a substitution.
