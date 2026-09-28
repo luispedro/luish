@@ -12,7 +12,7 @@ use crate::shell::{ExecResult, Flow, Shell};
 
 type EResult = Result<Vec<Assignment>, Flow>;
 use crate::sys;
-use crate::vars::{Item, Subscript};
+use crate::vars::{Item, Special, Subscript};
 
 /// An assignment after expansion.
 #[derive(Clone)]
@@ -358,7 +358,8 @@ impl Shell {
         let Command::Simple(sc) = cmd else { return };
         let Some(Word(parts)) = sc.words.first() else { return };
         let [WordPart::Literal(name)] = &parts[..] else { return };
-        if sc.assigns.iter().any(|a| a.name == b"PATH") || name.iter().any(|c| b"/*?[".contains(c)) {
+        let sets_path = |a: &Assign| a.name == b"PATH" || (a.name == b"path" && a.array().is_some());
+        if sc.assigns.iter().any(sets_path) || name.iter().any(|c| b"/*?[".contains(c)) {
             return;
         }
         if matches!(self.lookup_command(name, true), CommandKind::External) {
@@ -389,10 +390,15 @@ impl Shell {
         let mut r = None;
         for a in assigns {
             let n = a.name.clone();
-            let old = self.vars.take(&n);
+            // An array assigned to `path` sets `PATH`.
+            let tied = matches!(a.value, AssignValue::Items(_)) && self.vars.special(&n) == Some(Special::Path);
+            if tied {
+                saved.push((b"PATH".to_vec(), self.vars.save(b"PATH")));
+            }
+            let old = self.vars.save(&n);
             let set = self.assign(a);
             if set.is_ok() {
-                self.vars.entry(&n).exported = true;
+                self.vars.entry(if tied { b"PATH" } else { &n }).exported = true;
             }
             saved.push((n, old));
             if let Err(e) = set {
@@ -402,7 +408,7 @@ impl Shell {
         }
         let r = r.unwrap_or_else(|| f(self));
         for (n, old) in saved.into_iter().rev() {
-            self.restore_var(n, old);
+            self.restore_saved(n, old);
         }
         r
     }

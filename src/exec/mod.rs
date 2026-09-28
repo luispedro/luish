@@ -425,8 +425,8 @@ impl Shell {
             Err(RedirError::Open(n)) => Ok(n),
             Err(e) => Err(e.into()),
         };
-        for (name, var) in self.locals.pop().unwrap().into_iter().rev() {
-            self.restore_var(name, var);
+        for (name, saved) in self.locals.pop().unwrap().into_iter().rev() {
+            self.restore_saved(name, saved);
         }
         self.func_depth -= 1;
         self.loop_depth = saved_loop;

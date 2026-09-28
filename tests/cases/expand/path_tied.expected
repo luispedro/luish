@@ -1,0 +1,24 @@
+/usr/bin 2 /bin 0 1
+[/usr/bin]
+[/bin]
+4 [] []
+1
+/usr/bin:/a b
+/usr/bin:/a b:/c
+/usr/bin:/d:/c/e::/f
+:/d:/c/e::/f
+/bin:/usr/bin:/g
+not found
+found
+/tmp
+/usr/bin:/bin
+/h:/i
+/h:/i /i
+not associative
+/h:/i /j
+/usr/bin:/bin:/k
+/usr/bin:/bin:/k:/l
+/usr/bin:/bin:/k:/l /n /o
+/usr/bin:/bin:/k:/l /p
+read-only
+/usr/bin:/bin

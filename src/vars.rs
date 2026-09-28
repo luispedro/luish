@@ -157,6 +157,12 @@ pub struct Vars {
 /// so that scripts written for dash that use these names keep working.
 /// `pipestatus` (and bash's `PIPESTATUS`) is an array, which the shell
 /// computes (`Shell::special_elements`).
+///
+/// `path` is zsh's array of the directories in `PATH`. An array assignment
+/// to it (`path=(...)`, `path+=(...)`, `path[i]=x`, an error in dash) sets
+/// `PATH`, while a string assignment makes it an ordinary variable (as for
+/// `UID`), so that dash scripts can use the name. It is also made ordinary
+/// by `local`, and taken from the environment as an ordinary variable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Special {
     Random,
@@ -171,6 +177,7 @@ pub enum Special {
     Pipestatus,
     /// bash's name for `pipestatus`.
     PipestatusBash,
+    Path,
 }
 
 pub const SPECIALS: &[(&[u8], Special)] = &[
@@ -185,6 +192,7 @@ pub const SPECIALS: &[(&[u8], Special)] = &[
     (b"HISTCMD", Special::Histcmd),
     (b"pipestatus", Special::Pipestatus),
     (b"PIPESTATUS", Special::PipestatusBash),
+    (b"path", Special::Path),
 ];
 
 impl Special {
@@ -238,15 +246,53 @@ enum RandomSeed {
 #[derive(Debug)]
 pub struct ReadonlyError;
 
+/// A variable put aside by `local` or a temporary assignment, for
+/// `Shell::restore_saved`: its value, and whether its name was a special
+/// that was set (as an assignment makes most of them ordinary).
+#[derive(Debug)]
+pub struct Saved {
+    var: Option<Var>,
+    special: bool,
+}
+
+/// Sets element `i` of an array (counting from the end if it is negative),
+/// adding empty elements up to it; a string becomes an array. With
+/// `append`, the value is appended to the element.
+pub fn set_index(value: &mut Option<Value>, i: i64, v: Vec<u8>, append: bool) -> Result<(), AssignError> {
+    let len = value.as_ref().map_or(0, |v| v.elements().len());
+    let i = if i < 0 { i + len as i64 } else { i };
+    if i < 0 {
+        return Err(AssignError::BadSubscript);
+    }
+    let i = i as usize;
+    let a = value.get_or_insert_with(|| Value::Array(Box::default())).make_array();
+    if i >= a.len() {
+        a.resize(i + 1, Vec::new());
+    }
+    if append {
+        a[i].extend_from_slice(&v);
+    } else {
+        a[i] = v;
+    }
+    Ok(())
+}
+
 impl Vars {
     pub fn from_env() -> Vars {
         let mut map = HashMap::default();
+        let mut specials = Specials::default();
         for (k, v) in std::env::vars_os() {
             use std::os::unix::ffi::OsStrExt;
             let k = k.as_bytes().to_vec();
-            // As in zsh, the specials ignore the environment.
-            if !crate::lexer::is_valid_name(&k) || Special::from_name(&k).is_some() {
+            if !crate::lexer::is_valid_name(&k) {
                 continue;
+            }
+            // As in zsh, the specials ignore the environment, except `path`,
+            // which isn't special in zsh's sh emulation.
+            match Special::from_name(&k) {
+                Some(Special::Path) => specials.active &= !Special::Path.bit(),
+                Some(_) => continue,
+                None => {}
             }
             map.insert(
                 k,
@@ -257,10 +303,7 @@ impl Vars {
                 },
             );
         }
-        Vars {
-            map,
-            specials: Specials::default(),
-        }
+        Vars { map, specials }
     }
 
     /// The special parameter `name` names, if it is set.
@@ -305,7 +348,7 @@ impl Vars {
             Special::Euid => crate::sys::geteuid().into(),
             Special::Gid => crate::sys::getgid().into(),
             Special::Egid => crate::sys::getegid().into(),
-            Special::Histcmd | Special::Pipestatus | Special::PipestatusBash => 0,
+            Special::Histcmd | Special::Pipestatus | Special::PipestatusBash | Special::Path => 0,
         };
         n.to_string().into_bytes()
     }
@@ -337,6 +380,11 @@ impl Vars {
         if self.specials.random.get() == RandomSeed::Auto {
             self.specials.random.set(RandomSeed::Unseeded);
         }
+    }
+
+    /// Makes a special an ordinary variable.
+    pub fn deactivate(&mut self, s: Special) {
+        self.specials.active &= !s.bit();
     }
 
     /// The names of the specials that are set.
@@ -424,25 +472,7 @@ impl Vars {
                 return Ok(());
             }
         };
-        let len = var.value.as_ref().map_or(0, |v| v.elements().len());
-        let i = if i < 0 { i + len as i64 } else { i };
-        if i < 0 {
-            return Err(AssignError::BadSubscript);
-        }
-        let i = i as usize;
-        let a = var
-            .value
-            .get_or_insert_with(|| Value::Array(Box::default()))
-            .make_array();
-        if i >= a.len() {
-            a.resize(i + 1, Vec::new());
-        }
-        if append {
-            a[i].extend_from_slice(&value);
-        } else {
-            a[i] = value;
-        }
-        Ok(())
+        set_index(&mut var.value, i, value, append)
     }
 
     /// Appends elements to an array (`a+=(x y)`), making the variable an
@@ -561,6 +591,26 @@ impl Vars {
 
     pub fn take(&self, name: &[u8]) -> Option<Var> {
         self.map.get(name).cloned()
+    }
+
+    /// Saves a variable, to put back with `restore_saved`.
+    pub fn save(&self, name: &[u8]) -> Saved {
+        Saved {
+            var: self.take(name),
+            special: self.special(name).is_some(),
+        }
+    }
+
+    /// Puts back a variable saved with `save`, and a special's tie.
+    pub fn restore_saved(&mut self, name: Vec<u8>, saved: Saved) {
+        if let Some(s) = Special::from_name(&name) {
+            if saved.special {
+                self.specials.active |= s.bit();
+            } else {
+                self.specials.active &= !s.bit();
+            }
+        }
+        self.restore(name, saved.var);
     }
 
     /// A copy of all the variables, for `changes_since`.

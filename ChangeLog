@@ -1,4 +1,8 @@
 Unreleased
+    * `path` (zsh): the directories of `PATH` as an array, which
+      `path=(...)` and `path+=(...)` set
+    * Special variables such as `UID` are special again after a function
+      with `local UID` returns, or after `UID=x cmd`
     * `[[ =~ ]]` sets `match`, `mbegin` and `mend` (zsh) and `BASH_REMATCH`
       (bash)
     * `pipestatus` (zsh) and `PIPESTATUS` (bash): the statuses of the

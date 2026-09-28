@@ -5,7 +5,7 @@ use crate::exec::AssignValue;
 use crate::lexer::is_valid_name;
 use crate::options::{EXTENDED, Kind, OPTIONS, Opt, Options, Setting, VALUES, find_group, group_of, parse_bool};
 use crate::shell::{ExecResult, Flow, Shell};
-use crate::vars::{Item, Subscript, Value};
+use crate::vars::{Item, Special, Subscript, Value};
 
 /// Single-quotes a value for output that can be read back by the shell.
 /// dash's `single_quote`: the text in single quotes, with each run of
@@ -234,7 +234,11 @@ fn unset_element(sh: &mut Shell, cmd: &[u8], name: &[u8], index: &[u8]) -> Resul
         sh.berr(cmd, msg);
         Flow::Error(2)
     })?;
-    let len = sh.vars.get_value(name).map_or(0, |v| v.elements().len()) as i64;
+    let len = match sh.vars.get_value(name) {
+        Some(v) => v.elements().len(),
+        None if sh.vars.special(name) == Some(Special::Path) => sh.special_elements(name).map_or(0, |v| v.len()),
+        None => 0,
+    } as i64;
     if (-len..len).contains(&i) {
         sh.set_element(name, &Subscript::Index(i), Vec::new(), false)?;
     }
@@ -559,10 +563,15 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
             return Err(bad_name(sh, cmd, name));
         }
         if local && !sh.locals.last().unwrap().iter().any(|(n, _)| n == name) {
-            let old = sh.vars.take(name);
+            let old = sh.vars.save(name);
             sh.locals.last_mut().unwrap().push((name.to_vec(), old));
             if !keep {
                 sh.restore_var(name.to_vec(), None);
+            }
+            // A local `path` is an ordinary variable (unset, as in dash),
+            // which doesn't change `PATH` (zsh makes `PATH` local too).
+            if sh.vars.special(name) == Some(Special::Path) {
+                sh.vars.deactivate(Special::Path);
             }
         }
         // A string becomes an array of one element, or an associative
@@ -573,7 +582,11 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
         } else {
             None
         };
+        // `path` (tied to `PATH`) is already an array.
+        let tied = sh.vars.special(name) == Some(Special::Path);
         let converted = match old {
+            _ if tied && attrs.assoc => Err("indexed to associative"),
+            _ if tied => Ok(None),
             Some(Value::Array(_)) if attrs.assoc => Err("indexed to associative"),
             Some(Value::Assoc(_)) if attrs.array => Err("associative to indexed"),
             Some(Value::Str(s)) if attrs.assoc => {

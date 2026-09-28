@@ -26,3 +26,9 @@ RANDOM=9 SECONDS=10 UID=11 $SH -c '[ $SECONDS -lt 10 ] && [ $UID != 11 ] && echo
 env | grep -E "^(RANDOM|SECONDS|UID)="'
 readonly SECONDS
 (SECONDS=3) 2>/dev/null || echo readonly
+# A special made ordinary by `local` or before a command is special again
+# afterwards.
+f() { local GID=x; echo $GID; }
+f
+GID=y true
+case $GID in *[!0-9]*|'') echo bad;; *) echo gid;; esac

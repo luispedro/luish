@@ -10,7 +10,7 @@ use crate::lexer::{AliasMap, ParseError, Parser};
 use crate::options::{Opt, Options};
 use crate::signals::{self, NSIG};
 use crate::sys;
-use crate::vars::{AssignError, Item, Special, Subscript, Value, Var, Vars};
+use crate::vars::{AssignError, Item, Saved, Special, Subscript, Value, Var, Vars};
 
 /// Non-local control flow.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +63,7 @@ pub struct Shell {
     /// Exit status of the last command substitution in the current command.
     pub subst_status: Option<i32>,
     /// Saved variables for `local`, one frame per function call.
-    pub locals: Vec<Vec<(Vec<u8>, Option<Var>)>>,
+    pub locals: Vec<Vec<(Vec<u8>, Saved)>>,
     /// Position inside a group of options for `getopts`.
     /// Writing a built-in's output failed (checked after it returns).
     pub out_failed: std::cell::Cell<bool>,
@@ -219,18 +219,43 @@ impl Shell {
             Special::Histcmd => Some(crate::interactive::histcmd().to_string().into_bytes()),
             // As for any array, its first element.
             Special::Pipestatus | Special::PipestatusBash => Some(self.pipestatus.first()?.to_string().into_bytes()),
+            Special::Path => Some(self.vars.get(b"PATH")?.split(|&c| c == b':').next()?.to_vec()),
             s => Some(self.vars.special_value(s)),
         }
     }
 
     /// The elements of a variable that isn't stored, for `${a[@]}` and
-    /// `${a[i]}`: `pipestatus`, or one element for `LINENO` or another
-    /// special.
+    /// `${a[i]}`: `pipestatus`, `path`, or one element for `LINENO` or
+    /// another special.
     pub fn special_elements(&self, name: &[u8]) -> Option<Vec<Vec<u8>>> {
-        if let Some(Special::Pipestatus | Special::PipestatusBash) = self.vars.special(name) {
-            return Some(self.pipestatus.iter().map(|s| s.to_string().into_bytes()).collect());
+        match self.vars.special(name) {
+            Some(Special::Pipestatus | Special::PipestatusBash) => {
+                Some(self.pipestatus.iter().map(|s| s.to_string().into_bytes()).collect())
+            }
+            Some(Special::Path) => Some(self.path_elements()),
+            _ => self.get_var(name).map(|v| vec![v]),
         }
-        self.get_var(name).map(|v| vec![v])
+    }
+
+    /// The directories of `PATH`, for `path`: as in zsh, an empty `PATH` is
+    /// one empty directory, and an unset one none.
+    fn path_elements(&self) -> Vec<Vec<u8>> {
+        self.vars
+            .get(b"PATH")
+            .map_or_else(Vec::new, |p| p.split(|&c| c == b':').map(<[u8]>::to_vec).collect())
+    }
+
+    /// Whether `name` is `path` while it is tied to `PATH`.
+    fn is_tied_path(&self, name: &[u8]) -> bool {
+        self.vars.special(name) == Some(Special::Path)
+    }
+
+    /// An array assignment to `path` while it is tied: sets `PATH`.
+    fn assign_path(&mut self, dirs: Vec<Vec<u8>>) -> Result<(), Flow> {
+        if self.vars.var(b"path").is_some_and(|v| v.readonly) {
+            return Err(self.readonly_error(b"path"));
+        }
+        self.set_var(b"PATH", dirs.join(&b':'))
     }
 
     /// Sets a variable, reporting an error if it is readonly.
@@ -263,6 +288,9 @@ impl Shell {
         if let Value::Str(s) = value {
             return self.set_var(name, s);
         }
+        if matches!(value, Value::Array(_)) && self.is_tied_path(name) {
+            return self.assign_path(value.elements().to_vec());
+        }
         if self.vars.set_value(name, value).is_err() {
             return Err(self.readonly_error(name));
         }
@@ -273,7 +301,17 @@ impl Shell {
     /// Assigns to (or with `append`, appends to) an element of an array: an
     /// index counts from the end if it is negative.
     pub fn set_element(&mut self, name: &[u8], sub: &Subscript, value: Vec<u8>, append: bool) -> Result<(), Flow> {
-        match self.vars.set_element(name, sub, value, append) {
+        let r = match sub {
+            Subscript::Index(i) if self.is_tied_path(name) => {
+                let mut dirs = Some(Value::Array(Box::new(self.path_elements())));
+                match crate::vars::set_index(&mut dirs, *i, value, append) {
+                    Ok(()) => return self.assign_path(dirs.unwrap().elements().to_vec()),
+                    Err(e) => Err(e),
+                }
+            }
+            _ => self.vars.set_element(name, sub, value, append),
+        };
+        match r {
             Ok(()) => {
                 self.after_assign(name);
                 Ok(())
@@ -346,6 +384,11 @@ impl Shell {
 
     /// Appends elements to an array (`a+=(x y)`).
     pub fn append_elements(&mut self, name: &[u8], items: Vec<Vec<u8>>) -> Result<(), Flow> {
+        if self.is_tied_path(name) {
+            let mut dirs = self.path_elements();
+            dirs.extend(items);
+            return self.assign_path(dirs);
+        }
         if self.vars.append_elements(name, items).is_err() {
             return Err(self.readonly_error(name));
         }
@@ -371,14 +414,23 @@ impl Shell {
         self.optoff = None;
     }
 
-    /// Puts back a saved variable (after `local` or a temporary
-    /// assignment).
+    /// Puts back a variable as it was (`None` to unset it).
     pub fn restore_var(&mut self, name: Vec<u8>, var: Option<Var>) {
         if matches!(&name[..], b"PATH" | b"OPTIND") {
             self.vars.restore(name.clone(), var);
             self.var_changed(&name);
         } else {
             self.vars.restore(name, var);
+        }
+    }
+
+    /// Puts back a variable saved by `local` or a temporary assignment.
+    pub fn restore_saved(&mut self, name: Vec<u8>, saved: Saved) {
+        if matches!(&name[..], b"PATH" | b"OPTIND") {
+            self.vars.restore_saved(name.clone(), saved);
+            self.var_changed(&name);
+        } else {
+            self.vars.restore_saved(name, saved);
         }
     }
 
