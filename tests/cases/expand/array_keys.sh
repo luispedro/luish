@@ -21,13 +21,11 @@ printf '<%s>' ${!h[@]}; echo
 printf '<%s>' "${!h[*]}"; echo
 unset 'h[k]'
 printf '<%s>' "${!h[@]}"; echo
-# The index must be @ or *, with no operator (bash's indirection, `${!x}`,
-# isn't supported).
-(echo "${!a[1]}")
-echo "status $?"
-(echo "${!a[@]:-d}")
-echo "status $?"
-(x=a; echo "${!x}")
+# A lone "${!e[@]}" gives no field, as "$@" does.
+set -- "${!e[@]}"
+echo "$#"
+# No operator (`${!a[1]}` is an indirection: expand/indirect.sh).
+(echo "${!a[@]:-d}") 2>/dev/null
 echo "status $?"
 # `$!` still works.
 echo "[${!}] [${!-unset}]"

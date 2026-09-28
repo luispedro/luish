@@ -1,4 +1,7 @@
 Unreleased
+    * `${!x}` (bash): indirection, also with an operator (`${!x:-d}`)
+      and to elements (`x='a[1]'`); `${!prefix@}` lists variable names
+    * A lone `"${!a[@]}"` on an empty array gives no word, as `"$@"`
     * Tab after `${a[` completes the array's indices (in numeric order)
       or keys
     * `\]` is a `]` in the key of `${h[...]}`, as in `h[...]=v`

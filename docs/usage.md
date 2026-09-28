@@ -86,6 +86,8 @@ read -A words                        # read the fields of a line (bash: read -a 
 | `"${a[@]}"`, `"${a[*]}"` | The elements as separate words, or joined with the first character of `IFS`, as `"$@"` and `"$*"` |
 | `${#a[@]}`, `${#a[i]}` | The number of elements, the length of an element |
 | `"${!a[@]}"`, `"${!a[*]}"` | The indices (`0 1 2 ...`), or the keys of an associative array, as in bash |
+| `${!x}` | Indirection, as in bash: the parameter named by the value of `x`, which may be `name[index]` or a positional or special parameter. Operators apply to that parameter (`${!x:-default}`), and `${!a[i]}` goes through an element |
+| `"${!prefix@}"`, `"${!prefix*}"` | The names of the set variables that start with `prefix`, sorted, as in bash |
 | `${a[@]:offset:length}` | The elements from `offset` on (at most `length` of them) |
 | `${a[@]#pattern}`, `${a[@]/pattern/rep}`, ... | The operator applied to each element |
 

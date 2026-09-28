@@ -219,7 +219,7 @@ shell tracks the current file as well as the line, for provenance and for error 
   `glob.bare_qualifiers` are, unless their syntax is an error in POSIX sh. With them off, POSIX scripts must parse and
   behave exactly as before and run as fast. The lexer checks such options in one place (as it does
   `Parser::bareglobqual`). Indexed and associative arrays are done, always on (see `DEVELOPING.md`), with bash's
-  `${!a[@]}` for the keys; still to do for them: zsh's `${(k)a}` (which needs parameter flags), and the special
+  `${!a[@]}` for the keys (and its indirection, `${!x}` and `${!prefix@}`); still to do for them: zsh's `${(k)a}` (which needs parameter flags), and the special
   arrays (`pipestatus`, `path` and `dirstack`, and `match` and `BASH_REMATCH` for `=~`, are done). `typeset` and
   `declare` are done (with `-f`, `-i`, `-l`, `-u` and zsh's `-U`), and extensions can read and set arrays
   (`sh::getarray`, `sh::getmap`). Tab completes `${a[` (indices, or keys).

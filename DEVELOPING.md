@@ -164,9 +164,15 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   lexed as in double quotes). `savestate` writes `typeset -gA name` before the value. Tests: `builtins/assoc.sh` (zsh),
   `builtins/assoc_luish.sh`.
 - `${!a[@]}` and `${!a[*]}` (bash's keys) are `ParamOp::Keys`, lexed only as `${!name[@]}` or `${!name[*]}` directly
-  followed by `}`; any other `${!` followed by a name is a bad substitution (`name` `!`, so `${!}` and `${!-x}` are
-  still `$!`). `expand_array` pushes the keys (or the indices as strings) with `push_list`. Test:
-  `expand/array_keys.sh`.
+  followed by `}`. `${!prefix@}` and `${!prefix*}` (names) are `ParamOp::Names`, with the prefix as the name and the
+  index `At` or `Star`. `expand_array` pushes either list with `push_list`. Any other `${!` followed by a name or a
+  digit is an indirection (bash): the name becomes `ParamName::Indirect`, and the index and operator are read as usual
+  (an `[@]` or `[*]` index with an operator is a bad substitution). A `${!` followed by anything else is still `$!`
+  (`${!}`, `${!-x}`, `${!#}`). `expand_indirect` reads the value (of the element, with an index), parses it with
+  `parse_reference` (a name, `name[index]` with the index as a literal word, digits, or a special character), and
+  expands a `ParamExp` for it with the same operator (cloned; only indirections pay for it). `is_list` counts an
+  indirection as a list, so that a lone `"${!x}"` gives no field when `x` is `@` or `a[@]` with nothing in it;
+  `expand_indirect` sets `cur_exists` for other targets. Tests: `expand/array_keys.sh`, `expand/indirect.sh`.
 - Arithmetic: a variable holding only blanks is 0. Quotes and backslashes inside `$((...))` are kept, so they are
   errors, as in dash. Test: `expand/arith_quotes.sh`.
 - Command substitution drops NUL bytes (so does `read`) and sets `$?` only for commands of assignments alone (so
@@ -667,6 +673,7 @@ truncates when it relocates the package.
 | Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
 | Associative arrays | `builtins/assoc.sh` (zsh), `builtins/assoc_luish.sh` |
 | `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |
+| `${!x}`, `${!prefix@}` | `expand/indirect.sh` |
 | `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh`, `builtins/typeset_case.sh` (zsh), `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh`, `builtins/typeset_functions.sh` (zsh), `builtins/typeset_functions_luish.sh` |
 | `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |

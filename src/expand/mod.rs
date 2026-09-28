@@ -355,6 +355,7 @@ impl Shell {
                 }
                 _ => return None,
             }),
+            ParamName::Indirect(_) => unreachable!(),
         }
     }
 
@@ -372,6 +373,9 @@ impl Shell {
         {
             push_result(v, quoted, f);
             return Ok(());
+        }
+        if let ParamName::Indirect(base) = &pe.name {
+            return self.expand_indirect(pe, base, quoted, f);
         }
         // `${a[i]}` is an element, `${a[@]}` and `${a[*]}` the list.
         let (val, element) = match (&pe.index, &pe.name) {
@@ -500,13 +504,56 @@ impl Shell {
                 let v = val.unwrap_or_default();
                 push_result(pattern::trim(&v, &pat, how), quoted, f);
             }
-            ParamOp::Length | ParamOp::Keys | ParamOp::Substring(..) | ParamOp::Replace(..) => unreachable!(),
+            ParamOp::Length | ParamOp::Keys | ParamOp::Names | ParamOp::Substring(..) | ParamOp::Replace(..) => {
+                unreachable!()
+            }
             ParamOp::Bad(_) => {
                 self.error("Bad substitution");
                 return Err(Flow::Error(2));
             }
         }
         Ok(())
+    }
+
+    /// `${!name...}` (bash): the operator applies to the parameter named
+    /// by the value of `name` (or of the element `${!name[i]}`), which can
+    /// be a variable, `name[index]`, a positional or a special parameter.
+    fn expand_indirect(&mut self, pe: &ParamExp, base: &ParamName, quoted: bool, f: &mut Fields) -> EResult<()> {
+        if let ParamOp::Bad(_) = pe.op {
+            self.error("Bad substitution");
+            return Err(Flow::Error(2));
+        }
+        let reference = match (&pe.index, base) {
+            (Some(Index::Expr(w)), ParamName::Var(name)) => {
+                let sub = self.subscript(name, w)?;
+                self.element(name, &sub)
+            }
+            _ => self.param_value(base),
+        };
+        let Some(reference) = reference else {
+            // As in bash, also without `set -u`.
+            self.error(format!("{}: invalid indirect expansion", param_display(base)));
+            return Err(Flow::Error(2));
+        };
+        let Some((name, index)) = parse_reference(&reference) else {
+            self.error(format!(
+                "{}: invalid variable name",
+                String::from_utf8_lossy(&reference)
+            ));
+            return Err(Flow::Error(2));
+        };
+        let target = ParamExp {
+            name,
+            index,
+            op: pe.op.clone(),
+            colon: pe.colon,
+        };
+        // A lone `"${!x}"` gives no field if `x` names `@` or `a[@]` (see
+        // `is_list`).
+        if quoted && !is_list(&target) {
+            f.cur_exists = true;
+        }
+        self.expand_param(&target, quoted, f)
     }
 
     /// An element of an array: an index counts from the end if it is
@@ -547,6 +594,16 @@ impl Shell {
             push_list(&keys, at, quoted, self.ifs_first(), f);
             return Ok(());
         }
+        if pe.op == ParamOp::Names {
+            // `name` is the prefix. As in `set`, specials (`RANDOM`) are
+            // listed only once assigned (bash lists them all).
+            let names: Vec<_> = (self.vars.sorted().into_iter())
+                .filter(|(n, v)| v.value.is_some() && n.starts_with(name))
+                .map(|(n, _)| n.to_vec())
+                .collect();
+            push_list(&names, at, quoted, self.ifs_first(), f);
+            return Ok(());
+        }
         let items = match self.vars.get_value(name) {
             Some(v) => Some(v.elements().to_vec()),
             None => self.special_elements(name),
@@ -575,7 +632,7 @@ impl Shell {
         match &pe.op {
             ParamOp::Plain => push_list(&items, at, quoted, sep, f),
             ParamOp::Length => push_result(items.len().to_string().as_bytes(), quoted, f),
-            ParamOp::Keys => unreachable!(),
+            ParamOp::Keys | ParamOp::Names => unreachable!(),
             ParamOp::Default(w) => {
                 if is_set {
                     push_list(&items, at, quoted, sep, f);
@@ -872,9 +929,13 @@ fn is_list(pe: &ParamExp) -> bool {
         (ParamName::Special(b'@'), None) => {
             matches!(pe.op, ParamOp::Plain | ParamOp::Substring(..) | ParamOp::Replace(..))
         }
+        // Resolved in `expand_indirect`.
+        (ParamName::Indirect(_), _) => true,
         (_, Some(Index::At)) => matches!(
             pe.op,
             ParamOp::Plain
+                | ParamOp::Keys
+                | ParamOp::Names
                 | ParamOp::Substring(..)
                 | ParamOp::Replace(..)
                 | ParamOp::RemoveSmallestSuffix(_)
@@ -900,5 +961,36 @@ fn param_display(name: &ParamName) -> String {
         ParamName::Var(n) => String::from_utf8_lossy(n).into_owned(),
         ParamName::Positional(n) => n.to_string(),
         ParamName::Special(c) => (*c as char).to_string(),
+        ParamName::Indirect(n) => format!("!{}", param_display(n)),
     }
+}
+
+/// The parameter that the value of `x` names in `${!x}`, as in bash: a
+/// variable, `name[index]`, a positional parameter or a special one. As
+/// in `unset 'a[i]'`, the index is not expanded, only evaluated (or taken
+/// as the key of an associative array).
+fn parse_reference(s: &[u8]) -> Option<(ParamName, Option<Index>)> {
+    match s {
+        [b'0'] => return Some((ParamName::Special(b'0'), None)),
+        [c @ (b'@' | b'*' | b'#' | b'?' | b'-' | b'$' | b'!')] => return Some((ParamName::Special(*c), None)),
+        _ if !s.is_empty() && s.iter().all(u8::is_ascii_digit) => {
+            let n = std::str::from_utf8(s).ok()?.parse().unwrap_or(usize::MAX);
+            return Some((ParamName::Positional(n), None));
+        }
+        _ => {}
+    }
+    let (name, index) = match s.split_last() {
+        Some((b']', rest)) => {
+            let open = rest.iter().position(|&c| c == b'[')?;
+            let index = match &rest[open + 1..] {
+                b"" => return None,
+                b"@" => Index::At,
+                b"*" => Index::Star,
+                i => Index::Expr(Word(vec![WordPart::Literal(i.to_vec())])),
+            };
+            (&rest[..open], Some(index))
+        }
+        _ => (s, None),
+    };
+    crate::lexer::is_valid_name(name).then(|| (ParamName::Var(name.to_vec()), index))
 }

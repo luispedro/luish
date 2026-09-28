@@ -843,26 +843,51 @@ impl Parser {
             }
             self.pos = save;
         }
-        if self.at(0) == Some(b'!') && self.at(1).is_some_and(is_name_start) {
-            // `${!a[@]}` and `${!a[*]}` (bash's keys). Anything else after
-            // `${!` (bash's indirection) is a bad substitution.
+        if self.at(0) == Some(b'!') && self.at(1).is_some_and(|c| is_name_start(c) || c.is_ascii_digit()) {
+            // bash's `${!a[@]}` and `${!a[*]}` (keys), `${!prefix@}` and
+            // `${!prefix*}` (names), and `${!name...}` (indirection, also
+            // with an operator). In dash, these are bad substitutions.
             self.pos += 1;
             let save = (self.pos, self.lineno);
-            if let Some(name) = self.read_param_name()
-                && self.at(0) == Some(b'[')
-                && let Some(index @ (Index::At | Index::Star)) = self.read_index()?
-                && self.at(0) == Some(b'}')
-            {
-                self.pos += 1;
-                return Ok(WordPart::Param(Box::new(ParamExp {
+            let Some(name) = self.read_param_name() else {
+                unreachable!()
+            };
+            let list = |name, index, op| {
+                Ok(WordPart::Param(Box::new(ParamExp {
                     name,
                     index: Some(index),
-                    op: ParamOp::Keys,
+                    op,
                     colon: false,
-                })));
+                })))
+            };
+            if matches!(name, ParamName::Var(_)) {
+                match (self.at(0), self.at(1)) {
+                    (Some(c @ (b'@' | b'*')), Some(b'}')) => {
+                        self.pos += 2;
+                        let index = if c == b'@' { Index::At } else { Index::Star };
+                        return list(name, index, ParamOp::Names);
+                    }
+                    (Some(b'['), _) => match self.read_index()? {
+                        Some(index @ (Index::At | Index::Star)) if self.at(0) == Some(b'}') => {
+                            self.pos += 1;
+                            return list(name, index, ParamOp::Keys);
+                        }
+                        Some(index @ Index::Expr(_)) => {
+                            let mut part = self.read_param_op(ParamName::Indirect(Box::new(name)), ctx)?;
+                            if let WordPart::Param(pe) = &mut part {
+                                pe.index = Some(index);
+                            }
+                            return Ok(part);
+                        }
+                        _ => {
+                            (self.pos, self.lineno) = save;
+                            return bad(self, ParamName::Special(b'!'), false);
+                        }
+                    },
+                    _ => {}
+                }
             }
-            (self.pos, self.lineno) = save;
-            return bad(self, ParamName::Special(b'!'), false);
+            return self.read_param_op(ParamName::Indirect(Box::new(name)), ctx);
         }
         let Some(name) = self.read_param_name() else {
             return if self.at(0).is_none() {

@@ -328,6 +328,9 @@ pub enum ParamName {
     Positional(usize),
     /// One of `@ * # ? - $ ! 0`.
     Special(u8),
+    /// `${!name}` (bash): the parameter named by the value of `name` (or
+    /// of `${!name[index]}`'s element), which may have a subscript.
+    Indirect(Box<ParamName>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -336,6 +339,9 @@ pub enum ParamOp {
     Length,
     /// `${!a[@]}` and `${!a[*]}` (bash): the indices or keys of an array.
     Keys,
+    /// `${!prefix@}` and `${!prefix*}` (bash): the names of the variables
+    /// that start with the prefix (the index is `At` or `Star`).
+    Names,
     Default(Word),
     Assign(Word),
     Error(Word),

@@ -432,10 +432,17 @@ impl<'a> Printer<'a> {
             ParamName::Var(_) => !joins,
             ParamName::Positional(n) => *n < 10 && !joins,
             ParamName::Special(_) => true,
+            ParamName::Indirect(_) => false,
         };
         if pe.op == ParamOp::Plain && short {
             self.w(b"$");
             self.param_name(pe);
+            return;
+        }
+        if pe.op == ParamOp::Names {
+            self.w(b"${!");
+            self.name(&pe.name);
+            self.w(if pe.index == Some(Index::Star) { b"*}" } else { b"@}" });
             return;
         }
         self.w(match pe.op {
@@ -445,7 +452,7 @@ impl<'a> Printer<'a> {
         });
         self.param_name(pe);
         let (op, word): (&[u8], _) = match &pe.op {
-            ParamOp::Plain | ParamOp::Length | ParamOp::Keys => {
+            ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names => {
                 self.w(b"}");
                 return;
             }
@@ -488,11 +495,7 @@ impl<'a> Printer<'a> {
 
     /// The name of a parameter expansion, with its subscript.
     fn param_name(&mut self, pe: &ParamExp) {
-        match &pe.name {
-            ParamName::Var(n) => self.w(n),
-            ParamName::Positional(n) => self.w(n.to_string().as_bytes()),
-            ParamName::Special(c) => self.w(&[*c]),
-        }
+        self.name(&pe.name);
         match &pe.index {
             None => {}
             Some(Index::At) => self.w(b"[@]"),
@@ -501,6 +504,18 @@ impl<'a> Printer<'a> {
                 self.w(b"[");
                 self.word(w);
                 self.w(b"]");
+            }
+        }
+    }
+
+    fn name(&mut self, name: &ParamName) {
+        match name {
+            ParamName::Var(n) => self.w(n),
+            ParamName::Positional(n) => self.w(n.to_string().as_bytes()),
+            ParamName::Special(c) => self.w(&[*c]),
+            ParamName::Indirect(n) => {
+                self.w(b"!");
+                self.name(n);
             }
         }
     }
@@ -585,7 +600,7 @@ mod tests {
                     word(&mut item.value);
                 }),
                 WordPart::Param(pe) => match &mut pe.op {
-                    ParamOp::Plain | ParamOp::Length | ParamOp::Keys => {}
+                    ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names => {}
                     ParamOp::Default(w)
                     | ParamOp::Assign(w)
                     | ParamOp::Error(w)

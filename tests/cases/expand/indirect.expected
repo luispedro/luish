@@ -1,0 +1,43 @@
+hello ello hel ell heLlo set
+y=hello
+[] unset null
+assigned assigned
+[] null
+status 2
+q
+r
+r r
+<p><q><r><><q><r>
+p-q-r
+v
+w
+1 p 1
+q
+status 2
+one
+ten
+$0
+10
+<eight><nine><ten>
+0
+0
+1
+1
+[] status 2
+[a b] status 2
+[1+2] status 2
+[a[]] status 2
+[y}] status 2
+[#y] status 2
+[!y] status 2
+unset status 2
+length status 2
+nounset status 2
+<ya><yb><yc>
+ya,yb,yc
+0
+ya yb yc yl
+ya yb yc
+h() {
+    echo ${!x} ${!1:-d} ${!a[1]#p} ${!x@} "${!x*}" ${!a[@]}
+}
