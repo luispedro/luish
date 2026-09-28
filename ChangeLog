@@ -1,5 +1,6 @@
 Unreleased
     * `typeset` and `declare`, as in zsh and bash
+    * `read -A` (zsh) and `read -a NAME` (bash) read into an array
     * An empty array reads as unset, as in zsh and bash
     * Arrays, as in zsh and bash: `a=(x y)`, `${a[i]}`, `"${a[@]}"`, `a+=(z)`
     * `NAME+=value` appends to a variable

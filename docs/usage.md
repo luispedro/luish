@@ -73,6 +73,7 @@ for f in "${files[@]}"; do ...; done # each element as a separate word, as "$@"
 echo "${#files[@]}"                  # the number of elements
 local list=(a b c)                   # also with local, export, readonly and typeset
 typeset -a empty                     # an empty array (typeset -p prints variables)
+read -A words                        # read the fields of a line (bash: read -a words)
 ```
 
 | Form | Value |

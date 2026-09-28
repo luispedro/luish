@@ -2,6 +2,8 @@
 
 ```text
 read [-r] [-p prompt] name...
+read [-r] [-p prompt] -A name
+read [-r] [-p prompt] -a name
 ```
 
 Read a line from standard input into variables.
@@ -20,6 +22,14 @@ backslash at the end of the line continues it on the next line.
 
 `-p prompt`
 : Print `prompt` on standard error first, if standard input is a terminal.
+
+`-A`
+: Read the fields into the array `name` (not POSIX; as in zsh). The line
+  is split as for several names, but the last field ends at the next
+  delimiter too; an empty line gives an empty array.
+
+`-a name`
+: The same as `-A` (as in bash).
 
 ```sh
 while IFS=: read -r user _ uid _; do

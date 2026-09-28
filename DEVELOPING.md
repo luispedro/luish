@@ -314,6 +314,9 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   hides a read-only variable, as in zsh (bash refuses). `-p` prints `typeset -arx name=value` with `quote_value`.
   Not implemented: `-A` (associative arrays), `-i`, `-f`, `-U` and zsh's other options. Tests:
   `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`.
+- `read -A` (zsh) and `read -a NAME` (bash) split the line with the same `next_field` as `read` uses for all names
+  but the last, so there is no empty element after a trailing delimiter (bash; zsh has one). Tests:
+  `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh`.
 - `__luish_internal` (`internal.rs`) holds luish's own commands, so they don't take names from the command
   namespace; a missing or unknown subcommand is status 2. `print-git-rev` is set at compile time by `build.rs`
   (`-dirty` if `src/`, `build.rs`, `Cargo.toml` or `Cargo.lock` differ). Test: `builtins/internal_git_rev.sh`.
@@ -589,6 +592,7 @@ truncates when it relocates the package.
 | `RANDOM`, `SECONDS` and the other specials | `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
 | `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh` |
+| `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |
 | `SHLVL` | `misc/shlvl.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | Last command of `sh -c` | `exec/c_exec_last.sh` (zsh) |

@@ -3,6 +3,7 @@
 use crate::lexer::is_valid_name;
 use crate::shell::{ExecResult, Shell};
 use crate::sys;
+use crate::vars::Value;
 
 /// Reads one line from fd 0 a byte at a time, so that nothing after the
 /// newline is consumed. Returns the bytes (each with an "escaped" flag) and
@@ -39,9 +40,13 @@ fn read_line(raw: bool) -> (Vec<(u8, bool)>, bool) {
     }
 }
 
+/// `read`. `-a NAME` (bash) and `-A` (zsh, with one name) read the fields
+/// into an array, split as field splitting does (bash: zsh has an empty
+/// element after a trailing delimiter).
 pub fn read(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let mut raw = false;
     let mut prompt = None;
+    let mut array: Option<Option<Vec<u8>>> = None;
     let mut i = 1;
     while i < argv.len() {
         let a = &argv[i];
@@ -56,16 +61,26 @@ pub fn read(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         while j < a.len() {
             match a[j] {
                 b'r' => raw = true,
-                b'p' => {
-                    if j + 1 < a.len() {
-                        prompt = Some(a[j + 1..].to_vec());
+                b'A' if array.is_none() => array = Some(None),
+                c @ (b'p' | b'a') => {
+                    let arg = if j + 1 < a.len() {
+                        Some(a[j + 1..].to_vec())
                     } else {
                         i += 1;
-                        prompt = argv.get(i).cloned();
+                        argv.get(i).cloned()
+                    };
+                    if c == b'p' {
+                        prompt = arg;
+                    } else if arg.is_none() {
+                        sh.berr(&argv[0], "No arg for -a option");
+                        return Ok(2);
+                    } else {
+                        array = Some(arg);
                     }
                     j = a.len();
                     continue;
                 }
+                b'A' => {}
                 c => {
                     sh.berr(&argv[0], format!("Illegal option -{}", c as char));
                     return Ok(2);
@@ -75,7 +90,20 @@ pub fn read(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         }
         i += 1;
     }
-    let names = &argv[i..];
+    let mut names = &argv[i..];
+    let array_name;
+    match &array {
+        // As in bash, names after `-a NAME` are ignored.
+        Some(Some(name)) => {
+            array_name = [name.clone()];
+            names = &array_name;
+        }
+        Some(None) if names.len() > 1 => {
+            sh.berr(&argv[0], "only one array argument allowed");
+            return Ok(2);
+        }
+        _ => {}
+    }
     if names.is_empty() {
         sh.berr(&argv[0], "arg count");
         return Ok(2);
@@ -99,6 +127,34 @@ pub fn read(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     while pos < line.len() && is_ws(&line[pos]) {
         pos += 1;
     }
+    // The field at `pos`, moving `pos` past it and its delimiter.
+    let next_field = |pos: &mut usize| -> Vec<u8> {
+        let start = *pos;
+        while *pos < line.len() && !is_ifs(&line[*pos]) {
+            *pos += 1;
+        }
+        let v = line[start..*pos].iter().map(|c| c.0).collect();
+        // Skip the delimiter: whitespace, at most one non-whitespace IFS
+        // character, then whitespace.
+        while *pos < line.len() && is_ws(&line[*pos]) {
+            *pos += 1;
+        }
+        if *pos < line.len() && is_ifs(&line[*pos]) && !is_ws(&line[*pos]) {
+            *pos += 1;
+            while *pos < line.len() && is_ws(&line[*pos]) {
+                *pos += 1;
+            }
+        }
+        v
+    };
+    if array.is_some() {
+        let mut fields = Vec::new();
+        while pos < line.len() {
+            fields.push(next_field(&mut pos));
+        }
+        sh.set_var_value(&names[0], Value::Array(Box::new(fields)))?;
+        return Ok(if eof { 1 } else { 0 });
+    }
     for (k, name) in names.iter().enumerate() {
         let value: Vec<u8> = if k + 1 == names.len() {
             // The last variable gets the rest of the line, minus trailing
@@ -111,23 +167,7 @@ pub fn read(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             pos = line.len();
             v
         } else {
-            let start = pos;
-            while pos < line.len() && !is_ifs(&line[pos]) {
-                pos += 1;
-            }
-            let v = line[start..pos].iter().map(|c| c.0).collect();
-            // Skip the delimiter: whitespace, at most one non-whitespace
-            // IFS character, then whitespace.
-            while pos < line.len() && is_ws(&line[pos]) {
-                pos += 1;
-            }
-            if pos < line.len() && is_ifs(&line[pos]) && !is_ws(&line[pos]) {
-                pos += 1;
-                while pos < line.len() && is_ws(&line[pos]) {
-                    pos += 1;
-                }
-            }
-            v
+            next_field(&mut pos)
         };
         sh.set_var(name, value)?;
     }
