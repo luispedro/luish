@@ -1,4 +1,5 @@
 Unreleased
+    * Syntax highlighting shows unset variables in a different colour
     * `[[ ... ]]` conditions, as in zsh and bash
     * `function NAME { ... }` definitions, as in zsh and bash
     * `__luish_internal check-cache` reruns the startup files to check

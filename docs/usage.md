@@ -163,10 +163,11 @@ The line editor colours the command line as it is typed.
 SGR is the parameters of a terminal escape sequence. Its entries replace these defaults:
 
 ```text
-keyword=1;34:command=32:unknown=1;31:string=33:var=36:subst=35:op=1:redir=1:comment=90:assign=34:select=7:desc=90:suggest=90
+keyword=1;34:command=32:unknown=1;31:string=33:var=36:unset=2;36:subst=35:op=1:redir=1:comment=90:assign=34:select=7:desc=90:suggest=90
 ```
 
-`select` and `desc` are for the completion menu, and `suggest` for autosuggestions. An empty SGR leaves a class
+`unset` is for `$NAME` or `${NAME}` when `NAME` is not set (and not assigned earlier on the line, or in a `for`
+loop there). `select` and `desc` are for the completion menu, and `suggest` for autosuggestions. An empty SGR leaves a class
 uncoloured. `LUISH_HIGHLIGHT=none`, or a non-empty `$NO_COLOR`, turns highlighting off.
 
 ## History

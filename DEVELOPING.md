@@ -378,7 +378,9 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   screen. rustyline's default `keyseq_timeout` is None (a lone Esc waits for the next key); luish sets 400 ms in
   emacs mode (zsh's `KEYTIMEOUT`) and 100 ms in vi mode.
 - **Highlighting** (`highlight.rs`): command lookups are cached until the next prompt; `$LUISH_HIGHLIGHT` and
-  `$NO_COLOR` are read before each prompt.
+  `$NO_COLOR` are read before each prompt. `$NAME` and `${NAME}` get the `unset` class when `NAME` is not in
+  `Names::vars`, unless an earlier word in the text is `NAME=...` (as an assignment or an argument, as for `export`)
+  or a `for` name, or the cursor is on it. Test: `unset_variables` in `highlight.rs`.
 - **Autosuggestions**: the hint while the cursor is at the end of a non-blank, non-continuation line and the menu
   isn't open; accepted with rustyline's `CompleteHint`. The search goes from the newest entry and stops at the first
   match. Test: `autosuggestions` in `tests/interactive.rs`.

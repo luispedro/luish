@@ -6,7 +6,9 @@
 //! byte with a rough tokenizer that follows quoting, expansions, operators,
 //! redirections, here-documents, comments and reserved words, and colours
 //! command names by whether they can be found. A name under the cursor is
-//! not marked as unknown, since it may still be being typed.
+//! not marked as unknown, since it may still be being typed. Likewise,
+//! `$NAME` and `${NAME}` are marked when `NAME` is not set, unless an earlier
+//! part of the text assigns it (`NAME=`, also as an argument, or `for NAME`).
 //!
 //! The colours come from `$LUISH_HIGHLIGHT`, a colon-separated list of
 //! `class=SGR` entries (as in `GREP_COLORS`) that override the defaults; an
@@ -30,6 +32,8 @@ pub enum Class {
     Unknown,
     String,
     Var,
+    /// `$NAME` or `${NAME}` for a variable that is not set.
+    Unset,
     /// The delimiters of `$(...)` and backquotes.
     Subst,
     Op,
@@ -54,6 +58,7 @@ const DEFAULTS: &[(&str, Class, &str)] = &[
     ("unknown", Class::Unknown, "1;31"),
     ("string", Class::String, "33"),
     ("var", Class::Var, "36"),
+    ("unset", Class::Unset, "2;36"),
     ("subst", Class::Subst, "35"),
     ("op", Class::Op, "1"),
     ("redir", Class::Redir, "1"),
@@ -129,6 +134,9 @@ struct Scan<'a> {
     s: &'a [u8],
     cls: Vec<Class>,
     known: &'a dyn Fn(&[u8]) -> bool,
+    is_set: &'a dyn Fn(&[u8]) -> bool,
+    /// The names assigned so far in the text.
+    assigned: Vec<Vec<u8>>,
     /// The cursor's position in the text.
     cursor: Option<usize>,
     /// Pending here-documents: the delimiter, and whether tabs are stripped.
@@ -286,6 +294,12 @@ impl Scan<'_> {
         let e = w.end;
         let plain = !w.quoted && !w.expanded;
         let text = &w.text[..];
+        let raw = &self.s[start..e];
+        if let Some(eq) = raw.iter().position(|&c| c == b'=')
+            && crate::lexer::is_valid_name(&raw[..eq])
+        {
+            self.assigned.push(raw[..eq].to_vec());
+        }
         if *pattern {
             if plain && text == b"esac" {
                 self.paint(start, e, Class::Keyword);
@@ -296,6 +310,7 @@ impl Scan<'_> {
         }
         match *after {
             After::For => {
+                self.assigned.push(w.text.clone());
                 *after = After::ForName;
                 return e;
             }
@@ -332,7 +347,6 @@ impl Scan<'_> {
         if !*cmd || (*precommand && text.starts_with(b"-")) {
             return e;
         }
-        let raw = &self.s[start..e];
         if plain && (RESERVED.contains(&text) || text == b"{" || text == b"}" || text == b"!") {
             self.paint(start, e, Class::Keyword);
             match text {
@@ -513,19 +527,36 @@ impl Scan<'_> {
                         break;
                     }
                 }
-                k.min(s.len())
+                let k = k.min(s.len());
+                if depth == 0 && crate::lexer::is_valid_name(&s[i + 2..k - 1]) {
+                    return self.name(i, i + 2..k - 1, k);
+                }
+                k
             }
             (Some(&c), _) if c.is_ascii_alphabetic() || c == b'_' => {
-                i + 1
+                let e = i
+                    + 1
                     + s[i + 1..]
                         .iter()
                         .take_while(|c| c.is_ascii_alphanumeric() || **c == b'_')
-                        .count()
+                        .count();
+                return self.name(i, i + 1..e, e);
             }
             (Some(&c), _) if c.is_ascii_digit() || b"@*#?-$!".contains(&c) => i + 2,
             _ => return i + 1,
         };
         self.paint(i, e, Class::Var);
+        e
+    }
+
+    /// Paints the expansion `i..e` of the variable named by `name`, marking
+    /// it if the variable is unset (but not while the cursor is on it).
+    fn name(&mut self, i: usize, name: std::ops::Range<usize>, e: usize) -> usize {
+        let name = &self.s[name];
+        let set = (self.is_set)(name)
+            || self.assigned.iter().any(|a| a == name)
+            || self.cursor.is_some_and(|c| (i..=e).contains(&c));
+        self.paint(i, e, if set { Class::Var } else { Class::Unset });
         e
     }
 
@@ -604,12 +635,19 @@ impl Scan<'_> {
 }
 
 /// Classifies each byte of `text`. `known` says whether a command name
-/// can be found.
-pub fn classify(text: &[u8], cursor: Option<usize>, known: &dyn Fn(&[u8]) -> bool) -> Vec<Class> {
+/// can be found, and `is_set` whether a variable is set.
+pub fn classify(
+    text: &[u8],
+    cursor: Option<usize>,
+    known: &dyn Fn(&[u8]) -> bool,
+    is_set: &dyn Fn(&[u8]) -> bool,
+) -> Vec<Class> {
     let mut sc = Scan {
         s: text,
         cls: vec![Class::Plain; text.len()],
         known,
+        is_set,
+        assigned: Vec::new(),
         cursor,
         heredocs: Vec::new(),
         in_backquote: false,
@@ -706,7 +744,8 @@ impl Highlighter for ShellHelper {
         };
         let context = &self.highlight.context;
         let text = [&context[..], line.as_bytes()].concat();
-        let cls = classify(&text, Some(context.len() + pos), &|name| self.is_known(name));
+        let is_set = |name: &[u8]| self.names.vars.iter().any(|v| v == name);
+        let cls = classify(&text, Some(context.len() + pos), &|name| self.is_known(name), &is_set);
         String::from_utf8(render(line.as_bytes(), &cls[context.len()..], colors))
             .map_or(Cow::Borrowed(line), Cow::Owned)
     }
@@ -723,7 +762,7 @@ mod tests {
     use super::*;
 
     /// One letter per byte: `k`eyword, `c`ommand, `u`nknown, `s`tring,
-    /// `v`ar, `$` substitution, `o`perator, `r`edirection, `#` comment,
+    /// `v`ar, `x` unset variable, `$` substitution, `o`perator, `r`edirection, `#` comment,
     /// `a`ssignment, `.` plain.
     fn classes(text: &str) -> String {
         classes_at(text, None)
@@ -731,7 +770,8 @@ mod tests {
 
     fn classes_at(text: &str, cursor: Option<usize>) -> String {
         let known = |n: &[u8]| [&b"echo"[..], b"cat", b"ls", b"sudo"].contains(&n);
-        classify(text.as_bytes(), cursor, &known)
+        let is_set = |n: &[u8]| !n.starts_with(b"UN");
+        classify(text.as_bytes(), cursor, &known, &is_set)
             .into_iter()
             .map(|c| match c {
                 Class::Plain => '.',
@@ -740,6 +780,7 @@ mod tests {
                 Class::Unknown => 'u',
                 Class::String => 's',
                 Class::Var => 'v',
+                Class::Unset => 'x',
                 Class::Subst => '$',
                 Class::Op => 'o',
                 Class::Redir => 'r',
@@ -792,6 +833,26 @@ mod tests {
     }
 
     #[test]
+    fn unset_variables() {
+        assert_eq!(
+            classes("echo $UNX ${UNX} $x ${UNX:-a} $1"),
+            "cccc.xxxx.xxxxxx.vv.vvvvvvvvv.vv"
+        );
+        assert_eq!(classes("echo \"$UNX\" ${#UNX}"), "cccc.sxxxxs.vvvvvvv");
+        // Unless assigned earlier in the text.
+        assert_eq!(classes("echo $UNX; UNX=1"), "cccc.xxxxo.aaaa.");
+        assert_eq!(classes("UNX=1; echo $UNX"), "aaaa.o.cccc.vvvv");
+        assert_eq!(classes("echo UNX=1; echo $UNX"), "cccc......o.cccc.vvvv");
+        assert_eq!(
+            classes("for UNX in a; do echo $UNX; done"),
+            "kkk.....kk..o.kk.cccc.vvvvo.kkkk"
+        );
+        // Nor while the cursor is on it.
+        assert_eq!(classes_at("echo $UN", Some(8)), "cccc.vvv");
+        assert_eq!(classes_at("echo $UN ", Some(9)), "cccc.xxx.");
+    }
+
+    #[test]
     fn redirections() {
         assert_eq!(classes("ls 2>&1 >out <in"), "cc.rrrr.r....r..");
         assert_eq!(classes(">x ls"), "r..cc");
@@ -832,7 +893,7 @@ mod tests {
         assert_eq!(c.0[Class::Command as usize], b"");
         assert_eq!(c.0[Class::String as usize], b"33");
         assert_eq!(Colors::parse(b"none"), None);
-        let cls = classify(b"if ls", None, &|_| true);
+        let cls = classify(b"if ls", None, &|_| true, &|_| true);
         assert_eq!(render(b"if ls", &cls, &c), b"\x1b[4mif\x1b[0m ls");
     }
 }
