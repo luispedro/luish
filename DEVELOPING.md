@@ -550,6 +550,10 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   (`Vars::changes_since`) and put back after the prompt is built; no snapshot is taken if nothing has a
   `prompt-vars` hook or file. `prompt-rewrite` hooks that take a parameter are found by looking up the function in
   the extension's AST when it is registered.
+- Arrays: `sh::getvar` gives `$a` (a string), so existing extensions are unaffected; `sh::getarray` and `sh::getmap`
+  read the elements and keys, and `sh::setvar` is overloaded on Rhai's `Array` and `Map`, going through
+  `Shell::try_set_var_value` (the variable's attributes, the local scope and the `path` tie apply, and errors are
+  thrown, not printed). A map's keys come out sorted (Rhai's maps are ordered). Test: `tests/plugins/arrays.sh`.
 - **Bytes** (`bytes.rs`), as Python's `surrogateescape` (PEP 383), but Rust strings can't hold lone surrogates, so
   each byte `b` of an invalid UTF-8 sequence becomes U+10FF00 + `b` (bytes 0x80–0xFF map to U+10FF80–U+10FFFF), and
   back. Values round-trip exactly, except that real U+10FF80–U+10FFFF characters in shell data become raw bytes; that

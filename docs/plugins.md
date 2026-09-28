@@ -412,8 +412,10 @@ Extensions reach the shell through the `sh` module:
 |---|---|
 | `sh::hook(kind, fn)` | Register a hook: `"chpwd"`, `"post-rc"`, `"prompt-vars"` or `"prompt-rewrite"` |
 | `sh::completer(command, fn)` | Register a completer for a command's arguments (`-default-` for the others) |
-| `sh::getvar(name)` | The variable's value, or `()` if it is unset |
-| `sh::setvar(name, value)` | Set a shell variable. Throws an error if it is readonly |
+| `sh::getvar(name)` | The variable's value (`$name`: an array's first element), or `()` if it is unset |
+| `sh::getarray(name)` | The variable's elements (`"${name[@]}"`) as an array of strings: a string is one element, and an associative array gives its values. `()` if it is unset |
+| `sh::getmap(name)` | An associative array as a map, or `()` if the variable is unset or isn't one |
+| `sh::setvar(name, value)` | Set a shell variable to a string, to an array of strings (as `name=(...)`) or to a map of strings (an associative array). Throws an error if it is readonly |
 | `sh::export(name)`, `sh::unsetvar(name)` | Export or unset a variable |
 | `sh::cwd()` | The current directory (as `$PWD`) |
 | `sh::plugin_dir()` | The plugin's directory |

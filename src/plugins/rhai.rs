@@ -21,6 +21,7 @@ use super::{HookKind, Loading};
 use crate::interactive::{Candidate, Completion, DEFAULT_COMPLETER, Suffix};
 use crate::prompt::Prompt;
 use crate::shell::{ExecResult, Flow, Shell};
+use crate::vars::{Assoc, Value};
 use crate::{signals, sys};
 
 pub(super) type RhaiResult<T> = Result<T, Box<EvalAltResult>>;
@@ -204,6 +205,14 @@ pub(super) fn to_shell(s: &str) -> RhaiResult<Vec<u8>> {
     Ok(b)
 }
 
+/// An element of an array or map given to `setvar`, which must be a string.
+fn shell_string(v: &Dynamic) -> RhaiResult<Vec<u8>> {
+    match v.read_lock::<rhai::ImmutableString>() {
+        Some(s) => to_shell(&s),
+        None => error(format!("setvar: an element can't be {}", v.type_name())),
+    }
+}
+
 fn hook_kind(name: &str) -> Option<HookKind> {
     match name {
         "chpwd" => Some(HookKind::Chpwd),
@@ -361,6 +370,52 @@ fn sh_module() -> Module {
         check_name(name)?;
         let value = to_shell(value)?;
         with_shell(|sh| sh.try_set_var(name.as_bytes(), value).or_else(error))
+    });
+    m.set_native_fn("getarray", |name: &str| {
+        let name = to_bytes(name);
+        with_shell(|sh| {
+            let elements = match sh.vars.get_value(&name) {
+                Some(v) => v.elements().to_vec(),
+                None => match sh.special_elements(&name) {
+                    Some(e) => e,
+                    None => return Ok(Dynamic::UNIT),
+                },
+            };
+            Ok(elements
+                .iter()
+                .map(|e| Dynamic::from(to_str(e)))
+                .collect::<rhai::Array>()
+                .into())
+        })
+    });
+    m.set_native_fn("getmap", |name: &str| {
+        with_shell(|sh| {
+            let Some(Value::Assoc(h)) = sh.vars.get_value(&to_bytes(name)) else {
+                return Ok(Dynamic::UNIT);
+            };
+            let map: rhai::Map = h
+                .keys()
+                .iter()
+                .zip(h.values())
+                .map(|(k, v)| (to_str(k).into(), to_str(v).into()))
+                .collect();
+            Ok(map.into())
+        })
+    });
+    m.set_native_fn("setvar", |name: &str, elements: rhai::Array| {
+        check_name(name)?;
+        let elements = elements.iter().map(shell_string).collect::<RhaiResult<Vec<_>>>()?;
+        let value = Value::Array(Box::new(elements));
+        with_shell(|sh| sh.try_set_var_value(name.as_bytes(), value).or_else(error))
+    });
+    m.set_native_fn("setvar", |name: &str, map: rhai::Map| {
+        check_name(name)?;
+        let mut h = Assoc::default();
+        for (k, v) in &map {
+            h.insert(&to_shell(k)?, shell_string(v)?);
+        }
+        let value = Value::Assoc(Box::new(h));
+        with_shell(|sh| sh.try_set_var_value(name.as_bytes(), value).or_else(error))
     });
     m.set_native_fn("export", |name: &str| {
         check_name(name)?;

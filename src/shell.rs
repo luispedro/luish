@@ -278,17 +278,17 @@ impl Shell {
 
     /// An array assignment to a tied array: sets `PATH`, or replaces the
     /// directory stack (whose directories aren't checked, as in zsh).
-    fn assign_tied(&mut self, s: Special, elements: Vec<Vec<u8>>) -> Result<(), Flow> {
+    fn assign_tied(&mut self, s: Special, elements: Vec<Vec<u8>>) -> Result<(), String> {
         let name = s.name();
         if self.vars.var(name).is_some_and(|v| v.readonly) {
-            return Err(self.readonly_error(name));
+            return Err(readonly_message(name));
         }
         match s {
             Special::Dirstack => {
                 self.dirstack = elements;
                 Ok(())
             }
-            _ => self.set_var(b"PATH", elements.join(&b':')),
+            _ => self.try_set_var(b"PATH", elements.join(&b':')),
         }
     }
 
@@ -321,7 +321,7 @@ impl Shell {
             _ => value,
         };
         if self.vars.set(name, value).is_err() {
-            return Err(format!("{}: is read only", String::from_utf8_lossy(name)));
+            return Err(readonly_message(name));
         }
         if self.opt(Opt::Allexport) {
             self.vars.entry(name).exported = true;
@@ -348,10 +348,10 @@ impl Shell {
 
     /// Converts elements to assign with the attributes `t` (see `convert`),
     /// but doesn't remove repeated ones (`-U`).
-    fn convert_all<'a>(&mut self, t: Transform, elements: impl Iterator<Item = &'a mut Vec<u8>>) -> Result<(), Flow> {
+    fn convert_all<'a>(&mut self, t: Transform, elements: impl Iterator<Item = &'a mut Vec<u8>>) -> Result<(), String> {
         if t.any() {
             for e in elements {
-                *e = self.convert(t, std::mem::take(e)).map_err(|msg| self.fail(msg))?;
+                *e = self.convert(t, std::mem::take(e))?;
             }
         }
         Ok(())
@@ -366,9 +366,14 @@ impl Shell {
     /// Assigns a whole value (an array), reporting an error if the variable
     /// is readonly.
     pub fn set_var_value(&mut self, name: &[u8], value: Value) -> Result<(), Flow> {
+        self.try_set_var_value(name, value).map_err(|msg| self.fail(msg))
+    }
+
+    /// Assigns a whole value, or returns the error message.
+    pub fn try_set_var_value(&mut self, name: &[u8], value: Value) -> Result<(), String> {
         let t = self.vars.transform(name);
         let value = match value {
-            Value::Str(s) => return self.set_var(name, s),
+            Value::Str(s) => return self.try_set_var(name, s),
             Value::Array(mut a) if t.any() => {
                 self.convert_all(t, a.iter_mut())?;
                 if t.unique {
@@ -388,7 +393,7 @@ impl Shell {
             return self.assign_tied(s, value.elements().to_vec());
         }
         if self.vars.set_value(name, value).is_err() {
-            return Err(self.readonly_error(name));
+            return Err(readonly_message(name));
         }
         self.after_assign(name);
         Ok(())
@@ -435,7 +440,7 @@ impl Shell {
                         if t.unique {
                             crate::vars::dedupe(&mut a);
                         }
-                        return self.assign_tied(s, a);
+                        return self.assign_tied(s, a).map_err(|msg| self.fail(msg));
                     }
                     Err(e) => Err(e),
                 }
@@ -482,7 +487,8 @@ impl Shell {
                 std::iter::from_fn(|| Some((items.next()?.value, items.next()?.value))).collect()
             };
             let mut pairs = pairs;
-            self.convert_all(self.vars.transform(name), pairs.iter_mut().map(|(_, v)| v))?;
+            self.convert_all(self.vars.transform(name), pairs.iter_mut().map(|(_, v)| v))
+                .map_err(|msg| self.fail(msg))?;
             if self.vars.set_pairs(name, pairs, append).is_err() {
                 return Err(self.readonly_error(name));
             }
@@ -523,14 +529,14 @@ impl Shell {
     /// Appends elements to an array (`a+=(x y)`).
     pub fn append_elements(&mut self, name: &[u8], mut items: Vec<Vec<u8>>) -> Result<(), Flow> {
         let t = self.vars.transform(name);
-        self.convert_all(t, items.iter_mut())?;
+        self.convert_all(t, items.iter_mut()).map_err(|msg| self.fail(msg))?;
         if let Some(s) = self.tied(name) {
             let mut a = self.tied_elements(s);
             a.extend(items);
             if t.unique {
                 crate::vars::dedupe(&mut a);
             }
-            return self.assign_tied(s, a);
+            return self.assign_tied(s, a).map_err(|msg| self.fail(msg));
         }
         if self.vars.append_elements(name, items).is_err() {
             return Err(self.readonly_error(name));
@@ -545,7 +551,7 @@ impl Shell {
     }
 
     fn readonly_error(&self, name: &[u8]) -> Flow {
-        self.fail(format!("{}: is read only", String::from_utf8_lossy(name)))
+        self.fail(readonly_message(name))
     }
 
     fn after_assign(&mut self, name: &[u8]) {
@@ -829,4 +835,8 @@ impl Shell {
         }
         self.last_status
     }
+}
+
+fn readonly_message(name: &[u8]) -> String {
+    format!("{}: is read only", String::from_utf8_lossy(name))
 }

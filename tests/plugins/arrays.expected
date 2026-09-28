@@ -1,0 +1,26 @@
+getvar: 1
+a: ["1", "2 3"]
+s: ["str"]
+e: []
+h: ["v", "y"]
+path: ["/bin", "/usr/bin"]
+pipestatus: ["0", "1"]
+unset: () ()
+map: #{"k": "v", "x": "y"}, of an array: ()
+r: r: is read only
+r: r: is read only
+bad-name: bad-name: bad variable name
+bad-name: bad-name: bad variable name
+n: setvar: an element can't be i64
+n: string contains a NUL byte
+n: setvar: an element can't be i64
+n: string contains a NUL byte
+n: arithmetic expression: expecting primary: "1+"
+typeset -a b=('x y' '' 'z')
+typeset -A m=(['a b']='c' ['k1']='v1')
+typeset -a e=()
+typeset -ai n=('3' '7')
+typeset -aU u=('q' 'p')
+PATH=/p1:/p2
+in f: local
+q=global
