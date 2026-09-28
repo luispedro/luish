@@ -1,4 +1,5 @@
 Unreleased
+    * `${x:offset:length}` and `${x/pattern/replacement}`, as in zsh and bash
     * Syntax highlighting shows unset variables in a different colour
     * `[[ ... ]]` conditions, as in zsh and bash
     * `function NAME { ... }` definitions, as in zsh and bash

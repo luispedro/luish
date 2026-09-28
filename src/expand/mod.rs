@@ -191,7 +191,8 @@ impl Shell {
                 // A quoted word is a field even when it expands to nothing,
                 // except a lone "$@" with no positional parameters.
                 let lone_at = matches!(inner.as_slice(), [WordPart::Param(pe)]
-                    if pe.name == ParamName::Special(b'@') && matches!(pe.op, ParamOp::Plain));
+                    if pe.name == ParamName::Special(b'@')
+                        && matches!(pe.op, ParamOp::Plain | ParamOp::Substring(..) | ParamOp::Replace(..)));
                 if !lone_at {
                     f.cur_exists = true;
                 }
@@ -217,15 +218,8 @@ impl Shell {
                 push_result(&out, quoted, f);
             }
             WordPart::Arith(w) => {
-                let mut s = Vec::new();
-                self.arith_text(&w.0, &mut s)?;
-                match arith::eval(self, &s) {
-                    Ok(v) => push_result(v.to_string().as_bytes(), quoted, f),
-                    Err(msg) => {
-                        self.error(msg);
-                        return Err(Flow::Error(2));
-                    }
-                }
+                let v = self.arith_word(w)?;
+                push_result(v.to_string().as_bytes(), quoted, f);
             }
         }
         Ok(())
@@ -329,6 +323,12 @@ impl Shell {
             push_result(n.to_string().as_bytes(), quoted, f);
             return Ok(());
         }
+        if let ParamOp::Substring(..) | ParamOp::Replace(..) = pe.op {
+            if val.is_none() && nounset {
+                return Err(self.unset_error(&pe.name, "parameter not set"));
+            }
+            return self.expand_slice_op(pe, val, multi, quoted, f);
+        }
         let is_set = match &val {
             _ if multi => !pe.colon || multi_len(self) > 0,
             Some(v) => !pe.colon || !v.is_empty(),
@@ -406,7 +406,7 @@ impl Shell {
                 let v = val.unwrap_or_default();
                 push_result(pattern::trim(&v, &pat, how), quoted, f);
             }
-            ParamOp::Length => unreachable!(),
+            ParamOp::Length | ParamOp::Substring(..) | ParamOp::Replace(..) => unreachable!(),
             ParamOp::Bad(_) => {
                 self.error("Bad substitution");
                 return Err(Flow::Error(2));
@@ -417,26 +417,99 @@ impl Shell {
 
     /// `$@`, `$*`, `"$@"`, and `"$*"`.
     fn push_positional(&mut self, at: bool, quoted: bool, f: &mut Fields) {
-        if f.field_context() && (at || !quoted) {
-            for (i, p) in self.positional.iter().enumerate() {
-                if quoted {
-                    if i > 0 {
-                        f.finish();
-                    }
-                    f.push_quoted(p);
+        push_list(&self.positional, at, quoted, self.ifs_first(), f);
+    }
+
+    /// `${x:offset:length}` and `${x/pattern/replacement}`, where `val` is
+    /// the value of `x`. For `$@` and `$*`, they apply to the list of
+    /// positional parameters and to each of them.
+    fn expand_slice_op(
+        &mut self,
+        pe: &ParamExp,
+        val: Option<Vec<u8>>,
+        multi: bool,
+        quoted: bool,
+        f: &mut Fields,
+    ) -> EResult<()> {
+        let at = pe.name == ParamName::Special(b'@');
+        match &pe.op {
+            ParamOp::Substring(offset, len) => {
+                let offset = self.arith_word(offset)?;
+                let len = len.as_ref().map(|w| self.arith_word(w)).transpose()?;
+                if multi {
+                    // As in zsh, `$0` is included only from offset 0, and a
+                    // negative offset counts from the end of the positional
+                    // parameters only.
+                    let mut items;
+                    let list: &[Vec<u8>] = if offset == 0 {
+                        items = vec![self.arg0.clone()];
+                        items.extend(self.positional.iter().cloned());
+                        &items
+                    } else {
+                        &self.positional
+                    };
+                    let offset = if offset > 0 { offset - 1 } else { offset };
+                    let (start, end) = self.substring_range(list.len(), offset, len)?;
+                    push_list(&list[start..end], at, quoted, self.ifs_first(), f);
                 } else {
-                    if i > 0 {
-                        f.break_field();
-                    }
-                    f.push_expansion(p);
+                    let v = val.unwrap_or_default();
+                    let (start, end) = self.substring_range(v.len(), offset, len)?;
+                    push_result(&v[start..end], quoted, f);
                 }
             }
-            return;
+            ParamOp::Replace(how, pat, rep) => {
+                let pat = self.expand_pattern(pat)?;
+                let rep = self.expand_word_str(rep)?;
+                if multi && quoted && !at {
+                    // As in zsh, `"${*/a/b}"` replaces in the joined string.
+                    let sep: Vec<u8> = self.ifs_first().into_iter().collect();
+                    let joined = self.positional.join(&sep[..]);
+                    push_result(&pattern::replace(&joined, &pat, *how, &rep), quoted, f);
+                } else if multi {
+                    let items: Vec<_> = (self.positional.iter())
+                        .map(|p| pattern::replace(p, &pat, *how, &rep))
+                        .collect();
+                    push_list(&items, at, quoted, self.ifs_first(), f);
+                } else {
+                    let v = val.unwrap_or_default();
+                    push_result(&pattern::replace(&v, &pat, *how, &rep), quoted, f);
+                }
+            }
+            _ => unreachable!(),
         }
-        // Outside a field context, dash joins `$@` like `$*`.
-        let sep: Vec<u8> = self.ifs_first().into_iter().collect();
-        let joined = self.positional.join(&sep[..]);
-        push_result(&joined, quoted, f);
+        Ok(())
+    }
+
+    /// The range `${x:offset:length}` selects out of `n` bytes or elements.
+    /// As in zsh, a negative offset counts from the end (and before the
+    /// start it is the start), and a negative length leaves out that many
+    /// at the end.
+    fn substring_range(&self, n: usize, offset: i64, len: Option<i64>) -> EResult<(usize, usize)> {
+        let n = n as i64;
+        let start = if offset < 0 { (n + offset).max(0) } else { offset.min(n) };
+        let end = match len {
+            None => n,
+            Some(l) if l >= 0 => start.saturating_add(l).min(n),
+            Some(l) => {
+                let end = n + l;
+                if end < start {
+                    self.error(format!("substring expression: {end} < {start}"));
+                    return Err(Flow::Error(1));
+                }
+                end
+            }
+        };
+        Ok((start as usize, end as usize))
+    }
+
+    /// Evaluates a word as an arithmetic expression, as in `$((...))`.
+    fn arith_word(&mut self, w: &Word) -> EResult<i64> {
+        let mut s = Vec::new();
+        self.arith_text(&w.0, &mut s)?;
+        arith::eval(self, &s).map_err(|msg| {
+            self.error(msg);
+            Flow::Error(2)
+        })
     }
 
     /// Runs `$(...)` in a subshell and returns its output without trailing
@@ -529,6 +602,30 @@ fn declaration_command(argv: &[Vec<u8>]) -> Option<Option<NameTest>> {
             k += 1;
         }
     }
+}
+
+/// Pushes a list of values, as `$@` (`at`) or `$*` pushes the positional
+/// parameters. `sep` is the first character of IFS.
+fn push_list(items: &[Vec<u8>], at: bool, quoted: bool, sep: Option<u8>, f: &mut Fields) {
+    if f.field_context() && (at || !quoted) {
+        for (i, p) in items.iter().enumerate() {
+            if quoted {
+                if i > 0 {
+                    f.finish();
+                }
+                f.push_quoted(p);
+            } else {
+                if i > 0 {
+                    f.break_field();
+                }
+                f.push_expansion(p);
+            }
+        }
+        return;
+    }
+    // Outside a field context, dash joins `$@` like `$*`.
+    let sep: Vec<u8> = sep.into_iter().collect();
+    push_result(&items.join(&sep[..]), quoted, f);
 }
 
 fn push_result(s: &[u8], quoted: bool, f: &mut Fields) {

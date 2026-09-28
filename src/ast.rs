@@ -302,10 +302,39 @@ pub enum ParamOp {
     RemoveLargestSuffix(Word),
     RemoveSmallestPrefix(Word),
     RemoveLargestPrefix(Word),
+    /// `${x:offset}` and `${x:offset:length}`: arithmetic expressions,
+    /// expanded first as in `$((...))`.
+    Substring(Word, Option<Word>),
+    /// `${x/pattern/replacement}` and its variants.
+    Replace(Replace, Word, Word),
     /// Not a valid substitution (such as bash's `${x//a/b}`). As in dash,
     /// this is an error only when it is expanded; the word is the rest of
     /// the text up to `}`.
     Bad(Word),
+}
+
+/// Which matches of the pattern `${x/pattern/replacement}` replaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Replace {
+    /// `/`: the first (the longest match that starts first).
+    First,
+    /// `//`: every match.
+    All,
+    /// `/#`: a match at the start.
+    Prefix,
+    /// `/%`: a match at the end.
+    Suffix,
+}
+
+impl Replace {
+    pub fn text(self) -> &'static [u8] {
+        match self {
+            Replace::First => b"/",
+            Replace::All => b"//",
+            Replace::Prefix => b"/#",
+            Replace::Suffix => b"/%",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

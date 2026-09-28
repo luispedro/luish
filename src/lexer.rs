@@ -828,6 +828,27 @@ impl Parser {
             self.pos += 1;
             return Ok(mk(name, ParamOp::Plain, false));
         }
+        if c == b'/' {
+            // `${x/pattern/replacement}`: the pattern starts a fresh quoting
+            // context, as that of `%` and `#` does.
+            self.pos += 1;
+            let how = match self.at(0) {
+                Some(b'/') => Replace::All,
+                Some(b'#') => Replace::Prefix,
+                Some(b'%') => Replace::Suffix,
+                _ => Replace::First,
+            };
+            if how != Replace::First {
+                self.pos += 1;
+            }
+            let (pat, slash) = self.read_param_word_to(Ctx::Unquoted, Some(b'/'))?;
+            let rep = if slash {
+                self.read_param_word(ctx)?
+            } else {
+                Word::default()
+            };
+            return Ok(mk(name, ParamOp::Replace(how, pat, rep), false));
+        }
         let colon = c == b':';
         if colon {
             self.pos += 1;
@@ -836,6 +857,23 @@ impl Parser {
         let Some(c) = self.at(0) else {
             return self.eof_err("Syntax error: Missing '}'");
         };
+        // `${x:offset:length}`. As in zsh, a letter after the `:` would
+        // start a modifier (`${x:h}`), which luish doesn't have.
+        if colon
+            && !c.is_ascii_alphabetic()
+            && !matches!(c, b'-' | b'=' | b'?' | b'+' | b'#' | b'%' | b'/' | b':' | b'}')
+        {
+            let (offset, more) = self.read_param_word_to(Ctx::DQuote, Some(b':'))?;
+            let len = if more {
+                Some(self.read_param_word_to(Ctx::DQuote, None)?.0)
+            } else {
+                None
+            };
+            if len.as_ref().is_some_and(|w| w.0.is_empty()) {
+                return Ok(mk(name, ParamOp::Bad(Word::default()), true));
+            }
+            return Ok(mk(name, ParamOp::Substring(offset, len), true));
+        }
         self.pos += 1;
         let mut pattern = false;
         let op: fn(Word) -> ParamOp = match c {
@@ -870,23 +908,29 @@ impl Parser {
 
     /// Reads the word in `${x-word}` up to the closing `}`.
     fn read_param_word(&mut self, ctx: Ctx) -> PResult<Word> {
+        self.read_param_word_to(ctx, None).map(|(w, _)| w)
+    }
+
+    /// Reads a word up to the closing `}` or to an unquoted `stop`, and
+    /// consumes that. Returns whether it was `stop`.
+    fn read_param_word_to(&mut self, ctx: Ctx, stop: Option<u8>) -> PResult<(Word, bool)> {
         let mut parts = Vec::new();
         let mut lit = Vec::new();
-        loop {
+        let at_stop = loop {
             let Some(c) = self.at(0) else {
                 return self.eof_err("Syntax error: Missing '}'");
             };
-            if c == b'}' {
+            if c == b'}' || Some(c) == stop {
                 self.pos += 1;
-                break;
+                break c != b'}';
             }
             self.read_word_char(c, &mut parts, &mut lit, ctx)?;
-        }
+        };
         flush(&mut parts, &mut lit);
         if ctx == Ctx::Unquoted {
             mark_leading_tilde(&mut parts);
         }
-        Ok(Word(parts))
+        Ok((Word(parts), at_stop))
     }
 
     /// After `$((`. Returns `None` if this turns out to be `$( (...) )`.

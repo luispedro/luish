@@ -2,6 +2,7 @@
 //! `${x#pattern}` family. Quoted characters always match literally.
 
 use super::split::XChar;
+use crate::ast::Replace;
 
 /// One element of a compiled pattern.
 #[derive(Debug, Clone)]
@@ -249,6 +250,72 @@ pub fn trim<'s>(s: &'s [u8], pat: &[XChar], how: Trim) -> &'s [u8] {
     .unwrap_or(s)
 }
 
+/// `${x/pat/rep}` and its variants: replaces the longest match that
+/// starts first (or each such match in turn, or the longest at the start,
+/// or the longest at the end). An empty pattern matches only at the start
+/// or the end.
+pub fn replace(s: &[u8], pat: &[XChar], how: Replace, rep: &[u8]) -> Vec<u8> {
+    let p = Pattern::new(pat);
+    let n = s.len();
+    let first = p.0.first();
+    // The length of the longest match at `i`.
+    let longest_at = |i: usize| {
+        let could = i == n || elem_could_match(first, s[i]);
+        (could.then(|| p.lengths(n - i).rev().find(|&k| p.matches(&s[i..i + k])))).flatten()
+    };
+    let mut out = Vec::with_capacity(n + rep.len());
+    match how {
+        Replace::Prefix => match longest_at(0) {
+            Some(k) => {
+                out.extend_from_slice(rep);
+                out.extend_from_slice(&s[k..]);
+            }
+            None => out.extend_from_slice(s),
+        },
+        Replace::Suffix => {
+            let last = p.0.last();
+            let lens = p.lengths(n);
+            // The longest suffix that matches.
+            let k = lens
+                .rev()
+                .find(|&k| (k == 0 || elem_could_match(last, s[n - 1])) && p.matches(&s[n - k..]));
+            match k {
+                Some(k) => {
+                    out.extend_from_slice(&s[..n - k]);
+                    out.extend_from_slice(rep);
+                }
+                None => out.extend_from_slice(s),
+            }
+        }
+        Replace::First | Replace::All if pat.is_empty() => out.extend_from_slice(s),
+        Replace::First | Replace::All if n == 0 => {
+            out.extend_from_slice(if p.matches(b"") { rep } else { s });
+        }
+        Replace::First | Replace::All => {
+            let mut i = 0;
+            while i < n {
+                match longest_at(i) {
+                    // A match can be empty only at the end (a pattern of
+                    // `*` alone matches the whole rest).
+                    Some(k) if k > 0 => {
+                        out.extend_from_slice(rep);
+                        i += k;
+                        if how == Replace::First {
+                            break;
+                        }
+                    }
+                    _ => {
+                        out.push(s[i]);
+                        i += 1;
+                    }
+                }
+            }
+            out.extend_from_slice(&s[i..]);
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::split::unquoted;
@@ -310,5 +377,27 @@ mod tests {
         let p = unquoted(b"[/:]*");
         assert_eq!(trim(b"a/b:c", &p, Trim::SmallestSuffix), b"a/b");
         assert_eq!(trim(b"a/b:c", &p, Trim::LargestSuffix), b"a");
+    }
+
+    #[test]
+    fn replaces() {
+        let r = |s: &str, p: &str, how, rep: &str| {
+            String::from_utf8(replace(s.as_bytes(), &unquoted(p.as_bytes()), how, rep.as_bytes())).unwrap()
+        };
+        assert_eq!(r("a.b.c", ".", Replace::First, "-"), "a-b.c");
+        assert_eq!(r("a.b.c", ".", Replace::All, "-"), "a-b-c");
+        assert_eq!(r("a.b.c", "a", Replace::Prefix, "X"), "X.b.c");
+        assert_eq!(r("a.b.c", "c", Replace::Suffix, "X"), "a.b.X");
+        assert_eq!(r("abc", "", Replace::Prefix, "P"), "Pabc");
+        assert_eq!(r("abc", "", Replace::Suffix, "S"), "abcS");
+        assert_eq!(r("abc", "", Replace::All, "S"), "abc");
+        assert_eq!(r("aaa", "a*", Replace::All, "b"), "b");
+        assert_eq!(r("aaa", "*", Replace::All, "b"), "b");
+        assert_eq!(r("aaa", "a?", Replace::First, "b"), "ba");
+        assert_eq!(r("abcabc", "b*", Replace::Suffix, "Q"), "aQ");
+        assert_eq!(r("abcabc", "*b", Replace::Prefix, "Q"), "Qc");
+        assert_eq!(r("", "*", Replace::First, "Q"), "Q");
+        assert_eq!(r("", "a", Replace::All, "Q"), "");
+        assert_eq!(r("abc", "[ac]", Replace::All, "_"), "_b_");
     }
 }

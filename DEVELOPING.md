@@ -112,7 +112,7 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   table (`NO_ALIASES`), so an `eval` doesn't allocate one. The completer's `Scan` mirrors these rules. Tests:
   `parse/alias_global.sh` (zsh), `parse/alias_suffix.sh` (zsh), unit tests in `complete.rs`.
 - Function bodies may be any command (`f() echo hi`), as in dash.
-- As in dash, a bad `${...}` (such as `${x//a/b}`) is an error only when expanded, and `$(` in a here-doc delimiter
+- As in dash, a bad `${...}` (such as `${x^^}`) is an error only when expanded, and `$(` in a here-doc delimiter
   is a syntax error. Test: `parse/dash_lenient.sh`.
 - `Parser::started` tells a buffer of blank lines apart from a real incomplete command. The lexer reads a trailing
   `(...)` as `WordPart::GlobQual` only under `glob.bare_qualifiers`: the only place it depends on an option.
@@ -126,6 +126,12 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
 - `$@` and `$*` always count as set for `${@-x}`/`${@+x}`, and are null for `${@:-x}` when their joined length is
   zero (counting separators by dash's rules, `varvalue`); `${#@}` is the joined length. Test:
   `expand/positional_ifs.sh`.
+- `${x:offset:length}` and `${x/pat/rep}` (`ParamOp::Substring`, `ParamOp::Replace`), as in zsh's sh emulation.
+  The lexer reads the offset up to a `:` at the top level, and the pattern up to an unquoted `/`, in a fresh quoting
+  context as for `%` and `#`. `pattern::replace` tries, at each position, only the lengths the pattern can match,
+  longest first. For `$@` and `$*` they apply to the list (`push_list`, shared with `$@`) and to each element, except
+  in `"${*/...}"`, which replaces in the joined string, as zsh does. Tests: `expand/substring.sh` (zsh),
+  `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh`.
 - Arithmetic: a variable holding only blanks is 0. Quotes and backslashes inside `$((...))` are kept, so they are
   errors, as in dash. Test: `expand/arith_quotes.sh`.
 - Command substitution drops NUL bytes (so does `read`) and sets `$?` only for commands of assignments alone (so
@@ -558,6 +564,7 @@ truncates when it relocates the package.
 | Global aliases | `parse/alias_global.sh` (zsh), `builtins/alias_deviations.sh` (here-document delimiter), `builtins/internal_savestate_aliases.sh` |
 | Suffix aliases | `parse/alias_suffix.sh` (zsh), `builtins/alias_deviations.sh` (`command -v`) |
 | `RANDOM`, `SECONDS` and the other specials | `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
+| `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |
 | `SHLVL` | `misc/shlvl.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | Last command of `sh -c` | `exec/c_exec_last.sh` (zsh) |
 | Script read from a pipe | `misc/stdin_script.sh` (zsh) |

@@ -441,6 +441,29 @@ impl<'a> Printer<'a> {
             ParamOp::RemoveSmallestPrefix(w) => (b"#", w),
             ParamOp::RemoveLargestPrefix(w) => (b"##", w),
             ParamOp::Bad(w) => (b"", w),
+            ParamOp::Substring(offset, len) => {
+                self.w(b"${");
+                self.w(&name);
+                // The text of a negative offset starts with a space or `(`.
+                self.w(b":");
+                self.word(offset);
+                if let Some(len) = len {
+                    self.w(b":");
+                    self.word(len);
+                }
+                self.w(b"}");
+                return;
+            }
+            ParamOp::Replace(how, pat, rep) => {
+                self.w(b"${");
+                self.w(&name);
+                self.w(how.text());
+                self.word(pat);
+                self.w(b"/");
+                self.word(rep);
+                self.w(b"}");
+                return;
+            }
         };
         self.w(b"${");
         self.w(&name);
@@ -538,6 +561,14 @@ mod tests {
                     | ParamOp::RemoveSmallestPrefix(w)
                     | ParamOp::RemoveLargestPrefix(w)
                     | ParamOp::Bad(w) => word(w),
+                    ParamOp::Substring(offset, len) => {
+                        word(offset);
+                        len.iter_mut().for_each(word);
+                    }
+                    ParamOp::Replace(_, pat, rep) => {
+                        word(pat);
+                        word(rep);
+                    }
                 },
                 _ => {}
             }
@@ -676,7 +707,10 @@ mod tests {
         round_trip(
             r#"f() { echo ${x-a b} ${x:-"q"} ${x=~} ${x?err} ${x:+$y} ${x%.*} ${x%%/*} ${x#"$p"} ${x##*/} "${x-a\}b}"; }"#,
         );
-        round_trip(r#"f() { echo ${x//a/b} ${x:foo} ${}; }"#);
+        round_trip(r#"f() { echo ${x:foo} ${}; }"#);
+        round_trip(
+            r#"f() { echo ${x:1} ${x: -1:$n} ${x:(-2)} "${@:2:1}" ${x/a/b} ${x//\//"*"} ${x/#a} "${x/%$p/~}"; }"#,
+        );
         round_trip(r#"f() { echo $((1 + $x * (2 - y))) $(( $(echo 1) )) `echo a` "`echo \"b\"`"; }"#);
         round_trip("f() { x=$(a; b) y=$( (sub) ) z=$(case a in a) :;; esac); }");
         round_trip("f() { echo $(if a; then b; fi) \"$(for i in 1; do :; done)\"; }");

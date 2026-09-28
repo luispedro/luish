@@ -45,6 +45,20 @@ Besides POSIX's (`$?`, `$$`, `$!`, `$-`, `$#`, `$0`, `$@`, `$*`, `LINENO`, `PPID
 Unset, they read as unset until they are assigned again. Assigning to `UID`, `EUID`, `GID`, `EGID`, `EPOCHSECONDS`
 or `EPOCHREALTIME` makes it an ordinary variable, so that scripts that use these names still work.
 
+## Parameter expansion
+
+Besides POSIX's forms (`${x:-word}`, `${x#pattern}`, `${#x}` and so on), luish has these, as zsh and bash:
+
+| Form | Value |
+|---|---|
+| `${x:offset}`, `${x:offset:length}` | The part of `x` from `offset` (counting from 0), of at most `length` bytes. Both are arithmetic expressions. A negative offset counts from the end (write `${x: -1}` or `${x:(-1)}`, as `${x:-1}` is the default value), and a negative length leaves out that many bytes at the end |
+| `${x/pattern/replacement}` | `x` with the first (longest) match of the pattern replaced; without `/replacement`, removed |
+| `${x//pattern/replacement}` | Every match replaced |
+| `${x/#pattern/replacement}`, `${x/%pattern/replacement}` | A match at the start, or at the end, replaced |
+
+For `$@` and `$*`, `${@:offset:length}` selects positional parameters (offset 0 is `$0`), and `${@/pattern/rep}`
+replaces in each of them (`"${*/pattern/rep}"` replaces in the joined string, as in zsh).
+
 ## Getting help
 
 In an interactive shell, `help` lists the built-in commands, and `help NAME` shows the help for any of them (the
