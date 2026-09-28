@@ -32,6 +32,8 @@ pub struct Shell {
     pub positional: Vec<Vec<u8>>,
     pub arg0: Vec<u8>,
     pub last_status: i32,
+    /// The statuses of the commands of the last pipeline, for `pipestatus`.
+    pub pipestatus: Vec<i32>,
     pub last_bg_pid: Option<i32>,
     pub options: Options,
     pub functions: HashMap<Vec<u8>, Rc<FunctionBody>>,
@@ -132,6 +134,7 @@ impl Shell {
             positional: Vec::new(),
             arg0: b"luish".to_vec(),
             last_status: 0,
+            pipestatus: Vec::new(),
             last_bg_pid: None,
             options: Options::default(),
             functions: HashMap::default(),
@@ -214,8 +217,20 @@ impl Shell {
     pub fn special_value(&self, name: &[u8]) -> Option<Vec<u8>> {
         match self.vars.special(name)? {
             Special::Histcmd => Some(crate::interactive::histcmd().to_string().into_bytes()),
+            // As for any array, its first element.
+            Special::Pipestatus | Special::PipestatusBash => Some(self.pipestatus.first()?.to_string().into_bytes()),
             s => Some(self.vars.special_value(s)),
         }
+    }
+
+    /// The elements of a variable that isn't stored, for `${a[@]}` and
+    /// `${a[i]}`: `pipestatus`, or one element for `LINENO` or another
+    /// special.
+    pub fn special_elements(&self, name: &[u8]) -> Option<Vec<Vec<u8>>> {
+        if let Some(Special::Pipestatus | Special::PipestatusBash) = self.vars.special(name) {
+            return Some(self.pipestatus.iter().map(|s| s.to_string().into_bytes()).collect());
+        }
+        self.get_var(name).map(|v| vec![v])
     }
 
     /// Sets a variable, reporting an error if it is readonly.

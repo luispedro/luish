@@ -107,6 +107,19 @@ impl Shell {
             self.errexit_suppressed -= 1;
         }
         let status = r?;
+        // As in zsh, `pipestatus` is left as it was by assignments (so that
+        // it survives `s=$?`) and `[[`. A pipeline of several commands has
+        // set it already, when it was waited for.
+        if p.cmds.len() == 1
+            && !matches!(
+                &p.cmds[0],
+                Command::Simple(sc) if sc.words.is_empty() && sc.redirs.is_empty()
+            )
+            && !matches!(p.cmds[0], Command::Compound(CompoundCommand::Cond { .. }, _))
+        {
+            self.pipestatus.clear();
+            self.pipestatus.push(status);
+        }
         if p.negated {
             return Ok((status == 0) as i32);
         }

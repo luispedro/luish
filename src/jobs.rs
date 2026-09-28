@@ -436,6 +436,9 @@ impl Shell {
         let abnormal = job.state == JobState::Stopped
             || matches!(job.procs.last().and_then(|p| p.status), Some(WaitStatus::Signaled(..)));
         let done = job.state == JobState::Done;
+        if job.procs.len() > 1 {
+            self.pipestatus = job.procs.iter().map(|p| p.status.map_or(0, |s| s.code())).collect();
+        }
         if job.jobctl
             && let Some(t) = &mut self.jobctl
         {

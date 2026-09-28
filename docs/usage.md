@@ -40,10 +40,12 @@ Besides POSIX's (`$?`, `$$`, `$!`, `$-`, `$#`, `$0`, `$@`, `$*`, `LINENO`, `PPID
 | `EPOCHSECONDS`, `EPOCHREALTIME` | The time in seconds since 1970, and with microseconds (`1790530996.977661`) |
 | `UID`, `EUID`, `GID`, `EGID` | The real and effective user and group ids |
 | `HISTCMD` | The history event number of the command being run (0 without a history) |
+| `pipestatus`, `PIPESTATUS` (bash's name) | An array of the statuses of the commands of the last pipeline: after `true \| false`, `${pipestatus[@]}` is `0 1`. As in zsh, every pipeline sets it, a single command or an `if` too, but not an assignment (so it survives `s=$?`) or `[[ ... ]]` |
 | `SHLVL` | How deeply shells are nested: incremented at startup, and set to 1 by an interactive shell where it wasn't set |
 
-Unset, they read as unset until they are assigned again. Assigning to `UID`, `EUID`, `GID`, `EGID`, `EPOCHSECONDS`
-or `EPOCHREALTIME` makes it an ordinary variable, so that scripts that use these names still work.
+Unset, they read as unset until they are assigned again. Assigning to `UID`, `EUID`, `GID`, `EGID`, `EPOCHSECONDS`,
+`EPOCHREALTIME`, `pipestatus` or `PIPESTATUS` makes it an ordinary variable, so that scripts that use these names still
+work.
 
 ## Parameter expansion
 

@@ -519,12 +519,12 @@ impl Shell {
                 _ => return None,
             },
         };
-        let one;
+        let computed;
         let items = match self.vars.get_value(name) {
             Some(v) => v.elements(),
             None => {
-                one = [self.get_var(name)?];
-                &one[..]
+                computed = self.special_elements(name)?;
+                &computed[..]
             }
         };
         let i = if i < 0 { i + items.len() as i64 } else { i };
@@ -540,14 +540,16 @@ impl Shell {
             let keys = match self.vars.get_value(name) {
                 Some(Value::Assoc(h)) => h.keys().to_vec(),
                 Some(v) => (0..v.elements().len()).map(|i| i.to_string().into_bytes()).collect(),
-                None => self.get_var(name).map(|_| vec![b"0".to_vec()]).unwrap_or_default(),
+                None => (0..self.special_elements(name).map_or(0, |v| v.len()))
+                    .map(|i| i.to_string().into_bytes())
+                    .collect(),
             };
             push_list(&keys, at, quoted, self.ifs_first(), f);
             return Ok(());
         }
         let items = match self.vars.get_value(name) {
             Some(v) => Some(v.elements().to_vec()),
-            None => self.get_var(name).map(|v| vec![v]),
+            None => self.special_elements(name),
         };
         let sep = self.ifs_first();
         let unset = |sh: &Shell, msg: &str| {

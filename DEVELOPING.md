@@ -182,14 +182,17 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   with a qualifier in `set -o`/`+o` when it is off. Tests: `expand/glob_qualifiers.sh`,
   `expand/glob_qualifier_errors.sh`, `builtins/internal_savestate_globqual.sh`, unit tests in `qual.rs` and
   `parser.rs`.
-- zsh's special parameters (`RANDOM`, `SECONDS`, `EPOCH*`, `UID`/`EUID`/`GID`/`EGID`, `HISTCMD`, in
-  `vars.rs`) are not in the variable map, so plain lookups and assignments of other names cost only a check of the
+- zsh's special parameters (`RANDOM`, `SECONDS`, `EPOCH*`, `UID`/`EUID`/`GID`/`EGID`, `HISTCMD`, `pipestatus`
+  and bash's `PIPESTATUS`, in `vars.rs`) are not in the variable map, so plain lookups and assignments of other names cost only a check of the
   first byte. They are computed on a miss (`Shell::special_value`, also in arithmetic), and a bit per special
   records whether it is set (`unset` clears it, assigning `RANDOM` or `SECONDS` sets it; assigning another makes it
   an ordinary variable). `RANDOM` is libc's `rand() & 0x7fff`, as in zsh, seeded on first use, and again in a
   forked child unless it was assigned. `SHLVL` is an ordinary variable incremented in `main` (`bump_shlvl`).
-  Tests: `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `misc/shlvl.sh`, `histcmd_shlvl` in
-  `tests/interactive.rs`.
+  `pipestatus` is the array `Shell::pipestatus`, read through `Shell::special_elements` where an array is expanded
+  (`$pipestatus` is its first element). `run_pipeline` sets it for a single command (not an assignment or `[[`, as
+  in zsh); for several, `wait_foreground` (without job control) or `wait_job` does. Tests: `expand/special_vars.sh`
+  (zsh), `expand/special_vars_luish.sh`, `expand/pipestatus.sh`, `misc/shlvl.sh`, `histcmd_shlvl` and
+  `pipefail_job_control` in `tests/interactive.rs`.
 - Unit tests in `split.rs`, `pattern.rs` and `arith.rs`; cases in `expand/*`.
 
 ### Execution (`exec/`)
@@ -608,6 +611,7 @@ truncates when it relocates the package.
 | Global aliases | `parse/alias_global.sh` (zsh), `builtins/alias_deviations.sh` (here-document delimiter), `builtins/internal_savestate_aliases.sh` |
 | Suffix aliases | `parse/alias_suffix.sh` (zsh), `builtins/alias_deviations.sh` (`command -v`) |
 | `RANDOM`, `SECONDS` and the other specials | `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
+| `pipestatus`, `PIPESTATUS` | `expand/pipestatus.sh`, `pipefail_job_control` in `tests/interactive.rs` |
 | Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
 | Associative arrays | `builtins/assoc.sh` (zsh), `builtins/assoc_luish.sh` |
 | `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |

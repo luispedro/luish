@@ -136,8 +136,14 @@ impl Shell {
         let pipefail = pids.len() > 1 && self.opt(Opt::Pipefail);
         if !self.jobctl() {
             let mut status = 0;
+            if pids.len() > 1 {
+                self.pipestatus.clear();
+            }
             for &pid in pids {
                 let s = self.wait_for(pid);
+                if pids.len() > 1 {
+                    self.pipestatus.push(s);
+                }
                 if s != 0 || !pipefail {
                     status = s;
                 }

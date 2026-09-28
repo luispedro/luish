@@ -1,4 +1,6 @@
 Unreleased
+    * `pipestatus` (zsh) and `PIPESTATUS` (bash): the statuses of the
+      last pipeline's commands
     * `${!a[@]}` gives the indices or keys of an array, as in bash
     * Associative arrays (`typeset -A`), as in zsh and bash
     * `a=([i]=x)` assigns to an index, as in zsh and bash

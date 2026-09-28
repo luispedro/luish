@@ -153,8 +153,10 @@ pub struct Vars {
 /// that is unset reads as unset until it is assigned, and assigning to
 /// `RANDOM` seeds the generator and to `SECONDS` sets the count. Assigning
 /// to the others makes them ordinary variables (where zsh makes them
-/// read-only or calls `setuid`), so that scripts written for dash that use
-/// these names keep working.
+/// read-only, calls `setuid` or sets `pipestatus` until the next pipeline),
+/// so that scripts written for dash that use these names keep working.
+/// `pipestatus` (and bash's `PIPESTATUS`) is an array, which the shell
+/// computes (`Shell::special_elements`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Special {
     Random,
@@ -166,6 +168,9 @@ pub enum Special {
     Gid,
     Egid,
     Histcmd,
+    Pipestatus,
+    /// bash's name for `pipestatus`.
+    PipestatusBash,
 }
 
 pub const SPECIALS: &[(&[u8], Special)] = &[
@@ -178,13 +183,17 @@ pub const SPECIALS: &[(&[u8], Special)] = &[
     (b"GID", Special::Gid),
     (b"EGID", Special::Egid),
     (b"HISTCMD", Special::Histcmd),
+    (b"pipestatus", Special::Pipestatus),
+    (b"PIPESTATUS", Special::PipestatusBash),
 ];
 
 impl Special {
     pub fn from_name(name: &[u8]) -> Option<Special> {
-        // All the names are upper case: most names are rejected on their
-        // first byte.
-        if !matches!(name.first(), Some(b'E' | b'G' | b'H' | b'R' | b'S' | b'U')) {
+        // Most names are rejected on their first byte.
+        if !matches!(
+            name.first(),
+            Some(b'E' | b'G' | b'H' | b'P' | b'R' | b'S' | b'U' | b'p')
+        ) {
             return None;
         }
         SPECIALS.iter().find(|(n, _)| *n == name).map(|&(_, s)| s)
@@ -259,8 +268,8 @@ impl Vars {
         Special::from_name(name).filter(|s| self.specials.active & s.bit() != 0)
     }
 
-    /// The value of a special (`HISTCMD` is left to the caller, which knows
-    /// about the history).
+    /// The value of a special (`HISTCMD` and `pipestatus` are left to the
+    /// caller, which knows about the history and pipelines).
     pub fn special_value(&self, s: Special) -> Vec<u8> {
         let n: i64 = match s {
             Special::Random => {
@@ -296,7 +305,7 @@ impl Vars {
             Special::Euid => crate::sys::geteuid().into(),
             Special::Gid => crate::sys::getgid().into(),
             Special::Egid => crate::sys::getegid().into(),
-            Special::Histcmd => 0,
+            Special::Histcmd | Special::Pipestatus | Special::PipestatusBash => 0,
         };
         n.to_string().into_bytes()
     }

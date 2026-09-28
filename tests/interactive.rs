@@ -314,6 +314,11 @@ fn pipefail_job_control() {
     assert_has(&sh.run("false | true; echo st=$?"), "st=0\n");
     sh.run("set -o pipefail");
     assert_has(&sh.run("(exit 3) | (exit 2) | true; echo st=$?"), "st=2\n");
+    // `pipestatus` comes from the job's processes.
+    assert_has(
+        &sh.run("(exit 3) | (exit 2) | true; echo ps=${pipestatus[*]}"),
+        "ps=3 2 0\n",
+    );
     assert_has(&sh.run("(exit 3) | true & wait %1; echo st=$?"), "st=3\n");
     // A stopped job's status is that of the process that stopped.
     sh.send("sleep 30 | true\n");
