@@ -428,7 +428,7 @@ impl<'a> Printer<'a> {
 
     fn param(&mut self, pe: &ParamExp, joins: bool) {
         let short = match &pe.name {
-            _ if pe.index.is_some() => false,
+            _ if pe.index.is_some() || pe.flags.is_some() => false,
             ParamName::Var(_) => !joins,
             ParamName::Positional(n) => *n < 10 && !joins,
             ParamName::Special(_) => true,
@@ -450,6 +450,11 @@ impl<'a> Printer<'a> {
             ParamOp::Keys => b"${!",
             _ => b"${",
         });
+        if let Some(flags) = &pe.flags {
+            self.w(b"(");
+            self.w(&flags.text);
+            self.w(b")");
+        }
         self.param_name(pe);
         let (op, word): (&[u8], _) = match &pe.op {
             ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names => {

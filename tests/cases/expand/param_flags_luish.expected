@@ -1,0 +1,9 @@
+defined
+bad 2
+bad 2
+bad 2
+bad 2
+g() {
+    echo "${(j:,:)a[@]}" ${(s(,)o)x:-d} "${(@kv)h[*]}" ${(U)1} ${(Oa)@}
+}
+x,y a b k v Z w z

@@ -1,4 +1,6 @@
 Unreleased
+    * zsh's parameter flags: `${(j:,:)a[@]}`, `${(s:,:)x}`, `${(o)a[@]}`,
+      `${(k)h[@]}`, and `@ v f F L U C u O i n a`
     * `${!x}` (bash): indirection, also with an operator (`${!x:-d}`)
       and to elements (`x='a[1]'`); `${!prefix@}` lists variable names
     * A lone `"${!a[@]}"` on an empty array gives no word, as `"$@"`

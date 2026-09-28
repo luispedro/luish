@@ -106,7 +106,7 @@ size=([small]=1 [big]=10)            # replace them all (also as pairs: size=(sm
 size+=([huge]=100)                   # add keys
 echo "${size[big]}" "${#size[@]}"    # a value, and the number of keys
 for v in "${size[@]}"; do ...; done  # the values
-for k in "${!size[@]}"; do ...; done # the keys (bash; zsh has ${(k)size})
+for k in "${!size[@]}"; do ...; done # the keys (bash; also "${(k)size[@]}", as in zsh)
 echo $((size[small] + size[big]))    # in arithmetic, the text of the subscript is the key
 unset 'size[huge]'                   # remove a key
 ```
@@ -114,6 +114,32 @@ unset 'size[huge]'                   # remove a key
 The operators apply to the values as they do to the elements of an array. The values come in no particular order (in
 luish, the order in which the keys were added, until one is removed; zsh and bash use another). As in bash, `$h` is
 `${h[0]}`, the value at key `0`, and `h=value` assigns to it. `read -A` reads pairs of keys and values into one.
+
+zsh's parameter flags, in parentheses after `${`, transform the value of a parameter (or the elements of an array,
+with `[@]`):
+
+```sh
+echo "${(j:,:)files[@]}"             # the elements joined with commas
+parts=(${(s:/:)PWD})                 # split at each / (the words aren't split again)
+for k in "${(ko)size[@]}"; do ...; done   # the keys, sorted
+echo ${(u)list[@]} ${(Oa)list[@]}    # without repeated elements; in reverse order
+```
+
+| Flag | Effect |
+|---|---|
+| `j:sep:`, `F` | Join the words with `sep`, or with newlines |
+| `s:sep:`, `f` | Split into words at each `sep` (at each byte if it is empty), or at newlines |
+| `L`, `U`, `C` | Lower case, upper case, or a capital at the start of each word (of letters and digits) |
+| `u` | Only the first of repeated words |
+| `o`, `O` | Sort, in ascending or descending order (byte order), also with `i` (ignoring case) and `n` (numbers by their value: `x2` before `x10`); `i` or `n` alone sort too |
+| `a` | The array's order (`Oa` reverses it) |
+| `k`, `v` | For an associative array, its keys, or its values (the default); both give each key followed by its value |
+| `@` | Separate words even in double quotes: `"${(@)a[*]}"` is `"${a[@]}"` |
+
+The delimiters around `sep` can be any character, or a pair of brackets: `(j(, ))`. The operator, such as `:-` or
+`/`, applies first, then `j`, `s`, the case, `u` and the order, whatever order the flags are written in. As in zsh, in
+double quotes and where the result is a single word (`x=${(o)a[@]}`), the elements of `$*` and `${a[*]}` (and in
+the latter case of `${a[@]}`) are joined first, unless `@` or `j` is given, and there `s` doesn't split.
 
 `typeset -i` gives variables the integer attribute, as in zsh and bash: what is assigned to them is evaluated as an
 arithmetic expression (for an array, each element), so `typeset -i n=2*3` sets `n` to `6`, and `n+=1` adds.

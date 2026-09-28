@@ -714,6 +714,7 @@ impl Parser {
                 index: None,
                 op: ParamOp::Plain,
                 colon: false,
+                flags: None,
             })))
         };
         match c {
@@ -807,6 +808,7 @@ impl Parser {
                 index: None,
                 op: ParamOp::Bad(word),
                 colon,
+                flags: None,
             })))
         };
         let mk = |name, op, colon| {
@@ -815,9 +817,27 @@ impl Parser {
                 index: None,
                 op,
                 colon,
+                flags: None,
             }))
         };
         self.eat_bnl(0);
+        if self.at(0) == Some(b'(') {
+            // zsh's `${(flags)name...}`, a bad substitution in dash. The
+            // rest is read as usual, but without `${#name}` and `${!name}`.
+            let start = (self.pos, self.lineno);
+            let part = match self.read_flags()? {
+                Some(flags) => self.read_flagged_param(flags, ctx)?,
+                None => None,
+            };
+            return match part {
+                Some(part) => Ok(part),
+                None => {
+                    // Read as a whole, from the `(`.
+                    (self.pos, self.lineno) = start;
+                    bad(self, ParamName::Var(Vec::new()), false)
+                }
+            };
+        }
         if self.at(0) == Some(b'#') {
             // `${#}`, `${#name}` (length), or `${#op...}` ($# with an operator)
             if self.at(1) == Some(b'}') {
@@ -838,6 +858,7 @@ impl Parser {
                         index,
                         op: ParamOp::Length,
                         colon: false,
+                        flags: None,
                     })));
                 }
             }
@@ -858,6 +879,7 @@ impl Parser {
                     index: Some(index),
                     op,
                     colon: false,
+                    flags: None,
                 })))
             };
             if matches!(name, ParamName::Var(_)) {
@@ -915,6 +937,92 @@ impl Parser {
         self.read_param_op(name, ctx)
     }
 
+    /// Reads zsh's `(flags)` of `${(flags)name...}`, from the `(` to the
+    /// `)`. Returns `None` for a flag luish doesn't have.
+    fn read_flags(&mut self) -> PResult<Option<Flags>> {
+        let start = self.pos + 1;
+        self.pos = start;
+        let mut fl = Flags::default();
+        loop {
+            let Some(c) = self.at(0) else {
+                return self.eof_err("Syntax error: Missing '}'");
+            };
+            self.pos += 1;
+            match c {
+                b')' => break,
+                b'@' => fl.at = true,
+                b'k' => fl.keys = true,
+                b'v' => fl.values = true,
+                b'j' | b's' => {
+                    // The separator is between two delimiters, which can
+                    // also be a pair of brackets: `j:,:`, `s(,)`. As in
+                    // zsh, it can't contain `}`, which ends the expansion.
+                    let Some(open) = self.at(0) else {
+                        return self.eof_err("Syntax error: Missing '}'");
+                    };
+                    let close = match open {
+                        b'(' => b')',
+                        b'[' => b']',
+                        b'<' => b'>',
+                        c => c,
+                    };
+                    self.pos += 1;
+                    let from = self.pos;
+                    loop {
+                        match self.at(0) {
+                            None => return self.eof_err("Syntax error: Missing '}'"),
+                            Some(b'}') => return Ok(None),
+                            Some(c) if c == close => break,
+                            Some(_) => self.pos += 1,
+                        }
+                    }
+                    let sep = self.src[from..self.pos].to_vec();
+                    self.pos += 1;
+                    if c == b'j' {
+                        fl.join = Some(sep);
+                    } else {
+                        fl.split = Some(sep);
+                    }
+                }
+                b'F' => fl.join = Some(b"\n".to_vec()),
+                b'f' => fl.split = Some(b"\n".to_vec()),
+                b'L' => fl.case = Some(Case::Lower),
+                b'U' => fl.case = Some(Case::Upper),
+                b'C' => fl.case = Some(Case::Capitalize),
+                b'u' => fl.unique = true,
+                b'o' => fl.sort = true,
+                b'O' => fl.reverse = true,
+                b'i' => fl.nocase = true,
+                b'n' => fl.numeric = true,
+                b'a' => fl.array_order = true,
+                _ => return Ok(None),
+            }
+        }
+        fl.text = self.src[start..self.pos - 1].to_vec();
+        Ok(Some(fl))
+    }
+
+    /// The rest of `${(flags)name...}`, after the flags. Returns `None` if
+    /// there is no name, or no `]` after `[`.
+    fn read_flagged_param(&mut self, flags: Flags, ctx: Ctx) -> PResult<Option<WordPart>> {
+        let Some(name) = self.read_param_name() else {
+            return Ok(None);
+        };
+        let index = match self.at(0) {
+            Some(b'[') if matches!(name, ParamName::Var(_)) => match self.read_index()? {
+                Some(index) => Some(index),
+                None => return Ok(None),
+            },
+            _ => None,
+        };
+        let mut part = self.read_param_op(name, ctx)?;
+        if let WordPart::Param(pe) = &mut part {
+            pe.index = index;
+            pe.flags = Some(Box::new(flags));
+        }
+        Ok(Some(part))
+    }
+
     /// Reads `[index]` of `${name[index]}`, from the `[`. Returns `None`,
     /// leaving the position anywhere, if there is no `]` before the `}`.
     fn read_index(&mut self) -> PResult<Option<Index>> {
@@ -943,6 +1051,7 @@ impl Parser {
                 index: None,
                 op: ParamOp::Bad(word),
                 colon,
+                flags: None,
             })))
         };
         let mk = |name, op, colon| {
@@ -951,6 +1060,7 @@ impl Parser {
                 index: None,
                 op,
                 colon,
+                flags: None,
             }))
         };
         self.eat_bnl(0);

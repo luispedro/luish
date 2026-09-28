@@ -309,6 +309,44 @@ pub struct ParamExp {
     pub index: Option<Index>,
     pub op: ParamOp,
     pub colon: bool,
+    /// zsh's flags, `${(flags)name...}`.
+    pub flags: Option<Box<Flags>>,
+}
+
+/// The flags of `${(flags)name...}` (zsh).
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Flags {
+    /// The text between the parentheses.
+    pub text: Vec<u8>,
+    /// `@`: separate words, also in double quotes.
+    pub at: bool,
+    /// `k` and `v`: the keys, the values (or both) of an associative array.
+    pub keys: bool,
+    pub values: bool,
+    /// `j:sep:` (and `F`, a newline): join the words.
+    pub join: Option<Vec<u8>>,
+    /// `s:sep:` (and `f`, a newline): split into words.
+    pub split: Option<Vec<u8>>,
+    pub case: Option<Case>,
+    /// `u`: only the first of equal words.
+    pub unique: bool,
+    /// `o`, `O`, `i` (ignoring case), `n` (numbers by value) and `a`
+    /// (the array's order): any but `a` sorts, `O` in reverse.
+    pub sort: bool,
+    pub reverse: bool,
+    pub nocase: bool,
+    pub numeric: bool,
+    pub array_order: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Case {
+    /// `L`
+    Lower,
+    /// `U`
+    Upper,
+    /// `C`: the first letter of each word upper case, the others lower.
+    Capitalize,
 }
 
 /// The subscript of an array parameter.

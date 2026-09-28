@@ -219,10 +219,10 @@ shell tracks the current file as well as the line, for provenance and for error 
   `glob.bare_qualifiers` are, unless their syntax is an error in POSIX sh. With them off, POSIX scripts must parse and
   behave exactly as before and run as fast. The lexer checks such options in one place (as it does
   `Parser::bareglobqual`). Indexed and associative arrays are done, always on (see `DEVELOPING.md`), with bash's
-  `${!a[@]}` for the keys (and its indirection, `${!x}` and `${!prefix@}`); still to do for them: zsh's `${(k)a}` (which needs parameter flags), and the special
-  arrays (`pipestatus`, `path` and `dirstack`, and `match` and `BASH_REMATCH` for `=~`, are done). `typeset` and
-  `declare` are done (with `-f`, `-i`, `-l`, `-u` and zsh's `-U`), and extensions can read and set arrays
-  (`sh::getarray`, `sh::getmap`). Tab completes `${a[` (indices, or keys).
+  `${!a[@]}` for the keys (and its indirection, `${!x}` and `${!prefix@}`), zsh's parameter flags (`${(k)h[@]}`,
+  `${(j:,:)a[@]}`, `${(o)a[@]}` and others), and the special arrays (`pipestatus`, `path` and `dirstack`, and `match`
+  and `BASH_REMATCH` for `=~`). `typeset` and `declare` are done (with `-f`, `-i`, `-l`, `-u` and zsh's `-U`), and
+  extensions can read and set arrays (`sh::getarray`, `sh::getmap`). Tab completes `${a[` (indices, or keys).
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL
   around the prompt and command output. Unicode width handling and bracketed paste belong to the line editor.
 - **Scripting**: error messages with file, line and function stack (from call frames), a predictable strict mode,

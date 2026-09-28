@@ -262,7 +262,7 @@ impl Shell {
             WordPart::DoubleQuoted(inner) => {
                 // A quoted word is a field even when it expands to nothing,
                 // except a lone "$@" with no positional parameters.
-                let lone_at = matches!(inner.as_slice(), [WordPart::Param(pe)] if is_list(pe));
+                let lone_at = matches!(inner.as_slice(), [WordPart::Param(pe)] if pe.flags.is_some() || is_list(pe));
                 if !lone_at {
                     f.cur_exists = true;
                 }
@@ -367,13 +367,20 @@ impl Shell {
     fn expand_param(&mut self, pe: &ParamExp, quoted: bool, f: &mut Fields) -> EResult<()> {
         // The common case, a plain `$name` that is set, without copying the
         // value.
-        if let (ParamName::Var(n), ParamOp::Plain, None) = (&pe.name, &pe.op, &pe.index)
+        if let (ParamName::Var(n), ParamOp::Plain, None, None) = (&pe.name, &pe.op, &pe.index, &pe.flags)
             && n != b"LINENO"
             && let Some(v) = self.vars.get(n)
         {
             push_result(v, quoted, f);
             return Ok(());
         }
+        if let Some(flags) = &pe.flags {
+            return self.expand_flagged(pe, flags, quoted, f);
+        }
+        self.expand_unflagged(pe, quoted, f)
+    }
+
+    fn expand_unflagged(&mut self, pe: &ParamExp, quoted: bool, f: &mut Fields) -> EResult<()> {
         if let ParamName::Indirect(base) = &pe.name {
             return self.expand_indirect(pe, base, quoted, f);
         }
@@ -547,6 +554,7 @@ impl Shell {
             index,
             op: pe.op.clone(),
             colon: pe.colon,
+            flags: None,
         };
         // A lone `"${!x}"` gives no field if `x` names `@` or `a[@]` (see
         // `is_list`).
@@ -554,6 +562,103 @@ impl Shell {
             f.cur_exists = true;
         }
         self.expand_param(&target, quoted, f)
+    }
+
+    /// zsh's `${(flags)name...}`. The parameter, with its operator, is
+    /// expanded as in double quotes into a list of words (as `"$@"` for a
+    /// list); the flags then join, split, convert and order the words, in
+    /// zsh's order.
+    fn expand_flagged(&mut self, pe: &ParamExp, fl: &Flags, quoted: bool, f: &mut Fields) -> EResult<()> {
+        // As in zsh, `$*` and `${a[*]}` are lists like `$@`, unless quoted
+        // without `@` or `j`: then their elements are joined first, as are
+        // those of `$@` and `${a[@]}` where the result is one word (in an
+        // assignment, for example).
+        let field_ctx = f.field_context();
+        let separate = |at: bool| fl.join.is_some() || field_ctx && (at || fl.at || !quoted);
+        let mut inner = Fields::new(Some(IfsSet::new(b"")));
+        match (&pe.name, &pe.index) {
+            (ParamName::Var(name), Some(index @ (Index::At | Index::Star))) => {
+                let items = match self.vars.get_value(name) {
+                    Some(Value::Assoc(h)) if fl.keys && fl.values => Some(
+                        (h.keys().iter().zip(h.values()))
+                            .flat_map(|(k, v)| [k.clone(), v.clone()])
+                            .collect(),
+                    ),
+                    Some(Value::Assoc(h)) if fl.keys => Some(h.keys().to_vec()),
+                    Some(v) => Some(v.elements().to_vec()),
+                    None => self.special_elements(name),
+                };
+                self.array_op(pe, name, items, separate(*index == Index::At), true, &mut inner)?;
+            }
+            (ParamName::Special(c @ (b'@' | b'*')), None) if separate(*c == b'@') != (*c == b'@') => {
+                let other = ParamExp {
+                    name: ParamName::Special(if *c == b'@' { b'*' } else { b'@' }),
+                    index: None,
+                    op: pe.op.clone(),
+                    colon: pe.colon,
+                    flags: None,
+                };
+                self.expand_unflagged(&other, true, &mut inner)?;
+            }
+            _ => {
+                if !is_list(pe) {
+                    inner.cur_exists = true;
+                }
+                self.expand_unflagged(pe, true, &mut inner)?;
+            }
+        }
+        let mut words: Vec<_> = inner.into_fields().iter().map(|w| bytes(w)).collect();
+        // As in zsh, words are split only where the result can be several
+        // words; they are joined first.
+        let split = fl.split.as_deref().filter(|_| field_ctx);
+        if let Some(sep) = &fl.join {
+            words = vec![words.join(&sep[..])];
+        } else if split.is_some() && words.len() != 1 {
+            let sep: Vec<u8> = self.ifs_first().into_iter().collect();
+            words = vec![words.join(&sep[..])];
+        }
+        if let Some(sep) = split {
+            words = split_on(&words[0], sep);
+            if quoted && !fl.at && words.len() > 2 {
+                // As in zsh, only the first and the last word can be empty.
+                let last = words.len() - 1;
+                let mut i = 0;
+                words.retain(|w| {
+                    i += 1;
+                    i == 1 || i - 1 == last || !w.is_empty()
+                });
+            }
+        }
+        if let Some(case) = fl.case {
+            words.iter_mut().for_each(|w| change_case(w, case));
+        }
+        if fl.unique {
+            crate::vars::dedupe(&mut words);
+        }
+        if fl.array_order {
+            if fl.reverse {
+                words.reverse();
+            }
+        } else if fl.sort || fl.reverse || fl.nocase || fl.numeric {
+            // Stable, also in reverse.
+            words.sort_by(|a, b| {
+                let o = compare_words(a, b, fl.nocase, fl.numeric);
+                if fl.reverse { o.reverse() } else { o }
+            });
+        }
+        if split.is_some() && !quoted {
+            // As in zsh, the words aren't split again, but empty ones are
+            // dropped.
+            for (i, w) in words.iter().filter(|w| !w.is_empty()).enumerate() {
+                if i > 0 {
+                    f.break_field();
+                }
+                f.push_literal(w);
+            }
+        } else {
+            push_list(&words, true, quoted, self.ifs_first(), f);
+        }
+        Ok(())
     }
 
     /// An element of an array: an index counts from the end if it is
@@ -608,6 +713,20 @@ impl Shell {
             Some(v) => Some(v.elements().to_vec()),
             None => self.special_elements(name),
         };
+        self.array_op(pe, name, items, at, quoted, f)
+    }
+
+    /// The operator of `${a[@]}` or `${a[*]}` applied to the elements
+    /// (`None` if the array is unset).
+    fn array_op(
+        &mut self,
+        pe: &ParamExp,
+        name: &[u8],
+        items: Option<Vec<Vec<u8>>>,
+        at: bool,
+        quoted: bool,
+        f: &mut Fields,
+    ) -> EResult<()> {
         let sep = self.ifs_first();
         let unset = |sh: &Shell, msg: &str| {
             sh.error(format!(
@@ -919,6 +1038,80 @@ fn push_list(items: &[Vec<u8>], at: bool, quoted: bool, sep: Option<u8>, f: &mut
     // Outside a field context, dash joins `$@` like `$*`.
     let sep: Vec<u8> = sep.into_iter().collect();
     push_result(&items.join(&sep[..]), quoted, f);
+}
+
+/// The words of `${(s:sep:)x}`: an empty separator splits into bytes.
+fn split_on(s: &[u8], sep: &[u8]) -> Vec<Vec<u8>> {
+    if sep.is_empty() {
+        return s.iter().map(|&c| vec![c]).collect();
+    }
+    let mut words = Vec::new();
+    let mut start = 0;
+    let mut i = 0;
+    while i + sep.len() <= s.len() {
+        if &s[i..i + sep.len()] == sep {
+            words.push(s[start..i].to_vec());
+            i += sep.len();
+            start = i;
+        } else {
+            i += 1;
+        }
+    }
+    words.push(s[start..].to_vec());
+    words
+}
+
+/// The `L`, `U` and `C` flags. Only ASCII letters change, as in `typeset -l`.
+fn change_case(w: &mut [u8], case: Case) {
+    match case {
+        Case::Lower => w.make_ascii_lowercase(),
+        Case::Upper => w.make_ascii_uppercase(),
+        Case::Capitalize => {
+            // A word is a run of letters and digits.
+            let mut in_word = false;
+            for c in w {
+                *c = if in_word {
+                    c.to_ascii_lowercase()
+                } else {
+                    c.to_ascii_uppercase()
+                };
+                in_word = c.is_ascii_alphanumeric();
+            }
+        }
+    }
+}
+
+/// The order of the `o` flag: bytes (after making ASCII letters lower
+/// case, with `i`). With `n`, as in zsh, if the words differ first in a
+/// number, they are ordered by its value, unless it is the same.
+fn compare_words(a: &[u8], b: &[u8], nocase: bool, numeric: bool) -> std::cmp::Ordering {
+    let lower;
+    let (a, b) = if nocase {
+        lower = (a.to_ascii_lowercase(), b.to_ascii_lowercase());
+        (&lower.0[..], &lower.1[..])
+    } else {
+        (a, b)
+    };
+    let digit = |s: &[u8], i: usize| s.get(i).is_some_and(u8::is_ascii_digit);
+    let common = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+    if numeric && (digit(a, common) || digit(b, common)) {
+        let mut start = common;
+        while start > 0 && a[start - 1].is_ascii_digit() {
+            start -= 1;
+        }
+        if digit(a, start) && digit(b, start) {
+            fn number(s: &[u8]) -> &[u8] {
+                let s = &s[..s.iter().take_while(|c| c.is_ascii_digit()).count()];
+                &s[s.iter().take_while(|&&c| c == b'0').count()..]
+            }
+            let (x, y) = (number(&a[start..]), number(&b[start..]));
+            let o = x.len().cmp(&y.len()).then(x.cmp(y));
+            if o.is_ne() {
+                return o;
+            }
+        }
+    }
+    a.cmp(b)
 }
 
 /// Whether `"${...}"` alone gives no field when there are no elements, as

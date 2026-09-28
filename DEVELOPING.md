@@ -173,6 +173,16 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   expands a `ParamExp` for it with the same operator (cloned; only indirections pay for it). `is_list` counts an
   indirection as a list, so that a lone `"${!x}"` gives no field when `x` is `@` or `a[@]` with nothing in it;
   `expand_indirect` sets `cur_exists` for other targets. Tests: `expand/array_keys.sh`, `expand/indirect.sh`.
+- zsh's parameter flags: `${(` starts them (`Parser::read_flags`, into `ast::Flags`, boxed in `ParamExp::flags`,
+  which keeps its text for `unparse` and `cmdtext`); the name, index and operator follow as usual, but not `#` or
+  `!`. An unknown flag, a separator reaching `}`, or no name, make the whole a bad substitution. `expand_param` checks
+  `flags` only after the `$x` fast path. `expand_flagged` expands the parameter and its operator as in double quotes
+  into a list of words (`array_op`, split out of `expand_array`, takes the keys or pairs for `k`), turning `$*` and
+  `[*]` into lists (or `$@` and `[@]` into joined words) following zsh's rules, then applies `j`, `s`, the case, `u`
+  and the order, and pushes the words: quoted, or unquoted with `push_list` (split again), or for `s` with
+  `push_literal` (not split, but globbed). The numeric order (`compare_words`) is zsh's: the first number that
+  differs decides, then the bytes. A lone quoted flagged expansion counts as a list in `DoubleQuoted` (it sets
+  `cur_exists`: a string gives one word, even if empty). Tests: `expand/param_flags.sh`, `expand/param_flags_luish.sh`.
 - Arithmetic: a variable holding only blanks is 0. Quotes and backslashes inside `$((...))` are kept, so they are
   errors, as in dash. Test: `expand/arith_quotes.sh`.
 - Command substitution drops NUL bytes (so does `read`) and sets `$?` only for commands of assignments alone (so
@@ -674,6 +684,7 @@ truncates when it relocates the package.
 | Associative arrays | `builtins/assoc.sh` (zsh), `builtins/assoc_luish.sh` |
 | `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |
 | `${!x}`, `${!prefix@}` | `expand/indirect.sh` |
+| Parameter flags, `${(o)a[@]}` | `expand/param_flags.sh` (zsh), `expand/param_flags_luish.sh` |
 | `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh`, `builtins/typeset_case.sh` (zsh), `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh`, `builtins/typeset_functions.sh` (zsh), `builtins/typeset_functions_luish.sh` |
 | `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |

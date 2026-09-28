@@ -278,6 +278,11 @@ fn push_param(out: &mut Vec<u8>, pe: &ParamExp) {
         ParamOp::Keys | ParamOp::Names => b"${!",
         _ => b"${",
     });
+    if let Some(flags) = &pe.flags {
+        out.push(b'(');
+        out.extend_from_slice(&flags.text);
+        out.push(b')');
+    }
     push_name(out, &pe.name);
     match &pe.index {
         None => {}
