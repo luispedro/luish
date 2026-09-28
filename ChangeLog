@@ -1,4 +1,6 @@
 Unreleased
+    * Tab after `${a[` completes the array's indices or keys
+    * `\]` is a `]` in the key of `${h[...]}`, as in `h[...]=v`
     * Plugins read and set arrays: `sh::getarray`, `sh::getmap`, and
       `sh::setvar` with an array or a map
     * `typeset -f` prints functions, `typeset +f` their names

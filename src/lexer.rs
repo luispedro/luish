@@ -1032,6 +1032,13 @@ impl Parser {
                 self.pos += 1;
                 break c != b'}';
             }
+            // `\]` in a subscript is a `]` in the key (as in `a[x\]]=v`).
+            if c == b'\\' && stop == Some(b']') && self.at(1) == Some(b']') {
+                flush(&mut parts, &mut lit);
+                parts.push(WordPart::Escaped(b']'));
+                self.pos += 2;
+                continue;
+            }
             self.read_word_char(c, &mut parts, &mut lit, ctx)?;
         };
         flush(&mut parts, &mut lit);

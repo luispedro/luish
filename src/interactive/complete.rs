@@ -69,12 +69,18 @@ pub type Ask = fn(&[Vec<u8>], usize) -> Completion;
 /// `expand-or-complete`), or gives None if it can't.
 pub type Expand = fn(&[u8]) -> Option<Vec<Vec<u8>>>;
 
+/// The subscripts of the array `name` (its indices, or an associative
+/// array's keys), each with its element, for completing `${name[`; None if
+/// there is no such variable.
+pub type Subscripts = fn(&[u8]) -> Option<Vec<(Vec<u8>, Vec<u8>)>>;
+
 #[derive(Default)]
 pub struct ShellHelper {
     pub names: Names,
     pub highlight: super::highlight::State,
     pub ask: Option<Ask>,
     pub expand: Option<Expand>,
+    pub subscripts: Option<Subscripts>,
     /// The prompt, as the line editor measures it (for the menu's height).
     pub prompt: String,
     pub menu: Arc<Mutex<Menu>>,
@@ -243,6 +249,9 @@ enum Quote {
     None,
     Single,
     Double,
+    /// In the subscript of `${name[...]}`: as in double quotes, but `]`
+    /// and `}` are escaped too, and there is no closing quote.
+    Subscript,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -254,6 +263,8 @@ enum Kind {
     File,
     /// A variable name after `$` (or after `${`, when the flag is set).
     Var(bool),
+    /// The subscript after `${name[` (the name is `Word::words[0]`).
+    Subscript,
     Nothing,
 }
 
@@ -545,6 +556,7 @@ impl<'a> Scan<'a> {
                     self.push(line[i - 1], i);
                 }
                 (Quote::Double, _) => self.push(c, i),
+                (Quote::Subscript, _) => unreachable!("the scan starts outside subscripts"),
                 (Quote::None, b' ' | b'\t') => self.end_word(),
                 (Quote::None, b'\n' | b';' | b'&' | b'|') => self.end_command(),
                 (Quote::None, b'(') => self.open(false, i - 1),
@@ -617,8 +629,12 @@ fn analyze(line: &[u8], aliases: &AliasMap) -> Word {
         };
     }
 
-    // A variable name after `$` or `${` (not inside single quotes).
+    // A variable name after `$` or `${`, or a subscript after `${name[`
+    // (not inside single quotes).
     if s.quote != Quote::Single {
+        if let Some(w) = subscript(line, s.quote) {
+            return w;
+        }
         let n = line
             .iter()
             .rev()
@@ -663,6 +679,47 @@ fn analyze(line: &[u8], aliases: &AliasMap) -> Word {
         offsets: s.offsets,
         words: s.words,
     }
+}
+
+/// The subscript ending at the end of `line`, if it is in `${name[` (not
+/// escaped) and has no quotes or substitutions: its text unquoted as in the
+/// lexer's `read_index`.
+fn subscript(line: &[u8], quote: Quote) -> Option<Word> {
+    let open = line.iter().rposition(|&c| c == b'[')?;
+    let n = (line[..open].iter().rev())
+        .take_while(|&&c| c.is_ascii_alphanumeric() || c == b'_')
+        .count();
+    let name = &line[open - n..open];
+    let dollar = (open - n).checked_sub(2).filter(|&d| &line[d..d + 2] == b"${")?;
+    let escaped = line[..dollar].iter().rev().take_while(|&&c| c == b'\\').count() % 2 == 1;
+    if escaped || !crate::lexer::is_valid_name(name) {
+        return None;
+    }
+    let mut text = Vec::new();
+    let mut offsets = vec![(open + 1, Quote::Subscript)];
+    let mut i = open + 1;
+    while i < line.len() {
+        let c = match (line[i], line.get(i + 1)) {
+            (b'\\', Some(&e)) if b"$`\"\\]}".contains(&e) => {
+                i += 1;
+                e
+            }
+            (b'\\', None) | (b']' | b'}' | b'$' | b'`' | b'"', _) => return None,
+            (c, _) => c,
+        };
+        i += 1;
+        text.push(c);
+        offsets.push((i, Quote::Subscript));
+    }
+    Some(Word {
+        start: open + 1,
+        kind: Kind::Subscript,
+        quote,
+        text,
+        split: 0,
+        offsets,
+        words: vec![name.to_vec()],
+    })
 }
 
 /// The words of the command after the cursor, unquoted, given the text
@@ -742,8 +799,8 @@ fn quote_suffix(s: &[u8], quote: Quote, at_start: bool, out: &mut Vec<u8>) {
                 }
                 _ => out.push(c),
             },
-            Quote::Double => {
-                if b"$`\"\\".contains(&c) {
+            Quote::Double | Quote::Subscript => {
+                if b"$`\"\\".contains(&c) || (quote == Quote::Subscript && b"]}".contains(&c)) {
                     out.push(b'\\');
                 }
                 out.push(c);
@@ -761,7 +818,7 @@ fn quote_suffix(s: &[u8], quote: Quote, at_start: bool, out: &mut Vec<u8>) {
 
 fn closing(quote: Quote) -> &'static [u8] {
     match quote {
-        Quote::None => b"",
+        Quote::None | Quote::Subscript => b"",
         Quote::Single => b"'",
         Quote::Double => b"\"",
     }
@@ -1047,12 +1104,12 @@ impl ShellHelper {
             Completion::Failed => return Err(w.start),
         };
         let cands = best_matches(cands, |c| &c.value, &w.text[from..]);
-        // A variable name needs no quoting, and a `}` after it ends the
-        // expansion, not the quoted word.
-        let quote = if matches!(w.kind, Kind::Var(_)) {
-            Quote::None
-        } else {
-            w.quote
+        // A variable name needs no quoting, and a `}` after it (or after a
+        // subscript) ends the expansion, not the quoted word.
+        let quote = match w.kind {
+            Kind::Var(_) => Quote::None,
+            Kind::Subscript => Quote::Subscript,
+            _ => w.quote,
         };
         let t = Target {
             w: &w,
@@ -1105,6 +1162,17 @@ impl ShellHelper {
                     out.push(Candidate {
                         suffix: suffix.clone(),
                         ..Candidate::word(v)
+                    });
+                }
+                0
+            }
+            Kind::Subscript => {
+                let found = self.subscripts.and_then(|f| f(&w.words[0]));
+                for (key, value) in found.unwrap_or_default() {
+                    out.push(Candidate {
+                        desc: Some(value),
+                        suffix: Suffix::Close(b"]}".to_vec()),
+                        ..Candidate::word(&key)
                     });
                 }
                 0
@@ -2081,5 +2149,39 @@ mod tests {
         let mut line = "cat *.md".to_string();
         tab(&h, &mut line);
         assert_eq!(line, "cat a.md c\\ d.md ");
+    }
+
+    fn fake_subscripts(name: &[u8]) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
+        let pairs: &[(&[u8], &[u8])] = match name {
+            b"h" => &[(b"apple", b"1"), (b"a]b", b"2"), (b"$x", b"3")],
+            b"a" => &[(b"0", b"x"), (b"1", b"y")],
+            _ => return None,
+        };
+        Some(pairs.iter().map(|(k, v)| (k.to_vec(), v.to_vec())).collect())
+    }
+
+    #[test]
+    fn subscripts() {
+        let h = ShellHelper {
+            subscripts: Some(fake_subscripts),
+            ..ShellHelper::default()
+        };
+        assert_eq!(complete(&h, "echo ${h[ap"), ["apple]}"]);
+        assert_eq!(complete(&h, "echo ${h["), ["\\$x]}", "a\\]b]}", "apple]}"]);
+        // Escapes are those of the subscript, and quotes are left open.
+        assert_eq!(complete(&h, "echo ${h[a\\]"), ["a\\]b]}"]);
+        assert_eq!(complete(&h, "echo \"x${h[\\$"), ["\\$x]}"]);
+        assert_eq!(complete(&h, "echo ${a["), ["0]}", "1]}"]);
+        let (_, items) = h.complete_bytes(b"echo ${a[1", b"");
+        assert_eq!(items[0].desc.as_deref(), Some("y"));
+        // Not a subscript: escaped, closed, or with a substitution.
+        assert!(complete(&h, "echo ${nosuch[").is_empty());
+        assert!(complete(&h, "echo \\${h[").is_empty());
+        assert!(complete(&h, "echo '${h[").is_empty());
+        assert!(complete(&h, "echo ${h[$").is_empty());
+        assert!(complete(&h, "echo ${h[a]}${h[x]").is_empty());
+        let mut line = "echo \"${h[app".to_string();
+        tab(&h, &mut line);
+        assert_eq!(line, "echo \"${h[apple]}");
     }
 }

@@ -95,7 +95,7 @@ Arithmetic expressions can use elements, as in `$((a[i] + 1))` and `a[i] += 2`. 
 index of an element, and those that follow come after it: `a=([2]=x y)` is `('' '' x y)`.
 
 An associative array, made with `typeset -A` (or `local -A`), maps keys to values. A key is any string: the subscript
-is expanded as a word is in an assignment, not evaluated as arithmetic.
+is expanded as a word is in an assignment, not evaluated as arithmetic, and `\]` in it is a `]`.
 
 ```sh
 typeset -A size                      # an empty associative array
@@ -285,7 +285,8 @@ Unlike zsh, luish saves the history by default: zsh keeps no file unless
 In an interactive shell, Tab starts completion.
 
 
-- `$` completes variable names, and `${` also function names;
+- `$` and `${` complete variable names, and `${name[` the indices of the array (or the keys of an associative array),
+  listed with their values;
 - `cd`, `pushd` and `rmdir` complete directories; for `cd` and `pushd`, when none in the current directory match,
   the directories in `CDPATH` complete instead (listed with the `CDPATH` directory they are in), as in zsh;
 - `export`, `local`, `readonly`, `unset`, `read` (except the prompt after `-p`), `getopts` (after the option

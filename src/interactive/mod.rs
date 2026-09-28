@@ -25,6 +25,7 @@ use crate::jobs::JobTable;
 use crate::options::Opt;
 use crate::shell::{Flow, Shell};
 use crate::sys;
+use crate::vars::Value;
 
 thread_local! {
     static EDITOR: RefCell<Option<Editor<ShellHelper, ShellHistory>>> = const { RefCell::new(None) };
@@ -84,6 +85,7 @@ pub fn init_editor() -> bool {
     let mut helper = ShellHelper::default();
     helper.ask = Some(ask);
     helper.expand = Some(expand);
+    helper.subscripts = Some(subscripts);
     ed.history_mut().search = helper.keys.lock().map(|k| k.search.clone()).unwrap_or_default();
     keys::bind(&mut ed, &helper.menu, &helper.keys);
     ed.set_helper(Some(helper));
@@ -261,6 +263,25 @@ fn expand(word: &[u8]) -> Option<Vec<Vec<u8>>> {
     }
 }
 
+/// The subscripts of the array `name` and its elements, for completing
+/// `${name[`: an associative array's keys, or else indices (a string is
+/// one element).
+fn subscripts(name: &[u8]) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
+    let p = SHELL.get();
+    if p.is_null() {
+        return None;
+    }
+    // SAFETY: as in `ask`.
+    let sh = unsafe { &*p };
+    let elements = match sh.vars.get_value(name) {
+        Some(Value::Assoc(h)) => return Some(h.keys().iter().cloned().zip(h.values().iter().cloned()).collect()),
+        Some(v) => v.elements().to_vec(),
+        None => sh.special_elements(name)?,
+    };
+    let indices = (0..elements.len()).map(|i| i.to_string().into_bytes());
+    Some(indices.zip(elements).collect())
+}
+
 /// A match for the word under the cursor: the text that replaces the word
 /// in the line, and its description.
 pub type Match = (String, Option<String>);
@@ -273,6 +294,7 @@ pub fn completions(sh: &mut Shell, line: &[u8]) -> Result<Option<Vec<Match>>, Fl
     helper.names = names(sh);
     helper.ask = Some(ask);
     helper.expand = Some(expand);
+    helper.subscripts = Some(subscripts);
     let outer = SHELL.replace(sh as *mut Shell);
     let r = helper.completions(line);
     SHELL.set(outer);

@@ -222,7 +222,7 @@ shell tracks the current file as well as the line, for provenance and for error 
   `${!a[@]}` for the keys; still to do for them: zsh's `${(k)a}` (which needs parameter flags), and the special
   arrays (`pipestatus`, `path` and `dirstack`, and `match` and `BASH_REMATCH` for `=~`, are done). `typeset` and
   `declare` are done (with `-f`, `-i`, `-l`, `-u` and zsh's `-U`), and extensions can read and set arrays
-  (`sh::getarray`, `sh::getmap`). Still to do: completion of `${a[` (indices and keys).
+  (`sh::getarray`, `sh::getmap`). Tab completes `${a[` (indices, or keys).
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL
   around the prompt and command output. Unicode width handling and bracketed paste belong to the line editor.
 - **Scripting**: error messages with file, line and function stack (from call frames), a predictable strict mode,

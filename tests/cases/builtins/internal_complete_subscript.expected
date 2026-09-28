@@ -1,0 +1,21 @@
+--- echo ${h[ap
+apple]}	red
+--- echo ${h[
+\$x]}	z
+a b]}	y
+a\]b]}	x
+apple]}	red
+--- echo "${h[a
+a b]}	y
+a\]b]}	x
+apple]}	red
+--- echo ${h[a\]
+a\]b]}	x
+--- echo ${a[
+0]}	first
+1]}	second
+--- echo ${s[
+0]}	string
+--- echo ${nosuch[
+--- echo ${pipestatus[
+0]}	0

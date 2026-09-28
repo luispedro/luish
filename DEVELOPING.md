@@ -160,7 +160,8 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   `$((...))` text was expanded. `Value::elements` gives the values, so `${h[@]}` and its operators need nothing more,
   and `Vars::get` gives the value at key `0`, as bash does. `Shell::assign_items` makes `h=(...)`, `read -A` and
   declaration arguments: pairs, or `[key]=value` (declaration arguments encode a key as `[key` and a NUL before the
-  element's `=value`). `savestate` writes `typeset -gA name` before the value. Tests: `builtins/assoc.sh` (zsh),
+  element's `=value`). In `${h[...]}`, `read_param_word_to` makes `\]` an escaped `]`, as in `h[...]=v` (the rest is
+  lexed as in double quotes). `savestate` writes `typeset -gA name` before the value. Tests: `builtins/assoc.sh` (zsh),
   `builtins/assoc_luish.sh`.
 - `${!a[@]}` and `${!a[*]}` (bash's keys) are `ParamOp::Keys`, lexed only as `${!name[@]}` or `${!name[*]}` directly
   followed by `}`; any other `${!` followed by a name is a bad substitution (`name` `!`, so `${!}` and `${!-x}` are
@@ -453,6 +454,11 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   executables are cached until `PATH` or one of its directories changes. rustyline's own listing is never used:
   `Completer::complete` returns 0 or 1 candidates (in `CompletionType::List`, one candidate is put in the line with
   `update`).
+  After `${name[` (`subscript`), the word is the subscript, unquoted as the lexer's `read_index` does, and
+  `Quote::Subscript` escapes `$`, backquote, `"`, `\`, `]` and `}` in what is inserted; the candidates come from the
+  `subscripts` callback in `interactive/mod.rs` (through the `SHELL` pointer, as `ask`), called only then, so the
+  `Names` snapshot taken before each prompt doesn't copy arrays. Tests: `builtins/internal_complete_subscript.sh`,
+  `subscripts` in `complete.rs`.
 - **Expansion on Tab** (zsh's `expand-or-complete`, `ShellHelper::expansion`): a word ending at the cursor, outside
   quotes, with `*?[$` or a backquote in it, is parsed as the argument of `:` and expanded by the shell (the `expand`
   callback in `interactive/mod.rs`, through the same `SHELL` pointer as `ask`, so options such as bare glob
@@ -681,7 +687,7 @@ truncates when it relocates the package.
 | Command cache | `path_cache` in `tests/interactive.rs` |
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |
-| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `builtins/internal_complete_expand.sh`, `tests/plugins/complete.sh` |
+| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `builtins/internal_complete_expand.sh`, `builtins/internal_complete_subscript.sh`, `tests/plugins/complete.sh` |
 | Startup files | `misc/startup_cache.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `tests/plugins/startup_cache_check.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |

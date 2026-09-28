@@ -7,6 +7,10 @@ h[a]=1
 k='b c'
 h[$k]=2
 echo "${h[a]} ${h[$k]} ${h[b c]} ${#h[@]}"
+# `\]` is a `]` in a key, and `\$` a `$`.
+h[x\]y]=3 h[d\$x]=4
+echo "${h[x\]y]} ${h[x\]y]-u} ${h[d\$x]}"
+unset 'h[x]y]' 'h[d$x]'
 # A key is a string, not an arithmetic expression.
 h[1+1]=x
 echo "${h[1+1]} [${h[2]-unset}]"
