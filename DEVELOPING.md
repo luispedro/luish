@@ -414,6 +414,10 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   in shells started with `-i` (which `set` can't change, so also their subshells). Unit tests check that every
   built-in has a page, that pages fit 80 columns and that `docs/builtins.md` includes them all. Tests:
   `builtins/help_noninteractive.sh`, `builtins/internal_help.sh`, `help_builtin` in `tests/interactive.rs`.
+  When adding a page: every name, aliases such as `declare` included, needs an entry in `TOPICS` (kept sorted); the
+  summary (the first paragraph after the synopsis) is at most 60 characters and rendered lines at most 79; the page
+  must not contain relative links (Sphinx rejects them). After a failing `pixi run docs`, `rm -rf docs/_build`
+  before rebuilding, or the cached build hides the warnings.
 - `local x` keeps the current value, as in dash (also an array's, and with `-a`).
 
 ### Options (`options.rs`)
@@ -738,6 +742,29 @@ truncates when it relocates the package.
 - Plugin cases (`tests/plugins/`) get `$STD_PLUGINS`, the path of `luish-std-plugins`, and test completers with
   `__luish_internal complete LINE`, which needs no terminal. Its output has a space at the end of a match that ends
   the word, before the tab of a description.
+- `# reference: zsh` cases: errors give status 2 in luish (as dash) but 1 in zsh, so don't print `$?` after one,
+  and don't end a case on a fatal error (the case's exit status is compared): run it in a subshell,
+  `(x=1+; echo not reached) 2>/dev/null || echo failed`. `((expr))` isn't arithmetic in luish (dash parses nested
+  subshells), so write `: $((expr))`. `echo` interprets backslashes in luish (as dash) but not in zsh's sh
+  emulation, so print with `printf '%s\n'`. zsh sorts with the locale's collation, so compare under `LC_ALL=C`, as
+  the tests run. After `for i in "${a[@]}"`, `i` holds an element, and `$((a[i]))` then fails in luish and dash
+  (`Illegal number`) where zsh evaluates the value recursively.
+- To write a `.expected` file, run the case in the scratchpad (a script run from the repository root can leave files
+  there) with a cleared environment: `env -i LC_ALL=C HOME=$PWD .../luish case.sh 2>/dev/null`. When the failure
+  report of `tests/compare.rs` shows an empty `luish:` block (only a few lines differ), diff the two outputs by hand
+  the same way.
+- Anything that prints code should use `unparse.rs` (source that re-parses exactly, as for `savestate` and
+  `typeset -f`), not `cmdtext.rs` (dash's lossy job text).
+- To compare `zsh --emulate sh`, bash and luish on a snippet, define these and run `t 'code'`, or `T 'code' 'stdin'`
+  with standard input as a `printf` format (bash gets `-A` rewritten to `-a`). Never pass them `typeset` or
+  `typeset -x` without names, nor bash's `typeset +f` (which lists all variables): they print the whole
+  environment, tokens included.
+
+  ```sh
+  Z=$(pixi run -q which zsh)
+  t() { printf '== %s\n' "$1"; z=$($Z --emulate sh -c "$1" 2>&1 | tr '\n' '|'); b=$(bash --posix -c "$1" 2>&1 | tr '\n' '|'); l=$(./target/debug/luish -c "$1" 2>&1 | tr '\n' '|'); printf ' zsh-sh: %s\n bash:   %s\n luish:  %s\n' "$z" "$b" "$l"; }
+  T() { printf '== %s\n' "$1"; z=$(printf "$2" | $Z --emulate sh -c "$1" 2>&1 | tr '\n' '|'); b=$(printf "$2" | bash --posix -c "${1//-A/-a}" 2>&1 | tr '\n' '|'); l=$(printf "$2" | ./target/debug/luish -c "$1" 2>&1 | tr '\n' '|'); printf ' zsh-sh: %s\n bash:   %s\n luish:  %s\n' "$z" "$b" "$l"; }
+  ```
 
 ## Conformance
 
@@ -781,6 +808,14 @@ of 35 operator strings, SipHash on every variable lookup, `${x#pat}` trying ever
 `case` compiling literal patterns, and needless copies. Work inside the shell is now as fast as dash or faster; the
 fork-heavy scripts are within 10%, mostly startup. Most of the remaining in-shell time is `malloc` and `free`, since
 expansion builds `Vec`s where dash uses its stack allocator.
+
+For small changes, instruction counts are steadier than timings: run a benchmark script under
+`valgrind --tool=callgrind` with a release build before and after, and compare "Collected" for the main process. To
+build the "before" without touching other worktrees, `git archive HEAD | tar x` into a temporary directory and build
+there with its own `CARGO_TARGET_DIR`. Arrays cost arith +1.2% and functions +1.8% this way (the `Value` match in
+`Vars::get`, the fast-path check in `expand_assigns`), parameter flags under 1% (the `flags` check on the `$x` fast
+path). New variable kinds or expansions must keep `Vars::get` and the `$x` fast path in `expand_param` this cheap.
+The `Arith` branch of `expand_part` deliberately doesn't call `arith_word`, which is slower out of line.
 
 luish parses large files about three times as slowly as dash (`-n` of nvm's 144 KB `nvm.sh`: about 6 ms to dash's
 2 ms, after startup), and touches about 4 MB of memory doing it (1046 page faults to dash's 228), so the AST or the
@@ -843,6 +878,9 @@ User-visible limitations are listed in `docs/compatibility.md`. Beyond those:
 - Fds saved at 10 or above could collide with a user redirection to fd 10+ in the same command.
 - The native built-ins are a `fn` table, not yet on a `Builtin` trait shared with extension built-ins.
 - No fuzz targets (lexer, parser, arithmetic, pattern matcher) and no `insta` snapshots.
+- The tests never run on the musl build (CI tests glibc; the release workflow only runs `test-install.sh` on musl),
+  so musl's offset in `exec/cond.rs::re_nsub` (0, from the `libc` crate's struct definition) has only been checked
+  by reading it: run `exec::cond::tests::groups` on musl.
 
 ## References
 

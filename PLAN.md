@@ -223,6 +223,11 @@ shell tracks the current file as well as the line, for provenance and for error 
   `${(j:,:)a[@]}`, `${(o)a[@]}` and others), and the special arrays (`pipestatus`, `path` and `dirstack`, and `match`
   and `BASH_REMATCH` for `=~`). `typeset` and `declare` are done (with `-f`, `-i`, `-l`, `-u` and zsh's `-U`), and
   extensions can read and set arrays (`sh::getarray`, `sh::getmap`). Tab completes `${a[` (indices, or keys).
+  Possible follow-ups, not yet asked for: more parameter flags (`q`/`Q`, `l:n:`/`r:n:`, `#`, `e`; `P` would
+  duplicate `${!x}`), flags before `#` (`${(flags)#x}`), nested substitutions (`${${x#a}%b}`), and the locale's
+  collation for `(o)`. Not to be done (decided 2026-09-29): zsh's `integer` built-in and base argument
+  (`typeset -i 16 x`), `typeset -F`, highlighting subscripts beyond what the highlighter already does, completing
+  keys that contain `'`, and `0` rather than `''` for the holes filled in integer arrays.
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL
   around the prompt and command output. Unicode width handling and bracketed paste belong to the line editor.
 - **Scripting**: error messages with file, line and function stack (from call frames), a predictable strict mode,
