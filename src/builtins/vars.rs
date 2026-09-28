@@ -539,6 +539,8 @@ impl Attrs {
 fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
     let cmd = &argv[0];
     let (mut attrs, mut global, mut print) = (Attrs::default(), false, false);
+    // `-f` (definitions) or `+f` (names): functions rather than variables.
+    let mut funcs = None;
     let mut i = 1;
     while let Some(a) = argv.get(i) {
         let on = match a.first() {
@@ -556,6 +558,7 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
         for &c in &a[1..] {
             match c {
                 b'a' if on => (attrs.array, attrs.assoc) = (true, false),
+                b'f' if !keep => funcs = Some(on),
                 b'A' if on => (attrs.array, attrs.assoc) = (false, true),
                 b'g' if on && !keep => global = true,
                 b'i' => attrs.integer = Some(on),
@@ -574,6 +577,9 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
         }
     }
     let args = &argv[i..];
+    if let Some(defs) = funcs {
+        return Ok(print_functions(sh, cmd, args, defs, &attrs));
+    }
     if print || (args.is_empty() && !keep) {
         return Ok(print_declarations(sh, cmd, args, &attrs));
     }
@@ -685,6 +691,39 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
         }
     }
     Ok(status)
+}
+
+/// `typeset -f` (`defs`) prints the definitions of the functions `names`
+/// (all of them without names), `typeset +f` only their names. A name that
+/// isn't a function gives status 1, silently (zsh and bash).
+fn print_functions(sh: &Shell, cmd: &[u8], names: &[Vec<u8>], defs: bool, attrs: &Attrs) -> i32 {
+    let a = attrs;
+    let flags = [a.integer, a.lower, a.upper, a.unique, a.readonly, a.export];
+    if a.array || a.assoc || flags.iter().any(Option::is_some) {
+        sh.berr(cmd, "-f can't be used with variable attributes");
+        return 2;
+    }
+    if names.iter().any(|n| n.contains(&b'=')) {
+        sh.berr(cmd, "can't use -f to make functions");
+        return 1;
+    }
+    let mut all: Vec<&Vec<u8>> = sh.functions.keys().collect();
+    all.sort_unstable();
+    let names = if names.is_empty() { all } else { names.iter().collect() };
+    let mut out = Vec::new();
+    let mut status = 0;
+    for name in names {
+        match sh.functions.get(name) {
+            Some(body) if defs => out.extend(crate::unparse::function(name, body, &sh.aliases).0),
+            Some(_) => {
+                out.extend_from_slice(name);
+                out.push(b'\n');
+            }
+            None => status = 1,
+        }
+    }
+    sh.out(&out);
+    status
 }
 
 /// `typeset -p`: prints the variables `names`, or without names all those

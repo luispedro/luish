@@ -350,8 +350,14 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   `path` and `dirstack` (which reads back as an array assignment, so `path` stays tied), but a listing without
   names includes only the specials that have attributes (as `set` doesn't list them).
   `-a` and `-A` convert a string, and refuse to convert one kind of array to the other (status 1, as in bash, and
-  the other names are still declared). Not implemented: `-f` and zsh's other options. Tests:
-  `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`.
+  the other names are still declared). Not implemented: zsh's other options, and `-F` (zsh's floats, bash's names of
+  functions). Tests: `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`.
+- `typeset -f` (`vars::print_functions`) prints definitions with `unparse::function`, as `savestate` does, so they
+  read back (the layout differs from zsh's and bash's, which differ from each other); `+f` prints the names, as in
+  zsh. A name that isn't a function gives status 1 without a message (zsh and bash). With `-f`, variable attributes
+  are an error (status 2) and `name=value` too (status 1, bash's error; zsh ignores both); `local` has no `-f`, as in
+  zsh. Tests: `builtins/typeset_functions.sh` (zsh: listings, statuses, reading back),
+  `builtins/typeset_functions_luish.sh` (layout, errors).
 - `typeset -i`, `-l`, `-u` and `-U` set `Var::transform` (a `vars::Transform`), and `Vars::transforms` records that
   some variable ever had one, so that `Vars::transform` costs a flag test when no script uses them.
   `Shell::try_set_var` (hence `set_var`, `read`, `for`), `set_var_value`, `set_element`, `assign_items` and
@@ -650,7 +656,7 @@ truncates when it relocates the package.
 | Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
 | Associative arrays | `builtins/assoc.sh` (zsh), `builtins/assoc_luish.sh` |
 | `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |
-| `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh`, `builtins/typeset_case.sh` (zsh), `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh` |
+| `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh`, `builtins/typeset_case.sh` (zsh), `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh`, `builtins/typeset_functions.sh` (zsh), `builtins/typeset_functions_luish.sh` |
 | `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |
 | `SHLVL` | `misc/shlvl.sh`, `histcmd_shlvl` in `tests/interactive.rs` |

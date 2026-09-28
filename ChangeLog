@@ -1,4 +1,5 @@
 Unreleased
+    * `typeset -f` prints functions, `typeset +f` their names
     * `typeset -l` and `-u` (lower and upper case), and `typeset -U` (zsh:
       unique arrays, as in `typeset -U path`)
     * `typeset -i`: integer variables, as in zsh and bash

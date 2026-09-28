@@ -3,6 +3,7 @@
 ```text
 typeset [-aAgilruUx] [+ilruUx] name[=value]... name=(value...)...
 typeset -p [-aAilruUx] [name...]
+typeset -f|+f [name...]
 declare ...
 ```
 
@@ -26,6 +27,11 @@ another name for `typeset`.
   Their values are given as `name=([key]=value...)`, or as pairs of keys
   and values, `name=(key value...)`. An array can't become an associative
   one, nor the other way around.
+
+`-f`
+: Print the definitions of the functions named (all of them without
+  names), as text that can be read back. `+f` prints only their names. The
+  status is 1 if a name isn't a function. It takes no variable attributes.
 
 `-g`
 : In a function, change the variables outside it rather than make local

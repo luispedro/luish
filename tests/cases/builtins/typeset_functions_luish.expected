@@ -1,0 +1,37 @@
+f() {
+    if [ "$1" = x ]; then
+        echo "x: ${2:-none}"
+    elif [ -n "$1" ]; then
+        :
+    fi
+    while false; do
+        :
+    done
+    case $1 in
+        (a | b)
+            echo ab
+        ;;
+        (*)
+        ;;
+    esac
+    x=1 y=$(echo z) cmd >/dev/null 2>&1 <in
+    a && b || ! c | d &
+    {
+        grp
+    } 2>/dev/null
+    [[ -n $x && $y == z* ]]
+    arr=(a 'b c') h[k]=v
+    cat <<'EOF'
+raw $x
+EOF
+}
+g() (
+    echo in g
+) >/dev/null
+h() {
+    echo h
+}
+status 2
+status 1
+status 2
+status 2
