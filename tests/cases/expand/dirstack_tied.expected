@@ -1,0 +1,26 @@
+[unset] 0
+/b 2 /a 0 1
+[/b]
+[/a]
+/a
+~/b ~/b ~/c
+~/b ~/b ~/c /x
+~/b ~/b /y /xz  /w
+~/b ~/b  /xz  /w
+cannot popd
+~/b ~/c
+~/b
+/b [unset]
+~/b /r /s
+2
+not associative
+~/b /t
+~/b /r /s
+~/b /r /s
+/u
+~/b /v
+~/b /v /w
+/m
+~/a ~/b /v /w
+~/a ~/b /v /w
+/n

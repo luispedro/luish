@@ -388,13 +388,21 @@ impl Shell {
     fn with_temp_assigns(&mut self, assigns: Vec<Assignment>, f: impl FnOnce(&mut Shell) -> ExecResult) -> ExecResult {
         let mut saved = Vec::with_capacity(assigns.len());
         let mut r = None;
+        let mut dirstack = None;
         for a in assigns {
             let n = a.name.clone();
-            // An array assigned to `path` sets `PATH`.
-            let tied = matches!(a.value, AssignValue::Items(_)) && self.vars.special(&n) == Some(Special::Path);
-            if tied {
-                saved.push((b"PATH".to_vec(), self.vars.save(b"PATH")));
+            // An array assigned to `path` sets `PATH`, and to `dirstack` the
+            // directory stack.
+            let tied = match self.vars.special(&n) {
+                Some(s) if s.is_tied() && matches!(a.value, AssignValue::Items(_)) => Some(s),
+                _ => None,
+            };
+            match tied {
+                Some(Special::Dirstack) if dirstack.is_none() => dirstack = Some(self.dirstack.clone()),
+                Some(Special::Path) => saved.push((b"PATH".to_vec(), self.vars.save(b"PATH"))),
+                _ => {}
             }
+            let tied = tied == Some(Special::Path);
             let old = self.vars.save(&n);
             let set = self.assign(a);
             if set.is_ok() {
@@ -409,6 +417,9 @@ impl Shell {
         let r = r.unwrap_or_else(|| f(self));
         for (n, old) in saved.into_iter().rev() {
             self.restore_saved(n, old);
+        }
+        if let Some(d) = dirstack {
+            self.dirstack = d;
         }
         r
     }

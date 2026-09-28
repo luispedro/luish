@@ -194,13 +194,17 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   assignments save a variable with its special bit (`Vars::save`, `Shell::restore_saved`), so that a special made
   ordinary there is special again afterwards. Tests: `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`,
   `expand/pipestatus.sh`, `misc/shlvl.sh`, `histcmd_shlvl` and `pipefail_job_control` in `tests/interactive.rs`.
-- zsh's `path` is a special too, read as `PATH` split at colons (`Shell::path_elements`). Only array assignments
+- zsh's `path` is a special too, read as `PATH` split at colons (`Shell::tied_elements`). Only array assignments
   tie it, as they are errors in dash: `Shell::set_var_value`, `append_elements` and `set_element` turn them into an
-  assignment of `PATH` while it is special (`assign_path`, which also checks that `path` isn't read-only), while a
+  assignment of `PATH` while it is special (`assign_tied`, which also checks that `path` isn't read-only), while a
   string assignment (`Vars::set`) makes it ordinary, as for `UID`, so that dash scripts can use the name. `local`
   makes it ordinary (and unset, as in dash), `typeset -a path` leaves it alone, `path=(...) cmd` also saves and
   exports `PATH` (`with_temp_assigns`), and `remember_command` doesn't look up a command with it. `from_env` takes
   it from the environment as an ordinary variable. Tests: `expand/path_ordinary.sh` (dash), `expand/path_tied.sh`.
+- zsh's `dirstack` is tied to `Shell::dirstack` in the same way (`Special::is_tied` covers both): an array
+  assignment replaces the stack without checking the directories (as zsh: `popd` reports a missing one and drops
+  it), and `dirstack=(...) cmd` saves and restores the stack (`with_temp_assigns`). Tests:
+  `expand/dirstack_ordinary.sh` (dash), `expand/dirstack_tied.sh`.
 - Unit tests in `split.rs`, `pattern.rs` and `arith.rs`; cases in `expand/*`.
 
 ### Execution (`exec/`)
@@ -623,6 +627,7 @@ truncates when it relocates the package.
 | `RANDOM`, `SECONDS` and the other specials | `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | `pipestatus`, `PIPESTATUS` | `expand/pipestatus.sh`, `pipefail_job_control` in `tests/interactive.rs` |
 | `path` tied to `PATH` by array assignments | `expand/path_tied.sh`, `expand/path_ordinary.sh` (dash) |
+| `dirstack` tied to the directory stack by array assignments | `expand/dirstack_tied.sh`, `expand/dirstack_ordinary.sh` (dash) |
 | Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
 | Associative arrays | `builtins/assoc.sh` (zsh), `builtins/assoc_luish.sh` |
 | `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |

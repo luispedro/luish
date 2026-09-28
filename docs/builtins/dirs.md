@@ -25,6 +25,10 @@ entries before it move to the end.
 even if the directory can't be changed to. `popd +n` or `-n` removes that
 entry instead, without changing directory.
 
+The array `dirstack` holds the stack without the current directory, so
+that `${dirstack[0]}` is entry 1; assigning an array to it, as in
+`dirstack=(~/src /tmp)`, replaces the stack.
+
 In an interactive shell, `pushd` and `popd` print the stack afterwards, as
 `dirs` does, unless `pushd.silent` is set.
 

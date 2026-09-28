@@ -1,4 +1,6 @@
 Unreleased
+    * `dirstack` (zsh): the directory stack as an array, which
+      `dirstack=(...)` sets
     * `path` (zsh): the directories of `PATH` as an array, which
       `path=(...)` and `path+=(...)` set
     * Special variables such as `UID` are special again after a function

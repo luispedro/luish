@@ -220,42 +220,57 @@ impl Shell {
             // As for any array, its first element.
             Special::Pipestatus | Special::PipestatusBash => Some(self.pipestatus.first()?.to_string().into_bytes()),
             Special::Path => Some(self.vars.get(b"PATH")?.split(|&c| c == b':').next()?.to_vec()),
+            Special::Dirstack => self.dirstack.first().cloned(),
             s => Some(self.vars.special_value(s)),
         }
     }
 
     /// The elements of a variable that isn't stored, for `${a[@]}` and
-    /// `${a[i]}`: `pipestatus`, `path`, or one element for `LINENO` or
-    /// another special.
+    /// `${a[i]}`: `pipestatus`, `path`, `dirstack`, or one element for
+    /// `LINENO` or another special.
     pub fn special_elements(&self, name: &[u8]) -> Option<Vec<Vec<u8>>> {
         match self.vars.special(name) {
             Some(Special::Pipestatus | Special::PipestatusBash) => {
                 Some(self.pipestatus.iter().map(|s| s.to_string().into_bytes()).collect())
             }
-            Some(Special::Path) => Some(self.path_elements()),
+            Some(s @ (Special::Path | Special::Dirstack)) => Some(self.tied_elements(s)),
             _ => self.get_var(name).map(|v| vec![v]),
         }
     }
 
-    /// The directories of `PATH`, for `path`: as in zsh, an empty `PATH` is
-    /// one empty directory, and an unset one none.
-    fn path_elements(&self) -> Vec<Vec<u8>> {
-        self.vars
-            .get(b"PATH")
-            .map_or_else(Vec::new, |p| p.split(|&c| c == b':').map(<[u8]>::to_vec).collect())
-    }
-
-    /// Whether `name` is `path` while it is tied to `PATH`.
-    fn is_tied_path(&self, name: &[u8]) -> bool {
-        self.vars.special(name) == Some(Special::Path)
-    }
-
-    /// An array assignment to `path` while it is tied: sets `PATH`.
-    fn assign_path(&mut self, dirs: Vec<Vec<u8>>) -> Result<(), Flow> {
-        if self.vars.var(b"path").is_some_and(|v| v.readonly) {
-            return Err(self.readonly_error(b"path"));
+    /// The elements of a tied array: the directories of `PATH` for `path`
+    /// (as in zsh, an empty `PATH` is one empty directory, and an unset one
+    /// none), or the directory stack for `dirstack`.
+    fn tied_elements(&self, s: Special) -> Vec<Vec<u8>> {
+        match s {
+            Special::Dirstack => self.dirstack.clone(),
+            _ => self
+                .vars
+                .get(b"PATH")
+                .map_or_else(Vec::new, |p| p.split(|&c| c == b':').map(<[u8]>::to_vec).collect()),
         }
-        self.set_var(b"PATH", dirs.join(&b':'))
+    }
+
+    /// The special `name` names if it is an array tied to something else
+    /// (`path` or `dirstack`) and still special.
+    fn tied(&self, name: &[u8]) -> Option<Special> {
+        self.vars.special(name).filter(|s| s.is_tied())
+    }
+
+    /// An array assignment to a tied array: sets `PATH`, or replaces the
+    /// directory stack (whose directories aren't checked, as in zsh).
+    fn assign_tied(&mut self, s: Special, elements: Vec<Vec<u8>>) -> Result<(), Flow> {
+        let name = s.name();
+        if self.vars.var(name).is_some_and(|v| v.readonly) {
+            return Err(self.readonly_error(name));
+        }
+        match s {
+            Special::Dirstack => {
+                self.dirstack = elements;
+                Ok(())
+            }
+            _ => self.set_var(b"PATH", elements.join(&b':')),
+        }
     }
 
     /// Sets a variable, reporting an error if it is readonly.
@@ -288,8 +303,10 @@ impl Shell {
         if let Value::Str(s) = value {
             return self.set_var(name, s);
         }
-        if matches!(value, Value::Array(_)) && self.is_tied_path(name) {
-            return self.assign_path(value.elements().to_vec());
+        if matches!(value, Value::Array(_))
+            && let Some(s) = self.tied(name)
+        {
+            return self.assign_tied(s, value.elements().to_vec());
         }
         if self.vars.set_value(name, value).is_err() {
             return Err(self.readonly_error(name));
@@ -302,10 +319,10 @@ impl Shell {
     /// index counts from the end if it is negative.
     pub fn set_element(&mut self, name: &[u8], sub: &Subscript, value: Vec<u8>, append: bool) -> Result<(), Flow> {
         let r = match sub {
-            Subscript::Index(i) if self.is_tied_path(name) => {
-                let mut dirs = Some(Value::Array(Box::new(self.path_elements())));
-                match crate::vars::set_index(&mut dirs, *i, value, append) {
-                    Ok(()) => return self.assign_path(dirs.unwrap().elements().to_vec()),
+            Subscript::Index(i) if let Some(s) = self.tied(name) => {
+                let mut a = Some(Value::Array(Box::new(self.tied_elements(s))));
+                match crate::vars::set_index(&mut a, *i, value, append) {
+                    Ok(()) => return self.assign_tied(s, a.unwrap().elements().to_vec()),
                     Err(e) => Err(e),
                 }
             }
@@ -384,10 +401,10 @@ impl Shell {
 
     /// Appends elements to an array (`a+=(x y)`).
     pub fn append_elements(&mut self, name: &[u8], items: Vec<Vec<u8>>) -> Result<(), Flow> {
-        if self.is_tied_path(name) {
-            let mut dirs = self.path_elements();
-            dirs.extend(items);
-            return self.assign_path(dirs);
+        if let Some(s) = self.tied(name) {
+            let mut a = self.tied_elements(s);
+            a.extend(items);
+            return self.assign_tied(s, a);
         }
         if self.vars.append_elements(name, items).is_err() {
             return Err(self.readonly_error(name));

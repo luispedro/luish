@@ -163,6 +163,8 @@ pub struct Vars {
 /// `PATH`, while a string assignment makes it an ordinary variable (as for
 /// `UID`), so that dash scripts can use the name. It is also made ordinary
 /// by `local`, and taken from the environment as an ordinary variable.
+/// `dirstack` (zsh's directory stack, without the current directory) is
+/// tied to `Shell::dirstack` in the same way.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Special {
     Random,
@@ -178,6 +180,7 @@ pub enum Special {
     /// bash's name for `pipestatus`.
     PipestatusBash,
     Path,
+    Dirstack,
 }
 
 pub const SPECIALS: &[(&[u8], Special)] = &[
@@ -193,6 +196,7 @@ pub const SPECIALS: &[(&[u8], Special)] = &[
     (b"pipestatus", Special::Pipestatus),
     (b"PIPESTATUS", Special::PipestatusBash),
     (b"path", Special::Path),
+    (b"dirstack", Special::Dirstack),
 ];
 
 impl Special {
@@ -200,7 +204,7 @@ impl Special {
         // Most names are rejected on their first byte.
         if !matches!(
             name.first(),
-            Some(b'E' | b'G' | b'H' | b'P' | b'R' | b'S' | b'U' | b'p')
+            Some(b'E' | b'G' | b'H' | b'P' | b'R' | b'S' | b'U' | b'd' | b'p')
         ) {
             return None;
         }
@@ -209,6 +213,16 @@ impl Special {
 
     fn bit(self) -> u16 {
         1 << self as u16
+    }
+
+    pub fn name(self) -> &'static [u8] {
+        SPECIALS.iter().find(|&&(_, s)| s == self).unwrap().0
+    }
+
+    /// Whether it is an array tied to something else (`path`, `dirstack`):
+    /// array assignments change that, other assignments make it ordinary.
+    pub fn is_tied(self) -> bool {
+        matches!(self, Special::Path | Special::Dirstack)
     }
 }
 
@@ -287,10 +301,10 @@ impl Vars {
             if !crate::lexer::is_valid_name(&k) {
                 continue;
             }
-            // As in zsh, the specials ignore the environment, except `path`,
-            // which isn't special in zsh's sh emulation.
+            // As in zsh, the specials ignore the environment, except the
+            // tied arrays, which aren't special in zsh's sh emulation.
             match Special::from_name(&k) {
-                Some(Special::Path) => specials.active &= !Special::Path.bit(),
+                Some(s) if s.is_tied() => specials.active &= !s.bit(),
                 Some(_) => continue,
                 None => {}
             }
@@ -348,7 +362,7 @@ impl Vars {
             Special::Euid => crate::sys::geteuid().into(),
             Special::Gid => crate::sys::getgid().into(),
             Special::Egid => crate::sys::getegid().into(),
-            Special::Histcmd | Special::Pipestatus | Special::PipestatusBash | Special::Path => 0,
+            Special::Histcmd | Special::Pipestatus | Special::PipestatusBash | Special::Path | Special::Dirstack => 0,
         };
         n.to_string().into_bytes()
     }

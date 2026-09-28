@@ -236,7 +236,7 @@ fn unset_element(sh: &mut Shell, cmd: &[u8], name: &[u8], index: &[u8]) -> Resul
     })?;
     let len = match sh.vars.get_value(name) {
         Some(v) => v.elements().len(),
-        None if sh.vars.special(name) == Some(Special::Path) => sh.special_elements(name).map_or(0, |v| v.len()),
+        None if sh.vars.special(name).is_some_and(Special::is_tied) => sh.special_elements(name).map_or(0, |v| v.len()),
         None => 0,
     } as i64;
     if (-len..len).contains(&i) {
@@ -568,10 +568,11 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
             if !keep {
                 sh.restore_var(name.to_vec(), None);
             }
-            // A local `path` is an ordinary variable (unset, as in dash),
-            // which doesn't change `PATH` (zsh makes `PATH` local too).
-            if sh.vars.special(name) == Some(Special::Path) {
-                sh.vars.deactivate(Special::Path);
+            // A local `path` or `dirstack` is an ordinary variable (unset,
+            // as in dash), which doesn't change `PATH` (zsh makes `PATH`
+            // local too) or the directory stack.
+            if let Some(s) = sh.vars.special(name).filter(|s| s.is_tied()) {
+                sh.vars.deactivate(s);
             }
         }
         // A string becomes an array of one element, or an associative
@@ -582,8 +583,8 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
         } else {
             None
         };
-        // `path` (tied to `PATH`) is already an array.
-        let tied = sh.vars.special(name) == Some(Special::Path);
+        // `path` and `dirstack` (tied arrays) are already arrays.
+        let tied = sh.vars.special(name).is_some_and(Special::is_tied);
         let converted = match old {
             _ if tied && attrs.assoc => Err("indexed to associative"),
             _ if tied => Ok(None),
