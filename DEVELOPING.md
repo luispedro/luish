@@ -194,6 +194,12 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   fails) exit on their own status, so `{ false && true; }` doesn't exit. Inside `$(...)` the suppression is reset.
   Tests: `errexit/compound.sh`, `errexit/cmdsubst_condition.sh`, `errexit/*`.
 - A function can't be named after a special built-in ("Bad function name").
+- `function` is a reserved word (`parse_function_keyword`), so `FunctionDef` holds a list of names (zsh's
+  `function f g`). Names are unquoted literal words: any but those with `/` or of special built-ins, so
+  `unparse.rs` writes a name that isn't a valid variable name, or is a reserved word, or several names, after
+  `function` (`f()` wouldn't read back). A second name that opens a compound command (`if`, `for`, ...) starts a
+  bash-style body instead; zsh would take it as a name. Tests: `parse/function_keyword.sh` (zsh),
+  `parse/function_keyword_bash.sh` (`.expected`; zsh's sh emulation rejects these bodies).
 - Recursion (`stack.rs`): as in Debian's dash (its patch 0009, for Debian bug 579815), a function call when 1000 are
   running is a shell error, `Maximum function recursion depth (1000) reached`; unlike dash, `func_depth` also goes
   down when the error unwinds. Other deep nesting would overflow the stack, which kills the shell with SIGSEGV

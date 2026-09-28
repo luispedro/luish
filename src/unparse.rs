@@ -9,7 +9,8 @@
 use std::cell::Cell;
 
 use crate::ast::*;
-use crate::lexer::{AliasMap, is_name_char};
+use crate::lexer::{AliasMap, is_name_char, is_valid_name};
+use crate::parser::is_reserved;
 
 /// The definition of a function, ending with a newline. A command name that
 /// is one of `aliases` is quoted, so that reading the text back doesn't
@@ -18,7 +19,7 @@ use crate::lexer::{AliasMap, is_name_char};
 pub fn function(name: &[u8], body: &FunctionBody, aliases: &AliasMap) -> (Vec<u8>, bool) {
     let globqual = Cell::new(false);
     let mut p = Printer::new(0, aliases, &globqual);
-    p.function(name, body);
+    p.function(&[name], body);
     (p.finish(), globqual.get())
 }
 
@@ -78,9 +79,24 @@ impl<'a> Printer<'a> {
         self.finish_with(true)
     }
 
-    fn function(&mut self, name: &[u8], body: &FunctionBody) {
-        self.w(name);
-        self.w(b"() ");
+    fn function(&mut self, names: &[impl AsRef<[u8]>], body: &FunctionBody) {
+        match names {
+            [name] if is_valid_name(name.as_ref()) && !is_reserved(name.as_ref()) => {
+                self.w(name.as_ref());
+                self.w(b"() ");
+            }
+            // Other names only read back after `function`.
+            _ => {
+                self.w(b"function ");
+                for name in names {
+                    self.w(name.as_ref());
+                    self.w(b" ");
+                }
+                if !matches!(body.cmd, CompoundCommand::BraceGroup(_)) {
+                    self.w(b"() ");
+                }
+            }
+        }
         self.compound(&body.cmd);
         self.redirs(&body.redirs);
     }
@@ -152,7 +168,7 @@ impl<'a> Printer<'a> {
                 self.compound(cc);
                 self.redirs(redirs);
             }
-            Command::FunctionDef { name, body } => self.function(name, body),
+            Command::FunctionDef { names, body } => self.function(names, body),
         }
     }
 
@@ -480,10 +496,13 @@ mod tests {
     /// The function defined by `src`, printed.
     fn print(src: &[u8], aliases: &AliasMap) -> String {
         let list = parse(src);
-        let Command::FunctionDef { name, body } = &list[0].list.first.cmds[0] else {
+        let Command::FunctionDef { names, body } = &list[0].list.first.cmds[0] else {
             panic!("not a function: {}", String::from_utf8_lossy(src));
         };
-        String::from_utf8(function(name, body, aliases).0).unwrap()
+        let globqual = Cell::new(false);
+        let mut p = Printer::new(0, aliases, &globqual);
+        p.function(names, body);
+        String::from_utf8(p.finish()).unwrap()
     }
 
     /// Clears line numbers, which differ between the original and the
@@ -617,6 +636,14 @@ mod tests {
             "f() (\n    cd /\n    ls\n) >out 2>&1\n"
         );
         assert_eq!(round_trip("f() echo hi"), "f() {\n    echo hi\n}\n");
+        // Names that only `function` can define.
+        assert_eq!(round_trip("function a-b { :; }"), "function a-b {\n    :\n}\n");
+        assert_eq!(round_trip("function if { :; }"), "function if {\n    :\n}\n");
+        assert_eq!(round_trip("function a.b () ( : )"), "function a.b () (\n    :\n)\n");
+        assert_eq!(
+            round_trip("f() { function g h { :; }; }"),
+            "f() {\n    function g h {\n        :\n    }\n}\n"
+        );
     }
 
     #[test]

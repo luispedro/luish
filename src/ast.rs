@@ -34,7 +34,12 @@ pub struct Pipeline {
 pub enum Command {
     Simple(SimpleCommand),
     Compound(CompoundCommand, Vec<Redirect>),
-    FunctionDef { name: Vec<u8>, body: Rc<FunctionBody> },
+    /// Several names only with `function` (as in zsh), each defined with the
+    /// same body.
+    FunctionDef {
+        names: Vec<Vec<u8>>,
+        body: Rc<FunctionBody>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]

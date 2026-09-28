@@ -118,6 +118,8 @@ enum After {
     ForName,
     Case,
     CaseWord,
+    /// The names after `function`.
+    Function,
 }
 
 struct Scan<'a> {
@@ -290,6 +292,11 @@ impl Scan<'_> {
                 *after = After::None;
                 return e;
             }
+            After::Function if !(plain && text == b"{") => {
+                self.paint_plain(start, e, Class::Command);
+                return e;
+            }
+            After::Function => *after = After::None,
             After::ForName if plain && text == b"do" => {
                 self.paint(start, e, Class::Keyword);
                 *after = After::None;
@@ -307,6 +314,7 @@ impl Scan<'_> {
             match text {
                 b"for" => *after = After::For,
                 b"case" => *after = After::Case,
+                b"function" => *after = After::Function,
                 _ => {}
             }
             *cmd = !matches!(text, b"for" | b"case" | b"fi" | b"done" | b"esac" | b"}");
@@ -724,6 +732,8 @@ mod tests {
         assert_eq!(classes("sudo -E ls"), "cccc....cc");
         assert_eq!(classes("echo a | cat && ls"), "cccc...o.ccc.oo.cc");
         assert_eq!(classes("f() { ls; }"), "coo.k.cco.k");
+        assert_eq!(classes("function a-b c { ls; }"), "kkkkkkkk.ccc.c.k.cco.k");
+        assert_eq!(classes("function f()\n{ nope; }"), "kkkkkkkk.coo.k.uuuuo.k");
         assert_eq!(classes("! ls"), "k.cc");
         assert_eq!(classes("(ls)"), "occo");
         assert_eq!(classes("e\"ch\"o"), "cssssc");

@@ -143,7 +143,20 @@ struct PathCache {
 }
 
 pub(super) const RESERVED: &[&[u8]] = &[
-    b"case", b"do", b"done", b"elif", b"else", b"esac", b"fi", b"for", b"if", b"in", b"then", b"until", b"while",
+    b"case",
+    b"do",
+    b"done",
+    b"elif",
+    b"else",
+    b"esac",
+    b"fi",
+    b"for",
+    b"function",
+    b"if",
+    b"in",
+    b"then",
+    b"until",
+    b"while",
 ];
 
 /// Reserved words after which a command comes next.

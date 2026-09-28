@@ -6,8 +6,23 @@ use crate::ast::*;
 use crate::lexer::{AliasMap, Op, PResult, ParseError, Parser, Tok, Token, is_valid_name};
 
 const RESERVED: &[&[u8]] = &[
-    b"!", b"{", b"}", b"case", b"do", b"done", b"elif", b"else", b"esac", b"fi", b"for", b"if", b"in", b"then",
-    b"until", b"while",
+    b"!",
+    b"{",
+    b"}",
+    b"case",
+    b"do",
+    b"done",
+    b"elif",
+    b"else",
+    b"esac",
+    b"fi",
+    b"for",
+    b"function",
+    b"if",
+    b"in",
+    b"then",
+    b"until",
+    b"while",
 ];
 
 pub fn is_reserved(w: &[u8]) -> bool {
@@ -232,6 +247,7 @@ impl Parser {
                     let redirs = self.parse_redirects()?;
                     return Ok(Command::Compound(cmd, redirs));
                 }
+                b"function" => return self.parse_function_keyword(),
                 w if is_reserved(w) => {
                     let t = self.next()?;
                     return self.unexpected(&t, None);
@@ -524,8 +540,73 @@ impl Parser {
             },
         };
         Ok(Command::FunctionDef {
-            name,
+            names: vec![name],
             body: Rc::new(body),
+        })
+    }
+
+    /// `function NAME... [()] compound-command`, as in zsh and bash. The
+    /// names needn't be valid variable names (`function git-up`), and aren't
+    /// alias-expanded. Several names are zsh's, and a body that starts after
+    /// the first name with a reserved word such as `if` is bash's.
+    fn parse_function_keyword(&mut self) -> PResult<Command> {
+        self.next()?;
+        let mut names = Vec::new();
+        loop {
+            let Some(w) = self.peek_literal()? else {
+                if matches!(self.peek()?.tok, Tok::Word(_)) {
+                    return self.err("Syntax error: Bad function name");
+                }
+                break;
+            };
+            if w == b"{" || !names.is_empty() && matches!(&w[..], b"if" | b"while" | b"until" | b"for" | b"case") {
+                break;
+            }
+            // As for `f()`, special built-ins can't be redefined; a name with
+            // `/` would be run as a file.
+            if w.contains(&b'/') || matches!(crate::builtins::lookup(&w), Some((_, true))) {
+                return self.err("Syntax error: Bad function name");
+            }
+            self.next()?;
+            names.push(w);
+        }
+        if names.is_empty() {
+            let t = self.next()?;
+            return self.unexpected(&t, None);
+        }
+        if self.peek_op()? == Some(Op::LParen) {
+            self.next()?;
+            if self.peek_op()? != Some(Op::RParen) {
+                // `function f (cmd)`, a subshell body, as in bash.
+                let list = self.parse_nonempty_list()?;
+                self.expect_op(Op::RParen)?;
+                let redirs = self.parse_redirects()?;
+                return Ok(Command::FunctionDef {
+                    names,
+                    body: Rc::new(FunctionBody {
+                        cmd: CompoundCommand::Subshell(list),
+                        redirs,
+                    }),
+                });
+            }
+            self.next()?;
+        }
+        self.skip_newlines()?;
+        let compound = match self.peek()?.tok {
+            Tok::Op(Op::LParen) => true,
+            _ => self
+                .peek_literal()?
+                .is_some_and(|w| matches!(&w[..], b"{" | b"if" | b"while" | b"until" | b"for" | b"case")),
+        };
+        if !compound {
+            let t = self.next()?;
+            return self.unexpected(&t, None);
+        }
+        let cmd = self.parse_compound()?;
+        let redirs = self.parse_redirects()?;
+        Ok(Command::FunctionDef {
+            names,
+            body: Rc::new(FunctionBody { cmd, redirs }),
         })
     }
 }
@@ -662,6 +743,46 @@ mod tests {
         );
         assert_eq!(l.len(), 4);
         assert!(matches!(l[3].list.first.cmds[0], Command::FunctionDef { .. }));
+    }
+
+    #[test]
+    fn function_keyword() {
+        let def = |s: &str| match parse(s).remove(0).list.first.cmds.remove(0) {
+            Command::FunctionDef { names, body } => (names, body.cmd.clone()),
+            c => panic!("not a definition: {c:?}"),
+        };
+        let names = |s: &str| def(s).0;
+        assert_eq!(names("function f { :; }\n"), [b"f"]);
+        assert_eq!(names("function f() { :; }\n"), [b"f"]);
+        assert_eq!(names("function f ( )\n\n{ :; }\n"), [b"f"]);
+        assert_eq!(names("function a-b c.d { :; }\n"), [&b"a-b"[..], b"c.d"]);
+        assert_eq!(names("function if { :; }\n"), [b"if"]);
+        assert_eq!(names("function f\n{ :; }\n"), [b"f"]);
+        assert!(matches!(def("function f (:)\n").1, CompoundCommand::Subshell(_)));
+        assert!(matches!(
+            def("function f if :; then :; fi\n").1,
+            CompoundCommand::If { .. }
+        ));
+        // Not alias-expanded, and `function` isn't either.
+        let mut aliases = AliasMap::default();
+        aliases.insert(b"f".to_vec(), b"g".to_vec(), false);
+        aliases.insert(b"function".to_vec(), b"echo".to_vec(), false);
+        let mut p = Parser::new(b"function f { :; }\n".to_vec(), 1, true);
+        let l = p.parse_next(&Rc::new(aliases)).unwrap().unwrap();
+        assert!(matches!(&l[0].list.first.cmds[0], Command::FunctionDef { names, .. } if names == &[b"f"]));
+        // Only as a command name.
+        assert_eq!(simple(&parse("echo function\n")).words.len(), 2);
+        for (src, msg) in [
+            ("function f echo hi;\n", "Syntax error: \";\" unexpected"),
+            ("function f() echo hi\n", "Syntax error: \"echo\" unexpected"),
+            ("function\n", "Syntax error: newline unexpected"),
+            ("function { :; }\n", "Syntax error: \"{\" unexpected"),
+            ("function 'f' { :; }\n", "Syntax error: Bad function name"),
+            ("function a/b { :; }\n", "Syntax error: Bad function name"),
+            ("function export { :; }\n", "Syntax error: Bad function name"),
+        ] {
+            assert_eq!(parse_err(src).msg, msg, "{src}");
+        }
     }
 
     #[test]

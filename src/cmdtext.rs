@@ -68,9 +68,18 @@ fn push_command(out: &mut Vec<u8>, cmd: &Command) {
         Command::Simple(sc) => push_simple(out, sc),
         // dash does not show the redirections of compound commands.
         Command::Compound(cc, _) => push_compound(out, cc),
-        Command::FunctionDef { name, .. } => {
-            out.extend_from_slice(name);
-            out.extend_from_slice(b"() { ... }");
+        Command::FunctionDef { names, .. } => {
+            if let [name] = &names[..] {
+                out.extend_from_slice(name);
+                out.extend_from_slice(b"() { ... }");
+            } else {
+                out.extend_from_slice(b"function");
+                for name in names {
+                    out.push(b' ');
+                    out.extend_from_slice(name);
+                }
+                out.extend_from_slice(b" { ... }");
+            }
         }
     }
 }

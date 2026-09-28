@@ -224,8 +224,10 @@ impl Shell {
                 self.restore_redirs(saved);
                 r
             }
-            Command::FunctionDef { name, body } => {
-                self.functions.insert(name.clone(), Rc::clone(body));
+            Command::FunctionDef { names, body } => {
+                for name in names {
+                    self.functions.insert(name.clone(), Rc::clone(body));
+                }
                 Ok(0)
             }
         }
