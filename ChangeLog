@@ -1,4 +1,5 @@
 Unreleased
+    * `typeset -p` prints special variables (`path`, `pipestatus`, `UID`)
     * `dirstack` (zsh): the directory stack as an array, which
       `dirstack=(...)` sets
     * `path` (zsh): the directories of `PATH` as an array, which

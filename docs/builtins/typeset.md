@@ -35,6 +35,9 @@ another name for `typeset`.
 : Print the variables named, or all those that have the attributes given
   (all of them without other options), as `typeset` commands that can be
   read back. Without names or other options, `typeset` does the same.
+  Special parameters such as `path`, `pipestatus` and `RANDOM` are printed
+  with their current value when named, but listed only if they have
+  attributes.
 
 `-r`
 : Make the variables read-only (see `readonly`). A read-only variable can't

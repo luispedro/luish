@@ -1,0 +1,10 @@
+typeset -a path=('/usr/bin' '/bin')
+typeset -a path=('/usr/bin' '/bin' '/opt/bin')
+/usr/bin:/bin:/opt/bin
+typeset -a dirstack=('/a' '/b c')
+typeset -a pipestatus=('1' '0')
+typeset -a PIPESTATUS=('1' '0')
+typeset EUID='N'
+typeset path='x'
+1
+typeset -ar dirstack=('/a' '/b c')

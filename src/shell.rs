@@ -238,6 +238,24 @@ impl Shell {
         }
     }
 
+    /// A special parameter that is still special, as a variable, for
+    /// `typeset -p`: its value (an array for `pipestatus`, `path` and
+    /// `dirstack`), with the attributes that `export` or `readonly` gave it.
+    pub fn special_var(&self, name: &[u8]) -> Option<Var> {
+        let value = match self.vars.special(name)? {
+            Special::Pipestatus | Special::PipestatusBash | Special::Path | Special::Dirstack => {
+                Value::Array(Box::new(self.special_elements(name)?))
+            }
+            _ => Value::Str(self.special_value(name)?),
+        };
+        let attrs = self.vars.var(name);
+        Some(Var {
+            value: Some(value),
+            exported: attrs.is_some_and(|v| v.exported),
+            readonly: attrs.is_some_and(|v| v.readonly),
+        })
+    }
+
     /// The elements of a tied array: the directories of `PATH` for `path`
     /// (as in zsh, an empty `PATH` is one empty directory, and an unset one
     /// none), or the directory stack for `dirstack`.

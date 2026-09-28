@@ -345,10 +345,13 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
 - `typeset` and `declare` (`vars::typeset`) share `vars::declare` with `local`, which differs in keeping the value
   (dash) where `typeset` starts a local unset (zsh and bash), in rejecting `-g`, and in being special. Outside a
   function, `typeset x` puts a `Var` without a value in the map, so `typeset -p` finds it. A local made by `typeset`
-  hides a read-only variable, as in zsh (bash refuses). `-p` prints `typeset -aArx name=value` with `quote_value`.
+  hides a read-only variable, as in zsh (bash refuses). `-p` prints `typeset -aArx name=value` with `quote_value`;
+  a special that is still special (`Shell::special_var`) is printed with its value, as an array for `pipestatus`,
+  `path` and `dirstack` (which reads back as an array assignment, so `path` stays tied), but a listing without
+  names includes only the specials that have attributes (as `set` doesn't list them).
   `-a` and `-A` convert a string, and refuse to convert one kind of array to the other (status 1, as in bash, and
   the other names are still declared). Not implemented: `-i`, `-f`, `-U` and zsh's other options. Tests:
-  `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`.
+  `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`.
 - `read -A` (zsh) and `read -a NAME` (bash) split the line with the same `next_field` as `read` uses for all names
   but the last, so there is no empty element after a trailing delimiter (bash; zsh has one). Tests:
   `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh`.
@@ -631,7 +634,7 @@ truncates when it relocates the package.
 | Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
 | Associative arrays | `builtins/assoc.sh` (zsh), `builtins/assoc_luish.sh` |
 | `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |
-| `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh` |
+| `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh` |
 | `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |
 | `SHLVL` | `misc/shlvl.sh`, `histcmd_shlvl` in `tests/interactive.rs` |

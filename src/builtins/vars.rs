@@ -647,7 +647,11 @@ fn print_declarations(sh: &Shell, cmd: &[u8], names: &[Vec<u8>], attrs: &Attrs) 
     let mut out = Vec::new();
     let mut status = 0;
     if names.is_empty() {
+        // The specials are listed only if they have attributes (as for
+        // `set`, which doesn't list them).
         for (name, var) in sh.vars.sorted() {
+            let special = var.value.is_none().then(|| sh.special_var(name)).flatten();
+            let var = special.as_ref().unwrap_or(var);
             let is_array = matches!(var.value, Some(Value::Array(_)));
             let is_assoc = matches!(var.value, Some(Value::Assoc(_)));
             if (!attrs.array || is_array)
@@ -660,7 +664,7 @@ fn print_declarations(sh: &Shell, cmd: &[u8], names: &[Vec<u8>], attrs: &Attrs) 
         }
     }
     for name in names {
-        match sh.vars.take(name) {
+        match sh.special_var(name).or_else(|| sh.vars.take(name)) {
             Some(var) => declaration(&mut out, name, &var),
             None => {
                 sh.berr(cmd, format!("no such variable: {}", String::from_utf8_lossy(name)));
