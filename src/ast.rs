@@ -334,6 +334,8 @@ pub enum ParamName {
 pub enum ParamOp {
     Plain,
     Length,
+    /// `${!a[@]}` and `${!a[*]}` (bash): the indices or keys of an array.
+    Keys,
     Default(Word),
     Assign(Word),
     Error(Word),

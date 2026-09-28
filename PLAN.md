@@ -218,10 +218,10 @@ shell tracks the current file as well as the line, for provenance and for error 
 - **Extensions** (associative arrays, process substitution, brace expansion) behind options, as `glob.star` and
   `glob.bare_qualifiers` are, unless their syntax is an error in POSIX sh. With them off, POSIX scripts must parse and
   behave exactly as before and run as fast. The lexer checks such options in one place (as it does
-  `Parser::bareglobqual`). Indexed and associative arrays are done, always on (see `DEVELOPING.md`); still to do
-  for them: the keys, `${!a[@]}` (bash) and zsh's `${(k)a}` (which needs parameter flags), and the special arrays:
-  `path` tied to `PATH`, `pipestatus`, `match` for `=~`, `dirstack`. `typeset` and `declare` are done, but for `-i`
-  (integers), `-f` (functions) and zsh's `-U`, `-l`, `-u`.
+  `Parser::bareglobqual`). Indexed and associative arrays are done, always on (see `DEVELOPING.md`), with bash's
+  `${!a[@]}` for the keys; still to do for them: zsh's `${(k)a}` (which needs parameter flags), and the special
+  arrays: `path` tied to `PATH`, `pipestatus`, `match` for `=~`, `dirstack`. `typeset` and `declare` are done, but for
+  `-i` (integers), `-f` (functions) and zsh's `-U`, `-l`, `-u`.
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL
   around the prompt and command output. Unicode width handling and bracketed paste belong to the line editor.
 - **Scripting**: error messages with file, line and function stack (from call frames), a predictable strict mode,

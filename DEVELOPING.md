@@ -162,6 +162,10 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   declaration arguments: pairs, or `[key]=value` (declaration arguments encode a key as `[key` and a NUL before the
   element's `=value`). `savestate` writes `typeset -gA name` before the value. Tests: `builtins/assoc.sh` (zsh),
   `builtins/assoc_luish.sh`.
+- `${!a[@]}` and `${!a[*]}` (bash's keys) are `ParamOp::Keys`, lexed only as `${!name[@]}` or `${!name[*]}` directly
+  followed by `}`; any other `${!` followed by a name is a bad substitution (`name` `!`, so `${!}` and `${!-x}` are
+  still `$!`). `expand_array` pushes the keys (or the indices as strings) with `push_list`. Test:
+  `expand/array_keys.sh`.
 - Arithmetic: a variable holding only blanks is 0. Quotes and backslashes inside `$((...))` are kept, so they are
   errors, as in dash. Test: `expand/arith_quotes.sh`.
 - Command substitution drops NUL bytes (so does `read`) and sets `$?` only for commands of assignments alone (so
@@ -606,6 +610,7 @@ truncates when it relocates the package.
 | `RANDOM`, `SECONDS` and the other specials | `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
 | Associative arrays | `builtins/assoc.sh` (zsh), `builtins/assoc_luish.sh` |
+| `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |
 | `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh` |
 | `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |

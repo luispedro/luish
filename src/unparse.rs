@@ -438,10 +438,14 @@ impl<'a> Printer<'a> {
             self.param_name(pe);
             return;
         }
-        self.w(if pe.op == ParamOp::Length { b"${#" } else { b"${" });
+        self.w(match pe.op {
+            ParamOp::Length => b"${#",
+            ParamOp::Keys => b"${!",
+            _ => b"${",
+        });
         self.param_name(pe);
         let (op, word): (&[u8], _) = match &pe.op {
-            ParamOp::Plain | ParamOp::Length => {
+            ParamOp::Plain | ParamOp::Length | ParamOp::Keys => {
                 self.w(b"}");
                 return;
             }
@@ -581,7 +585,7 @@ mod tests {
                     word(&mut item.value);
                 }),
                 WordPart::Param(pe) => match &mut pe.op {
-                    ParamOp::Plain | ParamOp::Length => {}
+                    ParamOp::Plain | ParamOp::Length | ParamOp::Keys => {}
                     ParamOp::Default(w)
                     | ParamOp::Assign(w)
                     | ParamOp::Error(w)
@@ -743,7 +747,7 @@ mod tests {
         );
         round_trip(r#"f() { echo $((1 + $x * (2 - y))) $(( $(echo 1) )) `echo a` "`echo \"b\"`"; }"#);
         round_trip(
-            r#"f() { a=(x "y z" $(echo w)) b+=() c[$i+1]=q d[2]+=r e+=s; local g=(1 2); echo ${a[1]} "${a[@]}" ${#a[*]} ${a[i]:-x} ${a[@]/a/b}; }"#,
+            r#"f() { a=(x "y z" $(echo w)) b+=() c[$i+1]=q d[2]+=r e+=s; local g=(1 2); echo ${a[1]} "${a[@]}" ${#a[*]} ${a[i]:-x} ${a[@]/a/b} "${!a[@]}" ${!h[*]}; }"#,
         );
         round_trip("f() { x=$(a; b) y=$( (sub) ) z=$(case a in a) :;; esac); }");
         round_trip("f() { echo $(if a; then b; fi) \"$(for i in 1; do :; done)\"; }");

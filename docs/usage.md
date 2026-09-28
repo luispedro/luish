@@ -81,6 +81,7 @@ read -A words                        # read the fields of a line (bash: read -a 
 | `${a[i]}` | Element `i` (counting from the end if `i` is negative). `$a` is `${a[0]}` |
 | `"${a[@]}"`, `"${a[*]}"` | The elements as separate words, or joined with the first character of `IFS`, as `"$@"` and `"$*"` |
 | `${#a[@]}`, `${#a[i]}` | The number of elements, the length of an element |
+| `"${!a[@]}"`, `"${!a[*]}"` | The indices (`0 1 2 ...`), or the keys of an associative array, as in bash |
 | `${a[@]:offset:length}` | The elements from `offset` on (at most `length` of them) |
 | `${a[@]#pattern}`, `${a[@]/pattern/rep}`, ... | The operator applied to each element |
 
@@ -99,6 +100,7 @@ size=([small]=1 [big]=10)            # replace them all (also as pairs: size=(sm
 size+=([huge]=100)                   # add keys
 echo "${size[big]}" "${#size[@]}"    # a value, and the number of keys
 for v in "${size[@]}"; do ...; done  # the values
+for k in "${!size[@]}"; do ...; done # the keys (bash; zsh has ${(k)size})
 echo $((size[small] + size[big]))    # in arithmetic, the text of the subscript is the key
 unset 'size[huge]'                   # remove a key
 ```

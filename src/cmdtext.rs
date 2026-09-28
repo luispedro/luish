@@ -261,7 +261,11 @@ fn push_part(out: &mut Vec<u8>, p: &WordPart) {
 }
 
 fn push_param(out: &mut Vec<u8>, pe: &ParamExp) {
-    out.extend_from_slice(if pe.op == ParamOp::Length { b"${#" } else { b"${" });
+    out.extend_from_slice(match pe.op {
+        ParamOp::Length => b"${#",
+        ParamOp::Keys => b"${!",
+        _ => b"${",
+    });
     match &pe.name {
         ParamName::Var(n) => out.extend_from_slice(n),
         ParamName::Positional(n) => out.extend_from_slice(n.to_string().as_bytes()),
@@ -278,7 +282,7 @@ fn push_param(out: &mut Vec<u8>, pe: &ParamExp) {
         }
     }
     let (op, w): (&[u8], _) = match &pe.op {
-        ParamOp::Plain | ParamOp::Length => (b"", None),
+        ParamOp::Plain | ParamOp::Length | ParamOp::Keys => (b"", None),
         ParamOp::Default(w) => (b"-", Some(w)),
         ParamOp::Assign(w) => (b"=", Some(w)),
         ParamOp::Error(w) => (b"?", Some(w)),

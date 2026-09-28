@@ -1,4 +1,5 @@
 Unreleased
+    * `${!a[@]}` gives the indices or keys of an array, as in bash
     * Associative arrays (`typeset -A`), as in zsh and bash
     * `a=([i]=x)` assigns to an index, as in zsh and bash
     * `typeset` and `declare`, as in zsh and bash

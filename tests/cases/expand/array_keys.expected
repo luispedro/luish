@@ -1,0 +1,17 @@
+0 1 2
+0=x
+1=y
+2=z
+0:1:2 0 1 2
+0
+[] []
+[]
+<k><a b><z>
+<k><a><b><z>
+<k a b z>
+<z><a b>
+status 2
+status 2
+status 2
+[] [unset]
+0 1 2 z a b

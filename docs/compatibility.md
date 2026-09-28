@@ -62,6 +62,7 @@ instead.
 | `kill %n` for a job started without job control | Signals the process group `-pid`, which doesn't exist, and fails with "No such process" | Signals each process of the job (as bash does) |
 | `fc` | Debian's dash has none (`fc: not found`, status 127). Upstream dash (with libedit) lists as `%5d cmd`, counts its own entry, and doesn't echo edited commands | The POSIX list format (`N\tcmd`, continuation lines indented by a tab). As in bash, its own entry is left out, and commands it re-runs replace that entry and are echoed to stderr. An event number outside the history is moved to the nearest end (dash moves a `first` that is too large to the oldest entry). Fails with status 2 in a non-interactive shell |
 | `$((` that is not arithmetic | Syntax error (dash always reads `$((` as arithmetic) | Read as `$( (...) )`, a command substitution of a subshell, as bash does (POSIX leaves it unspecified) |
+| `${!a[@]}`, `${!a[*]}` | Bad substitution when expanded | The indices of an array, or the keys of an associative one (in the order they were added), as bash's, which zsh's sh emulation doesn't have (native zsh has `${(k)a}`). As in bash, an unset array has none, even with `set -u`. bash's other `${!` forms (`${!x}`, `${!prefix*}`) are still bad substitutions |
 | `emacs` option in interactive shells | Off (Debian's dash has no line editor) | On unless `vi` is set, since it is the line editor's mode, so `$-` has `E` (as in bash) |
 
 ### luish's own

@@ -500,7 +500,7 @@ impl Shell {
                 let v = val.unwrap_or_default();
                 push_result(pattern::trim(&v, &pat, how), quoted, f);
             }
-            ParamOp::Length | ParamOp::Substring(..) | ParamOp::Replace(..) => unreachable!(),
+            ParamOp::Length | ParamOp::Keys | ParamOp::Substring(..) | ParamOp::Replace(..) => unreachable!(),
             ParamOp::Bad(_) => {
                 self.error("Bad substitution");
                 return Err(Flow::Error(2));
@@ -535,6 +535,16 @@ impl Shell {
     /// which apply to the list or to each element. A string is an array of
     /// one element.
     fn expand_array(&mut self, pe: &ParamExp, name: &[u8], at: bool, quoted: bool, f: &mut Fields) -> EResult<()> {
+        if pe.op == ParamOp::Keys {
+            // As in bash, an unset array has no keys, even with `set -u`.
+            let keys = match self.vars.get_value(name) {
+                Some(Value::Assoc(h)) => h.keys().to_vec(),
+                Some(v) => (0..v.elements().len()).map(|i| i.to_string().into_bytes()).collect(),
+                None => self.get_var(name).map(|_| vec![b"0".to_vec()]).unwrap_or_default(),
+            };
+            push_list(&keys, at, quoted, self.ifs_first(), f);
+            return Ok(());
+        }
         let items = match self.vars.get_value(name) {
             Some(v) => Some(v.elements().to_vec()),
             None => self.get_var(name).map(|v| vec![v]),
@@ -563,6 +573,7 @@ impl Shell {
         match &pe.op {
             ParamOp::Plain => push_list(&items, at, quoted, sep, f),
             ParamOp::Length => push_result(items.len().to_string().as_bytes(), quoted, f),
+            ParamOp::Keys => unreachable!(),
             ParamOp::Default(w) => {
                 if is_set {
                     push_list(&items, at, quoted, sep, f);

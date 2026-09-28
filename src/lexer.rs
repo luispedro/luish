@@ -843,6 +843,27 @@ impl Parser {
             }
             self.pos = save;
         }
+        if self.at(0) == Some(b'!') && self.at(1).is_some_and(is_name_start) {
+            // `${!a[@]}` and `${!a[*]}` (bash's keys). Anything else after
+            // `${!` (bash's indirection) is a bad substitution.
+            self.pos += 1;
+            let save = (self.pos, self.lineno);
+            if let Some(name) = self.read_param_name()
+                && self.at(0) == Some(b'[')
+                && let Some(index @ (Index::At | Index::Star)) = self.read_index()?
+                && self.at(0) == Some(b'}')
+            {
+                self.pos += 1;
+                return Ok(WordPart::Param(Box::new(ParamExp {
+                    name,
+                    index: Some(index),
+                    op: ParamOp::Keys,
+                    colon: false,
+                })));
+            }
+            (self.pos, self.lineno) = save;
+            return bad(self, ParamName::Special(b'!'), false);
+        }
         let Some(name) = self.read_param_name() else {
             return if self.at(0).is_none() {
                 self.eof_err("Syntax error: Missing '}'")
