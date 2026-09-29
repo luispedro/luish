@@ -155,24 +155,57 @@ fn current_dir() -> RhaiResult<Vec<u8>> {
     })
 }
 
+/// The file of `import "@SOURCE/PLUGIN/MODULE"` (`name`), without `.rhai`:
+/// MODULE in the directory of the loaded plugin PLUGIN. Loaded plugins have
+/// different names, so the plugin is found by its name alone, however it
+/// was loaded; SOURCE is written as in `[dependencies]`.
+fn other_plugin(name: &str, pos: Position) -> RhaiResult<Vec<u8>> {
+    // (Not `ErrorModuleNotFound`, which Rhai replaces with its own, without
+    // the reason.)
+    let not_found = |why: String| EvalAltResult::ErrorRuntime(format!("import {name}: {why}").into(), pos).into();
+    let parts: Vec<&str> = name[1..].splitn(3, '/').collect();
+    let [source, plugin, module] = parts[..] else {
+        return Err(not_found("write @SOURCE/PLUGIN/MODULE".into()));
+    };
+    if [source, plugin, module].contains(&"") {
+        return Err(not_found("write @SOURCE/PLUGIN/MODULE".into()));
+    }
+    let dir = with_shell(|sh| {
+        let host = host(sh)?;
+        let plugins = host.plugins.borrow();
+        Ok(plugins
+            .iter()
+            .find(|p| p.name == to_bytes(plugin))
+            .map(|p| p.dir.clone()))
+    })?;
+    match dir {
+        Some(dir) => Ok([dir, b"/".to_vec(), to_bytes(module)].concat()),
+        None => Err(not_found(format!(
+            "the plugin {plugin} is not loaded (add {source}.{plugin} to [dependencies] in plugin.toml)"
+        ))),
+    }
+}
+
 /// Resolves `import "NAME"` to `NAME.rhai` in the directory of the file
-/// that does the import (or an absolute path). That file is the source of
-/// the code running (`AST::set_source`, which Rhai also gives the functions
-/// and closures defined in it, and `Module::set_id`), an absolute path; for
-/// code without one, it is the plugin's directory.
+/// that does the import (or an absolute path, or `@SOURCE/PLUGIN/MODULE`,
+/// in another plugin). That file is the source of the code running
+/// (`AST::set_source`, which Rhai also gives the functions and closures
+/// defined in it, and `Module::set_id`), an absolute path; for code without
+/// one, it is the plugin's directory.
 struct Resolver;
 
 impl ModuleResolver for Resolver {
     fn resolve(&self, engine: &Engine, source: Option<&str>, name: &str, pos: Position) -> RhaiResult<Shared<Module>> {
-        let mut path = match (name.starts_with('/'), source.filter(|s| s.starts_with('/'))) {
-            (true, _) => Vec::new(),
-            (false, Some(file)) => {
+        let mut path = match (name.as_bytes().first(), source.filter(|s| s.starts_with('/'))) {
+            (Some(b'@'), _) => other_plugin(name, pos)?,
+            (Some(b'/'), _) => to_bytes(name),
+            (_, Some(file)) => {
                 let file = to_bytes(file);
-                file[..file.iter().rposition(|&c| c == b'/').unwrap_or(0) + 1].to_vec()
+                let dir = &file[..file.iter().rposition(|&c| c == b'/').unwrap_or(0) + 1];
+                [dir, &to_bytes(name)].concat()
             }
-            (false, None) => [current_dir()?, b"/".to_vec()].concat(),
+            (_, None) => [current_dir()?, b"/".to_vec(), to_bytes(name)].concat(),
         };
-        path.extend(to_bytes(name));
         path.extend_from_slice(b".rhai");
         // (`import "../x"`: the same file is the same module.)
         let path = crate::builtins::cd::canonicalize(&path);

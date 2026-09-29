@@ -16,6 +16,8 @@ Unreleased
       for their completions; `complete-cobra PROG...` adds more programs
     * std.git-completion is now part of std.completion
     * `import` in an extension's module is relative to that module's file
+    * `import "@SOURCE/PLUGIN/MODULE"` imports a module of another plugin,
+      such as std's completion engine (`@std/completion/lib`)
 
 Version 0.2.0 2026-09-29 by luispedro
     * Fix crashes on Tab after a word like `--opt=value`, and on a plugin

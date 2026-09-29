@@ -1,0 +1,23 @@
+at load time: all
+load 0
+completion
+ext
+--- mytool --c
+--color=	when to colour
+--- mytool --color=
+--color=always 
+--color=auto 
+--color=never 
+--- mytool -
+--color=	when to colour
+-a 	show all
+-o 	output
+--- mytool s
+src/
+--- std/completion loaded by name or by path
+at load time: all
+at load time: all
+--- errors
+status 1
+status 1
+status 1

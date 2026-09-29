@@ -174,6 +174,12 @@ subdirectory (`import "hts/samtools"`) finds its own neighbours there (`import "
 reads `hts/common.rhai`). This holds wherever the code runs: in a function or closure of the module, even when an
 extension calls it. `NAME` can also be an absolute path, without `.rhai`.
 
+A plugin can use the modules of another plugin: `import "@SOURCE/PLUGIN/MODULE"` reads `MODULE.rhai` in the
+directory of `PLUGIN`, such as `import "@std/completion/lib"` for std's completion engine. That plugin must be loaded, so list it in the `[dependencies]` of
+your `plugin.toml` (here `std.completion = "*"`), which loads it first. It is found by its name, whether it was
+loaded from its source, by `plugin load` or from a path; `SOURCE` is written as in `[dependencies]`. The module's own
+imports are relative to its files, as above.
+
 luish keeps each module once it is compiled, until a plugin is loaded again. An `import` inside a function (a
 completer, for instance) reads the module only when the function first runs, so a large plugin loads quickly.
 

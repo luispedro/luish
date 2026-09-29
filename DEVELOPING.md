@@ -590,8 +590,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   imports (`Resolver`): each extension's AST and each module's AST and `Module` get the file's absolute path as
   their source and id, which Rhai passes to the resolver and gives the functions and closures defined there, so a
   module in a subdirectory imports its neighbours wherever its code is called from; code without a source falls back
-  to the running plugin's directory. Imported modules are cached by their lexically canonical path (`../`), until a
-  plugin is loaded again. Test: `tests/plugins/imports.sh`. SIGINT stops extension code (checked in
+  to the running plugin's directory. `import "@SOURCE/PLUGIN/MODULE"` is `MODULE.rhai` in the directory of the loaded
+  plugin called `PLUGIN` (`other_plugin`): loaded plugins have unique names (loading one replaces another of the same
+  name), so `SOURCE` isn't checked, and a plugin loaded from `std`, by `plugin load` or by path is found the same way;
+  an error that isn't `ErrorModuleNotFound` (which Rhai replaces with its own) says to add the dependency. Imported
+  modules are cached by their lexically canonical path (`../`), until a plugin is loaded again. Tests:
+  `tests/plugins/imports.sh`, `plugin_imports.sh`. SIGINT stops extension code (checked in
   `on_progress`), leaving the signal pending for the shell. Rhai installs no signal handlers and has no threads or
   buffered output, so nothing happens around `fork` (built without its `sync` feature). Release builds use
   `panic = "abort"`; a panic in Rhai is a Rhai bug to report, not something to `catch_unwind`.
