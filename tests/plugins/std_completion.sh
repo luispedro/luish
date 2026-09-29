@@ -1,6 +1,5 @@
 # The completion plugin of luish-std-plugins (std/completion): options,
 # their values, and the arguments of common commands, as Tab offers them.
-# Its dependency git-completion is loaded with it.
 __luish_internal plugin load "$STD_PLUGINS/completion"
 echo "load $?"
 __luish_internal plugin list-loaded
@@ -102,5 +101,5 @@ c 'tar -cf b.tar s'
 echo "=== processes"
 c 'pkill --signal=KI'
 c 'killall -s TE'
-echo "=== git, from git-completion"
+echo "=== git"
 c 'git swi'

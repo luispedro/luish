@@ -7,11 +7,10 @@ and will become a repository of its own, as an example of how a plugin collectio
 
 | Plugin | What it does | Needs |
 |---|---|---|
-| `completion` | Tab completion for about 230 common commands: their options (with descriptions), the values of options, their subcommands, and their other arguments (directories for `mkdir`, users and groups for `chown`, make's targets, ssh's hosts, man pages, the files in an archive for `tar -xf`, systemd's units, installed and available packages, cargo's targets and features, pixi's and npm's tasks ...). Programs built with Cobra (gh, docker, kubectl ...) and nix are asked for their own completions. Loads `git-completion` | |
-| `git-completion` | Tab completion for git: its commands (with descriptions) and aliases, the options of each command, and the arguments each command takes (branches, tags, ranges such as `main..`, remotes, stashes, worktrees, and the files it can act on: modified and untracked files for `git add`, staged ones for `git restore --staged`, ...) | git |
+| `completion` | Tab completion for about 230 common commands: their options (with descriptions), the values of options, their subcommands, and their other arguments (directories for `mkdir`, users and groups for `chown`, make's targets, ssh's hosts, man pages, the files in an archive for `tar -xf`, systemd's units, installed and available packages, cargo's targets and features, pixi's and npm's tasks ...). Programs built with Cobra (gh, docker, kubectl ...) and nix are asked for their own completions. git: its commands (with descriptions) and aliases, the options of each command, and the arguments each command takes (branches, tags, ranges such as `main..`, remotes, stashes, worktrees, and the files it can act on: modified and untracked files for `git add`, staged ones for `git restore --staged`, ...) | |
 | `bash-completion` | Completion from [bash-completion](https://github.com/scop/bash-completion), for the commands that have no completer of their own | bash, bash-completion |
 
-`git-completion` runs git with the options of the command line that choose the repository (`-C DIR`,
+For git, `completion` runs git with the options of the command line that choose the repository (`-C DIR`,
 `--git-dir=DIR`, `--work-tree=DIR`), so an alias such as `alias g='git -C ~/src'` completes in `~/src`. git
 itself lists the options of its commands (`git CMD --git-completion-helper`, which git's own bash completion uses),
 so they follow the installed version of git. Options that start with `--no-` are offered once the word starts with
@@ -32,6 +31,7 @@ so they follow the installed version of git. Options that start with `--no-` are
 - the package managers of languages: pip, uv, conda, mamba, pixi, npm, npx, yarn and pnpm (`langs.rhai`);
 - the package managers of systems: apt, apt-get, apt-cache, apt-mark, dpkg, dnf, yum, rpm, pacman, zypper, apk, brew,
   snap and flatpak (`packages.rhai`);
+- git (`git.rhai`);
 - programs that complete themselves (`bridges.rhai`): those built with Cobra (gh, glab, docker, podman, kubectl, helm,
   minikube, kind, hugo, rclone ...), which answer `PROG __complete ARGS...`, and nix (`NIX_GET_COMPLETIONS`).
 
@@ -49,7 +49,7 @@ packages are offered for removing them.
 
 `bash-completion` is a default completer (registered for `-default-`): it runs, in bash, the function that
 bash-completion has for the command, and gives luish what it returns. The commands that have completers of their
-own, such as git with `git-completion`, keep them. bash-completion is looked for in the usual places; set
+own, such as git with `completion`, keep them. bash-completion is looked for in the usual places; set
 `BASH_COMPLETION_SCRIPT` to the path of its `bash_completion` script if it is elsewhere. Each Tab takes about 50 ms,
 as bash loads bash-completion again, and bash-completion gives no descriptions.
 
@@ -63,12 +63,11 @@ README, are ignored.
 ```text
 luish-std-plugins/
 ├── README.md
-├── git-completion.rhai        # a plugin in one Rhai file
 ├── bash-completion/           # a plugin directory
 │   ├── extension.rhai
 │   └── bridge.bash            # run by extension.rhai, through sh::plugin_dir()
 └── completion/
-    ├── plugin.toml            # depends on git-completion
+    ├── plugin.toml            # its description
     ├── extension.rhai         # registers the completers
     ├── lib.rhai               # modules that extension.rhai imports
     ├── kinds.rhai
@@ -81,7 +80,7 @@ This collection is the source `std` of luish's plugin configuration. Enable its 
 
 ```toml
 [plugins.enabled]
-std.completion = "*"          # and git-completion, which it needs
+std.completion = "*"
 std.bash-completion = "*"
 ```
 
@@ -99,7 +98,7 @@ std = { path = "~/src/luish/luish-std-plugins" }
 A plugin can also be loaded by its path, in one shell:
 
 ```sh
-plugin load ~/src/luish/luish-std-plugins/git-completion.rhai
+plugin load ~/src/luish/luish-std-plugins/completion
 ```
 
 `__luish_internal complete LINE` prints what Tab offers for a command line, which helps when working on a

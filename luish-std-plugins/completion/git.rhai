@@ -1,4 +1,5 @@
-// Completion for git: its commands (with descriptions) and aliases, the
+// Completion for git (the completer is `complete`, which extension.rhai
+// registers): its commands (with descriptions) and aliases, the
 // options of its commands (which git lists itself), and, depending on the
 // command, branches, tags, remotes, stashes, worktrees and the files that
 // the command can act on (modified files for `git add`, staged ones for
@@ -428,5 +429,3 @@ fn complete(words, i) {
     }
     arguments(g, cmd, args, cur, 0)
 }
-
-sh::completer("git", |words, i| complete(words, i));

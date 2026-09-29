@@ -84,7 +84,7 @@ scripts/                # dist.sh (release packages), test-install.sh (tests ins
 install.sh              # the `curl | sh` installer, which downloads a release
 flake.nix               # the Nix package and dev shell (see Releases)
 docs/                   # user documentation; docs/builtins/ is compiled into `help`; docs/examples/ has example plugins
-luish-std-plugins/      # a collection of plugins (completion, git-completion, bash-completion), see its README.md
+luish-std-plugins/      # a collection of plugins (completion, bash-completion), see its README.md
 ```
 
 ## Implementation notes by area
@@ -613,7 +613,7 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   names, the stash log), running git only for the reftable format and for `vcs::status` (`git --no-optional-locks
   status --porcelain=v2 --branch -z`). Not supported: bare repositories, `GIT_DIR`, `GIT_CEILING_DIRECTORIES`.
 - Examples: `docs/examples/cobra.rhai` (programs built with Cobra). Plugins for use, in the collection
-  `luish-std-plugins/` (to become a repository of its own; the source `std`): `git-completion.rhai`
+  `luish-std-plugins/` (to become a repository of its own; the source `std`): `completion/git.rhai`
   (lists commands from `LC_ALL=C git help -a` without the low-level and guide sections, options from
   `git CMD --git-completion-helper`, files from `ls-files`/`diff --cached`, collapsed to the next directory) and
   `bash-completion/` (a default completer that runs bash-completion in bash through `bridge.bash`; about 50 ms per
@@ -655,8 +655,8 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   completer uses `words[0]`, which is the name it was registered for); a module's constants aren't visible to its
   functions (shared tables are functions); arrays are passed to functions by value; keywords (`export`, `module`,
   `switch`, `go` ...) can't be map keys or function names without quotes; `replace` and `trim` change the string in
-  place and return `()`; a closure that captures a map it is iterating is a data race. `plugin.toml` depends on
-  `git-completion`. `src/options.rs` checks that `shells.rhai` lists all the options `luish -o` takes.
+  place and return `()`; a closure that captures a map it is iterating is a data race.
+  `src/options.rs` checks that `shells.rhai` lists all the options `luish -o` takes.
 - **Packages** (`package.rs`, `fetch.rs`): `read_config` turns `[plugins]` into owned `Config` (sources in
   `plugins.available`, plus the built-in `std`, at the tag `vVERSION` of the running luish (`std_ref`); entries in
   `plugins.enabled`), and `manifest` a directory plugin's `plugin.toml` into entries of the same kind. `Resolver` resolves entries depth-first, dependencies before
@@ -673,7 +673,7 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   commits), so it touches neither the cache nor the data directory. The lock is written only if its text
   changed (so the rc cache, which fingerprints it, stays valid). Messages about manifests of git plugins show
   `SOURCE:PATH/plugin.toml` rather than the data directory.
-- A loaded plugin is named after its file or directory (`std/git-completion` loads as `git-completion`), so
+- A loaded plugin is named after its file or directory (`std/bash-completion` loads as `bash-completion`), so
   `plugin list-available` leaves out the loaded plugins by absolute path, and `plugin unload ARG`, if no plugin is
   loaded under the name ARG, unloads the one at the path that `plugin load ARG` would load (`package::location`,
   else `find`). Test: `tests/plugins/packages.sh`.

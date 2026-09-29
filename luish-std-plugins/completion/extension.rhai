@@ -2,8 +2,7 @@
 // one of the modules below (specs.rhai for coreutils, grep, diffutils, tar,
 // make, rsync, man, ssh ...), and completed by lib.rhai. Programs that
 // complete themselves (those built with Cobra, and nix) are asked, in
-// bridges.rhai. git's completion is the plugin git-completion, which
-// plugin.toml loads.
+// bridges.rhai. git is completed by git.rhai.
 //
 // The modules are imported by the completer, so that they are compiled on
 // the first Tab for one of their commands rather than whenever a shell
@@ -72,6 +71,10 @@ for cmd in cobra {
 sh::completer("nix", |words, i| {
     import "bridges" as bridges;
     bridges::nix(words, i)
+});
+sh::completer("git", |words, i| {
+    import "git" as git;
+    git::complete(words, i)
 });
 
 for cmd in module_of.keys() {

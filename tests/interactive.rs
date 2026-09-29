@@ -773,7 +773,7 @@ complete -F _frob frob
     assert_eq!(sh.exit_status(), 0);
 }
 
-/// The git-completion plugin of luish-std-plugins, in a repository with a
+/// The completion plugin of luish-std-plugins, for git,, in a repository with a
 /// modified file, an untracked one, a staged one and two branches. A
 /// function `git` prints its arguments (the completer runs `command git`).
 #[cfg(feature = "plugins")]
@@ -811,7 +811,7 @@ fn git_completion() {
     std::fs::write(repo.join("src/deep/staged.rs"), "b\n").unwrap();
     git(&["add", "src"]);
     std::fs::write(repo.join("untracked.txt"), "").unwrap();
-    let plugin = concat!(env!("CARGO_MANIFEST_DIR"), "/luish-std-plugins/git-completion.rhai");
+    let plugin = concat!(env!("CARGO_MANIFEST_DIR"), "/luish-std-plugins/completion");
     sh.expect("$ ");
     sh.send(&format!(
         "plugin load {plugin}; git() {{ echo \"git:$*\"; }}; cd repo; echo \"loaded $?\"\n"

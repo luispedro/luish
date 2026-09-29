@@ -17,7 +17,7 @@ work = { path = "~/src/work-plugins" }
 
 [plugins.enabled]
 std.bash-completion = "*"      # the plugin bash-completion of the collection std
-"std/git-completion" = "*"     # the same, written differently
+"std/completion" = "*"         # the plugin completion of std, written differently
 smarty-prompt = "*"            # a source that is one plugin
 work.proxy = "*"               # the plugin proxy of ~/src/work-plugins
 greet = "*"                    # ~/.config/luish/plugins/greet.rhai, greet.lsh or greet/
@@ -43,7 +43,7 @@ Fetching std
 Fetching smarty-prompt
 Locking std at 15e39bb
 Locking smarty-prompt at 8a1c0de
-2 git sources locked, 2 plugins enabled: git-completion, smarty-prompt
+2 git sources locked, 2 plugins enabled: completion, smarty-prompt
 ```
 
 The first time `plugin sync` runs, it will create a `plugins.lock` file, which
@@ -55,7 +55,7 @@ and updates `plugins.lock`. Specify a plugin name to update only that one:
 $ plugin update smarty-prompt
 Fetching smarty-prompt
 Updating smarty-prompt 8a1c0de..3f00c2d
-2 git sources locked, 2 plugins enabled: git-completion, smarty-prompt
+2 git sources locked, 2 plugins enabled: completion, smarty-prompt
 ```
 
 `plugin check` asks each git source (with `git ls-remote`) for its newest
@@ -77,7 +77,7 @@ description = "Sets the proxy variables for the office network."
 
 [dependencies]
 netutils = "*"                        # the plugin netutils of the same collection
-std.git-completion = "*"              # a plugin of a source that luish knows
+std.completion = "*"                  # a plugin of a source that luish knows
 fzf = { gh = "bob/luish-fzf" }        # a source of its own
 ```
 
@@ -159,7 +159,7 @@ description = "Luis Pedro's personal luish configuration."
 
 [dependencies]
 std.bash-completion = "*"
-std.git-completion = "*"
+std.completion = "*"
 
 [options]
 autosuggest = true
@@ -419,7 +419,7 @@ enabled by default, but you can enable it in `config.toml`:
 
 ```toml
 [plugins.enabled]
-std.completion = "*"        # common commands, and git (git-completion)
+std.completion = "*"        # common commands, and git
 std.bash-completion = "*"
 ```
 
@@ -459,19 +459,19 @@ The `std` library is tied to the version of luish, so it is not affected by
     `-Q`, `-R` ... each with its own options), zypper, apk, brew, snap and
     flatpak: the installed packages, and those that can be installed once the
     word has a letter (except with dnf, yum and zypper, whose lists are slow);
+  - git: its commands, with their descriptions, and aliases, the options of
+    each command, and its arguments: branches, tags, the end of a range
+    (`main..`), remotes, stashes, worktrees, and the files the command can act
+    on (modified and untracked files for `git add`, staged ones for `git
+    restore --staged`, ...);
   - programs that complete themselves: those built with Cobra (gh, glab,
     docker, podman, kubectl, helm, minikube, kind, hugo, rclone, ...) and nix.
 
   The options of cargo's subcommands, rustup, uv, pixi and openssl's commands
   are read from their `-h`, so they follow the installed version. Short
-  options can be combined: `ls -la` offers the options that can follow. It
-  loads `git-completion` too. Each of its modules is compiled on the first Tab
+  options can be combined: `ls -la` offers the options that can follow. Each
+  of its modules is compiled on the first Tab
   for one of its commands (a few milliseconds), so loading it costs little.
-- **`git-completion`** (`git-completion.rhai`) completes git's commands, with
-  their descriptions, and aliases. It completes arguments, branches, tags, the
-  end of a range (`main..`), remotes, stashes, worktrees, and the files the
-  command can act on (modified and untracked files for `git add`, staged ones
-  for `git restore --staged`, ...).
 - **`bash-completion`** uses
   [bash-completion](https://github.com/scop/bash-completion), which completes
   the arguments of about a thousand commands, and for which many programs

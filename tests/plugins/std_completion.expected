@@ -1,5 +1,4 @@
 load 0
-git-completion
 completion
 === options
 --- ls --colo
@@ -248,7 +247,7 @@ status 0
 --- killall -s TE
 TERM 
 status 0
-=== git, from git-completion
+=== git
 --- git swi
 switch 	Switch branches
 status 0

@@ -89,7 +89,7 @@ You need to fetch the plugins once:
 $ plugin sync
 Fetching std
 Locking std at 6a893bc
-1 git source locked, 2 plugins enabled: git-completion, completion
+1 git source locked, 1 plugin enabled: completion
 ```
 
 

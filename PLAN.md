@@ -138,7 +138,7 @@ Still to build, in this order:
 
 1. **Completion content**, the biggest gap by volume (zsh gets git, ssh, make, man, cargo ... from `compinit` and
    zsh-completions):
-   - **git**: done, as `git-completion` in `luish-std-plugins/`. Still missing: `REV:PATH`, `git config` keys, and
+   - **git**: done, in `completion` in `luish-std-plugins/`. Still missing: `REV:PATH`, `git config` keys, and
      values for most `--option=` words.
    - **Common commands**: done, as `completion` in `luish-std-plugins/` (about 230: coreutils, grep, diffutils, tar,
      make, rsync, man, ssh/scp/sftp, pkill, shells, find, sed, awk, jq, rg, compressors, systemctl, journalctl,
