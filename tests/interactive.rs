@@ -1103,6 +1103,7 @@ fn plugin_builtin() {
 
 /// The first run: with an empty configuration directory, the shell offers
 /// to write `config.toml` before reading it, in a menu.
+#[cfg(feature = "plugins")]
 #[test]
 fn first_run() {
     let dir = Pty::new_dir("firstrun");
@@ -1189,4 +1190,23 @@ fn first_run() {
     assert_has(&text, "\n[plugins.enabled]\nstd.completion = \"*\"");
     sh4.send("exit\n");
     assert_eq!(sh4.exit_status(), 0);
+}
+
+/// The first run without plugins: no personal plugin item, and the
+/// recommended configuration enables no plugins.
+#[cfg(not(feature = "plugins"))]
+#[test]
+fn first_run() {
+    let dir = Pty::new_dir("firstrun");
+    let config = dir.join(".config/luish/config.toml");
+    let mut sh = Pty::spawn_at(dir.clone(), "dumb", false, None);
+    sh.expect("  2. Write an empty configuration (so this question will not be asked again)\n");
+    sh.expect("  3. Just start for now and ask again next time\nChoose 1-3 [1]: ");
+    sh.send("\n");
+    sh.expect("Wrote ~/.config/luish/config.toml\n");
+    sh.expect("$ ");
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert_has(&text, "\n[options.editor]\nautosuggest = true\n");
+    sh.send("exit\n");
+    assert_eq!(sh.exit_status(), 0);
 }
