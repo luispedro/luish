@@ -45,8 +45,8 @@ std.completion = "*"         # completion for common commands, and git
 ```
 
 Plugins can also set options. You can have a personal plugin on github that
-sets your favorite options, aliase, plugins, and functions. Then just enable it
-for every machine you use and keep your configuration in sync.
+sets your favorite options, aliases, plugins, and functions. Then just enable it
+for every machine you use and keep your configuration in sync (see [](personal-plugin.md)).
 
 ## Getting started
 
@@ -66,6 +66,7 @@ options.
 
 installation
 getting-started
+personal-plugin
 usage
 globbing
 builtins

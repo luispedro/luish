@@ -22,7 +22,7 @@ Down choose, Enter confirms; or press an item's number):
    shown again.
 3. **Add a personal plugin**, as [`plugin add`](plugins.md) takes it: a GitHub repository (`OWNER/REPO` or its URL),
    another git URL, or a path. `config.toml` then has only that plugin, which can hold your whole configuration
-   (see [](plugins.md)), and luish runs `plugin sync` to fetch it.
+   (see [](personal-plugin.md)), and luish runs `plugin sync` to fetch it.
 4. **Just start for now**, writing nothing: the menu is shown again next time (as it is after Ctrl-C or Esc).
 
 The rest of this page describes the files, to write or extend them yourself.
@@ -198,7 +198,8 @@ about 50 ms, as it runs bash), and gives no descriptions.
 ## Next steps
 
 - [](usage.md): the command line, the prompt, line editing, history, Tab completion and the startup files in detail.
-- [](plugins.md): other plugins, and writing your own, for example to keep the same configuration on every machine.
+- [](personal-plugin.md): keep your configuration in a plugin of your own, to use the same one on every machine.
+- [](plugins.md): other plugins, and writing your own.
 - [](globbing.md): `**/` and zsh's glob qualifiers, such as `vi *(.om[0])` to edit the newest file.
 
 - `help` lists the built-in commands, and `help NAME` shows the help for one of them.

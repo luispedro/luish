@@ -165,71 +165,10 @@ undo what the shell files did (aliases, functions, variables).
 2. a single Rhai file, `NAME.rhai`, which is the same as a directory that holds only that file, as `extension.rhai`;
 3. a single shell file, `NAME.lsh`, which is the same as a directory that holds only that file, as `init.lsh`.
 
-## Suggestion: a personal plugin
+## A personal plugin
 
-A plugin doesn't have to be for others. Packaging your own configuration as a plugin in a git repository is a good
-way to keep the same options, aliases, key bindings and functions on every machine: each one needs only a line in
-`config.toml` and `plugin sync`, and gets the same setup at the commit that `plugins.lock` records.
-[luispedro/luish-personal-plugin](https://github.com/luispedro/luish-personal-plugin) is an example:
-
-```text
-luish-personal-plugin/
-├── plugin.toml   # dependencies, and options, aliases and key bindings
-└── rc.lsh        # what plugin.toml can't hold (variables and functions)
-```
-
-Its `plugin.toml` enables other plugins, as dependencies, and holds most of the settings:
-
-```toml
-description = "Luis Pedro's personal luish configuration."
-
-[dependencies]
-std.bash-completion = "*"
-std.completion = "*"
-
-[options]
-autosuggest = true
-
-[options.cd]
-auto = true
-
-[options.prompt]
-percent = true
-
-[options.history]
-file = "~/.histfile"
-share = true
-ignore_space = true
-
-[alias]
-ls = "ls --color=auto"
-
-[alias.global]
-"..." = "../.."
-"...." = "../../.."
-
-[bindkey]
-"^[?" = "insert-last-word"
-```
-
-and its `rc.lsh` has the rest, which needs shell:
-
-```sh
-CDPATH=:$HOME:$HOME/work
-WORDCHARS='*?_-.[]~=&;!#%^(){}<>'
-PS1='%n@%m:%/ %(?. .%B!%b)%(!.#.§)'
-
-field() {
-    awk "{print \$$1}"
-}
-```
-
-Each machine enables it in `~/.config/luish/config.toml`:
-
-```toml
-[plugins.enabled]
-personal = { gh = "luispedro/luish-personal-plugin" }
-```
+A plugin of your own, in a git repository, is a good way to keep the same configuration on every machine; see
+[](personal-plugin.md).
 
 ## Example: running code when the directory changes
 
