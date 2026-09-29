@@ -668,6 +668,7 @@ fn analyze(line: &[u8], aliases: &AliasMap) -> Word {
     };
     if s.start.is_none() {
         s.offsets = vec![(line.len(), s.quote)];
+        s.split = 0;
     }
     debug_assert_eq!(s.offsets.len(), s.text.len() + 1);
     Word {
@@ -1662,6 +1663,7 @@ mod tests {
         assert_eq!(kind("PATH=/bin:/usr/b"), (File, "/usr/b".into()));
         assert_eq!(kind("ls --file=fo"), (Arg, "fo".into()));
         assert_eq!(kind("ls a=b"), (Arg, "a=b".into()));
+        assert_eq!(kind("ls --file=foo "), (Arg, "".into()));
         assert_eq!(kind("export a=b:c"), (Arg, "c".into()));
         assert_eq!(kind("setopt history.file=~/h"), (Arg, "~/h".into()));
         assert_eq!(kind("export history.file=~/h"), (Arg, "history.file=~/h".into()));
