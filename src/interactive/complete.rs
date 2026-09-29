@@ -2207,4 +2207,54 @@ mod tests {
         tab(&h, &mut line);
         assert_eq!(line, "echo \"${h[apple]}");
     }
+
+    /// Every line of up to four pieces of shell syntax is analyzed at each
+    /// position (and up to three are completed), which must not panic (a panic aborts the shell).
+    #[test]
+    fn no_panics_on_odd_lines() {
+        let pieces: [&[u8]; 18] = [
+            b"ls ", b"git ", b"cd ", b"x=", b"--a=", b":", b" ", b"'", b"\"", b"\\", b"$", b"${", b"[", b"~", b"/",
+            b"$(", b"| ", b"# ",
+        ];
+        // A completer that gives an offset far past the word.
+        fn wild(_: &[Vec<u8>], i: usize) -> Completion {
+            match i {
+                0 => Completion::Failed,
+                _ => Completion::Candidates(usize::MAX, vec![Candidate::word(b"xy z")]),
+            }
+        }
+        let h = ShellHelper {
+            names: Names {
+                functions: vec![b"myfunc".to_vec()],
+                vars: vec![b"HOME".to_vec()],
+                completers: vec![b"git".to_vec()],
+                options: vec![("errexit", false)],
+                ..Default::default()
+            },
+            ask: Some(wild),
+            ..Default::default()
+        };
+        let aliases = AliasMap::default();
+        let mut idx = [0usize; 4];
+        for len in 1..=4 {
+            let total = pieces.len().pow(len as u32);
+            for n in 0..total {
+                let mut m = n;
+                for slot in idx.iter_mut().take(len) {
+                    *slot = m % pieces.len();
+                    m /= pieces.len();
+                }
+                let line: Vec<u8> = idx[..len].iter().flat_map(|&i| pieces[i].iter().copied()).collect();
+                for end in 0..=line.len() {
+                    let w = analyze(&line[..end], &aliases);
+                    assert!(w.split <= w.text.len(), "split past the text of {:?}", &line[..end]);
+                    assert_eq!(w.offsets.len(), w.text.len() + 1, "offsets of {:?}", &line[..end]);
+                }
+                if len <= 3 {
+                    h.complete_bytes(&line, b"");
+                    h.complete_bytes(&line, b" x");
+                }
+            }
+        }
+    }
 }
