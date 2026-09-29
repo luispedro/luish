@@ -2,19 +2,23 @@
 
 ## Version 0.2.0 (29 September 2026)
 
-This release brings bash's and zsh's scripting extensions to luish. Arrays, associative arrays, `[[ ... ]]`, `typeset`
-and the rest work in scripts and in the interactive shell, and scripts that don't use them run as fast as before (see
-[](performance.md)). All of it is on by default, since it only gives a meaning to what is a syntax error or a missing
-command in dash.
+This release brings bash's and zsh's scripting extensions to luish. Arrays,
+associative arrays, `[[ ... ]]`, `typeset` and the rest work in scripts and in
+the interactive shell, and scripts that don't use them run as fast as before
+(see [](performance.md)).
 
-**Arrays.** Indexed and associative arrays, with the syntax and behaviour of zsh's `sh` emulation, and bash's where
-that is silent (see [](usage.md#arrays)):
+**Arrays.** Indexed and associative arrays, with the syntax and behaviour of
+zsh's `sh` emulation, and bash's where that is silent (see
+[](usage.md#arrays)):
 
 ```sh
 files=(*.txt "my notes")               # indexed, counting from 0
-files+=(extra); echo "${files[-1]}" "${#files[@]}"
+files+=(extra)
+echo "${files[-1]}" "${#files[@]}"
 typeset -A size=([small]=1 [big]=10)   # associative
-for k in "${!size[@]}"; do echo "$k=${size[$k]}"; done
+for k in "${!size[@]}"; do
+    echo "$k=${size[$k]}"
+done
 ```
 
 - `read -A` (zsh) and `read -a` (bash) read a line into an array; `local`, `export` and `readonly` take arrays.
@@ -24,7 +28,8 @@ for k in "${!size[@]}"; do echo "$k=${size[$k]}"; done
 - `typeset` and `declare`, with `-a -A -i -l -u -U -f -g -p -r -x`. `typeset -U path` keeps `PATH` free of repeated
   directories, and `typeset -f` prints functions.
 - Tab after `${a[` completes the indices or keys.
-- Plugins can read and set arrays: `sh::getarray`, `sh::getmap` and `sh::setvar` with an array or a map.
+- Plugins can read and set arrays: `sh::getarray`, `sh::getmap` and
+  `sh::setvar` with an array or a map.
 
 **More of the language.**
 
@@ -34,34 +39,35 @@ for k in "${!size[@]}"; do echo "$k=${size[$k]}"; done
 - `let`, and `builtin` (as in zsh and bash).
 - `set -o pipefail`, from POSIX 2024.
 - zsh's special variables: `RANDOM`, `SECONDS`, `EPOCHSECONDS`, `EPOCHREALTIME`, `UID`, `EUID`, `GID`, `EGID`,
-  `HISTCMD`, and the arrays `pipestatus` (`PIPESTATUS` in bash), `path` (tied to `PATH`) and `dirstack` (tied to the
-  directory stack). `SHLVL` is maintained.
+  `HISTCMD`, and the arrays `pipestatus` (`PIPESTATUS` in bash), `path` (tied
+  to `PATH`) and `dirstack` (tied to the directory stack). `SHLVL` is
+  maintained.
 
 **Interactive use.**
 
-- Tab expands globs, variables and command substitutions in the word, as zsh does: `ls *.md` Tab becomes the list of
-  files.
-- The syntax highlighter colours unset variables differently (`unset` in `$LUISH_HIGHLIGHT`).
+- Tab expands globs, variables and command substitutions in the word, as zsh
+  does: `ls *.md` Tab becomes the list of files.
+- The syntax highlighter colours unset variables differently (`unset` in
+  `$LUISH_HIGHLIGHT`).
 - `shopt` suggests the `setopt` that does the same.
 
-**Startup cache.** `__luish_internal check-cache` reruns the startup files and compares the result with what the cache
-restores, and rebuilds it if they differ. It can run from `cron` (see [](usage.md#checking-the-caches)).
+**Startup cache.** `__luish_internal check-cache` reruns the startup files and
+compares the result with what the cache restores, and rebuilds it if they
+differ. It can run from `cron` (see [](usage.md#checking-the-caches)).
 
-**Fixes.** Crashes on Tab after a stray `)` or after a word like `--opt=value`, and on a plugin source with an empty
-path. luish no longer prints git's error for a locked plugin commit that isn't fetched yet.
+**Fixes.** Crashes on Tab after a stray `)` or after a word like `--opt=value`,
+and on a plugin source with an empty path. luish no longer prints git's error
+for a locked plugin commit that isn't fetched yet.
 
-**Known problem.** The startup cache records what your files changed relative to the environment of the shell that
-built it. A variable your files set to the value that shell already had (for example `CONDA_EXE`, when the first luish
-was started inside zsh with conda already set up) isn't saved, and a changed `PATH` is saved with the entries that shell
-had. If `conda` or `nvm` fail in new terminals, remove the caches (`rm ~/.cache/luish/rc-* ~/.cache/luish/login-*`)
-and start luish once from a terminal that isn't running another shell with the same setup. See
-[Cached startup files](usage.md#cached-startup-files). A fix is planned.
+**Known problem.** The startup cache records what your files changed relative
+to the environment of the shell that built it. . If `conda` or `nvm` fail in
+new terminals, remove the caches (`rm ~/.cache/luish/rc-*
+~/.cache/luish/login-*`) and start luish once from a terminal that isn't
+running another shell with the same setup. See [Cached startup
+files](usage.md#cached-startup-files). A fix is planned.
 
-**Upgrading.** The startup caches rebuild themselves the first time. Scripts that follow POSIX behave as before,
-with these exceptions: a command named like an assignment to an array element or an append (`a[1]=x`, `x+=y`) is now an
-assignment; `$path` is the first directory of `PATH` where it was unset (`path=x` and `unset path` still work as for any variable);
-and `RANDOM`, `SECONDS`, `UID` and the other special variables above are computed instead of ordinary, though assigning
-to them still works. [](compatibility.md) lists each difference from dash.
+**Upgrading.** The startup caches rebuild themselves the first time. Scripts
+that follow POSIX behave as before, with few exceptions.
 
 ## Version 0.1.0 (27 September 2026)
 

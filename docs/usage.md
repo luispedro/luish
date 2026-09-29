@@ -367,9 +367,10 @@ As in zsh, a word with a glob, a `$` or a command substitution in it is expanded
 
 ### The completion menu
 
-The menu shows the matches in columns, or one per line with their descriptions (such as the commands of jobs for
-`fg`). If it doesn't fit on the screen, it scrolls, and its last line says which rows are shown. The next Tab selects
-the first match and puts it in the line, and then:
+The menu shows the matches in columns, or one per line with their descriptions
+(such as the commands of jobs for `fg`). If it doesn't fit on the screen, it
+scrolls, and its last line says which rows are shown. The next Tab selects the
+first match and puts it in the line, and then:
 
 | Key | Action |
 |---|---|
@@ -379,9 +380,11 @@ the first match and puts it in the line, and then:
 | Enter | Keep the match and close the menu |
 | Esc, Ctrl-G | Put back the text typed and close the menu |
 
-Any other key keeps the match, closes the menu and does what it usually does, so you can type on after it. Before a
-match is selected, Down, Ctrl-N and Shift-Tab also start selecting (Shift-Tab from the last match), but the other keys
-do what they usually do: Enter runs the command, and Up goes back in the history.
+Any other key keeps the match, closes the menu and does what it usually does,
+so you can type on after it. Before a match is selected, Down, Ctrl-N and
+Shift-Tab also start selecting (Shift-Tab from the last match), but the other
+keys do what they usually do: Enter runs the command, and Up goes back in the
+history.
 
 
 ## Settings in `config.toml`
