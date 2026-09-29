@@ -516,6 +516,13 @@ struct Attrs {
 }
 
 impl Attrs {
+    /// Whether no attribute is given (plain `local x=y` or `typeset x`).
+    fn is_empty(&self) -> bool {
+        let a = self;
+        let flags = [a.integer, a.lower, a.upper, a.unique, a.readonly, a.export];
+        !a.array && !a.assoc && flags.iter().all(Option::is_none)
+    }
+
     /// The attributes that change values, `old` changed by these. `-l` and
     /// `-u` replace each other, and together give neither (zsh and bash).
     fn transform(&self, old: Transform) -> Transform {
@@ -584,6 +591,8 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
         return Ok(print_declarations(sh, cmd, args, &attrs));
     }
     let local = !global && !sh.locals.is_empty();
+    // Without attributes (as for most `local`s) only the assignment is left.
+    let plain = attrs.is_empty();
     let mut status = 0;
     for a in args {
         let (name, value) = split_arg(a);
@@ -609,6 +618,15 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
             if let Some(s) = sh.vars.special(name).filter(|s| s.is_tied()) {
                 sh.vars.deactivate(s);
             }
+        }
+        if plain {
+            match value {
+                Some(v) => assign_arg(sh, name, v)?,
+                None => {
+                    sh.vars.entry(name);
+                }
+            }
+            continue;
         }
         // A string becomes an array of one element, or an associative
         // array with the key `0` (bash; zsh empties it). An array can't

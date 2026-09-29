@@ -340,8 +340,10 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
 - `set -x` doesn't trace commands run while `PS4` is expanded (`in_ps4`, dash's `inps4`), which used to loop forever.
   Test: `options/xtrace_ps4_subst.sh`.
 - `export`, `readonly`, `local`, `typeset`, `declare` and `setopt` expand assignment-like arguments as assignments, as dash 0.5.12 does,
-  also through `command` and when the name comes from an expansion (`declaration_command` in `expand/mod.rs`). Test:
-  `builtins/declaration_args.sh`.
+  also through `command` and when the name comes from an expansion (`declaration_command` in `expand/mod.rs`).
+  `name=value` without a tilde to expand or an array is expanded in place (`expand_plain_declaration`); the rest go
+  through `split_assignment_with`, which copies the word's parts. Tests: `builtins/declaration_args.sh`,
+  `builtins/local_forms.sh`.
 - `cd` and `pwd` use the logical directory (dash's `curdir`); a valid `$PWD` at startup is used without `getcwd`. Tests:
   `builtins/cd_logical.sh`, `builtins/chdir.sh`, `builtins/cd_e.sh`.
 - `cd.auto` (`autocd_target` in `exec/simple.rs`) costs nothing unless the option is on. Test: `builtins/autocd.sh`.
@@ -816,6 +818,20 @@ there with its own `CARGO_TARGET_DIR`. Arrays cost arith +1.2% and functions +1.
 `Vars::get`, the fast-path check in `expand_assigns`), parameter flags under 1% (the `flags` check on the `$x` fast
 path). New variable kinds or expansions must keep `Vars::get` and the `$x` fast path in `expand_param` this cheap.
 The `Arith` branch of `expand_part` deliberately doesn't call `arith_word`, which is slower out of line.
+
+Measured this way on 2026-09-29, the features added after 0.1.0 (from `76b9576`, where the tables in
+`docs/performance.md` were last made, to `138cf09`) had cost arith +4.1%, functions +7.9% and textproc +3.8%
+(strings got 3.8% faster). Most of functions was `local` becoming `declare` (shared with `typeset`): each variable
+went through the attribute and array-conversion code and two more `Vars::entry` lookups, and each `x="$1"`
+argument was copied into a new word by `split_assignment_with`, whose `ParamExp` had grown. `declare` now skips all
+that without attributes, `Vars::entry` looks the name up once when it inserts it, and `expand_plain_declaration`
+expands such arguments in place; `local a b=1 c="$1"` in a loop is now faster than at `76b9576`. `"$@"` and `"$*"`
+also no longer join the positional parameters into a string nobody uses (as they did at `76b9576` too). That left
+arith +3.7%, functions +0.9% and textproc +3.4%, spread thinly over the new features, each 0.5% or less: `pipestatus`
+in `run_pipeline` (about 11 instructions per pipeline), the stack checks in `run_list_exit` and `Arith::expr`, the
+array arms and the specials' check in `Vars::get` and `Vars::set`, the `typeset` transforms in `try_set_var`, and
+the parameter-flag split of `expand_param`, which is now a function call before its `expand_unflagged` (making it
+`#[inline]` gained nothing measurable).
 
 luish parses large files about three times as slowly as dash (`-n` of nvm's 144 KB `nvm.sh`: about 6 ms to dash's
 2 ms, after startup), and touches about 4 MB of memory doing it (1046 page faults to dash's 228), so the AST or the

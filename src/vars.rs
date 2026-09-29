@@ -467,6 +467,7 @@ impl Vars {
     }
 
     /// How the values assigned to `name` are changed.
+    #[inline]
     pub fn transform(&self, name: &[u8]) -> Transform {
         match self.transforms {
             true => self.map.get(name).map(|v| v.transform).unwrap_or_default(),
@@ -608,6 +609,7 @@ impl Vars {
             Some(v) => {
                 // As in ksh and bash, `a=x` sets the first element of an array.
                 match &mut v.value {
+                    Some(Value::Str(s)) => *s = value,
                     Some(Value::Array(a)) if a.is_empty() => a.push(value),
                     Some(Value::Array(a)) => a[0] = value,
                     Some(Value::Assoc(h)) => h.insert(b"0", value),
@@ -644,7 +646,7 @@ impl Vars {
     pub fn entry(&mut self, name: &[u8]) -> &mut Var {
         // Not `map.entry`, which would copy the name even if it is there.
         if !self.map.contains_key(name) {
-            self.map.insert(name.to_vec(), Var::default());
+            return self.map.entry(name.to_vec()).or_default();
         }
         self.map.get_mut(name).unwrap()
     }

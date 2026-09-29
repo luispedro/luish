@@ -57,6 +57,10 @@ impl Shell {
         }
         for w in &words[i..] {
             if let Some(Some(is_name)) = decl
+                && let Some(arg) = self.expand_plain_declaration(w, is_name)?
+            {
+                out.push(arg);
+            } else if let Some(Some(is_name)) = decl
                 && let Some(a) = crate::parser::split_assignment_with(w, is_name)
                 && a.index.is_none()
                 && !a.append
@@ -90,6 +94,45 @@ impl Shell {
             }
         }
         Ok(out)
+    }
+
+    /// The common case of an argument of a declaration command, `name=value`
+    /// with no tilde to expand in the value and no array (as in `local
+    /// x="$1"`), expanded without building the assignment's word (as
+    /// `split_assignment_with` does, copying its parts). `None` for others.
+    fn expand_plain_declaration(&mut self, w: &Word, is_name: fn(&[u8]) -> bool) -> EResult<Option<Vec<u8>>> {
+        let Some((WordPart::Literal(s), tail)) = w.0.split_first() else {
+            return Ok(None);
+        };
+        let Some(eq) = s.iter().position(|&c| c == b'=') else {
+            return Ok(None);
+        };
+        let rest = &s[eq + 1..];
+        let plain = |part: &WordPart| match part {
+            WordPart::Literal(s) => !s.contains(&b'~'),
+            // Its word gets tilde expansion (`mark_param_word_tildes`).
+            WordPart::Param(pe) => !matches!(
+                pe.op,
+                ParamOp::Default(_) | ParamOp::Assign(_) | ParamOp::Error(_) | ParamOp::Alternative(_)
+            ),
+            WordPart::Array(_) => false,
+            _ => true,
+        };
+        if rest.contains(&b'~') || !tail.iter().all(plain) || !is_name(&s[..eq]) {
+            return Ok(None);
+        }
+        let mut arg = s[..=eq].to_vec();
+        if tail.is_empty() {
+            arg.extend_from_slice(rest);
+            return Ok(Some(arg));
+        }
+        let mut f = Fields::new(None);
+        f.push_literal(rest);
+        self.expand_parts(tail, false, false, &mut f)?;
+        if let Some(v) = f.into_fields().first() {
+            arg.extend(bytes(v));
+        }
+        Ok(Some(arg))
     }
 
     /// The elements of an array, `(x [key]=value)`: an element is expanded
@@ -384,8 +427,12 @@ impl Shell {
         if let ParamName::Indirect(base) = &pe.name {
             return self.expand_indirect(pe, base, quoted, f);
         }
-        // `${a[i]}` is an element, `${a[@]}` and `${a[*]}` the list.
+        let multi = matches!(pe.name, ParamName::Special(b'@' | b'*'));
+        // `${a[i]}` is an element, `${a[@]}` and `${a[*]}` the list. `$@`
+        // and `$*` are joined only for `${@#pat}` and the like; the other
+        // operators use the list.
         let (val, element) = match (&pe.index, &pe.name) {
+            (None, _) if multi && !is_trim(&pe.op) => (None, None),
             (None, _) => (self.param_value(&pe.name), None),
             (Some(Index::Expr(w)), ParamName::Var(name)) => {
                 let sub = self.subscript(name, w)?;
@@ -403,7 +450,6 @@ impl Shell {
             }
             None => sh.unset_error(&pe.name, msg),
         };
-        let multi = matches!(pe.name, ParamName::Special(b'@' | b'*'));
         let nounset = self.opt(Opt::Nounset) && !multi;
         // dash: `$@` and `$*` always count as set; they are null when their
         // joined length (with separators, where there are any) is zero.
@@ -1117,6 +1163,18 @@ fn compare_words(a: &[u8], b: &[u8], nocase: bool, numeric: bool) -> std::cmp::O
 /// Whether `"${...}"` alone gives no field when there are no elements, as
 /// `"$@"` does: `$@` and `${a[@]}`, also with a substring or replacement
 /// (and a trim, for arrays).
+/// Whether the operator removes a prefix or suffix (`${x#pat}` and the
+/// like).
+fn is_trim(op: &ParamOp) -> bool {
+    matches!(
+        op,
+        ParamOp::RemoveSmallestSuffix(_)
+            | ParamOp::RemoveLargestSuffix(_)
+            | ParamOp::RemoveSmallestPrefix(_)
+            | ParamOp::RemoveLargestPrefix(_)
+    )
+}
+
 fn is_list(pe: &ParamExp) -> bool {
     match (&pe.name, &pe.index) {
         (ParamName::Special(b'@'), None) => {
