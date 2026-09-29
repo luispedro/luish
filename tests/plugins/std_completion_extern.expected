@@ -1,0 +1,31 @@
+load 0
+--- seqtool --ref data/
+data/genome.fa 
+data/other.fna 
+data/sub/
+--- seqtool -r data/g
+data/genome.fa 
+--- seqtool --format=
+--format=fasta 	sequences
+--format=sam 	alignments
+--- seqtool +
++fasta 	sequences
++sam 	alignments
+--- seqtool 
+faidx 	index a FASTA file
+view 	view a file
+--- seqtool -v view data/
+data/genome.fa 
+data/other.fna 
+data/sub/
+--- seqtool view data/genome.fa 
+chr1 
+chr2 
+--- seqtool index data/
+data/genome.fa 
+data/other.fna 
+data/sub/
+--- seqtool faidx -o data/genome.fa d
+data/
+--- seqtool faidx --ref=data/o
+--ref=data/other.fna 

@@ -681,6 +681,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   functions (shared tables are functions); arrays are passed to functions by value; keywords (`export`, `module`,
   `switch`, `go` ...) can't be map keys or function names without quotes; `replace` and `trim` change the string in
   place and return `()`; a closure that captures a map it is iterating is a data race.
+  Other plugins use the engine through `import "@std/completion/lib"`, and name their own kinds and `sub_spec` as
+  `@SOURCE/PLUGIN/MODULE:NAME`, which `kinds.rhai` and `lib.rhai` import as they do std's `MODULE:NAME`. Kinds aren't
+  closures because Rhai (1.26) links a closure to its function only through the caller's `global.lib[0]` (or by name
+  while a function of its module runs): a closure made in a module fails with `Function not found: anon$...` when
+  `lib.rhai` calls it. The spec format is public (`docs/plugins.md`), so changes to it must stay backward-compatible.
+  Test: `tests/plugins/std_completion_extern.sh`.
   `src/options.rs` checks that `shells.rhai` lists all the options `luish -o` takes.
 - **Packages** (`package.rs`, `fetch.rs`): `read_config` turns `[plugins]` into owned `Config` (sources in
   `plugins.available`, plus the built-in `std`, at the tag `vVERSION` of the running luish (`std_ref`); entries in
