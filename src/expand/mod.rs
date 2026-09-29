@@ -755,6 +755,35 @@ impl Shell {
             push_list(&names, at, quoted, self.ifs_first(), f);
             return Ok(());
         }
+        // The common operators on a set array without copying all of it,
+        // which would make `${#a[@]}` or `${a[@]:i:n}` in a loop quadratic.
+        let sep = self.ifs_first();
+        if let Some(v) = self.vars.get_value(name) {
+            match &pe.op {
+                ParamOp::Plain => {
+                    push_list(v.elements(), at, quoted, sep, f);
+                    return Ok(());
+                }
+                ParamOp::Length => {
+                    push_result(v.elements().len().to_string().as_bytes(), quoted, f);
+                    return Ok(());
+                }
+                ParamOp::Substring(offset, len) => {
+                    // The offset and length first, which may change the
+                    // array (as in bash, which slices the array as it is
+                    // then).
+                    let offset = self.arith_word(offset)?;
+                    let len = len.as_ref().map(|w| self.arith_word(w)).transpose()?;
+                    let n = self.vars.get_value(name).map_or(0, |v| v.elements().len());
+                    let (start, end) = self.substring_range(n, offset, len)?;
+                    if let Some(v) = self.vars.get_value(name) {
+                        push_list(&v.elements()[start..end], at, quoted, sep, f);
+                    }
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
         let items = match self.vars.get_value(name) {
             Some(v) => Some(v.elements().to_vec()),
             None => self.special_elements(name),

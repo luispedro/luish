@@ -144,8 +144,10 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh`.
 - Arrays (`vars::Value::Array`, boxed so that `Var` stays 32 bytes): `Vars::get` gives an array's first element, so
   everything that reads variables sees `$a` (an empty array is unset); `Value::elements` treats a string as one element. `a=x` sets element
-  0. `expand_array` handles `${a[@]}` and `${a[*]}` with every operator, through `push_list` (shared with `$@`);
-  `element` reads `${a[i]}`, which then goes through the scalar path. Assignments expand to `exec::simple::Assignment`
+  0. `expand_array` handles `${a[@]}` and `${a[*]}` with every operator, through `push_list` (shared with `$@`).
+  It copies the elements for the operators in `array_op`, but not for a plain `${a[@]}`, `${#a[@]}` or a slice
+  `${a[@]:i:n}` (which copies only the slice, after evaluating the offset and length): with the copy, `${#a[@]}` or a
+  slice in a loop over the array was quadratic. `element` reads `${a[i]}`, which then goes through the scalar path. Assignments expand to `exec::simple::Assignment`
   (the index evaluated, the elements expanded as command words), made by `Shell::assign`; temporary ones before a
   command are saved and restored whole. A declaration command gets an array argument as `name=`, a NUL, and each
   element followed by a NUL (`builtins::vars::split_arg`), since an argument can't otherwise hold a NUL. Arithmetic
