@@ -29,8 +29,8 @@ one run.
 ## The scripts
 
 Each script takes a scale (default 1) as its first argument; the work grows linearly with it. At scale 1 each takes
-0.2 to 1.5 s under dash. They use only POSIX features plus `local`, keep arithmetic below 2^31 up to scale 50 (mksh has
-32-bit integers), and use `printf` rather than `echo`.
+0.2 to 1.5 s under dash. Except `arrays.sh`, they use only POSIX features plus `local`, keep arithmetic below 2^31 up
+to scale 50 (mksh has 32-bit integers), and use `printf` rather than `echo`.
 
 | Script | What it does | Mostly exercises |
 |---|---|---|
@@ -40,6 +40,12 @@ Each script takes a scale (default 1) as its first argument; the work grows line
 | `functions.sh` | Recursion (Hanoi, Fibonacci, Ackermann), logging wrappers, `getopts` in a function, a stack and a queue | function calls, `local`, `"$@"`, `shift`, `return` statuses |
 | `configure.sh` | An autoconf-style `configure`: option parsing, cached header/function checks, `config.status` | here-documents, `$(... \| sed)`, `eval`, fd redirections: many small forks |
 | `build.sh` | A make-like build: dependency scanning, one `$SH -c` recipe per object, an incremental rebuild | fork and exec, shell start-up, pipelines, `test -nt`, globbing |
+| `arrays.sh` | Not POSIX: quicksort, a sieve, word counts, grouped records, matrix products, a BFS and sliding windows in arrays | indexed and associative arrays, `a+=(x)`, `$(( a[i] ))`, slices, `${x//pat/rep}`, `[[ ]]` |
 
-To add a benchmark, add `scripts/NAME.sh`; its output must be deterministic and the same under every shell (check
-with `bench/run.sh -c NAME`), and it should clean up after itself.
+`arrays.sh` uses what zsh and bash scripts use beyond POSIX, in the subset on which luish, `bash --posix` and
+`zsh --emulate sh` agree (its comment lists what it avoids). dash and BusyBox have no arrays and mksh's differ, so
+its line `# skip: dash busybox mksh` makes `run.sh` leave them out: its reference, for the output and the ratios, is
+then the first shell that runs it (luish by default), and the skipped shells show `-` in the table.
+
+To add a benchmark, add `scripts/NAME.sh`; its output must be deterministic and the same under every shell that
+runs it (check with `bench/run.sh -c NAME`), and it should clean up after itself.

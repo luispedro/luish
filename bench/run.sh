@@ -11,6 +11,10 @@
 #                   CMD may have arguments, e.g. -s 'zsh=zsh --emulate sh'.
 #   BENCHMARK       script names without .sh (default: all of bench/scripts)
 #
+# A script with a line `# skip: NAME...` isn't run by the shells of those
+# names (for scripts that aren't POSIX, such as arrays.sh); its reference
+# is then the first shell that runs it.
+#
 # The default shells are dash (the reference), luish (target/release/luish,
 # built with `pixi run release`), bash --posix, zsh --emulate sh, and busybox
 # sh, whichever are installed. Each script runs with a cleared environment
@@ -90,19 +94,37 @@ command_for() {
 		"$PATH" "$tmp/home" "$_cmd" "$_cmd" "$bench_dir/scripts/$1.sh" "$scale"
 }
 
-# Checks the output of every shell against the first one's; records the
-# shells that differ in differs_BENCH_N.
+# Whether benchmark $1 skips shell number $2 (its `# skip:` line).
+skips() {
+	eval "_name=\$shell_name_$2"
+	sed -n 's/^# skip://p' "$bench_dir/scripts/$1.sh" | tr ' \t' '\n\n' | grep -qxF "$_name"
+}
+
+# Checks the output of every shell against the first one's that runs the
+# benchmark (its reference, ref_BENCH); records the shells that differ in
+# differs_BENCH_N, and those that skip it in skip_BENCH_N.
 status=0
 printf 'Checking outputs (scale %s):\n' "$scale"
 for b in "$@"; do
 	printf '  %-12s' "$b"
+	ref=
 	i=1
 	while [ "$i" -le "$nshells" ]; do
 		eval "name=\$shell_name_$i"
+		if skips "$b" "$i"; then
+			eval "skip_${b}_$i=1"
+			printf ' %s:skipped' "$name"
+			i=$(( i + 1 ))
+			continue
+		fi
 		eval "$(command_for "$b" "$i")" > "$tmp/out.$i" 2> "$tmp/err.$i"
 		printf 'exit status %d\n' "$?" >> "$tmp/out.$i"
 		differs=
-		if [ "$i" -gt 1 ] && ! cmp -s "$tmp/out.1" "$tmp/out.$i"; then
+		if [ -z "$ref" ]; then
+			ref=$i
+			eval "ref_$b=$i"
+			printf ' %s:ok' "$name"
+		elif ! cmp -s "$tmp/out.$ref" "$tmp/out.$i"; then
 			differs=1
 			eval "differs_${b}_$i=1"
 			printf ' %s:DIFFERS' "$name"
@@ -115,11 +137,12 @@ for b in "$@"; do
 		fi
 		if [ -n "$differs" ] && $check_only; then
 			printf '\n'
-			diff "$tmp/out.1" "$tmp/out.$i" | sed 's/^/      /' | head -20
+			diff "$tmp/out.$ref" "$tmp/out.$i" | sed 's/^/      /' | head -20
 		fi
 		i=$(( i + 1 ))
 	done
 	printf '\n'
+	[ -n "$ref" ] || { printf 'run.sh: every shell skips %s\n' "$b" >&2; exit 2; }
 done
 $check_only && exit "$status"
 
@@ -135,8 +158,8 @@ time_benchmark() {
 		fi
 		i=1
 		while [ "$i" -le "$nshells" ]; do
-			eval "name=\$shell_name_$i"
-			set -- "$@" -n "$name" "$(command_for "$1" "$i")"
+			eval "name=\$shell_name_$i skip=\${skip_${1}_$i-}"
+			[ -z "$skip" ] && set -- "$@" -n "$name" "$(command_for "$1" "$i")"
 			i=$(( i + 1 ))
 		done
 		_b=$1
@@ -148,7 +171,11 @@ time_benchmark() {
 		: > "$tmp/$1.times"
 		i=1
 		while [ "$i" -le "$nshells" ]; do
-			eval "name=\$shell_name_$i"
+			eval "name=\$shell_name_$i skip=\${skip_${1}_$i-}"
+			if [ -n "$skip" ]; then
+				i=$(( i + 1 ))
+				continue
+			fi
 			cmd=$(command_for "$1" "$i")
 			n=0
 			: > "$tmp/samples"
@@ -175,9 +202,16 @@ for b in "$@"; do
 done
 
 # Summary: mean time per benchmark and shell, and the ratio to the first
-# shell.
+# shell (or to the benchmark's reference, if the first skips it).
 {
-	printf '\nMean time in seconds (ratio to %s), scale %s:\n\n' "$shell_name_1" "$scale"
+	printf '\nMean time in seconds (ratio to %s), scale %s:\n' "$shell_name_1" "$scale"
+	for b in "$@"; do
+		eval "ref=\$ref_$b"
+		if [ "$ref" != 1 ]; then
+			eval "printf '%s: skipped by some shells (-), ratio to %s\n' \"\$b\" \"\$shell_name_$ref\""
+		fi
+	done
+	printf '\n'
 	printf '| Benchmark |'
 	i=1
 	while [ "$i" -le "$nshells" ]; do
@@ -196,7 +230,12 @@ done
 		ref=$(awk 'NR == 1 { print $2 }' "$tmp/$b.times")
 		i=1
 		while [ "$i" -le "$nshells" ]; do
-			eval "name=\$shell_name_$i"
+			eval "name=\$shell_name_$i skip=\${skip_${b}_$i-}"
+			if [ -n "$skip" ]; then
+				printf ' - |'
+				i=$(( i + 1 ))
+				continue
+			fi
 			eval "flag=\${differs_${b}_$i-}"
 			awk -v name="$name" -v ref="$ref" -v flag="${flag:+ (output differs)}" \
 				'$1 == name { printf " %.3f (%.2f)%s |", $2, $2 / ref, flag }' "$tmp/$b.times"
