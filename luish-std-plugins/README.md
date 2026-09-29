@@ -7,7 +7,7 @@ and will become a repository of its own, as an example of how a plugin collectio
 
 | Plugin | What it does | Needs |
 |---|---|---|
-| `completion` | Tab completion for about 70 common commands: their options (with descriptions), the values of options, and their other arguments (directories for `mkdir`, modes for `chmod`, users and groups for `chown`, make's targets, ssh's hosts, man pages, the files in an archive for `tar -xf`, processes for `pkill` ...). Loads `git-completion` | |
+| `completion` | Tab completion for about 230 common commands: their options (with descriptions), the values of options, their subcommands, and their other arguments (directories for `mkdir`, users and groups for `chown`, make's targets, ssh's hosts, man pages, the files in an archive for `tar -xf`, systemd's units, installed and available packages, cargo's targets and features, pixi's and npm's tasks ...). Programs built with Cobra (gh, docker, kubectl ...) and nix are asked for their own completions. Loads `git-completion` | |
 | `git-completion` | Tab completion for git: its commands (with descriptions) and aliases, the options of each command, and the arguments each command takes (branches, tags, ranges such as `main..`, remotes, stashes, worktrees, and the files it can act on: modified and untracked files for `git add`, staged ones for `git restore --staged`, ...) | git |
 | `bash-completion` | Completion from [bash-completion](https://github.com/scop/bash-completion), for the commands that have no completer of their own | bash, bash-completion |
 
@@ -17,12 +17,35 @@ itself lists the options of its commands (`git CMD --git-completion-helper`, whi
 so they follow the installed version of git. Options that start with `--no-` are offered once the word starts with
 `--no`.
 
-`completion` covers coreutils (`ls`, `cp`, `mv`, `rm`, `mkdir`, `ln`, `chmod`, `chown`, `head`, `tail`, `sort`,
-`date`, `dd`, `install`, ...), grep, diffutils, tar, make, rsync, man, ssh, scp, sftp, pkill, pgrep and killall. Each
-command is a spec in `specs.rhai`: its options as a table written like `--help` output, what the values of options
-complete to, and what its arguments complete to (a kind from `kinds.rhai`, such as `dirs`, `users` or `hosts`).
-`lib.rhai` completes a command line from a spec. To add a command, add its spec and its name in `extension.rhai`.
-The modules are compiled on the first Tab, so loading the plugin costs little.
+`completion` covers:
+
+- coreutils (`ls`, `cp`, `mv`, `rm`, `mkdir`, `ln`, `chmod`, `chown`, `head`, `tail`, `sort`, `date`, `dd`, `install`,
+  ...), grep, diffutils, tar, make, rsync, man, ssh, scp, sftp, pkill, pgrep and killall (`specs.rhai`);
+- shells: luish itself, sh (dash), bash and zsh (`shells.rhai`);
+- files and text: find, fd, locate, sed, awk, jq, rg, less, more, file, ldd, patch, tree, gzip, xz, zstd, bzip2, zip
+  and unzip (`tools.rhai`);
+- the system: systemctl, journalctl, loginctl, ps, top, htop, lsof, strace, mount, umount, lsblk, dmesg, free and tmux
+  (`system.rhai`);
+- the network: curl, wget, ip, ss, ping, dig, ssh-add, ssh-keygen, ssh-copy-id, gpg and openssl (`net.rhai`);
+- development: cargo, rustup, go, gcc, clang, cmake, meson, ninja, gdb, python, sqlite3, vim, nvim, nano and emacs
+  (`dev.rhai`);
+- the package managers of languages: pip, uv, conda, mamba, pixi, npm, npx, yarn and pnpm (`langs.rhai`);
+- the package managers of systems: apt, apt-get, apt-cache, apt-mark, dpkg, dnf, yum, rpm, pacman, zypper, apk, brew,
+  snap and flatpak (`packages.rhai`);
+- programs that complete themselves (`bridges.rhai`): those built with Cobra (gh, glab, docker, podman, kubectl, helm,
+  minikube, kind, hugo, rclone ...), which answer `PROG __complete ARGS...`, and nix (`NIX_GET_COMPLETIONS`).
+
+Each command is a spec: its options as a table written like `--help` output, what the values of options complete to,
+its subcommands, and what its arguments complete to (a kind from `kinds.rhai`, such as `dirs`, `users` or `hosts`, or
+one of the module, such as `system:units`). `lib.rhai` completes a command line from a spec; the fields of specs are
+described there. Some specs are read from the program's own `-h` when it is fast (cargo's subcommands, rustup, uv,
+pixi, openssl's commands), so that they follow the installed version. To add a command, add its spec to a module and
+its name in `extension.rhai`. A module is compiled on the first Tab for one of its commands (a few milliseconds), so
+loading the plugin costs little (about 0.4 ms).
+
+The packages that can be installed are offered once the word has a letter (apt, pacman, apk, brew, flatpak), since
+there are tens of thousands of them, and not at all for dnf, yum and zypper, whose lists take seconds to get; installed
+packages are offered for removing them.
 
 `bash-completion` is a default completer (registered for `-default-`): it runs, in bash, the function that
 bash-completion has for the command, and gives luish what it returns. The commands that have completers of their

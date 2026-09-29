@@ -140,13 +140,17 @@ Still to build, in this order:
    zsh-completions):
    - **git**: done, as `git-completion` in `luish-std-plugins/`. Still missing: `REV:PATH`, `git config` keys, and
      values for most `--option=` words.
-   - **Common commands**: done, as `completion` in `luish-std-plugins/` (coreutils, grep, diffutils, tar, make,
-     rsync, man, ssh/scp/sftp, pkill), including **ssh/scp/rsync hosts** from `~/.ssh/config` (`Host` lines without
+   - **Common commands**: done, as `completion` in `luish-std-plugins/` (about 230: coreutils, grep, diffutils, tar,
+     make, rsync, man, ssh/scp/sftp, pkill, shells, find, sed, awk, jq, rg, compressors, systemctl, journalctl,
+     loginctl, ps, mount, tmux, curl, wget, ip, gpg, openssl, cargo, rustup, go, gcc, cmake, gdb, python, editors,
+     pip, uv, conda, pixi, npm, yarn, pnpm, and the package managers of systems: apt, dpkg, dnf, rpm, pacman,
+     zypper, apk, brew, snap, flatpak), including **ssh/scp/rsync hosts** from `~/.ssh/config` (`Host` lines without
      wildcards, and `Include`) and `/etc/hosts`. `~/.ssh/known_hosts` is hashed on this system, so it gives nothing,
-     even in zsh. Still missing: find, cargo, systemctl, apt, docker (Cobra, through the bridge below), paths on
-     remote hosts for scp and rsync.
+     even in zsh. Still missing: paths on remote hosts for scp and rsync, the packages that dnf, yum and zypper can
+     install (their lists take seconds; zsh keeps a cache), and options for `xargs` (luish's completer skips it as a
+     precommand, so no plugin sees it).
    - **A generic bridge**, so that most programs get completion without a hand-written completer: programs that
-     complete themselves (Cobra, as in `docs/examples/cobra.rhai`, clap's `COMPLETE=`, `argcomplete`),
+     complete themselves (Cobra and nix: done, in `completion`; still to do: clap's `COMPLETE=`, `argcomplete`),
      bash-completion scripts (as in `luish-std-plugins/bash-completion/`, but faster), and `--help` parsing for
      options only (as fish does). This needs a design note before building.
    - **Typing to narrow the menu** (zsh's `menu select interactive`): while the menu is open, printable keys filter

@@ -1,0 +1,471 @@
+load 0
+=== shells
+--- luish --no-
+--no-plugins 	make plugin load do nothing
+--no-rcs 	don't read any startup files
+status 0
+--- luish -o pipe
+pipefail 
+status 0
+--- luish -o glob.
+glob.bare_qualifiers 
+glob.star 
+status 0
+--- luish -c cmd 
+status 1
+--- sh -o nou
+nounset 
+status 0
+--- bash -O extg
+extglob 
+status 0
+=== single-dash options (find, gcc)
+--- find . -ty
+-type 	of type TYPE (f, d, l ...)
+status 0
+--- find . -type 
+D 	door (Solaris)
+b 	block device
+c 	character device
+d 	directory
+f 	regular file
+l 	symbolic link
+p 	named pipe (FIFO)
+s 	socket
+status 0
+--- find . -user roo
+root 
+status 0
+--- find -maxdepth 2 s
+src/
+status 0
+--- find . -newer n
+notes.txt 
+status 0
+--- gcc -std=c1
+-std=c11 
+-std=c17 
+status 0
+--- gcc -fsanitize=th
+-fsanitize=thread 
+status 0
+--- gcc -O
+-O0 	do not optimize (the default)
+-O1 	optimize
+-O2 	optimize more
+-O3 	optimize even more
+-Ofast 	optimize, disregarding strict standards compliance
+-Og 	optimize for debugging
+-Os 	optimize for size
+-Oz 	optimize for size aggressively
+status 0
+=== a value after = only where the table has it (vim)
+--- vim --cm
+--cmd 	run COMMAND before loading any vimrc file
+status 0
+--- vim --startuptime n
+notes.txt 
+status 0
+=== the values of options by the names of their arguments (curl)
+--- curl -X P
+PATCH 
+POST 
+PUT 
+status 0
+--- curl -o n
+notes.txt 
+status 0
+--- curl --header 
+status 1
+--- curl --cacert n
+notes.txt 
+status 0
+=== options of two letters or more (wget)
+--- wget -n
+-nH 	don't create host directories
+-nc 	skip downloads that would overwrite existing files
+-nd 	don't create directories
+-np 	don't ascend to the parent directory
+-nv 	turn off verboseness, without being quiet
+status 0
+--- wget -nv
+-nv 	turn off verboseness, without being quiet
+status 0
+=== files by extension
+--- gunzip 
+a.gz 
+b.txt.gz 
+bin/
+examples/
+src/
+status 0
+--- gzip -d 
+a.gz 
+b.txt.gz 
+bin/
+examples/
+src/
+status 0
+--- gzip n
+notes.txt 
+status 0
+--- dpkg -i 
+bin/
+examples/
+src/
+x.deb 
+status 0
+--- rpm -qp 
+bin/
+examples/
+src/
+y.rpm 
+status 0
+--- pacman -U 
+bin/
+examples/
+src/
+z.pkg.tar.zst 
+status 0
+=== subcommands
+--- systemctl sta
+start 	start (activate) units
+status 	show the runtime status of units
+status 0
+--- systemctl -t 
+automount 
+device 
+mount 
+path 
+scope 
+service 
+slice 
+socket 
+swap 
+target 
+timer 
+status 0
+--- systemctl --no-p
+--no-pager 	do not pipe the output into a pager
+status 0
+--- systemctl status --no-p
+--no-pager 	do not pipe the output into a pager
+status 0
+--- loginctl lock-s
+lock-session 	screen lock sessions
+lock-sessions 	screen lock all current sessions
+status 0
+--- apt fu
+full-upgrade 	upgrade the system by removing, installing and upgrading packages
+status 0
+--- apt list --up
+--upgradable 	list the packages that can be upgraded
+status 0
+--- apt-get install --no-install-r
+--no-install-recommends 	don't install recommended packages
+status 0
+--- pip 
+cache 	inspect and manage pip's wheel cache
+check 	verify installed packages have compatible dependencies
+completion 	a helper command used for command completion
+config 	manage local and global configuration
+debug 	show information useful for debugging
+download 	download packages
+freeze 	output installed packages in requirements format
+hash 	compute hashes of package archives
+help 	show help for commands
+index 	inspect information available from package indexes
+inspect 	inspect the python environment
+install 	install packages
+list 	list installed packages
+search 	search PyPI for packages
+show 	show information about installed packages
+uninstall 	uninstall packages
+wheel 	build wheels from your requirements
+status 0
+--- pip install -r n
+notes.txt 
+status 0
+--- pip install --prog
+--progress-bar=	whether to show the progress bar
+status 0
+--- tmux ne
+new-session 	create a new session
+new-window 	create a new window
+status 0
+--- tmux new -c s
+src/
+status 0
+--- ip a
+address 	protocol (IP or IPv6) addresses of a device
+addrlabel 	label configuration for protocol address selection
+status 0
+--- ip addr sh
+show 	show the objects
+status 0
+--- ip -f in
+inet 
+inet6 
+status 0
+--- go mod ti
+tidy 	add missing and remove unused modules
+status 0
+--- dig +sh
++short 
++showsearch 
+status 0
+--- ssh-keygen -t ed
+ed25519 
+ed25519-sk 
+status 0
+=== aliases of subcommands
+--- tmux attach -
+-E 	don't apply update-environment
+-c 	the working directory of the session
+-d 	detach other clients
+-f 	client flags
+-r 	attach read-only
+-t 	the session to attach to
+-x 	send SIGHUP to the parents of the other clients
+status 0
+--- dnf in -
+--advisory=	include packages of these advisories
+--allowerasing 	allow erasing installed packages to resolve dependencies
+--assumeno 	answer no to all questions
+--best 	try the best available package versions
+--disableplugin=	disable plugins
+--disablerepo=	disable repositories
+--downloadonly 	only download packages
+--enableplugin=	enable plugins
+--enablerepo=	enable more repositories
+--forcearch=	force the architecture
+--installroot=	set the install root
+--nobest 	allow packages that aren't the best version
+--nogpgcheck 	skip checking the GPG signatures of packages
+--noplugins 	disable all plugins
+--refresh 	set the metadata as expired before running
+--releasever=	override the release version
+--repo=	enable only the given repositories
+--repoid=	enable only the given repositories
+--security 	include only security updates
+--setopt=	set a configuration option
+--skip-broken 	skip packages that have broken dependencies
+--skip-unavailable 	skip packages that are unavailable
+--version 	show the version
+-C 	run entirely from the cache
+-c 	the configuration file
+-h 	show the help
+-q 	show only the results
+-v 	show more output
+-x 	exclude packages
+-y 	answer yes to all questions
+status 0
+=== operations (pacman)
+--- pacman -S
+-S 	synchronize packages
+status 0
+--- pacman -Sy
+-SyV	display the version and exit
+-Syb 	set an alternate database location
+-Syc	remove old packages from the cache directory (-cc for all)
+-Syd	skip dependency version checks (-dd to skip all checks)
+-Syg	view all members of a package group
+-Syh	display the help
+-Syi	view package information (-ii for extended information)
+-Syl	view a list of the packages of a repository
+-Syp	print the targets instead of performing the operation
+-Syq	show less information for query and search
+-Syr 	set an alternate installation root
+-Sys	search the remote repositories for matching strings
+-Syu	upgrade installed packages (-uu enables downgrades)
+-Syv	be verbose
+-Syw	download packages but do not install or upgrade anything
+status 0
+--- pacman -S --need
+--needed 	do not reinstall up to date packages
+status 0
+--- pacman -R
+-R 	remove packages from the system
+status 0
+=== programs read from their -h (cargo)
+--- cargo 
+build 	compile a local package
+fmt 	formats all bin and lib files
+status 0
+--- cargo -
+--color=	coloring
+--config=	override a configuration value
+--explain=	provide a detailed explanation of a rustc error message
+--frozen 	equivalent to specifying both --locked and --offline
+--list 	list installed commands
+--locked 	assert that Cargo.lock will remain unchanged
+--offline 	run without accessing the network
+-C 	change to DIRECTORY before doing anything (nightly-only)
+-V 	print version info and exit
+-Z 	unstable (nightly-only) flags to Cargo
+-h 	print help
+-q 	do not print cargo log messages
+-v 	use verbose output (-vv very verbose/build.rs output)
+status 0
+--- cargo --color 
+always 
+auto 
+never 
+status 0
+--- cargo +
++1.80.0 
++beta 
++nightly 
++stable 
++stable-x86_64-unknown-linux-gnu 
+status 0
+--- cargo +stable b
+build 	compile a local package
+status 0
+--- cargo -C src b
+build 	compile a local package
+status 0
+--- cargo build --rel
+--release 	build artifacts in release mode
+status 0
+--- cargo b --rel
+--release 	build artifacts in release mode
+status 0
+--- cargo build --bin 
+extra 
+proj 
+tool 
+status 0
+--- cargo build --example 
+demo 
+status 0
+--- cargo build -F fast,
+fast,default 
+fast,fast 
+fast,simd 
+status 0
+--- cargo build --profile 
+bench 
+bench-fast 
+dev 
+release 
+test 
+status 0
+--- cargo build -p 
+proj 
+status 0
+--- cargo build --manifest-path C
+Cargo.toml 
+status 0
+--- cargo build --config 
+status 1
+--- cargo build --color 
+always 
+auto 
+never 
+status 0
+--- cargo 'x;touch pwned' --
+status 1
+=== pixi's tasks and environments
+--- pixi 
+remove 	removes dependencies
+run 	runs task in the pixi environment
+status 0
+--- pixi r 
+build 	cargo build
+docs 	sphinx-build docs out
+lint 	ruff check
+test 	cargo test
+status 0
+--- pixi run -e 
+default 
+docs 
+status 0
+--- pixi rm 
+python 
+sphinx 
+status 0
+=== npm, yarn and pnpm
+--- npm run 
+check 	tsc
+serve 	vite
+status 0
+--- npm rm 
+left-pad 
+vitest 
+status 0
+--- npm i -D
+-D 	save as a devDependency
+status 0
+--- yarn se
+serve 	vite
+status 0
+--- pnpm ch
+check 	tsc
+status 0
+=== conda
+--- conda activate 
+base 
+py3 
+status 0
+--- conda install -n p
+py3 
+status 0
+--- conda remove -n py3 
+numpy 
+python-dateutil 
+status 0
+--- mamba env 
+config 	configure an environment
+create 	create an environment from an environment file
+export 	export a given environment
+list 	list the environments
+remove 	remove an environment
+update 	update an environment from an environment file
+status 0
+=== Cobra programs
+--- gh 
+pr 	Manage pull requests
+repo 	Manage repositories
+status 0
+--- gh pr list --state=
+--state=closed 
+--state=merged 
+--state=open 
+status 0
+--- gh pr list --state 
+closed 
+merged 
+open 
+status 0
+--- gh pr checkout n
+notes.txt 
+status 0
+--- gh nosuch 
+status 1
+=== nix
+--- nix bu
+build 
+bundle 
+status 0
+--- nix build --f
+--file 	Interpret installables as
+status 0
+--- nix build nixpkgs#he
+nixpkgs#hello
+nixpkgs#hello-go
+status 0
+--- nix build ./n
+./notes.txt 
+status 0
+=== openssl, from the -help of its commands
+--- openssl x5
+x509 	certificate utility
+status 0
+--- openssl x509 -in
+-in 	Input file
+-inform 	Input format
+status 0
+--- openssl x509 -in n
+notes.txt 
+status 0

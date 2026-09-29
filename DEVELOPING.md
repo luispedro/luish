@@ -620,18 +620,43 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   Tab, since bash sources `bash_completion` each time). Outside bash's own completion, compgen doesn't undo
   the quoting bash-completion gives the word (`~` as `\~`), so the bridge replaces the quoting functions; its
   `-o` options are in `copts`, since completion functions have a local `opts`.
-- `luish-std-plugins/completion/` completes about 70 common commands (coreutils, grep, diffutils, tar, make, rsync, man,
-  ssh, pkill ...) from specs (`specs.rhai`): an option table written as in `--help` (`-a, --all  DESC`, `--name=ARG`,
-  `--name[=ARG]`, `-n ARG`), the values of options, and the kinds of the arguments that aren't options (`kinds.rhai`:
-  `dirs`, `users`, `mode`, `hosts` from `~/.ssh/config` with `Include` and `/etc/hosts`, `targets` from the makefile,
-  `members` from `tar -tf`, ...). `lib.rhai` scans the words before the cursor for options, values and `--`, and handles
-  `--opt=VALUE`, `-o VALUE`, `-oVALUE` and bundles (`-la` offers the flags that can follow). A word `-` offers each
-  option once (its short name if it has one), `--` the long names. The extension only registers the commands; the
-  completer imports the modules, so they are compiled on the first Tab (about 5 ms; later ones take about 1 ms) instead
-  of at every start (loading it takes about 0.3 ms more than git-completion alone, rather than 3.5 ms). Rhai details it
-  works around: a closure made in a `for` loop sees the loop variable's last value (the completer uses `words[0]`, which
-  is the name it was registered for); a module's constants aren't visible to its functions (shared tables are
-  functions); arrays are passed to functions by value. `plugin.toml` depends on `git-completion`.
+- `luish-std-plugins/completion/` completes about 230 common commands from specs, one module per group (`specs.rhai`
+  for coreutils, grep, tar, make, ssh ...; `shells.rhai`, `tools.rhai`, `system.rhai`, `net.rhai`, `dev.rhai`,
+  `langs.rhai` for the package managers of languages, `packages.rhai` for those of systems): an option table written as
+  in `--help` (`-a, --all  DESC`, `--name=ARG`, `--name[=ARG]`, `-n ARG`, `--name <ARG>`), the values of options, the
+  kinds of the arguments that aren't options (`kinds.rhai`: `dirs`, `users`, `mode`, `hosts` from `~/.ssh/config` with
+  `Include` and `/etc/hosts`, `targets` from the makefile, `members` from `tar -tf`, `commands` from `PATH` ...;
+  `MODULE:NAME` is `MODULE::kind(NAME, cur, words)`, for the kinds of one module, such as `system:units`), and
+  subcommands (`commands`, a table of names and aliases, `subs`, their specs, and `common`, the options valid on both
+  sides), each of which gets the whole command line for its kinds (`line`). Other fields: `modes` (an option that picks
+  an operation, as `pacman -S`, whose spec replaces the command's; the other operations stay valid but hidden, and a
+  mode is also found in the word being completed, as in `-Sy`), `single_dash` (`find -name`, `gcc -std=`: no bundles,
+  and `=` only where the table has it), `strict_eq` (the same for `--` options, for vim and cmake, which don't take
+  `--opt=VALUE`), `guess_values` (for big tables, such as curl's: an option whose argument is named like a file or a
+  directory completes to those, others to nothing), `skip` (words such as cargo's `+toolchain`, with their kinds) and
+  `sub_spec` (a module function that makes a subcommand's spec when needed). `help_spec` makes a spec from a program's
+  `-h` (clap or GNU style: options, the commands of a section whose heading has `command` in it, `[possible values:
+  ...]` and `[aliases: ...]`), run with `COLUMNS=400` so that clap doesn't wrap; cargo's subcommands, rustup, uv and
+  pixi are read this way (each takes about 10 ms), and openssl's commands from their `-help`, but pip, conda and npm
+  are written out, as they take 60 to 300 ms to start. `kinds::toml` reads enough TOML for manifests (`Cargo.toml`,
+  `pixi.toml`, `pyproject.toml`). `lib.rhai` scans the words before the cursor for options, values, `--` and the
+  subcommand, and handles `--opt=VALUE`, `-o VALUE`, `-oVALUE` and bundles (`-la` offers the flags that can follow);
+  a word such as `-nv` that is an option (wget) is completed as one. A word `-` offers each option once (its short name
+  if it has one), `--` the long names. Package managers list the installable packages only for a word with a letter
+  (apt has about 90,000), and not at all for dnf, yum and zypper. `bridges.rhai` asks programs that complete
+  themselves: Cobra's (`PROG __complete ARGS... WORD`, whose last line `:N` has flags: 2 no space, 4 no filenames, 8
+  extensions, 16 directories; the values of `--flag=` come without the prefix, which the bridge adds back) and nix's
+  (`NIX_GET_COMPLETIONS=N`, whose first line is `normal`, `filenames` or `attrs`, the last with no space after, and
+  whose descriptions are Markdown). The extension only registers the commands (a map from command to module, which the
+  closures share); a completer imports its module, so each is compiled on its first Tab (5 to 10 ms; later ones take
+  about 1 ms, plus the programs they run: 15 ms for `systemctl stop`, 30 ms for `cargo build --`) instead of at every
+  start (loading the plugin takes about 0.4 ms). xargs gets no plugin completer, as luish's own completer skips it as a
+  precommand. Rhai details it works around: a closure made in a `for` loop sees the loop variable's last value (the
+  completer uses `words[0]`, which is the name it was registered for); a module's constants aren't visible to its
+  functions (shared tables are functions); arrays are passed to functions by value; keywords (`export`, `module`,
+  `switch`, `go` ...) can't be map keys or function names without quotes; `replace` and `trim` change the string in
+  place and return `()`; a closure that captures a map it is iterating is a data race. `plugin.toml` depends on
+  `git-completion`. `src/options.rs` checks that `shells.rhai` lists all the options `luish -o` takes.
 - **Packages** (`package.rs`, `fetch.rs`): `read_config` turns `[plugins]` into owned `Config` (sources in
   `plugins.available`, plus the built-in `std`, at the tag `vVERSION` of the running luish (`std_ref`); entries in
   `plugins.enabled`), and `manifest` a directory plugin's `plugin.toml` into entries of the same kind. `Resolver` resolves entries depth-first, dependencies before
@@ -669,7 +694,8 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   concurrent syncs, `login.lsh`.
 - Tests: `tests/plugins/*` (packages: `packages.sh` for local sources, `git_packages.sh` for git ones with
   `file://` repositories, `post_rc.sh`, `manifest.sh`; completers through `__luish_internal complete`:
-  `complete.sh`, and `std_completion.sh` for `luish-std-plugins/completion`, found through `$STD_PLUGINS`), `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit
+  `complete.sh`, and `std_completion.sh` and `std_completion_more.sh` for `luish-std-plugins/completion`, found through
+  `$STD_PLUGINS`, the latter with stand-ins for the programs it runs), `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit
   tests for the byte conversion, `git status` parsing and (with a stand-in completer) in `complete.rs`, and
   `plugin_builtin`, `plugin_completer`, `cobra_completer`, `git_completion` and `bash_completion_bridge` (skipped
   without bash-completion) in `tests/interactive.rs`.

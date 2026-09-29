@@ -259,7 +259,24 @@ impl Options {
 
 #[cfg(test)]
 mod tests {
-    use super::{Kind, Opt, Options, Setting, find_group, groups, inverted, is_setting_name};
+    use super::{EXTENDED, Kind, OPTIONS, Opt, Options, Setting, find_group, groups, inverted, is_setting_name};
+
+    /// The completion plugin of luish-std-plugins lists the options that
+    /// `luish -o` takes.
+    #[test]
+    fn std_completion_lists_the_options() {
+        let shells = include_str!("../luish-std-plugins/completion/shells.rhai");
+        let names = OPTIONS
+            .iter()
+            .map(|o| o.2)
+            .filter(|&n| n != "interactive" && n != "stdin");
+        for name in names.chain(EXTENDED.iter().map(|o| o.1)) {
+            assert!(
+                shells.contains(&format!("\"{name}\"")),
+                "{name} is missing from shells.rhai"
+            );
+        }
+    }
 
     #[test]
     fn zsh_names() {

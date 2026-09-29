@@ -18,6 +18,8 @@
 // | `targets` | make's targets, from the makefile |
 // | `members` | the files in the archive of `tar -f ARCHIVE` |
 // | `dd` | dd's operands (`if=FILE`, `bs=BYTES`, `conv=CONVS` ...) and their values |
+// | `commands` | the commands in `PATH` |
+// | `MODULE:NAME` | `MODULE::kind(NAME, cur, words)`, for the kinds of the commands of one module |
 //
 // An array is its own candidates.
 
@@ -529,9 +531,113 @@ fn dd(cur) {
     #{prefix: cur.sub_string(0, start), candidates: values}
 }
 
+// A TOML key or string without its quotes.
+fn unquote(s) {
+    s.trim();
+    if s.len() >= 2 && (s.starts_with("\"") && s.ends_with("\"") || s.starts_with("'") && s.ends_with("'")) {
+        s.sub_string(1, s.len() - 2)
+    } else {
+        s
+    }
+}
+
+// The strings of a TOML array (`["a", "b"]`).
+fn toml_list(v) {
+    v.trim();
+    if !v.starts_with("[") {
+        return [];
+    }
+    v = v.sub_string(1, v.len() - 2);
+    v.split(",").map(|x| unquote(x)).filter(|x| x != "")
+}
+
+// The tables of a TOML file, enough for the names in manifests
+// (Cargo.toml, pixi.toml ...): a map from each table's name (`package`,
+// `target.linux-64.tasks`) to a map from its keys to their values, as
+// written. An array of tables (`[[bin]]`) is an array of such maps.
+fn toml(text) {
+    let out = #{};
+    let name = "";
+    let many = false;
+    let key = ();
+    let val = "";
+    out[""] = #{};
+    for line in text.split("\n") {
+        let l = line;
+        l.trim();
+        if key != () {
+            val += " " + l;
+            if val.split("[").len() <= val.split("]").len() {
+                if many { out[name][-1][key] = val; } else { out[name][key] = val; }
+                key = ();
+            }
+            continue;
+        }
+        if l == "" || l.starts_with("#") {
+            continue;
+        }
+        if l.starts_with("[[") {
+            name = unquote(l.sub_string(2, l.index_of("]]") - 2));
+            many = true;
+            if out[name] == () {
+                out[name] = [];
+            }
+            out[name].push(#{});
+        } else if l.starts_with("[") {
+            name = l.sub_string(1, l.index_of("]") - 1);
+            name.trim();
+            many = false;
+            if out[name] == () {
+                out[name] = #{};
+            }
+        } else {
+            let eq = l.index_of("=");
+            if eq <= 0 {
+                continue;
+            }
+            let k = unquote(l.sub_string(0, eq));
+            let v = l.sub_string(eq + 1);
+            v.trim();
+            if v.starts_with("[") && v.split("[").len() > v.split("]").len() {
+                key = k;
+                val = v;
+            } else if many {
+                out[name][-1][k] = v;
+            } else {
+                out[name][k] = v;
+            }
+        }
+    }
+    out
+}
+
+// The commands in `PATH` that start with `cur`.
+fn commands(cur) {
+    if cur.contains("/") {
+        return ();
+    }
+    let out = [];
+    let seen = #{};
+    for d in (sh::getvar("PATH") ?? "").split(":") {
+        for n in fs::list_dir(if d == "" { "." } else { d }) ?? [] {
+            if n.starts_with(cur) && !seen.contains(n) {
+                seen[n] = true;
+                out.push(n);
+            }
+        }
+    }
+    out
+}
+
 fn complete(kind, cur, words) {
     if type_of(kind) == "array" {
         return kind;
+    }
+    let colon = kind.index_of(":");
+    if colon > 0 {
+        let m = kind.sub_string(0, colon);
+        import m as specs;
+        return specs::kind(kind.sub_string(colon + 1), cur, words);
     }
     switch kind {
         "files" => (),
@@ -551,6 +657,7 @@ fn complete(kind, cur, words) {
         "targets" => targets(words),
         "members" => members(cur, words),
         "dd" => dd(cur),
+        "commands" => commands(cur),
         _ => throw `unknown kind: ${kind}`,
     }
 }

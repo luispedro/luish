@@ -2,6 +2,14 @@ Unreleased
     * Plugins can add commands: `sh::builtin(name, fn)` registers a
       built-in written in Rhai, and `sh::read_line()` reads its input
     * `type` names the plugin that added a built-in
+    * std.completion completes about 160 more commands: luish, sh, bash
+      and zsh, find, sed, awk, jq, rg, less, compressors, systemctl,
+      journalctl, loginctl, ps, top, mount, tmux, curl, wget, ip, gpg,
+      openssl, cargo, rustup, go, gcc, cmake, gdb, python, vim, nano, pip,
+      uv, conda, pixi, npm, yarn, pnpm, apt, dpkg, dnf, rpm, pacman,
+      zypper, apk, brew, snap, flatpak ...
+    * std.completion asks Cobra programs (gh, docker, kubectl ...) and nix
+      for their completions
 
 Version 0.2.0 2026-09-29 by luispedro
     * Fix crashes on Tab after a word like `--opt=value`, and on a plugin
