@@ -47,6 +47,7 @@ Unreleased
     * `builtin` built-in, as in zsh and bash
     * Tab expands globs, variables and substitutions, as in zsh
     * Don't print git's error for a locked plugin commit that isn't fetched yet
+    * Fix a crash on Tab after a stray `)`
 
 Version 0.1.0 2026-09-27 by luispedro
     * First release

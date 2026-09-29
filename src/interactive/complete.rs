@@ -1205,7 +1205,7 @@ impl ShellHelper {
             }
             Kind::Arg => {
                 let cmd = w.words.first().map_or(&b""[..], |c| &c[..]);
-                let args = &w.words[1..];
+                let args = w.words.get(1..).unwrap_or(&[]);
                 let words = |names: &[Vec<u8>], out: &mut Vec<Candidate>| {
                     out.extend(names.iter().map(|v| Candidate::word(v)));
                     0
@@ -2212,9 +2212,9 @@ mod tests {
     /// position (and up to three are completed), which must not panic (a panic aborts the shell).
     #[test]
     fn no_panics_on_odd_lines() {
-        let pieces: [&[u8]; 18] = [
+        let pieces: [&[u8]; 19] = [
             b"ls ", b"git ", b"cd ", b"x=", b"--a=", b":", b" ", b"'", b"\"", b"\\", b"$", b"${", b"[", b"~", b"/",
-            b"$(", b"| ", b"# ",
+            b"$(", b"| ", b"# ", b")",
         ];
         // A completer that gives an offset far past the word.
         fn wild(_: &[Vec<u8>], i: usize) -> Completion {
