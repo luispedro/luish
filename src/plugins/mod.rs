@@ -56,6 +56,18 @@ impl Host {
         match *self {}
     }
 
+    pub fn has_builtin(&self, _: &[u8]) -> bool {
+        match *self {}
+    }
+
+    fn builtin_names(&self) -> Vec<Vec<u8>> {
+        match *self {}
+    }
+
+    fn run_builtin(&self, _: &mut Shell, _: &[Vec<u8>]) -> ExecResult {
+        match *self {}
+    }
+
     fn complete(&self, _: &mut Shell, _: &[Vec<u8>], _: usize) -> Result<Completion, Flow> {
         match *self {}
     }
@@ -102,6 +114,19 @@ pub fn prompt(sh: &mut Shell) -> Result<Option<Prompt>, Flow> {
 /// The commands for which extensions provide completers.
 pub fn completer_names(sh: &Shell) -> Vec<Vec<u8>> {
     sh.plugins.as_ref().map_or_else(Vec::new, |host| host.completer_names())
+}
+
+/// The names of the built-ins that extensions registered.
+pub fn builtin_names(sh: &Shell) -> Vec<Vec<u8>> {
+    sh.plugins.as_ref().map_or_else(Vec::new, |host| host.builtin_names())
+}
+
+/// Runs the extension's built-in `argv[0]` (see [`Shell::lookup_command`]).
+pub fn run_builtin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    match sh.plugins.clone() {
+        None => Ok(127),
+        Some(host) => host.run_builtin(sh, argv),
+    }
 }
 
 /// Runs the completer for `words[0]`, given the words of the command and

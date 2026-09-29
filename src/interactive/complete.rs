@@ -46,6 +46,8 @@ pub struct Names {
     pub home: Option<Vec<u8>>,
     /// The commands with an extension's completer.
     pub completers: Vec<Vec<u8>>,
+    /// The extensions' built-ins.
+    pub builtins: Vec<Vec<u8>>,
     /// The jobs' numbers and commands, from the current job on.
     pub jobs: Vec<(usize, Vec<u8>)>,
     /// The loaded plugins.
@@ -1360,6 +1362,7 @@ impl ShellHelper {
         let all = crate::builtins::names()
             .map(|b: &[u8]| b)
             .chain(RESERVED.iter().copied())
+            .chain(self.names.builtins.iter().map(|c| &c[..]))
             .chain(self.names.functions.iter().map(|c| &c[..]))
             .chain(aliases.into_iter().map(|a| a.0))
             .chain(cache.names.iter().map(|c| &c[..]));
@@ -1818,6 +1821,7 @@ mod tests {
         let h = ShellHelper {
             names: Names {
                 functions: vec![b"myfunc".to_vec()],
+                builtins: vec![b"myext".to_vec()],
                 aliases: {
                     let mut a = AliasMap::default();
                     a.insert(b"ll".to_vec(), b"ls -l".to_vec(), false);
@@ -1846,6 +1850,7 @@ mod tests {
         };
         assert_eq!(complete(&h, "myt"), ["mytool "]);
         assert_eq!(complete(&h, "myf"), ["myfunc "]);
+        assert_eq!(complete(&h, "mye"), ["myext "]);
         assert_eq!(complete(&h, "ech"), ["echo "]);
         assert_eq!(complete(&h, "whil"), ["while "]);
         assert_eq!(

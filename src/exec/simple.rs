@@ -37,6 +37,8 @@ pub enum CommandKind {
     Special(BuiltinFn),
     Function(Rc<FunctionBody>),
     Builtin(BuiltinFn),
+    /// A built-in registered by a plugin's extension (`sh::builtin`).
+    Extension,
     External,
 }
 
@@ -72,6 +74,10 @@ impl Shell {
         }
         if functions && let Some(body) = self.functions.get(name) {
             return CommandKind::Function(body.clone());
+        }
+        // Extensions' built-ins rank as regular built-ins, after functions.
+        if self.plugins.as_ref().is_some_and(|h| h.has_builtin(name)) {
+            return CommandKind::Extension;
         }
         CommandKind::External
     }
@@ -274,6 +280,7 @@ impl Shell {
             CommandKind::Special(f) => self.call_builtin(f, &argv),
             CommandKind::Function(body) => self.with_temp_assigns(assigns, |sh| sh.call_function(&body, &argv)),
             CommandKind::Builtin(f) => self.with_temp_assigns(assigns, |sh| sh.call_builtin(f, &argv)),
+            CommandKind::Extension => self.with_temp_assigns(assigns, |sh| crate::plugins::run_builtin(sh, &argv)),
             // As in dash, the assignments are made (temporarily) in the shell,
             // so that an error in one is the shell's.
             CommandKind::External => self.with_temp_assigns(assigns, |sh| sh.run_external(cmd, &argv, no_fork)),
@@ -441,6 +448,7 @@ impl Shell {
         match self.lookup_command(&argv[0], functions) {
             CommandKind::Special(f) | CommandKind::Builtin(f) => self.call_builtin(f, argv),
             CommandKind::Function(body) => self.call_function(&body, argv),
+            CommandKind::Extension => crate::plugins::run_builtin(self, argv),
             CommandKind::External => {
                 let pid = if self.can_spawn() {
                     match self.spawn_argv(argv, alt_path) {

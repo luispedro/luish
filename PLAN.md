@@ -38,18 +38,18 @@ second (nvm) are otherwise a daily cost.
    `Candidate`, also for plugins), `LS_COLORS` for files, fuzzy matching.
 5. **Fuzz targets** for the lexer, parser, arithmetic and pattern matcher, with a round-trip property: unparsing then
    re-parsing an AST gives the same AST.
-6. **Plugins (Phase 11)**: `precmd`/`preexec` hooks (Phase 13 item 2 needs them), extension built-ins, `plugin add`
-   and `plugin remove`.
+6. **Plugins (Phase 11)**: `precmd`/`preexec` hooks (Phase 13 item 2 needs them), `plugin add` and `plugin remove`.
 
 ## Phase 11 — Plugin system (Stage 2)
 
 Done: the `plugin` built-in (`load`, `list-loaded`, `list-available`, `unload`, `sync`, `update`, and `restore` for
 the startup cache), directory plugins, plugin packages (below), the byte conversion, the Rhai engine with its limits
-and interrupts, the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks, completers, part of the `sh`
-module, and the `fs` and `vcs` modules. Still to do:
+and interrupts, the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks, completers, extension built-ins
+(`sh::builtin`, with `sh::read_line`), part of the `sh` module, and the `fs` and `vcs` modules. Still to do:
 
 1. A plugin-agnostic `Builtin` trait, with the Rust built-ins moved onto it, so that extension and native built-ins
-   go through the same code path:
+   go through the same code path (extension built-ins are now a separate `CommandKind::Extension`, looked up after
+   functions, and `builtin`, `command`, `type` and `hash` know about them):
 
    ```rust
    pub trait Builtin {
@@ -60,15 +60,13 @@ module, and the `fs` and `vcs` modules. Still to do:
    ```
 
    Extension built-ins rank as **regular** built-ins in command lookup, so a shell function with the same name
-   overrides them.
+   overrides them (done).
 2. The rest of the `sh` module:
 
    | Function | Description |
    |---|---|
-   | `builtin(name, fn)` | Register a built-in. It receives `argv` (the command name first) and returns its exit status (`()` is 0, an error 1) |
    | `argv0()`, `positional()` | `$0`, and `$1...` as an array |
    | `chdir(path)` | Change the directory as `cd` would, updating `PWD` and running `chpwd` hooks |
-   | `read_line()` | Read a line from the current fd 0, `()` at end of file |
    | `parse_json(text)` | Parse JSON into Rhai maps and arrays |
 
 3. The other hooks, and time budgets (checked in `on_progress`) for every hook that runs while the user waits, not

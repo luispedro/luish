@@ -1,0 +1,4 @@
+builtins.sh: 41: greet: usage: greet NAME...
+builtins.sh: 45: ./b.rhai: Function not found: no_such_function () (line 11, position 30)
+builtins.sh: 46: ./b.rhai: returned string, not a status
+builtins.sh: 48: readonly_set: R: is read only

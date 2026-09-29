@@ -227,6 +227,51 @@ sh::hook("chpwd", |from, to| {
 the hooks as before them. If a hook fails, the error is printed and the other hooks still run. A `chpwd` hook that
 itself runs `cd` does not trigger `chpwd` again.
 
+## Commands written in Rhai: `sh::builtin`
+
+`sh::builtin(name, fn)` adds a command. It is called with the command's words as an array of strings, its name first
+(so the arguments are `argv[1]` on), and it can be used as any built-in: with arguments, redirections, in pipelines,
+in `$(...)`, with `NAME=value` before it for the length of the call.
+
+```rhai
+// ~/.config/luish/plugins/urlencode.rhai
+
+// urlencode TEXT...: each TEXT percent-encoded, one per line.
+sh::builtin("urlencode", |argv| {
+    if argv.len() < 2 { throw "usage: urlencode TEXT..."; }
+    for text in argv.extract(1) {
+        let out = "";
+        for c in text.chars() {
+            if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || "._~-".contains(c) {
+                out += c;
+            } else {
+                let h = c.to_int().to_hex().to_upper();
+                out += if h.len() < 2 { `%0${h}` } else { `%${h}` };
+            }
+        }
+        print(out);
+    }
+});
+```
+
+- **Exit status**: what the function returns: `()` (nothing) is 0, `true` 0 and `false` 1, and an integer is taken
+  modulo 256, as `return` does. An error gives 1: a string thrown with `throw` is printed as the command's error
+  message (`urlencode: usage: urlencode TEXT...`), and other errors with the extension's file and position.
+- **Output** goes to standard output with `print`, or `sh::write`. To give a result to shell code without the cost of
+  `$(...)`, which forks, set a variable, such as `REPLY`, with `sh::setvar`.
+- **Input**: `sh::read_line()` reads a line of standard input, without its newline, or gives `()` at the end. Like
+  the `read` built-in, it reads a byte at a time, so the rest is left for the commands after it. To read a whole
+  file, `fs::read_file` is much faster.
+- **Lookup**: it ranks as a regular built-in, so a shell function with the same name comes first, and `builtin NAME`
+  or `command NAME` still run it. `type` shows it as a shell builtin. The names of luish's own built-ins can't be
+  taken. Registering a name again replaces the command, and it goes away when its plugin is unloaded.
+- **Ctrl-C** stops it with status 130, as it stops any extension code.
+
+A command in Rhai is worth it for work done inside the command: loops, arithmetic and string processing run two to
+three times as fast as in shell code (see [Performance](performance.md#commands-in-rhai)). A command that does very
+little, such as adding two numbers, is faster as a shell function, since each Rhai operation costs more than the
+equivalent shell expansion. Loading the first extension costs about a millisecond, once.
+
 ## After the startup files: `post-rc`
 
 An interactive shell starts in this order:
@@ -412,6 +457,8 @@ Extensions reach the shell through the `sh` module:
 |---|---|
 | `sh::hook(kind, fn)` | Register a hook: `"chpwd"`, `"post-rc"`, `"prompt-vars"` or `"prompt-rewrite"` |
 | `sh::completer(command, fn)` | Register a completer for a command's arguments (`-default-` for the others) |
+| `sh::builtin(name, fn)` | Register a command, called with its words (the name first); see [Commands written in Rhai](#commands-written-in-rhai-shbuiltin) |
+| `sh::read_line()` | A line of standard input without its newline, or `()` at the end |
 | `sh::getvar(name)` | The variable's value (`$name`: an array's first element), or `()` if it is unset |
 | `sh::getarray(name)` | The variable's elements (`"${name[@]}"`) as an array of strings: a string is one element, and an associative array gives its values. `()` if it is unset |
 | `sh::getmap(name)` | An associative array as a map, or `()` if the variable is unset or isn't one |

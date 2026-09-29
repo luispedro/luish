@@ -65,6 +65,8 @@ pub struct Host {
     hooks: RefCell<Vec<(HookKind, Callback)>>,
     /// The completers, by command name.
     completers: RefCell<Vec<(Vec<u8>, Callback)>>,
+    /// The built-ins that extensions registered, by name.
+    builtins: RefCell<Vec<(Vec<u8>, Callback)>>,
     next_id: Cell<u32>,
     /// The hook kinds whose hooks are running, so that a hook doesn't
     /// trigger itself (a `chpwd` hook that runs `cd`).
@@ -270,6 +272,49 @@ fn capture(sh: &mut Shell, script: &[u8]) -> RhaiResult<rhai::Map> {
     Ok(m)
 }
 
+/// `sh::read_line()`: a line from fd 0 without its newline, or `()` at end
+/// of file. As the `read` built-in, it reads a byte at a time, so that
+/// what follows the line is left for the next command.
+fn read_line() -> RhaiResult<Dynamic> {
+    let mut line = Vec::new();
+    let mut buf = [0u8; 1];
+    loop {
+        match sys::read(0, &mut buf, true) {
+            Ok(1) if buf[0] == b'\n' => break,
+            Ok(1) => line.push(buf[0]),
+            Err(libc::EINTR) if !signals::is_pending(libc::SIGINT) => {}
+            Err(libc::EINTR) => return Err(stop(INTERRUPTED)),
+            _ if line.is_empty() => return Ok(Dynamic::UNIT),
+            _ => break,
+        }
+    }
+    Ok(to_str(&line).into())
+}
+
+/// The message of a string thrown (with `throw`, or by an `sh` function),
+/// as shell bytes.
+fn thrown(e: &EvalAltResult) -> Option<Vec<u8>> {
+    match e.unwrap_inner() {
+        EvalAltResult::ErrorRuntime(v, _) => v.read_lock::<rhai::ImmutableString>().map(|s| to_bytes(&s)),
+        _ => None,
+    }
+}
+
+/// The exit status for what an extension's built-in returned: `()` is 0,
+/// a boolean true 0 and false 1, and an integer is taken modulo 256, as
+/// `return` does.
+fn builtin_status(v: Dynamic) -> Result<i32, String> {
+    if v.is_unit() {
+        Ok(0)
+    } else if let Some(b) = v.clone().try_cast::<bool>() {
+        Ok(!b as i32)
+    } else if let Some(n) = v.clone().try_cast::<i64>() {
+        Ok((n & 0xff) as i32)
+    } else {
+        Err(format!("returned {}, not a status", v.type_name()))
+    }
+}
+
 /// Converts what a completer returned for the word `word`: `()` for the
 /// default completion, or an array of strings and of maps with a `value`
 /// and an optional `desc` and `suffix`, or a map with such an array
@@ -343,6 +388,21 @@ fn sh_module() -> Module {
             completers.push((command, cb));
         })
     });
+    m.set_native_fn("builtin", |name: &str, f: FnPtr| {
+        let name = to_shell(name)?;
+        if name.is_empty() || name.contains(&b'/') {
+            return error(format!("builtin: {}: bad command name", to_str(&name)));
+        }
+        if crate::builtins::names().any(|b| b == name) {
+            return error(format!("builtin: {}: is a shell builtin", to_str(&name)));
+        }
+        register(f, |host, cb| {
+            let mut builtins = host.builtins.borrow_mut();
+            builtins.retain(|b| b.0 != name);
+            builtins.push((name, cb));
+        })
+    });
+    m.set_native_fn("read_line", read_line);
     m.set_native_fn("capture", |script: &str| {
         let script = to_shell(script)?;
         with_shell(|sh| capture(sh, &script))
@@ -531,6 +591,11 @@ fn new_engine() -> Engine {
     // control.
     // Code that the user waits for, such as a completer, also stops
     // when its time is up.
+    // Rhai interns short strings, and once its cache is full each new one
+    // scans the whole cache: that made a built-in that returns a different
+    // short string each call about a fifth slower, and a long-lived shell
+    // would get there anyway.
+    engine.set_max_strings_interned(0);
     engine.on_progress(|ops| {
         if signals::is_pending(libc::SIGINT) {
             Some(INTERRUPTED.into())
@@ -558,6 +623,7 @@ impl Host {
             plugins: RefCell::new(Vec::new()),
             hooks: RefCell::new(Vec::new()),
             completers: RefCell::new(Vec::new()),
+            builtins: RefCell::new(Vec::new()),
             next_id: Cell::new(1),
             running: RefCell::new(Vec::new()),
             modules: RefCell::new(HashMap::new()),
@@ -684,6 +750,7 @@ impl Host {
         self.plugins.borrow_mut().retain(|p| p.id != id);
         self.hooks.borrow_mut().retain(|h| h.1.plugin != id);
         self.completers.borrow_mut().retain(|c| c.1.plugin != id);
+        self.builtins.borrow_mut().retain(|b| b.1.plugin != id);
     }
 
     /// Unloads a plugin by name. Returns false if it isn't loaded.
@@ -904,6 +971,48 @@ impl Host {
             }
         }
         Ok(None)
+    }
+
+    /// Whether an extension registered the built-in `name`.
+    pub fn has_builtin(&self, name: &[u8]) -> bool {
+        self.builtins.borrow().iter().any(|b| b.0 == name)
+    }
+
+    /// The names of the extensions' built-ins.
+    pub fn builtin_names(&self) -> Vec<Vec<u8>> {
+        self.builtins.borrow().iter().map(|b| b.0.clone()).collect()
+    }
+
+    /// Runs the extension's built-in `argv[0]`, which is given `argv` as an
+    /// array. A string thrown (or an error from an `sh` function) is
+    /// reported as the built-in's, `name: message`, and other errors with
+    /// the extension's file and position; either way the status is 1.
+    pub fn run_builtin(&self, sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+        let found = self
+            .builtins
+            .borrow()
+            .iter()
+            .find(|b| b.0 == argv[0])
+            .map(|b| b.1.clone());
+        let Some(cb) = found else {
+            sh.berr(&argv[0], "not found");
+            return Ok(127);
+        };
+        let args: rhai::Array = argv.iter().map(|a| to_str(a).into()).collect();
+        let r = enter(sh, cb.plugin, || cb.f.call::<Dynamic>(self.engine(), &cb.ast, (args,)))?;
+        match r {
+            Ok(v) => Ok(builtin_status(v).unwrap_or_else(|msg| {
+                sh.error(format!("{}: {msg}", String::from_utf8_lossy(&cb.path)));
+                1
+            })),
+            Err(e) => match thrown(&e) {
+                Some(msg) => {
+                    sh.berr(&argv[0], String::from_utf8_lossy(&msg));
+                    Ok(1)
+                }
+                None => Ok(Self::report(sh, &cb.path, &e)),
+            },
+        }
     }
 
     /// The commands that have completers.

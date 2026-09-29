@@ -49,3 +49,19 @@ then the first shell that runs it (luish by default), and the skipped shells sho
 
 To add a benchmark, add `scripts/NAME.sh`; its output must be deterministic and the same under every shell that
 runs it (check with `bench/run.sh -c NAME`), and it should clean up after itself.
+
+## Commands in Rhai: `extensions/`
+
+`extensions/run.sh` compares a plugin's commands written in Rhai (`sh::builtin`) with the same commands written as
+luish shell functions: `tasks.lsh` has the shell functions, `ext.rhai` the extension, and `driver.sh IMPL TASK` runs a
+task with either. It checks that both print the same output, then prints a Markdown table of the times (the fastest
+and the mean of `-r` runs, 5 by default). At scale 1 each task takes about a second with the shell functions.
+
+```sh
+pixi run release
+bench/extensions/run.sh                  # all tasks
+bench/extensions/run.sh -r 10 collatz    # one task, 10 runs
+```
+
+The tasks and the results are in `docs/performance.md` (Commands in Rhai). `gen-words.awk` writes the text that
+`wordfreq` reads.

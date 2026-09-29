@@ -1,0 +1,77 @@
+# The benchmark's commands as luish shell functions. ext.rhai has the same
+# commands as an extension's built-ins; both must print the same output.
+
+# collatz_max N: the number below N with the longest Collatz sequence, and
+# its length.
+collatz_max() {
+	local n=$1 i=1 x len best=0 best_len=0
+	while [ $i -lt $n ]; do
+		x=$i len=1
+		while [ $x -ne 1 ]; do
+			x=$(( x % 2 ? 3 * x + 1 : x / 2 ))
+			len=$(( len + 1 ))
+		done
+		if [ $len -gt $best_len ]; then
+			best=$i best_len=$len
+		fi
+		i=$(( i + 1 ))
+	done
+	printf '%d %d\n' $best $best_len
+}
+
+# wordfreq FILE: the number of words (split at blanks), the number of
+# distinct ones, and the five most frequent (ties go to the first seen).
+wordfreq() {
+	typeset -A count
+	local -a seen
+	local line w k best best_n total=0
+	while read -r line; do
+		for w in $line; do
+			if [ -z "${count[$w]+set}" ]; then
+				seen+=("$w")
+				count[$w]=1
+			else
+				count[$w]=$(( count[$w] + 1 ))
+			fi
+			total=$(( total + 1 ))
+		done
+	done < "$1"
+	printf 'words: %d, distinct: %d\n' $total ${#seen[@]}
+	for k in 1 2 3 4 5; do
+		best= best_n=0
+		for w in "${seen[@]}"; do
+			if [ "${count[$w]}" -gt $best_n ]; then
+				best=$w best_n=${count[$w]}
+			fi
+		done
+		printf '%d. %s %d\n' $k "$best" $best_n
+		count[$best]=0
+	done
+}
+
+# urlencode TEXT: TEXT percent-encoded (RFC 3986) into REPLY. ASCII only,
+# with a table rather than a `$(printf ...)` per character, which would fork.
+urlencode() {
+	local s=$1 c out=
+	while [ -n "$s" ]; do
+		c=${s%"${s#?}"}
+		s=${s#?}
+		case $c in
+		[A-Za-z0-9._~-]) out=$out$c ;;
+		' ') out=$out%20 ;; '!') out=$out%21 ;; '"') out=$out%22 ;; '#') out=$out%23 ;;
+		'$') out=$out%24 ;; '%') out=$out%25 ;; '&') out=$out%26 ;; "'") out=$out%27 ;;
+		'(') out=$out%28 ;; ')') out=$out%29 ;; '*') out=$out%2A ;; '+') out=$out%2B ;;
+		',') out=$out%2C ;; '/') out=$out%2F ;; ':') out=$out%3A ;; ';') out=$out%3B ;;
+		'<') out=$out%3C ;; '=') out=$out%3D ;; '>') out=$out%3E ;; '?') out=$out%3F ;;
+		'@') out=$out%40 ;; '[') out=$out%5B ;; '\') out=$out%5C ;; ']') out=$out%5D ;;
+		'^') out=$out%5E ;; '`') out=$out%60 ;; '{') out=$out%7B ;; '|') out=$out%7C ;;
+		'}') out=$out%7D ;; *) out=$out$(printf '%%%02X' "'$c") ;;
+		esac
+	done
+	REPLY=$out
+}
+
+# add A B: A + B into REPLY (to measure the cost of a call).
+add() {
+	REPLY=$(( $1 + $2 ))
+}

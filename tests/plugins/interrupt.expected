@@ -1,2 +1,6 @@
 INT trapped
 status 130
+INT trapped
+spin: 130
+INT trapped
+wait_line: 130

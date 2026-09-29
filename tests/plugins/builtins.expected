@@ -1,0 +1,44 @@
+builtin: cd: is a shell builtin
+builtin: plugin: is a shell builtin
+builtin: a/b: bad command name
+builtin: : bad command name
+hello, world
+hello, two words
+greet: 0
+no args: 1
+3 words: ["show", "a b", ""], X=temporary
+X=unset
+3 odd: 0
+4 odd: 1
+0: 0
+300: 44
+-1: 255
+broken: 1
+wrong: 1
+readonly: 1
+greet is a shell builtin
+greet
+hello, command
+hello, builtin
+hello, redirected
+HELLO, PIPE
+[hello, substitution]
+3
+2
+1
+0
+1: one
+2: two
+3: three
+lines: 0
+1: first
+rest 1
+rest 2
+empty: 0
+the function
+hello, via-builtin
+hello, via-command
+leave: 7
+unloaded: 127
+greet: not found
+type: 127

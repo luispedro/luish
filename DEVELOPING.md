@@ -79,7 +79,7 @@ tests/
 ├── plugins/            # plugin cases (*.sh with .expected, .stderr)
 ├── compare.rs          # the differential harness
 └── interactive.rs      # pty tests
-bench/                  # script benchmarks (see bench/README.md)
+bench/                  # script benchmarks, and extensions/ for Rhai commands (see bench/README.md)
 scripts/                # dist.sh (release packages), test-install.sh (tests install.sh with them)
 install.sh              # the `curl | sh` installer, which downloads a release
 flake.nix               # the Nix package and dev shell (see Releases)
@@ -588,6 +588,18 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   (`Vars::changes_since`) and put back after the prompt is built; no snapshot is taken if nothing has a
   `prompt-vars` hook or file. `prompt-rewrite` hooks that take a parameter are found by looking up the function in
   the extension's AST when it is registered.
+- **Extension built-ins** (`sh::builtin`): `Host::builtins`, by name, looked up in `Shell::lookup_command` after
+  functions and before `PATH` (`CommandKind::Extension`), so the only cost without them is the `Shell::plugins`
+  check for external commands. `builtin`, `command`, `type` (as a shell builtin) and `hash` (skips them) know them;
+  the editor gets their names in `Names::builtins` (highlighting, command completion; not `help`). They take
+  temporary assignments as regular built-ins do. The function is called with `argv` as an array; the status comes
+  from what it returns (`builtin_status`), a thrown string (an `ErrorRuntime` holding a string, also from `sh`
+  functions) is printed as `NAME: message`, other errors with the file. Recursion through `sh::run` is stopped by
+  the shell's stack check (each `FnPtr::call` starts Rhai's call depth afresh). `sh::read_line` reads fd 0 a byte at
+  a time, as `read` does, and stops on SIGINT. The engine doesn't intern strings (`set_max_strings_interned(0)`):
+  once Rhai's interner is full, each new short string scans it, which cost a built-in returning a new short string
+  each call about 19% of its instructions. Tests: `tests/plugins/builtins.sh`, `interrupt.sh`; benchmark against
+  shell functions: `bench/extensions/` (results in `docs/performance.md`).
 - Arrays: `sh::getvar` gives `$a` (a string), so existing extensions are unaffected; `sh::getarray` and `sh::getmap`
   read the elements and keys, and `sh::setvar` is overloaded on Rhai's `Array` and `Map`, going through
   `Shell::try_set_var_value` (the variable's attributes, the local scope and the `path` tie apply, and errors are

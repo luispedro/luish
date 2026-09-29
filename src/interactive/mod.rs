@@ -185,6 +185,7 @@ fn names(sh: &Shell) -> Names {
         path: sh.get_var(b"PATH").unwrap_or_default(),
         home: sh.get_var(b"HOME"),
         completers: crate::plugins::completer_names(sh),
+        builtins: crate::plugins::builtin_names(sh),
         jobs: (sh.jobs.order().iter())
             .map(|&i| (JobTable::number(i), sh.jobs.get(i).text().into_bytes()))
             .collect(),

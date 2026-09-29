@@ -748,6 +748,7 @@ impl ShellHelper {
             }
         } else {
             crate::builtins::names().any(|b| b == name)
+                || self.names.builtins.iter().any(|c| c == name)
                 || self.names.functions.iter().any(|c| c == name)
                 || self.names.aliases.contains(name)
                 || self.names.aliases.for_suffix(name).is_some()

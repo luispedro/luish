@@ -90,6 +90,37 @@ do conda's initialization and other scripts that run programs, while the cached 
 luish parses large files more slowly than dash: `nvm.sh` (144 KB) takes about 6 ms to parse in luish and 2 ms in
 dash, which is most of the difference in sourcing it without the cache.
 
+## Commands in Rhai
+
+A plugin can add commands written in Rhai ([`sh::builtin`](plugins.md#commands-written-in-rhai-shbuiltin)).
+`bench/extensions/` has four commands written both ways, as luish shell functions (`tasks.lsh`, using `local`,
+arrays and associative arrays) and as an extension's built-ins (`ext.rhai`), which must print the same output:
+
+| Task | What it does |
+|---|---|
+| collatz | One call: the number below 12,000 with the longest Collatz sequence (about a million loop iterations) |
+| wordfreq | One call: counts the words of a 20,000-line file and finds the five most frequent (the shell reads it with `while read`, Rhai with `fs::read_file`) |
+| urlencode | 8,000 calls from a shell loop, each percent-encoding a 60-character string into `REPLY` (the shell function with a `case` table, not a `$(printf)` per character) |
+| calls | 300,000 calls from a shell loop of a command that adds two numbers into `REPLY`: the cost of a call |
+
+The fastest of 10 runs of `bench/extensions/run.sh -r 10`, on 2026-09-29, on a machine with 16 cores (another than
+the one for the tables above, and just as noisy):
+
+| Task | Shell functions (ms) | Rhai built-ins (ms) | Shell / Rhai |
+|---|--:|--:|--:|
+| collatz | 834 | 380 | 2.2 |
+| wordfreq | 550 | 189 | 2.9 |
+| urlencode | 673 | 332 | 2.0 |
+| calls | 472 | 758 | 0.6 |
+
+Work inside a command (loops, arithmetic, strings, maps) runs two to three times as fast in Rhai. Rhai evaluates its
+syntax tree much as luish evaluates shell code, so the gain is not larger. A command that does almost nothing is
+faster as a shell function: calling into Rhai costs no more than calling a shell function (40,000 calls of an empty
+command added about 5 ms either way to a loop that took 47 ms), but each Rhai operation costs more than the shell
+expansion it replaces (`parse_int` twice, a string template and `sh::setvar`, against `REPLY=$(( $1 + $2 ))`).
+The first extension creates Rhai's engine, once, which takes about 0.6 ms and 1 MB of memory (`-c` with `plugin load`
+of an empty extension, against `true`); compiling and running `ext.rhai` takes about 0.6 ms more.
+
 ## Running the benchmarks
 
 The benchmarks need [pixi](https://pixi.sh), and
@@ -102,5 +133,6 @@ bench/run.sh -n 4 -r 10 arith      # one benchmark, 4 times the work, 10 runs pe
 ```
 
 `bench/README.md` describes the options and the scripts. Absolute times depend
-on the machine and its load, so compare shells within one run.
+on the machine and its load, so compare shells within one run. `bench/extensions/run.sh` runs the comparison of
+commands in Rhai with shell functions.
 

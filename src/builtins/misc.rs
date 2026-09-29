@@ -348,7 +348,7 @@ fn describe(sh: &mut Shell, name: &[u8], verbose: bool, alt_path: Option<&[u8]>)
         match sh.lookup_command(name, true) {
             CommandKind::Special(_) => line("is a special shell builtin"),
             CommandKind::Function(_) => line("is a shell function"),
-            CommandKind::Builtin(_) => line("is a shell builtin"),
+            CommandKind::Builtin(_) | CommandKind::Extension => line("is a shell builtin"),
             CommandKind::External => {
                 let tracked = alt_path.is_none() && sh.hash.contains_key(name);
                 let found = if name.contains(&b'/') {
@@ -433,6 +433,7 @@ pub fn builtin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let Some(name) = args.first() else { return Ok(0) };
     match sh.builtin(name) {
         Some((f, _)) => sh.call_builtin(f, args),
+        None if sh.plugins.as_ref().is_some_and(|h| h.has_builtin(name)) => crate::plugins::run_builtin(sh, args),
         None => {
             sh.berr(
                 &argv[0],
@@ -493,7 +494,8 @@ pub fn hash(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             sh.hash.clear();
             continue;
         }
-        if a.contains(&b'/') || sh.builtin(a).is_some() || sh.functions.contains_key(a) {
+        let ext = sh.plugins.as_ref().is_some_and(|h| h.has_builtin(a));
+        if a.contains(&b'/') || sh.builtin(a).is_some() || sh.functions.contains_key(a) || ext {
             continue;
         }
         sh.hash.remove(a);
