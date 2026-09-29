@@ -28,6 +28,34 @@ no_glob`, `-o prompt_percent`; `+o glob` is the same as
 
 Options end at the first operand, or at `--` or `-`.
 
+## Shell language extensions
+
+luish runs the POSIX shell language as dash does, and adds some of what bash
+and zsh scripts use. These extensions only give a meaning to what is a syntax
+error or a missing command in dash, so they are always on, and cost nothing in
+a script that doesn't use them. Where the two shells differ, luish follows
+zsh's `sh` emulation (`zsh --emulate sh`) and then bash; [](compatibility.md)
+lists every difference.
+
+```sh
+function greet { echo "hello $1"; }        # the function keyword (also: function greet() { ...; })
+if [[ $name == j* && -d $dir ]]; then ...  # conditions without word splitting or globbing
+[[ $line =~ ^([a-z]+)=(.*)$ ]] && echo "${match[1]} ${match[2]}"   # a regular expression, with its groups
+path+=(/opt/bin)                           # NAME+=value appends to a variable, or to an array
+let 'n = n * 2 + 1'                        # arithmetic, with the status of its value
+typeset -i count=0                         # variable attributes, also with declare
+builtin cd /tmp                            # run the built-in even if a function has its name
+set -o pipefail                            # a pipeline fails if any of its commands does
+```
+
+- `[[ ... ]]` has `test`'s operators, `&&`, `||`, `!` and parentheses, patterns on the right of `==` and `!=`, `=~`
+  for regular expressions (which sets `MATCH`, `match` and `BASH_REMATCH`) and `-v NAME` for a set variable.
+- [Arrays](#arrays), including associative ones, with `typeset`, `read -A` and zsh's parameter flags.
+- [Parameter expansion](#parameter-expansion): `${x:offset:length}`, `${x/pattern/replacement}`, `${!name}` and more.
+- [Special variables](#special-variables): `RANDOM`, `SECONDS`, `UID`, `pipestatus`, `path` and others.
+- `source` is `.`, and looks for a name without a `/` in the current directory first, as zsh does.
+- `shopt` and `zstyle` are not built-ins. For `shopt`, luish suggests the matching `setopt`.
+
 ## Special variables
 
 Besides POSIX's (`$?`, `$$`, `$!`, `$-`, `$#`, `$0`, `$@`, `$*`, `LINENO`, `PPID`, `PWD`, `OLDPWD`, `OPTIND`,
@@ -474,10 +502,15 @@ restored. For example:
   cache was built, so, for example, `PATH=$HOME/bin:$PATH` keeps the rest of
   the `PATH` that the shell had then.
 
-The system is not perfect: luish can't see what a command does, so it can't
-know whether it changed the environment. In the future, luish may use more
-sophisticated ways to detect changes, but for now, it only checks the files it
-reads, unless you check the caches yourself.
+Currently (v0.2.0), the cache system is very optimistic. In particular, if
+startup files themselves depend on the starting environment in significant
+ways, this can lead to problems.
+
+Furthermore, luish can't see what a command does, so it can't know how it
+depends on the environment.
+
+In the future, luish may use more sophisticated ways to detect changes, but for
+now, it only checks the files it reads, unless you check the caches yourself.
 
 ### Checking the caches
 

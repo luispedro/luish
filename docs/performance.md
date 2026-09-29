@@ -25,7 +25,7 @@ benchmark print the same output for it.
 | arrays | Not POSIX: sorting, a sieve, word counts, grouping, matrices, a search and slices, in indexed and associative arrays |
 
 The script and startup measurements on this page were made on 2026-09-29, with the release build of luish at git
-revision `9c469a3` (`pixi run release`), on a virtual machine with 4 cores running Ubuntu 24.04. The other shells are
+revision `3463933` (`pixi run release`), on a virtual machine with 4 cores running Ubuntu 24.04. The other shells are
 Ubuntu's dash 0.5.12, bash 5.2 (`--posix`), zsh 5.9 (`--emulate sh`) and BusyBox 1.36. The machine is noisy:
 differences under about 10% between two shells are within what separates two runs of the same one.
 

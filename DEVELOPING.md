@@ -66,7 +66,7 @@ src/
 ├── expand/             # mod.rs (driver, parameters, command substitution), arith.rs, split.rs, pattern.rs, glob.rs,
 │                       # qual.rs
 ├── exec/               # mod.rs (lists, pipelines, compound commands), simple.rs (commands, lookup), fork.rs,
-│                       # redirect.rs
+│                       # redirect.rs, cond.rs (`[[ ... ]]`), not_found.rs (hints for commands of other shells)
 ├── vars.rs, options.rs, jobs.rs, signals.rs, path.rs
 ├── hash.rs             # the hash for the shell's tables (not SipHash)
 ├── builtins/           # mod.rs (table, special vs regular), one file per built-in or small group; help.rs
@@ -537,6 +537,13 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   (`check_not_reached`) before `$ENV` and `luishrc`. Times are shown with `strftime("%c")` in local time, in the
   `LC_TIME` locale of the shell's variables (`sys::format_time`, which sets and restores the C library's locale
   around the call). Tests: `misc/startup_cache_check.sh`, `tests/plugins/startup_cache_check.sh`.
+- **Known faults** (see `PLAN.md`, Stage 3), both from replaying a difference onto an environment other than the
+  one the cache was built in, and neither seen by `check-cache`, which reruns the files in the recorded one: an
+  assignment that doesn't change the build shell's value (`export CONDA_EXE=...` in a shell that inherited it) is
+  never saved, so the variable is unset in a shell started elsewhere; and one that does change it is saved with its
+  whole final value, inherited parts included (`PATH`). Reproduce with `FOO=bar luish -i -c :` building a cache whose
+  file has `export FOO=bar`, then `env -i luish -i -c 'echo ${FOO-unset}'`. The fixes: save every variable the files
+  assign (tracked while the cache is built), and key the cache on the inherited values the files read.
 - Not yet done (see `PLAN.md`, Stage 3): keying on the inherited values the files read (so `PATH=$HOME/bin:$PATH`
   keeps the rest of `PATH` from when the cache was built, and an `rc.d` cache built in a login shell, before
   `login.d` ran, is used in shells started from it), changes a fingerprint can't show (other than by `check-cache`),
@@ -779,7 +786,8 @@ Checked on 2026-09-26 (the scripts are not in the repository):
   them from ftp.gnu.org, run `CONFIG_SHELL=$L $L ./configure` next to a dash-configured copy, and diff the output,
   `config.h` and `make check` results.
 - **Oils spec tests** (`spec/*.test.sh` whose `compare_shells` include dash, 1620 cases): 161 differed at first, 43
-  now: the deviations, bash-only features (arrays, `shopt`, `printf -v`/`%q`, `declare`), cases that differ only by
+  on 2026-09-26, before arrays, `declare`, `[[`, `function`, `let` and the rest of the extensions of 0.2.0 (so some
+  of the 43 no longer differ; not rerun since): the deviations, bash-only features (arrays, `shopt`, `printf -v`/`%q`, `declare`), cases that differ only by
   temporary directory names or timestamps, and the known limitations. To rerun: `git clone --depth 1
   https://github.com/oils-for-unix/oils`, split `spec/*.test.sh` on `#### ` (skipping `## STDOUT:`...`## END`
   blocks, which are expected output), keep files whose `## compare_shells:` includes dash, and run each case with
@@ -859,6 +867,12 @@ publishes the packages and `install.sh` as a GitHub release. The tag is also whe
 takes the `std` plugins from (`package::std_ref`), so they can't change after the release, and a build whose
 version has no tag yet can't fetch them: developers use a `path` or `branch` source named `std`. `install.sh` downloads from the latest release's URLs
 (`releases/latest/download/NAME`), so the packages' names must not change.
+
+Before tagging: `pixi run check` is green; `version` in `Cargo.toml` (and `Cargo.lock`) is the new one;
+`Unreleased` in `ChangeLog` is renamed to `Version X.Y.Z YYYY-MM-DD by luispedro`; the new section of
+`docs/whatsnew.md` has its date; the measurements in `docs/performance.md` were made with a release build of a
+revision that is in the history (their date and revision are stated there); and `pixi run docs` builds without
+warnings.
 
 - **gnu**: linked against glibc 2.17 with conda-forge's `sysroot_linux-64` (or `-aarch64`) and `gcc_linux-*` as the
   linker, from the `dist` environment in `pixi.toml`. conda-forge's gcc adds its environment's `lib` as an RPATH to

@@ -11,10 +11,13 @@ fast as [dash](http://gondor.apana.org.au/~herbert/dash/).
 - **POSIX first.** luish implements the POSIX Shell Command Language and its required built-ins, plus `local`.
   Where POSIX is ambiguous, luish matches dash.
 - **As fast as dash, with zsh's features.** Scripts run as fast as under dash (faster on arithmetic and function
-  calls), and up to five times faster than under bash or zsh. Interactively: zsh's keys, syntax highlighting,
+  calls), and up to six times faster than under bash or zsh. Interactively: zsh's keys, syntax highlighting,
   autosuggestions, shared history in zsh's format, completion with a menu, zsh's prompts and glob qualifiers.
 - **A modern plugin architecture**: plugins in shell and [Rhai](https://rhai.rs), listed in `config.toml`, fetched
-  from git and pinned in a lock file. Anything beyond POSIX is opt-in and costs nothing when it is not used.
+  from git and pinned in a lock file. Anything beyond POSIX that changes behaviour is opt-in, and none of it costs
+  anything when it is not used.
+- **bash's and zsh's scripting extensions**: arrays and associative arrays, `[[ ... ]]`, `${x/pattern/replacement}`,
+  `typeset`, zsh's parameter flags and more. Scripts that use them run up to six times faster than under bash or zsh.
 - **Instant startup**: luish caches the effect of your startup files, so a shell starts in milliseconds even with
   `conda`, `nvm` and the like set up.
 - **Modern configuration** in a TOML file, with options named in groups (`history.share`) and settings in layers
@@ -87,8 +90,8 @@ The goals are grouped into stages, described in [GOALS.md](GOALS.md):
 
 1. **Reproduce existing functionality** (current focus): POSIX conformance, dash-level speed, and a usable
    interactive shell.
-2. **Beyond POSIX**: lazily loaded plugins, opt-in arrays and process substitution, modern terminal features, better
-   error messages and strict mode, and richer history and completion.
+2. **Beyond POSIX**: lazily loaded plugins, process substitution, modern terminal features, better error messages and
+   strict mode, and richer history and completion. Plugins and arrays are already built.
 3. **New capabilities**: caching the effects of login scripts for near-instant startup, and a built-in SSH mode
    where the line editor runs locally.
 

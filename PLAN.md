@@ -4,7 +4,7 @@
 plugin system from Stage 2, and sketches of the later stages with the constraints they put on the design now. What
 is already built, and how, is in `DEVELOPING.md`; the user documentation is in `docs/`.
 
-## Status (2026-09-27)
+## Status (2026-09-29)
 
 | Phase | Stage | Status |
 |---|---|---|
@@ -160,7 +160,7 @@ Still to build, in this order:
 3. **Lazy function parsing for the startup cache**, below.
 
 Not planned, because the history shows they aren't used or they are easy to rewrite in POSIX sh: the `:h`/`:t`
-modifiers, `builtin` (`command cd` works), zsh's two-argument `cd old new`, `vared`, `zmv`, `mmv`, `zed`, `zcalc`,
+modifiers, zsh's two-argument `cd old new`, `vared`, `zmv`, `mmv`, `zed`, `zcalc`,
 `noglob`, zsh-history-substring-search, zsh-nvm, zplug, and `fpath`/`compinit`.
 
 The user's config (`~/.config/luish/rc.d`) also needs porting: `setopt prompt.percent` and `PS1`, `CDPATH`,
@@ -215,7 +215,7 @@ shell tracks the current file as well as the line, for provenance and for error 
 
 ### Stage 2: beyond POSIX
 
-- **Extensions** (associative arrays, process substitution, brace expansion) behind options, as `glob.star` and
+- **Extensions** (process substitution, brace expansion) behind options, as `glob.star` and
   `glob.bare_qualifiers` are, unless their syntax is an error in POSIX sh. With them off, POSIX scripts must parse and
   behave exactly as before and run as fast. The lexer checks such options in one place (as it does
   `Parser::bareglobqual`). Indexed and associative arrays are done, always on (see `DEVELOPING.md`), with bash's
@@ -258,7 +258,12 @@ shell tracks the current file as well as the line, for provenance and for error 
 
 The goal is to cache the *effects* of login scripts. With a warm cache, a new shell should start almost instantly,
 and many shells started at once (a desktop login can start 40) should not each run the scripts. The first version is
-built (`rc.d`, `login.d` and `_uncached.lsh`, one cache per directory keyed on fingerprints; see `DEVELOPING.md`).
+built (`rc.d`, `login.d` and `_uncached.lsh`, one cache per directory keyed on fingerprints; see `DEVELOPING.md`),
+with two known faults to fix first, both because the cache replays a difference onto an environment other than the one
+it was built in: a variable the files set to the value the build shell already had isn't saved (so `CONDA_EXE` and
+`NVM_DIR` are unset in a shell started outside the one that built the cache), and one they changed is saved with its
+inherited parts (`PATH`). `check-cache` can't see them. The fixes are to save every variable the files assign, and to
+key the cache on the inherited values the files read (below).
 The rest of the design is stale-while-revalidate: a shell starts from the cached state at once, reruns the scripts in
 the background, and applies any difference at a later prompt, so invalidation doesn't have to be perfect.
 `__luish_internal check-cache` is a first, manual form of the background run: it reruns the files in the environment

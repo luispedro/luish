@@ -18,6 +18,10 @@ from github or other git repositories and pinned to specific commits.
 (see [](performance.md)) while interactive use is intended to be as
 full-featured as zsh.
 
+**bash's and zsh's scripting extensions.** Arrays and associative arrays, `[[ ... ]]`, `${x/pattern/replacement}`,
+`typeset`, zsh's parameter flags and `pipefail` work in scripts and interactively (see [](usage.md#shell-language-extensions)),
+without slowing down scripts that don't use them.
+
 **Instant startup through caching.** luish caches the *effect* of your startup
 files. The result is that a new shell starts instantly (&lt; 20ms) even if you
 are using `conda`, `nvm` and the like (which can take several seconds in a

@@ -9,6 +9,8 @@ Evaluate a conditional expression.
 
 The exit status is 0 if the expression is true, 1 if it is false and 2 on
 an error. With one argument, the expression is true if it is not empty.
+`[[ ... ]]` is a reserved word, not this command, with more operators (see
+"Shell language extensions" in the Usage page of the documentation).
 
 `-e file`, `-f file`, `-d file`
 : `file` exists; is a regular file; is a directory. Also `-b` (block
