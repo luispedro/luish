@@ -478,7 +478,12 @@ fn with_toml<R>(file: &[u8], shown: &[u8], f: impl FnOnce(&str, Table<'_>) -> R)
 }
 
 fn parent(path: &[u8]) -> &[u8] {
-    &path[..path.iter().rposition(|&c| c == b'/').unwrap_or(0).max(1)]
+    &path[..path
+        .iter()
+        .rposition(|&c| c == b'/')
+        .unwrap_or(0)
+        .max(1)
+        .min(path.len())]
 }
 
 /// Reads the `[plugins]` table of `config.toml`: an empty table if there is
@@ -1452,7 +1457,16 @@ pub fn available(sh: &mut Shell) -> Vec<(Vec<u8>, Vec<u8>)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, GitRef, Origin, Pin, lock_text, toml_str};
+    use super::{Config, GitRef, Origin, Pin, lock_text, parent, toml_str};
+
+    #[test]
+    fn parent_of_odd_paths() {
+        assert_eq!(parent(b""), b"");
+        assert_eq!(parent(b"a"), b"a");
+        assert_eq!(parent(b"/"), b"/");
+        assert_eq!(parent(b"/a"), b"/");
+        assert_eq!(parent(b"/a/b"), b"/a");
+    }
 
     #[test]
     fn std_is_this_release() {

@@ -64,4 +64,30 @@ mod tests {
         let all: Vec<u8> = (0..=255).collect();
         assert_eq!(to_bytes(&to_str(&all)), all);
     }
+
+    #[test]
+    fn odd_sequences_round_trip() {
+        let pieces: [u8; 9] = [0x00, b'a', 0x7f, 0x80, 0xbf, 0xc3, 0xa9, 0xe2, 0xff];
+        let mut idx = [0usize; 5];
+        for len in 0..=5 {
+            for n in 0..pieces.len().pow(len as u32) {
+                let mut m = n;
+                for slot in idx.iter_mut().take(len) {
+                    *slot = m % pieces.len();
+                    m /= pieces.len();
+                }
+                let b: Vec<u8> = idx[..len].iter().map(|&i| pieces[i]).collect();
+                assert_eq!(to_bytes(&to_str(&b)), b);
+            }
+        }
+    }
+
+    #[test]
+    fn escape_characters_in_a_string() {
+        // Whatever a script builds, converting it doesn't panic.
+        let s: String = ['\u{10FF7F}', '\u{10FF80}', '\u{10FFFF}', '\u{0}', 'é']
+            .iter()
+            .collect();
+        let _ = to_bytes(&s);
+    }
 }

@@ -946,3 +946,78 @@ impl Host {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// What a script might return from a completer.
+    fn values() -> Vec<Dynamic> {
+        let map = |pairs: &[(&str, Dynamic)]| -> Dynamic {
+            let mut m = rhai::Map::new();
+            for (k, v) in pairs {
+                m.insert((*k).into(), v.clone());
+            }
+            m.into()
+        };
+        let strs: Dynamic = vec![Dynamic::from("a"), Dynamic::from("")].into();
+        let odd: Dynamic = vec![
+            Dynamic::from(1_i64),
+            Dynamic::UNIT,
+            Dynamic::from(true),
+            Dynamic::from(1.5_f64),
+        ]
+        .into();
+        let cand = |v: Dynamic, d: Dynamic, s: Dynamic| -> Dynamic { map(&[("value", v), ("desc", d), ("suffix", s)]) };
+        let mut out = vec![
+            Dynamic::UNIT,
+            Dynamic::from(1_i64),
+            Dynamic::from("a"),
+            Dynamic::from('c'),
+            Dynamic::from(true),
+            strs.clone(),
+            odd.clone(),
+            vec![map(&[]), map(&[("value", "x".into())]), map(&[("value", 1_i64.into())])].into(),
+            vec![cand("v".into(), "d".into(), "]}".into())].into(),
+            vec![cand("v".into(), 1_i64.into(), "".into())].into(),
+            vec![cand("v".into(), Dynamic::UNIT, 2_i64.into())].into(),
+            map(&[]),
+        ];
+        for prefix in [
+            Dynamic::from(""),
+            "a".into(),
+            "--x=".into(),
+            "\u{10FF80}".into(),
+            1_i64.into(),
+            Dynamic::UNIT,
+        ] {
+            for list in [Dynamic::UNIT, strs.clone(), odd.clone(), 1_i64.into()] {
+                out.push(map(&[("prefix", prefix.clone()), ("candidates", list)]));
+            }
+            out.push(map(&[("prefix", prefix)]));
+        }
+        out
+    }
+
+    #[test]
+    fn completer_results_never_panic() {
+        let words: [&[u8]; 5] = [b"", b"a", b"--x=1", b"\xff", b"\xf4\x8f\xbe\x80"];
+        for v in values() {
+            for w in words {
+                let _ = candidates(v.clone(), w);
+            }
+        }
+    }
+
+    #[test]
+    fn completer_prefix_must_begin_the_word() {
+        let mut m = rhai::Map::new();
+        m.insert("prefix".into(), "zz".into());
+        assert!(candidates(m.into(), b"a").is_err());
+        let mut m = rhai::Map::new();
+        m.insert("prefix".into(), "a".into());
+        m.insert("candidates".into(), vec![Dynamic::from("ab")].into());
+        let (n, c) = candidates(m.into(), b"ab").unwrap().unwrap();
+        assert_eq!((n, c.len()), (1, 1));
+    }
+}
