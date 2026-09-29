@@ -10,6 +10,23 @@ luish
 
 If you've used a shell before, you should feel at home, luish should feel much like zsh.
 
+## The first run
+
+The first time luish starts in a terminal (when `~/.config/luish/` is missing or empty), it shows a menu (Up and
+Down choose, Enter confirms; or press an item's number):
+
+1. **Write the recommended configuration** to `config.toml`: Tab completion from the standard plugins (see below),
+   suggestions from the history as you type, and zsh's `%` sequences in prompts. luish then runs `plugin sync` to
+   fetch the plugins.
+2. **Write an empty configuration**: the recommended one, all commented out to turn on later, so that the menu isn't
+   shown again.
+3. **Add a personal plugin**, as [`plugin add`](plugins.md) takes it: a GitHub repository (`OWNER/REPO` or its URL),
+   another git URL, or a path. `config.toml` then has only that plugin, which can hold your whole configuration
+   (see [](plugins.md)), and luish runs `plugin sync` to fetch it.
+4. **Just start for now**, writing nothing: the menu is shown again next time (as it is after Ctrl-C or Esc).
+
+The rest of this page describes the files, to write or extend them yourself.
+
 ## Where the configuration goes
 
 The configuration is in `~/.config/luish/` (or `$XDG_CONFIG_HOME/luish/` if you set `XDG_CONFIG_HOME`), in these files and directories:

@@ -512,6 +512,22 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
 
 ### Startup files (`main.rs`, `startcache.rs`, `config.rs`)
 
+- **First run** (`interactive/firstrun.rs`): before `config.toml` is read, an interactive shell reading from the line
+  editor, with stderr a terminal (and without `--no-rcs` or `--no-plugins`), whose configuration directory is missing
+  or empty (only `.` and `..`) shows a menu on stderr (`choose`): write `config.toml` with the recommended settings
+  (`config_text`: `editor.autosuggest`, `prompt.percent`, the default `history.file` as a comment, `std.completion`,
+  plus `std.bash-completion` if bash-completion is where `bridge.bash` looks for it; the plugins only with the
+  `plugins` feature), write the same text commented out (so the directory isn't empty next time), write a minimal
+  file with only a personal plugin, or write nothing. The menu puts the terminal in raw mode (`Raw`, restored on drop;
+  no `ISIG`, so Ctrl-C is a byte) and redraws its items in place (`ESC [ N A`, each line short enough not to wrap);
+  `read_key` takes Up and Down (`ESC [ A`, `ESC O A`, also `k`/`j` and Ctrl-P/Ctrl-N), Enter, a digit (which
+  chooses), and Ctrl-C, Ctrl-D, Esc (nothing after it for 50 ms) or `q` for nothing. With `TERM` unset or `dumb`, it
+  lists the items and reads a number with `read_answer` instead. A plugin spec goes through
+  `plugins::prepare_addition` (`add::prepare`, as `plugin add`, so a git source is fetched to see what it holds) and
+  `add_to_config` (`add::add_to`) on an empty text; an error is printed and the menu comes back. The file is written
+  once, and `plugin sync` runs unless it is all commented out; the normal startup then loads the plugins.
+  The pty tests' `Pty::spawn_term` puts an empty `luishrc` in the configuration directory so that no other test sees
+  the menu. Test: `first_run` in `tests/interactive.rs` (vt100 and dumb), and `config` in `firstrun.rs`.
 - Order: `config.toml`, `rc.d`, then the login files (`login.d`, or else `/etc/profile` and `~/.profile`), `$ENV`,
   `luishrc`. Login files run for login shells whether interactive or not, as in dash.
 - The cache is the difference between the state (`state.rs`) before and after the files ran, as commands, so
@@ -695,9 +711,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   and `objects`); a path if it starts with `/`, `.` or `~`; `gh:`/GitHub URLs; other URLs; `SOURCE/NAME` of a
   named source; an existing relative path; then `OWNER/REPO`), adds it as text after the last non-blank line of its
   table (`insert`, keeping comments; a new table at the end if there is none), and reads the new text with
-  `package::config_names` before writing: if the entry isn't there (say `[plugins]` has `enabled = {...}`, which a new
+  `package::config_names` before writing (`prepare` and `add_to`, which the first run shares): if the entry isn't there (say `[plugins]` has `enabled = {...}`, which a new
   `[plugins.enabled]` would duplicate), it prints the line to add by hand. It asks on stderr and reads the answer a
-  byte at a time from fd 0 (no answer is no), writes through the symbolic link if `config.toml` is one, then runs
+  byte at a time from fd 0 (`interactive::read_answer`; no answer is no), writes through the symbolic link if `config.toml` is one, then runs
   `sync` and `package::load_added`. Before asking, a git source is fetched (`fetch::resolve`, into the cache's bare
   repository) and extracted into a temporary data directory (`DATA/.add.PID`, removed after), to see whether it is
   a collection of more than one plugin (`holds`), which goes to `plugins.available`; so `sync` fetches it a second

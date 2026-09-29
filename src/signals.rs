@@ -162,7 +162,6 @@ pub fn parse(s: &[u8], minsig: i32) -> Option<i32> {
 }
 
 /// Whether `sig` has arrived and not yet been handled.
-#[cfg(feature = "plugins")]
 pub fn is_pending(sig: i32) -> bool {
     PENDING[sig as usize].load(Ordering::SeqCst)
 }

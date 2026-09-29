@@ -1,6 +1,7 @@
 //! Interactive mode: prompts, the line editor, history, and startup files.
 
 mod complete;
+pub mod firstrun;
 mod highlight;
 mod histfile;
 pub mod history;
@@ -398,6 +399,25 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
         sh.exit(n);
     }
     line
+}
+
+/// Reads a line from standard input, a byte at a time (so that nothing
+/// past it is read), for a question asked on stderr. `None` at end of file
+/// or on Ctrl-C, after starting a new line on stderr.
+pub fn read_answer() -> Option<Vec<u8>> {
+    let mut line = Vec::new();
+    let mut buf = [0u8; 1];
+    loop {
+        match sys::read(0, &mut buf, true) {
+            Ok(1) if buf[0] == b'\n' => return Some(line),
+            Ok(1) => line.push(buf[0]),
+            Err(libc::EINTR) if !crate::signals::is_pending(libc::SIGINT) => {}
+            _ => {
+                sys::write_all(2, b"\n");
+                return None;
+            }
+        }
+    }
 }
 
 /// Sources a file in the current shell if it exists.

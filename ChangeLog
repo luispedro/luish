@@ -1,4 +1,6 @@
 Unreleased
+    * On its first run, a menu offers to write a config.toml with the
+      recommended settings, or with a personal plugin
     * `plugin add`: adds a plugin (a GitHub repository, git or file
       URL, or path) to `config.toml`, after asking, and fetches it
     * Plugins can add commands: `sh::builtin(name, fn)` registers a

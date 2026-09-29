@@ -58,6 +58,21 @@ pub fn path(sh: &Shell) -> Option<Vec<u8>> {
     Some(p)
 }
 
+/// A TOML basic string.
+pub fn toml_str(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if (c as u32) < 0x20 || c == '\x7f' => out.push_str(&format!("\\u{:04X}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// Reads the file at `path`, if there is one, and applies its settings.
 pub fn load(sh: &mut Shell, path: &[u8]) {
     read(sh, path, true, |sh, key, value, err| match &*key.name {

@@ -31,23 +31,34 @@ impl Pty {
         Pty::spawn_term(name, "dumb")
     }
 
+    /// A shell in a new directory, whose configuration directory has a
+    /// file, so that the first run's questions aren't asked.
     fn spawn_term(name: &str, term: &str) -> Pty {
+        let dir = Pty::new_dir(name);
+        std::fs::create_dir_all(dir.join(".config/luish")).unwrap();
+        std::fs::write(dir.join(".config/luish/luishrc"), "").unwrap();
+        Pty::spawn_at(dir, term, true, None)
+    }
+
+    fn new_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("luish-pty-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        Pty::spawn_at(dir, term, true)
+        dir
     }
 
     /// Another shell in the directory (and `$HOME`) of `other`.
     fn spawn_beside(other: &Pty) -> Pty {
-        Pty::spawn_at(other.dir.clone(), "dumb", false)
+        Pty::spawn_at(other.dir.clone(), "dumb", false, None)
     }
 
-    fn spawn_at(dir: PathBuf, term: &str, owns_dir: bool) -> Pty {
+    /// `path` is `$PATH`, if not the tests' own.
+    fn spawn_at(dir: PathBuf, term: &str, owns_dir: bool, path: Option<&str>) -> Pty {
         let shell = CString::new(env!("CARGO_BIN_EXE_luish")).unwrap();
         let argv = [CString::new("luish").unwrap(), CString::new("-i").unwrap()];
+        let path = path.map_or_else(|| std::env::var("PATH").unwrap_or_default(), Into::into);
         let env = [
-            format!("PATH={}", std::env::var("PATH").unwrap_or_default()),
+            format!("PATH={path}"),
             format!("HOME={}", dir.display()),
             "PS1=$ ".to_string(),
             format!("TERM={term}"),
@@ -1088,4 +1099,94 @@ fn plugin_builtin() {
     assert_has(&out, "status 1");
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
+}
+
+/// The first run: with an empty configuration directory, the shell offers
+/// to write `config.toml` before reading it, in a menu.
+#[test]
+fn first_run() {
+    let dir = Pty::new_dir("firstrun");
+    let config = dir.join(".config/luish/config.toml");
+    let (down, enter) = ("\x1b[B", "\r");
+    // Ctrl-C (like the last item) leaves the directory alone, so the next
+    // shell asks again.
+    let mut sh = Pty::spawn_at(dir.clone(), "vt100", true, None);
+    sh.expect("Welcome to luish!\n\nThe configuration directory, ~/.config/luish, is empty.\n");
+    sh.expect("> 1. Write the recommended configuration");
+    sh.expect("4. Just start for now and ask again next time\n");
+    sh.send("\x03");
+    sh.expect("$ ");
+    assert!(!dir.join(".config/luish").exists());
+    sh.send("exit\n");
+    assert_eq!(sh.exit_status(), 0);
+
+    // A personal plugin (after a bad one): a minimal configuration with
+    // only it, added as `plugin add` would, and loaded.
+    std::fs::create_dir_all(dir.join(".config/luish")).unwrap();
+    std::fs::create_dir(dir.join("mine")).unwrap();
+    std::fs::write(dir.join("mine/init.lsh"), "echo mine loaded\n").unwrap();
+    let mut sh2 = Pty::spawn_at(dir.clone(), "vt100", false, None);
+    sh2.expect("4. Just start");
+    sh2.send(&format!("{down}{down}{enter}"));
+    sh2.expect("> 3. Add a personal plugin (for more advanced users)");
+    sh2.expect("Plugin (a GitHub repository, as OWNER/REPO or its URL, a git URL or a path): ");
+    sh2.send("./nope\n");
+    sh2.expect("./nope: no such file or directory\n");
+    sh2.expect("4. Just start");
+    // Up from the first item goes round to the last; 3 chooses the third.
+    sh2.send("\x1b[A");
+    sh2.expect("> 4. Just start");
+    sh2.send("3");
+    sh2.expect("Plugin (");
+    sh2.send("./mine\n");
+    sh2.expect("Wrote ~/.config/luish/config.toml\n");
+    sh2.expect("mine loaded\n");
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert_eq!(
+        text,
+        format!("[plugins.enabled]\nmine = {{ path = \"{}/mine\" }}\n", dir.display())
+    );
+    sh2.send("exit\n");
+    assert_eq!(sh2.exit_status(), 0);
+
+    // An empty configuration: everything commented out.
+    std::fs::remove_dir_all(dir.join(".config/luish")).unwrap();
+    let mut sh3 = Pty::spawn_at(dir.clone(), "vt100", false, None);
+    sh3.expect("4. Just start");
+    sh3.send("2");
+    sh3.expect("Wrote ~/.config/luish/config.toml\n");
+    sh3.expect("$ ");
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert_has(&text, "\n# [options.editor]\n# autosuggest = true\n");
+    assert_has(&text, "\n# std.completion = \"*\"");
+    sh3.send("exit\n");
+    assert_eq!(sh3.exit_status(), 0);
+
+    // Now the directory has a file: no questions.
+    let mut sh5 = Pty::spawn_beside(&sh);
+    assert_eq!(sh5.expect("$ "), "$ ");
+    sh5.send("exit\n");
+    assert_eq!(sh5.exit_status(), 0);
+
+    // The recommended configuration, chosen by number on a terminal that
+    // can't move the cursor, where the standard plugins can't be fetched
+    // (there is no git).
+    std::fs::remove_dir_all(dir.join(".config/luish")).unwrap();
+    let empty = dir.join("empty");
+    std::fs::create_dir(&empty).unwrap();
+    let mut sh4 = Pty::spawn_at(dir.clone(), "dumb", false, Some(empty.to_str().unwrap()));
+    sh4.expect("  4. Just start for now and ask again next time\nChoose 1-4 [1]: ");
+    sh4.send("5\n");
+    sh4.expect("Choose 1-4 [1]: ");
+    sh4.send("\n");
+    sh4.expect("Wrote ~/.config/luish/config.toml\n");
+    sh4.expect("Run plugin sync once the plugins can be fetched\n");
+    sh4.expect("$ ");
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert_has(&text, "\n[options.editor]\nautosuggest = true\n");
+    assert_has(&text, "\n[options.prompt]\npercent = true\n");
+    assert_has(&text, "\n[options.history]\n# file = \"~/.local/state/luish/history\"");
+    assert_has(&text, "\n[plugins.enabled]\nstd.completion = \"*\"");
+    sh4.send("exit\n");
+    assert_eq!(sh4.exit_status(), 0);
 }

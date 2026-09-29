@@ -267,6 +267,9 @@ fn run(args: Vec<Vec<u8>>) -> ! {
         }
     }
     if !no_rcs {
+        if matches!(input, Input::Editor) && sys::isatty(2) && !sh.no_plugins {
+            interactive::firstrun::run(&mut sh);
+        }
         if interactive {
             interactive::rc_d(&mut sh);
         }

@@ -27,6 +27,7 @@
 //! `plugin load` resolve with the pins, without the network.
 
 use super::{Found, Kind, fetch};
+pub(super) use crate::config::toml_str;
 use crate::config::{in_order, line_of, report, tilde};
 use crate::interactive::to_path;
 use crate::shell::{ExecResult, Shell};
@@ -626,21 +627,6 @@ fn read_lock(file: &[u8]) -> Result<Vec<Pin>, LockError> {
             None => p.msg,
         })),
     }
-}
-
-/// A TOML basic string.
-pub(super) fn toml_str(s: &str) -> String {
-    let mut out = String::from("\"");
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            c if (c as u32) < 0x20 || c == '\x7f' => out.push_str(&format!("\\u{:04X}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
 }
 
 /// The text of `plugins.lock`: the pins sorted by URL, and the plugins that

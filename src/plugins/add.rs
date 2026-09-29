@@ -16,7 +16,6 @@ use super::fetch;
 use super::package::{self, GitRef, toml_str, valid_name};
 use crate::interactive::to_path;
 use crate::shell::{ExecResult, Shell};
-use crate::signals;
 use crate::sys;
 
 /// What a `SPEC` names.
@@ -306,66 +305,54 @@ fn in_plugin_dir(sh: &Shell, name: &str) -> bool {
 /// Asks on stderr, and reads the answer from standard input.
 fn confirm(question: &str) -> bool {
     sys::write_all(2, question.as_bytes());
-    let mut line = Vec::new();
-    let mut buf = [0u8; 1];
-    loop {
-        match sys::read(0, &mut buf, true) {
-            Ok(1) if buf[0] == b'\n' => break,
-            Ok(1) => line.push(buf[0]),
-            Err(libc::EINTR) if !signals::is_pending(libc::SIGINT) => {}
-            _ => {
-                sys::write_all(2, b"\n");
-                return false;
-            }
-        }
-    }
-    matches!(line.trim_ascii().to_ascii_lowercase().as_slice(), b"y" | b"yes")
+    crate::interactive::read_answer()
+        .is_some_and(|a| matches!(a.trim_ascii().to_ascii_lowercase().as_slice(), b"y" | b"yes"))
 }
 
-const USAGE: &str = "usage: plugin add [-y] PLUGIN [NAME]";
+/// A plugin to add to `config.toml`: its name, the line to add, the table
+/// it goes to, and what its source holds.
+pub struct Addition {
+    name: String,
+    line: String,
+    table: &'static str,
+    holds: Holds,
+}
 
-/// `plugin add [-y] SPEC [NAME]`. `cmd` is the command, for messages.
-pub fn add(sh: &mut Shell, cmd: &[u8], args: &[Vec<u8>]) -> ExecResult {
-    let yes = args
-        .iter()
-        .take_while(|a| matches!(a.as_slice(), b"-y" | b"--yes"))
-        .count();
-    let (spec, given) = match &args[yes..] {
-        [spec] => (spec, None),
-        [spec, name] => (spec, Some(String::from_utf8_lossy(name).into_owned())),
-        _ => {
-            sh.berr(cmd, USAGE);
-            return Ok(2);
-        }
-    };
-    if sh.no_plugins {
-        return Ok(0);
+impl Addition {
+    /// For a collection, what it holds and how to use its plugins.
+    pub fn collection_note(&self) -> Option<String> {
+        let Holds::Collection(names) = &self.holds else {
+            return None;
+        };
+        Some(format!(
+            "{} has {} plugins: {}. Load one with plugin load {0}/{3}, or enable it with plugin add {0}/{3}\n",
+            self.name,
+            names.len(),
+            names.join(", "),
+            names[0]
+        ))
     }
-    let fail = |sh: &Shell, msg: String| {
-        sh.berr(cmd, msg);
-        Ok(1)
-    };
-    let text = String::from_utf8_lossy(spec).into_owned();
+}
+
+/// What adding `spec` (named `given`, if given) means: a git source is
+/// fetched, to see what it holds.
+pub fn prepare(sh: &mut Shell, spec: &str, given: Option<String>) -> Result<Addition, String> {
     let expand = |sh: &Shell, p: &str| super::absolute(sh, &crate::config::tilde(sh, p.as_bytes()));
     let parsed = parse(
-        &text,
-        |n| package::is_named_source(sh, n) || (n == text && in_plugin_dir(sh, n)),
+        spec,
+        |n| package::is_named_source(sh, n) || (n == spec && in_plugin_dir(sh, n)),
         |p| sys::stat(&expand(sh, p)).is_some(),
         |p| is_repo(p.as_bytes()),
-    );
-    let spec = match parsed {
-        Ok(s) => s,
-        Err(e) => return fail(sh, e),
-    };
+    )?;
     // The key and value of the line to add, and what the source holds.
-    let (name, value, holds) = match spec {
+    let (name, line, holds) = match parsed {
         Spec::Named(src, name) => {
             let key = match &src {
                 Some(src) => toml_str(&format!("{src}/{name}")),
                 None => toml_key(&name),
             };
             if given.is_some() {
-                return fail(sh, format!("{text}: a plugin of a source keeps its name"));
+                return Err(format!("{spec}: a plugin of a source keeps its name"));
             }
             (name, format!("{key} = \"*\""), Holds::Plugin)
         }
@@ -392,10 +379,7 @@ pub fn add(sh: &mut Shell, cmd: &[u8], args: &[Vec<u8>]) -> ExecResult {
                 Some(("rev", r)) => GitRef::Rev(r.clone()),
                 Some((_, b)) => GitRef::Branch(b.clone()),
             };
-            let holds = match fetch_holds(sh, &url, &at, subdir.as_deref(), &label) {
-                Ok(h) => h,
-                Err(e) => return fail(sh, e),
-            };
+            let holds = fetch_holds(sh, &url, &at, subdir.as_deref(), &label)?;
             let name = given.unwrap_or(name);
             let line = format!("{} = {}", toml_key(&name), table(&fields));
             (name, line, holds)
@@ -403,32 +387,97 @@ pub fn add(sh: &mut Shell, cmd: &[u8], args: &[Vec<u8>]) -> ExecResult {
         Spec::Path(p) => {
             let abs = expand(sh, &p);
             if sys::stat(&abs).is_none() {
-                return fail(sh, format!("{p}: no such file or directory"));
+                return Err(format!("{p}: no such file or directory"));
             }
             let written = match p.starts_with('~') {
                 true => p.trim_end_matches('/').to_string(),
                 false => String::from_utf8_lossy(&abs).into_owned(),
             };
-            let holds = match holds(&abs, &p) {
-                Ok(h) => h,
-                Err(e) => return fail(sh, e),
-            };
+            let holds = holds(&abs, &p)?;
             let base = String::from_utf8_lossy(&super::plugin_name(&abs, super::at_path(&abs).kind)).into_owned();
             let name = given.unwrap_or(base);
             let line = format!("{} = {}", toml_key(&name), table(&[("path", &written)]));
             (name, line, holds)
         }
     };
-    let table_name = match holds {
+    if !valid_name(&name) {
+        return Err(format!("{name:?}: bad plugin name (give one as the second argument)"));
+    }
+    let table = match holds {
         Holds::Plugin => "plugins.enabled",
         Holds::Collection(_) => "plugins.available",
     };
-    if !valid_name(&name) {
-        return fail(
-            sh,
-            format!("{name:?}: bad plugin name (give one as the second argument)"),
-        );
+    Ok(Addition {
+        name,
+        line,
+        table,
+        holds,
+    })
+}
+
+/// `text`, the text of the configuration file `file`, with `a` added.
+/// The result is read again to check that it has the plugin.
+pub fn add_to(sh: &Shell, file: &[u8], text: &[u8], a: &Addition) -> Result<String, String> {
+    let (enabled, available) = package::config_names(sh, file, text)?;
+    let taken = match a.table {
+        "plugins.enabled" => enabled.contains(&a.name),
+        _ => available.contains(&a.name) || a.name == "std",
+    };
+    if taken {
+        return Err(format!(
+            "{}: already in {} (give another name as the second argument)",
+            a.name, a.table
+        ));
     }
+    let Ok(text) = std::str::from_utf8(text) else {
+        return Err(format!("{}: not valid UTF-8", String::from_utf8_lossy(file)));
+    };
+    let new = insert(text, a.table, &a.line);
+    let added = match package::config_names(sh, file, new.as_bytes()) {
+        Ok((enabled, available)) => match a.table {
+            "plugins.enabled" => enabled.contains(&a.name),
+            _ => available.contains(&a.name),
+        },
+        Err(_) => false,
+    };
+    if !added {
+        return Err(format!(
+            "cannot add to {}: add this to its [{}] table yourself:\n{}",
+            String::from_utf8_lossy(file),
+            a.table,
+            a.line
+        ));
+    }
+    Ok(new)
+}
+
+const USAGE: &str = "usage: plugin add [-y] PLUGIN [NAME]";
+
+/// `plugin add [-y] SPEC [NAME]`. `cmd` is the command, for messages.
+pub fn add(sh: &mut Shell, cmd: &[u8], args: &[Vec<u8>]) -> ExecResult {
+    let yes = args
+        .iter()
+        .take_while(|a| matches!(a.as_slice(), b"-y" | b"--yes"))
+        .count();
+    let (spec, given) = match &args[yes..] {
+        [spec] => (spec, None),
+        [spec, name] => (spec, Some(String::from_utf8_lossy(name).into_owned())),
+        _ => {
+            sh.berr(cmd, USAGE);
+            return Ok(2);
+        }
+    };
+    if sh.no_plugins {
+        return Ok(0);
+    }
+    let fail = |sh: &Shell, msg: String| {
+        sh.berr(cmd, msg);
+        Ok(1)
+    };
+    let a = match prepare(sh, &String::from_utf8_lossy(spec), given) {
+        Ok(a) => a,
+        Err(e) => return fail(sh, e),
+    };
     let Some(file) = crate::config::path(sh) else {
         return fail(sh, "no configuration directory (HOME is not set)".into());
     };
@@ -438,44 +487,20 @@ pub fn add(sh: &mut Shell, cmd: &[u8], args: &[Vec<u8>]) -> ExecResult {
         Err(_) => file,
     };
     let old = std::fs::read(crate::interactive::to_path(&file)).unwrap_or_default();
-    let (enabled, available) = match package::config_names(sh, &file, &old) {
-        Ok(names) => names,
+    let new = match add_to(sh, &file, &old, &a) {
+        Ok(new) => new,
         Err(e) => return fail(sh, e),
     };
-    let taken = match table_name {
-        "plugins.enabled" => enabled.contains(&name),
-        _ => available.contains(&name) || name == "std",
-    };
-    if taken {
-        return fail(
-            sh,
-            format!("{name}: already in {table_name} (give another name as the second argument)"),
-        );
-    }
-    let Ok(old) = String::from_utf8(old) else {
-        return fail(sh, format!("{}: not valid UTF-8", String::from_utf8_lossy(&file)));
-    };
-    let new = insert(&old, table_name, &value);
-    let added = match package::config_names(sh, &file, new.as_bytes()) {
-        Ok((enabled, available)) => match table_name {
-            "plugins.enabled" => enabled.contains(&name),
-            _ => available.contains(&name),
-        },
-        Err(_) => false,
-    };
-    let shown = String::from_utf8_lossy(&file);
-    if !added {
-        return fail(
-            sh,
-            format!("cannot add to {shown}: add this to its [{table_name}] table yourself:\n{value}"),
-        );
-    }
-    let what = match &holds {
+    let what = match &a.holds {
         Holds::Plugin => String::new(),
         Holds::Collection(names) => format!(" (a collection of {})", names.join(", ")),
     };
-    let question =
-        format!("Adding to [{table_name}] in {shown}{what}:\n    {value}\nand running plugin sync. Continue? [y/N] ");
+    let question = format!(
+        "Adding to [{}] in {}{what}:\n    {}\nand running plugin sync. Continue? [y/N] ",
+        a.table,
+        String::from_utf8_lossy(&file),
+        a.line
+    );
     if yes == 0 && !confirm(&question) {
         sys::write_all(2, b"Nothing changed\n");
         return Ok(1);
@@ -484,18 +509,10 @@ pub fn add(sh: &mut Shell, cmd: &[u8], args: &[Vec<u8>]) -> ExecResult {
         return fail(sh, e);
     }
     let status = super::sync(sh, cmd, None, false)?;
-    match holds {
+    match a.collection_note() {
         _ if status != 0 => Ok(status),
-        Holds::Plugin => package::load_added(sh, cmd, &name),
-        Holds::Collection(names) => {
-            let msg = format!(
-                "{name} has {} plugins: {}. Load one with plugin load {name}/{2}, or enable it with plugin add {name}/{2}\n",
-                names.len(),
-                names.join(", "),
-                names[0]
-            );
-            Ok(sh.out_status(msg.as_bytes()))
-        }
+        None => package::load_added(sh, cmd, &a.name),
+        Some(note) => Ok(sh.out_status(note.as_bytes())),
     }
 }
 

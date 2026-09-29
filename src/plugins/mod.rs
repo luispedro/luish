@@ -672,6 +672,50 @@ fn add(sh: &mut Shell, cmd: &[u8], _: &[Vec<u8>]) -> ExecResult {
     Ok(1)
 }
 
+/// A plugin to add to `config.toml`, for the first run
+/// (`interactive/firstrun.rs`).
+#[cfg(feature = "plugins")]
+pub use add::Addition;
+
+#[cfg(not(feature = "plugins"))]
+pub enum Addition {}
+
+#[cfg(not(feature = "plugins"))]
+impl Addition {
+    pub fn collection_note(&self) -> Option<String> {
+        match *self {}
+    }
+}
+
+/// For the first run: what adding the plugin `spec` means, as for
+/// `plugin add` (a git source is fetched).
+#[cfg(feature = "plugins")]
+pub fn prepare_addition(sh: &mut Shell, spec: &str) -> Result<Addition, String> {
+    add::prepare(sh, spec, None)
+}
+
+#[cfg(not(feature = "plugins"))]
+pub fn prepare_addition(_: &mut Shell, _: &str) -> Result<Addition, String> {
+    Err("luish was built without plugin support".into())
+}
+
+/// For the first run: `text`, the text of `config.toml` at `file`, with
+/// `a` added.
+#[cfg(feature = "plugins")]
+pub fn add_to_config(sh: &Shell, file: &[u8], text: &str, a: &Addition) -> Result<String, String> {
+    add::add_to(sh, file, text.as_bytes(), a)
+}
+
+#[cfg(not(feature = "plugins"))]
+pub fn add_to_config(_: &Shell, _: &[u8], _: &str, a: &Addition) -> Result<String, String> {
+    match *a {}
+}
+
+/// For the first run: `plugin sync`, with its status.
+pub fn sync_config(sh: &mut Shell) -> i32 {
+    sync(sh, b"plugin", None, false).unwrap_or(1)
+}
+
 /// `plugin check`.
 #[cfg(feature = "plugins")]
 fn check(sh: &mut Shell, cmd: &[u8]) -> ExecResult {
