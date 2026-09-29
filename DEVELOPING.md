@@ -590,7 +590,7 @@ luish-std-plugins/      # a collection of plugins (completion, git-completion, b
   the extension's AST when it is registered.
 - **Extension built-ins** (`sh::builtin`): `Host::builtins`, by name, looked up in `Shell::lookup_command` after
   functions and before `PATH` (`CommandKind::Extension`), so the only cost without them is the `Shell::plugins`
-  check for external commands. `builtin`, `command`, `type` (as a shell builtin) and `hash` (skips them) know them;
+  check for external commands. `builtin`, `command`, `type` (`is a shell builtin from plugin NAME`, `Host::builtin_plugin`) and `hash` (skips them) know them;
   the editor gets their names in `Names::builtins` (highlighting, command completion; not `help`). They take
   temporary assignments as regular built-ins do. The function is called with `argv` as an array; the status comes
   from what it returns (`builtin_status`), a thrown string (an `ErrorRuntime` holding a string, also from `sh`

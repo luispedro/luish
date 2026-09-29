@@ -348,7 +348,14 @@ fn describe(sh: &mut Shell, name: &[u8], verbose: bool, alt_path: Option<&[u8]>)
         match sh.lookup_command(name, true) {
             CommandKind::Special(_) => line("is a special shell builtin"),
             CommandKind::Function(_) => line("is a shell function"),
-            CommandKind::Builtin(_) | CommandKind::Extension => line("is a shell builtin"),
+            CommandKind::Builtin(_) => line("is a shell builtin"),
+            CommandKind::Extension => match crate::plugins::builtin_plugin(sh, name) {
+                Some(p) => line(&format!(
+                    "is a shell builtin from plugin {}",
+                    String::from_utf8_lossy(&p)
+                )),
+                None => line("is a shell builtin"),
+            },
             CommandKind::External => {
                 let tracked = alt_path.is_none() && sh.hash.contains_key(name);
                 let found = if name.contains(&b'/') {

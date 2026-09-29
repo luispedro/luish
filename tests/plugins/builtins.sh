@@ -47,7 +47,7 @@ wrong; echo "wrong: $?"
 readonly R=1
 readonly_set; echo "readonly: $?"
 # Commands, redirections, pipelines and substitutions as for any built-in.
-type greet; command -v greet
+type greet; command -V greet; command -v greet
 command greet command; builtin greet builtin
 greet redirected > out.txt; cat out.txt
 greet pipe | tr a-z A-Z

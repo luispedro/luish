@@ -1,6 +1,7 @@
 Unreleased
     * Plugins can add commands: `sh::builtin(name, fn)` registers a
       built-in written in Rhai, and `sh::read_line()` reads its input
+    * `type` names the plugin that added a built-in
 
 Version 0.2.0 2026-09-29 by luispedro
     * Fix crashes on Tab after a word like `--opt=value`, and on a plugin

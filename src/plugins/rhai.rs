@@ -983,6 +983,17 @@ impl Host {
         self.builtins.borrow().iter().map(|b| b.0.clone()).collect()
     }
 
+    /// The name of the plugin whose extension registered the built-in
+    /// `name`.
+    pub fn builtin_plugin(&self, name: &[u8]) -> Option<Vec<u8>> {
+        let id = self.builtins.borrow().iter().find(|b| b.0 == name)?.1.plugin;
+        self.plugins
+            .borrow()
+            .iter()
+            .find(|p| p.id == id)
+            .map(|p| p.name.clone())
+    }
+
     /// Runs the extension's built-in `argv[0]`, which is given `argv` as an
     /// array. A string thrown (or an error from an `sh` function) is
     /// reported as the built-in's, `name: message`, and other errors with

@@ -16,7 +16,8 @@ X=unset
 broken: 1
 wrong: 1
 readonly: 1
-greet is a shell builtin
+greet is a shell builtin from plugin b
+greet is a shell builtin from plugin b
 greet
 hello, command
 hello, builtin

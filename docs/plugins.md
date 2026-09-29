@@ -263,7 +263,7 @@ sh::builtin("urlencode", |argv| {
   the `read` built-in, it reads a byte at a time, so the rest is left for the commands after it. To read a whole
   file, `fs::read_file` is much faster.
 - **Lookup**: it ranks as a regular built-in, so a shell function with the same name comes first, and `builtin NAME`
-  or `command NAME` still run it. `type` shows it as a shell builtin. The names of luish's own built-ins can't be
+  or `command NAME` still run it. `type` shows it as a shell builtin from its plugin. The names of luish's own built-ins can't be
   taken. Registering a name again replaces the command, and it goes away when its plugin is unloaded.
 - **Ctrl-C** stops it with status 130, as it stops any extension code.
 

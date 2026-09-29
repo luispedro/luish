@@ -64,6 +64,10 @@ impl Host {
         match *self {}
     }
 
+    fn builtin_plugin(&self, _: &[u8]) -> Option<Vec<u8>> {
+        match *self {}
+    }
+
     fn run_builtin(&self, _: &mut Shell, _: &[Vec<u8>]) -> ExecResult {
         match *self {}
     }
@@ -119,6 +123,11 @@ pub fn completer_names(sh: &Shell) -> Vec<Vec<u8>> {
 /// The names of the built-ins that extensions registered.
 pub fn builtin_names(sh: &Shell) -> Vec<Vec<u8>> {
     sh.plugins.as_ref().map_or_else(Vec::new, |host| host.builtin_names())
+}
+
+/// The name of the plugin that added the built-in `name`, for `type`.
+pub fn builtin_plugin(sh: &Shell, name: &[u8]) -> Option<Vec<u8>> {
+    sh.plugins.as_ref()?.builtin_plugin(name)
 }
 
 /// Runs the extension's built-in `argv[0]` (see [`Shell::lookup_command`]).
