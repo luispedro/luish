@@ -1262,6 +1262,7 @@ impl ShellHelper {
                     Some(Args::Plugin) => match args.first().map(|a| &a[..]) {
                         None => words(
                             &[
+                                b"add".to_vec(),
                                 b"check".to_vec(),
                                 b"list-available".to_vec(),
                                 b"list-loaded".to_vec(),
@@ -1275,6 +1276,7 @@ impl ShellHelper {
                         Some(b"load") if w.text.contains(&b'/') => files(Files::All, &mut out),
                         Some(b"load") => words(&self.plugin_files(), &mut out),
                         Some(b"unload") => words(&self.names.plugins, &mut out),
+                        Some(b"add") if w.text.contains(&b'/') => files(Files::All, &mut out),
                         Some(_) => 0,
                     },
                     Some(Args::Bindkey) => {
@@ -1970,6 +1972,7 @@ mod tests {
         assert_eq!(complete(&h, "plugin l"), ["list-available ", "list-loaded ", "load "]);
         assert_eq!(complete(&h, "plugin u"), ["unload ", "update "]);
         assert_eq!(complete(&h, "plugin c"), ["check "]);
+        assert_eq!(complete(&h, "plugin a"), ["add "]);
         assert_eq!(complete(&h, "plugin load "), ["git ", "prompt ", "work ", "zsh-like "]);
         assert_eq!(complete(&h, "plugin load ~/plugins/p"), ["~/plugins/prompt.rhai "]);
         assert_eq!(complete(&h, "plugin unload "), ["greet "]);

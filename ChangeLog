@@ -1,4 +1,6 @@
 Unreleased
+    * `plugin add`: adds a plugin (a GitHub repository, git or file
+      URL, or path) to `config.toml`, after asking, and fetches it
     * Plugins can add commands: `sh::builtin(name, fn)` registers a
       built-in written in Rhai, and `sh::read_line()` reads its input
     * `type` names the plugin that added a built-in

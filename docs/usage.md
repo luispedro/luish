@@ -22,7 +22,7 @@ no_glob`, `-o prompt_percent`; `+o glob` is the same as
 | `--interactive` | The same as `-i`: an interactive shell, even when standard input is not a terminal |
 | `--stdin` | The same as `-s`: read commands from standard input; the operands are the positional parameters |
 | `--no-rcs` | Don't read any startup files: `config.toml`, `rc.d`, `$ENV`, `luishrc`, and for a login shell `login.d` or `/etc/profile` and `~/.profile`. As zsh's `--no-rcs` |
-| `--no-plugins` | Load no plugins: those that `config.toml` enables, and `plugin load` does nothing (as do `plugin sync`, `plugin update` and `plugin check`), for example to check whether a problem comes from a plugin. The startup caches are neither used nor written |
+| `--no-plugins` | Load no plugins: those that `config.toml` enables, and `plugin load` does nothing (as do `plugin add`, `plugin sync`, `plugin update` and `plugin check`), for example to check whether a problem comes from a plugin. The startup caches are neither used nor written |
 | `--help` | Show a summary of the options and exit |
 | `--version` | Show the version of luish and the git revision it was built from, and exit |
 

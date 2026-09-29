@@ -38,11 +38,11 @@ second (nvm) are otherwise a daily cost.
    `Candidate`, also for plugins), `LS_COLORS` for files, fuzzy matching.
 5. **Fuzz targets** for the lexer, parser, arithmetic and pattern matcher, with a round-trip property: unparsing then
    re-parsing an AST gives the same AST.
-6. **Plugins (Phase 11)**: `precmd`/`preexec` hooks (Phase 13 item 2 needs them), `plugin add` and `plugin remove`.
+6. **Plugins (Phase 11)**: `precmd`/`preexec` hooks (Phase 13 item 2 needs them), `plugin remove`.
 
 ## Phase 11 — Plugin system (Stage 2)
 
-Done: the `plugin` built-in (`load`, `list-loaded`, `list-available`, `unload`, `sync`, `update`, and `restore` for
+Done: the `plugin` built-in (`load`, `list-loaded`, `list-available`, `unload`, `add`, `sync`, `update`, and `restore` for
 the startup cache), directory plugins, plugin packages (below), the byte conversion, the Rhai engine with its limits
 and interrupts, the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks, completers, extension built-ins
 (`sh::builtin`, with `sh::read_line`), part of the `sh` module, and the `fs` and `vcs` modules. Still to do:
@@ -98,10 +98,10 @@ Done (see `DEVELOPING.md` and the plugins page of the user docs): the `[plugins]
 directory plugin's `plugin.toml`, resolved recursively, and its `[options]`, `[alias]` and `[bindkey]` tables;
 `plugins.lock` (pins and the resolved plugins); `plugin sync` and `plugin update`, which run git into
 `$XDG_DATA_HOME/luish/plugins/`; `plugin load SOURCE/NAME` with dependencies; enabled plugins loaded at startup before
-`rc.d`, cached with it; `post-rc.lsh` and the `post-rc` hook. Still to do:
+`rc.d`, cached with it; `post-rc.lsh` and the `post-rc` hook; `plugin add SPEC [NAME]`, which edits
+`config.toml` as text. Still to do:
 
-1. `plugin add SPEC [NAME]` and `plugin remove NAME...`, editing `config.toml` as text (keeping comments, as
-   `cargo add` does), and `plugin gc` for the repositories and checkouts the lock doesn't use (`sync` and `update`
+1. `plugin remove NAME...`, editing `config.toml` as text as `plugin add` does, and `plugin gc` for the repositories and checkouts the lock doesn't use (`sync` and `update`
    never remove them, since a running shell may still read their files).
 2. `plugin list-loaded -l`: each plugin's source and commit, and the enabled plugins that aren't installed.
 3. `login.lsh`: run after `login.d`, in its cache, or uncached after `~/.profile` without `login.d`.

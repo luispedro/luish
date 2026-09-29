@@ -33,6 +33,32 @@ z = { gh = "bob/luish-z" }     # a source of its own
 | `subdir = "DIR"` | Where in the repository (or `path`) the plugin or collection is |
 | `plugin = "NAME"` | In `plugins.enabled`: which plugin of a collection. By default the one with the entry's name, or the only one |
 
+### Adding plugins: `plugin add`
+
+`plugin add` adds a plugin to `config.toml` for you, then runs `plugin sync`
+and loads it. It takes a GitHub repository or URL, another git URL, a local
+path (or `file://` URL), or a plugin of a source that `config.toml` names. It
+fetches a git source first, to check it, and asks before changing the file
+(`-y` doesn't ask):
+
+```console
+$ plugin add https://github.com/bob/luish-z
+Fetching bob/luish-z
+Adding to [plugins.enabled] in /home/me/.config/luish/config.toml:
+    luish-z = { gh = "bob/luish-z" }
+and running plugin sync. Continue? [y/N] y
+Fetching bob/luish-z
+Locking bob/luish-z at 4b1e2a9
+1 git source locked, 1 plugin enabled: luish-z
+$ plugin add std/bash-completion
+```
+
+A second argument names the plugin (`plugin add bob/luish-z z`). The line
+goes at the end of the `[plugins.enabled]` table (a collection of several
+plugins goes in `[plugins.available]`, and then `plugin add SOURCE/NAME` enables
+one of them), and the rest of the file, with its comments, is left as
+it is.
+
 ### Fetching plugins: `plugin sync` and `plugins.lock`
 
 Plugins need to be fetch explicitly, by running `plugin sync`.

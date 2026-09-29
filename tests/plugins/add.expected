@@ -1,0 +1,100 @@
+--- declined: nothing changes
+Fetching file://~/single
+Adding to [plugins.enabled] in ~/.config/luish/config.toml:
+    single = { git = "file://~/single" }
+and running plugin sync. Continue? [y/N] Nothing changed
+status 1
+Fetching file://~/single
+Adding to [plugins.enabled] in ~/.config/luish/config.toml:
+    single = { git = "file://~/single" }
+and running plugin sync. Continue? [y/N] Nothing changed
+status 1
+Fetching file://~/single
+Adding to [plugins.enabled] in ~/.config/luish/config.toml:
+    single = { git = "file://~/single" }
+and running plugin sync. Continue? [y/N] 
+Nothing changed
+status 1
+same
+--- a git URL, accepted
+Fetching file://~/single
+Adding to [plugins.enabled] in ~/.config/luish/config.toml:
+    single = { git = "file://~/single" }
+and running plugin sync. Continue? [y/N] Fetching file://~/single
+Fetching std
+Locking file://~/single at 8f1244e
+Locking std at 8894f95
+2 git sources locked, 1 plugin enabled: single
+single loaded
+status 0
+--- a git collection goes to plugins.available
+Fetching file://~/gcoll
+Fetching gcoll
+Locking gcoll at 29d0fa1
+3 git sources locked, 1 plugin enabled: single
+gcoll has 2 plugins: p, q. Load one with plugin load gcoll/p, or enable it with plugin add gcoll/p
+status 0
+q
+README
+src
+--- a git repository that is not there is not added
+luish: 1: __luish_internal plugin: ~/nothing.git/: no such file or directory
+status 1
+status 1
+0
+--- a plugin of a named source, and one of the plugin directory
+3 git sources locked, 2 plugins enabled: single, hello
+hello from std
+status 0
+3 git sources locked, 3 plugins enabled: single, hello, mine
+mine loaded
+status 0
+--- a local path, with a name; a local collection
+3 git sources locked, 4 plugins enabled: single, hello, mine, first
+a
+status 0
+3 git sources locked, 4 plugins enabled: single, hello, mine, first
+coll has 2 plugins: a, b. Load one with plugin load coll/a, or enable it with plugin add coll/a
+status 0
+3 git sources locked, 5 plugins enabled: single, hello, mine, first, b
+b
+status 0
+# My configuration.
+[plugins.available]
+std = { git = "file://~/luish", subdir = "std" }
+gcoll = { git = "file://~/gcoll" }
+coll = { path = "~/coll" }
+
+[plugins.enabled]
+# Nothing yet.
+single = { git = "file://~/single" }
+"std/hello" = "*"
+mine = "*"
+first = { path = "~/coll/a" }
+b = { path = "~/coll/b" }
+
+[options]
+--- startup loads them
+single loaded
+hello from std
+mine loaded
+a
+b
+--- errors
+luish: 1: __luish_internal plugin: first: already in plugins.enabled (give another name as the second argument)
+status 1
+luish: 1: __luish_internal plugin: nothing: no such file or directory, and not a GitHub repository (OWNER/REPO) or URL
+status 1
+luish: 1: __luish_internal plugin: o/r/blob/main/x: not a GitHub repository or directory
+status 1
+luish: 1: __luish_internal plugin: ./nothing: no such file or directory
+status 1
+luish: 1: __luish_internal plugin: usage: plugin add [-y] PLUGIN [NAME]
+status 2
+luish: 1: __luish_internal plugin: cannot add to ~/.config/luish/config.toml: add this to its [plugins.enabled] table yourself:
+a = { path = "~/coll/a" }
+status 1
+--- a configuration that is a symbolic link stays one
+status 0
+[plugins.enabled]
+b = { path = "~/coll/b" }

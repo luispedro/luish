@@ -172,6 +172,8 @@ under `[plugins.enabled]`, and run `plugin sync` again:
 std.bash-completion = "*"
 ```
 
+(`plugin add std/bash-completion` does both.)
+
 Compared to luish-native completion, this is slower (each completion takes
 about 50 ms, as it runs bash), and gives no descriptions.
 

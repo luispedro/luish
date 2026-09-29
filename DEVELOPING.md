@@ -690,10 +690,23 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   cache) holds these, since startup needs them and can't recreate them, with a `README` saying that `plugin sync`
   fetches them again; the bare repositories are only for fetching, so they are in the cache (whose `README` lists
   them).
-- Not yet done (see `PLAN.md`): `plugin add`/`remove`/`gc`, version requirements other than `"*"`, `flock` for
+- `plugin add` (`add.rs`) turns its argument into one line of `config.toml` (`parse`, unit-tested with the
+  GitHub URL forms: a `file:` URL is a path, percent-decoded, unless it is a git repository (a `.git`, or `HEAD`
+  and `objects`); a path if it starts with `/`, `.` or `~`; `gh:`/GitHub URLs; other URLs; `SOURCE/NAME` of a
+  named source; an existing relative path; then `OWNER/REPO`), adds it as text after the last non-blank line of its
+  table (`insert`, keeping comments; a new table at the end if there is none), and reads the new text with
+  `package::config_names` before writing: if the entry isn't there (say `[plugins]` has `enabled = {...}`, which a new
+  `[plugins.enabled]` would duplicate), it prints the line to add by hand. It asks on stderr and reads the answer a
+  byte at a time from fd 0 (no answer is no), writes through the symbolic link if `config.toml` is one, then runs
+  `sync` and `package::load_added`. Before asking, a git source is fetched (`fetch::resolve`, into the cache's bare
+  repository) and extracted into a temporary data directory (`DATA/.add.PID`, removed after), to see whether it is
+  a collection of more than one plugin (`holds`), which goes to `plugins.available`; so `sync` fetches it a second
+  time, which the bare repository makes cheap. A source that can't be fetched leaves `config.toml` alone. Test:
+  `tests/plugins/add.sh`.
+- Not yet done (see `PLAN.md`): `plugin remove`/`gc`, version requirements other than `"*"`, `flock` for
   concurrent syncs, `login.lsh`.
 - Tests: `tests/plugins/*` (packages: `packages.sh` for local sources, `git_packages.sh` for git ones with
-  `file://` repositories, `post_rc.sh`, `manifest.sh`; completers through `__luish_internal complete`:
+  `file://` repositories, `add.sh`, `post_rc.sh`, `manifest.sh`; completers through `__luish_internal complete`:
   `complete.sh`, and `std_completion.sh` and `std_completion_more.sh` for `luish-std-plugins/completion`, found through
   `$STD_PLUGINS`, the latter with stand-ins for the programs it runs), `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit
   tests for the byte conversion, `git status` parsing and (with a stand-in completer) in `complete.rs`, and

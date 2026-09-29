@@ -157,13 +157,13 @@ fn print_problems(sh: &Shell, cmd: Option<&[u8]>, problems: &[Problem]) {
     }
 }
 
-fn github_url(repo: &str) -> String {
+pub(super) fn github_url(repo: &str) -> String {
     format!("https://github.com/{repo}.git")
 }
 
 /// A plugin's or a source's name: not empty, without `/`, not starting
 /// with `.`.
-fn valid_name(s: &str) -> bool {
+pub(super) fn valid_name(s: &str) -> bool {
     !s.is_empty() && !s.starts_with('.') && !s.contains(['/', '\0', '\n'])
 }
 
@@ -459,17 +459,22 @@ fn is_source(t: &Table<'_>) -> bool {
 /// Parses the TOML file `file` and gives its top-level table to `f`.
 /// `Ok(None)` if the file doesn't exist. Messages call it `shown`.
 fn with_toml<R>(file: &[u8], shown: &[u8], f: impl FnOnce(&str, Table<'_>) -> R) -> Result<Option<R>, Problem> {
-    let Ok(bytes) = std::fs::read(to_path(file)) else {
-        return Ok(None);
-    };
+    match std::fs::read(to_path(file)) {
+        Ok(bytes) => with_toml_text(&bytes, shown, f),
+        Err(_) => Ok(None),
+    }
+}
+
+/// [`with_toml`] on the text of a file.
+fn with_toml_text<R>(bytes: &[u8], shown: &[u8], f: impl FnOnce(&str, Table<'_>) -> R) -> Result<Option<R>, Problem> {
     let problem = |offset: usize, msg: String| Problem {
         loc: Some(Loc {
             file: shown.to_vec(),
-            line: line_of(&bytes, offset),
+            line: line_of(bytes, offset),
         }),
         msg,
     };
-    let text = std::str::from_utf8(&bytes).map_err(|_| problem(0, "not valid UTF-8".into()))?;
+    let text = std::str::from_utf8(bytes).map_err(|_| problem(0, "not valid UTF-8".into()))?;
     let mut root = toml_span::parse(text).map_err(|e| problem(e.span.start, e.to_string()))?;
     match root.take() {
         ValueInner::Table(t) => Ok(Some(f(text, t))),
@@ -493,15 +498,24 @@ fn read_config(sh: &Shell, problems: &mut Vec<Problem>) -> Result<Config, Proble
     let Some(file) = crate::config::path(sh) else {
         return Ok(Config::default());
     };
-    let config = with_toml(&file, &file, |text, mut root| {
+    match std::fs::read(to_path(&file)) {
+        Ok(bytes) => parse_config(sh, &file, &bytes, problems),
+        Err(_) => Ok(Config::default()),
+    }
+}
+
+/// The `[plugins]` table of the text `bytes` of the configuration file
+/// `file`, as [`read_config`].
+fn parse_config(sh: &Shell, file: &[u8], bytes: &[u8], problems: &mut Vec<Problem>) -> Result<Config, Problem> {
+    let config = with_toml_text(bytes, file, |text, mut root| {
         let Some(value) = root.remove("plugins") else {
             return Config::default();
         };
         let mut r = Reader {
             sh,
-            file: &file,
+            file,
             text,
-            base: parent(&file),
+            base: parent(file),
             problems,
         };
         r.plugins(value)
@@ -615,7 +629,7 @@ fn read_lock(file: &[u8]) -> Result<Vec<Pin>, LockError> {
 }
 
 /// A TOML basic string.
-fn toml_str(s: &str) -> String {
+pub(super) fn toml_str(s: &str) -> String {
     let mut out = String::from("\"");
     for c in s.chars() {
         match c {
@@ -660,7 +674,7 @@ fn lock_text(pins: &[Pin], plugins: &[Resolved]) -> String {
 
 /// Writes `text` to `file` through a rename, unless it already holds it
 /// (so that the startup cache, which records the file, stays valid).
-fn write_file(file: &[u8], text: &str) -> Result<(), String> {
+pub(super) fn write_file(file: &[u8], text: &str) -> Result<(), String> {
     if std::fs::read(to_path(file)).is_ok_and(|t| t == text.as_bytes()) {
         return Ok(());
     }
@@ -1166,8 +1180,14 @@ pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8]) -> ExecResult {
         };
         r.add(&name, found, &label, &dir.clone(), Some(dir), None).is_ok()
     };
+    load_resolved(cmd, r, ok)
+}
+
+/// Loads the plugins that `r` resolved (`ok` if it could), those that
+/// aren't loaded yet and the last one.
+fn load_resolved(cmd: &[u8], mut r: Resolver, ok: bool) -> ExecResult {
     r.report_missing();
-    let (done, problems) = (r.done, r.problems);
+    let (sh, done, problems) = (r.sh, r.done, r.problems);
     print_problems(sh, Some(cmd), &problems);
     if !ok {
         return Ok(1);
@@ -1182,6 +1202,47 @@ pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8]) -> ExecResult {
         }
     }
     Ok(status)
+}
+
+/// For `plugin add`: loads the plugin `name` of `plugins.enabled`.
+pub(super) fn load_added(sh: &mut Shell, cmd: &[u8], name: &str) -> ExecResult {
+    let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
+    let Some(e) = config.enabled.iter().find(|e| e.name == name) else {
+        return Ok(0);
+    };
+    let pins = read_lock(&lock_path(sh).unwrap_or_default()).unwrap_or_default();
+    let mut r = Resolver::new(sh, &config, pins, Fetching::No);
+    let ok = r.resolve(e, &Scope::Config).is_ok();
+    load_resolved(cmd, r, ok)
+}
+
+/// For `plugin add`: the names in `plugins.enabled` and in
+/// `plugins.available` of the text `bytes` of the configuration file
+/// `file`, or its first problem.
+pub(super) fn config_names(sh: &Shell, file: &[u8], bytes: &[u8]) -> Result<(Vec<String>, Vec<String>), String> {
+    let mut problems = Vec::new();
+    let config = parse_config(sh, file, bytes, &mut problems).map_err(|p| problem_text(&p))?;
+    if let Some(p) = problems.first() {
+        return Err(problem_text(p));
+    }
+    Ok((
+        config.enabled.into_iter().map(|e| e.name).collect(),
+        config.available.into_iter().map(|(n, _)| n).collect(),
+    ))
+}
+
+fn problem_text(p: &Problem) -> String {
+    match &p.loc {
+        Some(l) => format!("{}: line {}: {}", String::from_utf8_lossy(&l.file), l.line, p.msg),
+        None => p.msg.clone(),
+    }
+}
+
+/// For `plugin add`: whether `name` is a source (in `plugins.available`,
+/// or `std`).
+pub(super) fn is_named_source(sh: &Shell, name: &str) -> bool {
+    let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
+    config.named(name).is_some()
 }
 
 /// The first 7 characters of a commit hash, as messages show it.

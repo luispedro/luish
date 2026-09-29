@@ -5,6 +5,8 @@
 //! (`Shell::plugins`); the Rhai engine waits for the first extension.
 
 #[cfg(feature = "plugins")]
+mod add;
+#[cfg(feature = "plugins")]
 mod bytes;
 #[cfg(feature = "plugins")]
 mod fetch;
@@ -148,7 +150,7 @@ pub fn complete(sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Compl
 }
 
 const USAGE: &str = "usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available, plugin unload NAME..., \
-                     plugin sync [-q], plugin update [-q] [SOURCE...], plugin check";
+                     plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check";
 
 /// The `plugin` built-in (interactive shells only, like `help`).
 pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
@@ -156,8 +158,8 @@ pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 }
 
 /// `plugin load NAME|PATH...`, `plugin list-loaded`, `plugin list-available`,
-/// `plugin unload NAME...`, `plugin sync [-q]`, `plugin update [-q]
-/// [SOURCE...]` and `plugin check`, also available as `__luish_internal
+/// `plugin unload NAME...`, `plugin add [-y] PLUGIN [NAME]`, `plugin
+/// sync [-q]`, `plugin update [-q] [SOURCE...]` and `plugin check`, also available as `__luish_internal
 /// plugin`. `name` is the command, for error messages.
 ///
 /// `plugin restore NAME PATH`, which `savestate` prints, loads a plugin
@@ -208,6 +210,7 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
             }
         }
         Some(b"check") if args.is_empty() => check(sh, name),
+        Some(b"add") => add(sh, name, args),
         Some(b"unload") if !args.is_empty() => {
             let mut status = 0;
             for a in args {
@@ -653,6 +656,18 @@ fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>, quiet: bool) -> 
 
 #[cfg(not(feature = "plugins"))]
 fn sync(sh: &mut Shell, cmd: &[u8], _: Option<&[Vec<u8>]>, _: bool) -> ExecResult {
+    sh.berr(cmd, "luish was built without plugin support");
+    Ok(1)
+}
+
+/// `plugin add`.
+#[cfg(feature = "plugins")]
+fn add(sh: &mut Shell, cmd: &[u8], args: &[Vec<u8>]) -> ExecResult {
+    add::add(sh, cmd, args)
+}
+
+#[cfg(not(feature = "plugins"))]
+fn add(sh: &mut Shell, cmd: &[u8], _: &[Vec<u8>]) -> ExecResult {
     sh.berr(cmd, "luish was built without plugin support");
     Ok(1)
 }
