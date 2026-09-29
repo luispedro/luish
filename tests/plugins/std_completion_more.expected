@@ -443,6 +443,17 @@ notes.txt
 status 0
 --- gh nosuch 
 status 1
+--- frob n
+notes.txt 
+status 0
+complete-cobra 0
+--- frob 
+down 	Stop
+up 	Start
+status 0
+gh
+frob
+complete-cobra 1
 === nix
 --- nix bu
 build 

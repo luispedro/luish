@@ -661,7 +661,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   if it has one), `--` the long names. Package managers list the installable packages only for a word with a letter
   (apt has about 90,000), and not at all for dnf, yum and zypper. `bridges.rhai` asks programs that complete
   themselves: Cobra's (`PROG __complete ARGS... WORD`, whose last line `:N` has flags: 2 no space, 4 no filenames, 8
-  extensions, 16 directories; the values of `--flag=` come without the prefix, which the bridge adds back) and nix's
+  extensions, 16 directories; the values of `--flag=` come without the prefix, which the bridge adds back; the
+  extension's `complete-cobra PROG...` built-in registers more of them, and lists them without arguments) and nix's
   (`NIX_GET_COMPLETIONS=N`, whose first line is `normal`, `filenames` or `attrs`, the last with no space after, and
   whose descriptions are Markdown). The extension only registers the commands (a map from command to module, which the
   closures share); a completer imports its module, so each is compiled on its first Tab (5 to 10 ms; later ones take

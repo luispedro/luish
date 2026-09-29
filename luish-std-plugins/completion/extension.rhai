@@ -2,7 +2,8 @@
 // one of the modules below (specs.rhai for coreutils, grep, diffutils, tar,
 // make, rsync, man, ssh ...), and completed by lib.rhai. Programs that
 // complete themselves (those built with Cobra, and nix) are asked, in
-// bridges.rhai. git is completed by git.rhai.
+// bridges.rhai; `complete-cobra PROG...` adds more of them. git is
+// completed by git.rhai.
 //
 // The modules are imported by the completer, so that they are compiled on
 // the first Tab for one of their commands rather than whenever a shell
@@ -62,12 +63,34 @@ let cobra = [
     "kn", "crane", "cosign", "syft", "grype", "trivy", "etcdctl", "doctl", "flyctl", "hugo", "rclone", "chezmoi",
     "golangci-lint", "goreleaser", "dagger", "operator-sdk",
 ];
-for cmd in cobra {
+fn cobra_completer(cmd) {
     sh::completer(cmd, |words, i| {
         import "bridges" as bridges;
         bridges::cobra(words, i)
     });
 }
+for cmd in cobra {
+    cobra_completer(cmd);
+}
+// complete-cobra PROG...: complete PROG... as programs built with Cobra;
+// without arguments, list those programs.
+sh::builtin("complete-cobra", |argv| {
+    if argv.len() < 2 {
+        for cmd in cobra {
+            print(cmd);
+        }
+        return;
+    }
+    for cmd in argv.extract(1) {
+        if cmd == "" || cmd.contains("/") {
+            throw `${cmd}: bad command name`;
+        }
+        cobra_completer(cmd);
+        if !cobra.contains(cmd) {
+            cobra.push(cmd);
+        }
+    }
+});
 sh::completer("nix", |words, i| {
     import "bridges" as bridges;
     bridges::nix(words, i)

@@ -7,7 +7,7 @@ and will become a repository of its own, as an example of how a plugin collectio
 
 | Plugin | What it does | Needs |
 |---|---|---|
-| `completion` | Tab completion for about 230 common commands: their options (with descriptions), the values of options, their subcommands, and their other arguments (directories for `mkdir`, users and groups for `chown`, make's targets, ssh's hosts, man pages, the files in an archive for `tar -xf`, systemd's units, installed and available packages, cargo's targets and features, pixi's and npm's tasks ...). Programs built with Cobra (gh, docker, kubectl ...) and nix are asked for their own completions. git: its commands (with descriptions) and aliases, the options of each command, and the arguments each command takes (branches, tags, ranges such as `main..`, remotes, stashes, worktrees, and the files it can act on: modified and untracked files for `git add`, staged ones for `git restore --staged`, ...) | |
+| `completion` | Tab completion for about 230 common commands: their options (with descriptions), the values of options, their subcommands, and their other arguments (directories for `mkdir`, users and groups for `chown`, make's targets, ssh's hosts, man pages, the files in an archive for `tar -xf`, systemd's units, installed and available packages, cargo's targets and features, pixi's and npm's tasks ...). Programs built with Cobra (gh, docker, kubectl ..., and more with `complete-cobra PROG...`) and nix are asked for their own completions. git: its commands (with descriptions) and aliases, the options of each command, and the arguments each command takes (branches, tags, ranges such as `main..`, remotes, stashes, worktrees, and the files it can act on: modified and untracked files for `git add`, staged ones for `git restore --staged`, ...) | |
 | `bash-completion` | Completion from [bash-completion](https://github.com/scop/bash-completion), for the commands that have no completer of their own | bash, bash-completion |
 
 For git, `completion` runs git with the options of the command line that choose the repository (`-C DIR`,
@@ -33,7 +33,9 @@ so they follow the installed version of git. Options that start with `--no-` are
   snap and flatpak (`packages.rhai`);
 - git (`git.rhai`);
 - programs that complete themselves (`bridges.rhai`): those built with Cobra (gh, glab, docker, podman, kubectl, helm,
-  minikube, kind, hugo, rclone ...), which answer `PROG __complete ARGS...`, and nix (`NIX_GET_COMPLETIONS`).
+  minikube, kind, hugo, rclone ...), which answer `PROG __complete ARGS...`, and nix (`NIX_GET_COMPLETIONS`). For
+  another Cobra program, run `complete-cobra PROG...` (in a file of `rc.d`, say) once the plugin is loaded; without
+  arguments, it lists the programs.
 
 Each command is a spec: its options as a table written like `--help` output, what the values of options complete to,
 its subcommands, and what its arguments complete to (a kind from `kinds.rhai`, such as `dirs`, `users` or `hosts`, or

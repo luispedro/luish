@@ -1,9 +1,9 @@
 # More of the completion plugin of luish-std-plugins (std/completion):
 # shells, find, subcommands (systemctl, apt, pip ...), operations (pacman
-# -S), programs read from their -h (cargo, pixi), Cobra programs, nix and
-# openssl. Programs that the completers run are stand-ins in ~/bin, and
-# files such as Cargo.toml are made here, so that nothing depends on what
-# is installed.
+# -S), programs read from their -h (cargo, pixi), Cobra programs (and
+# complete-cobra), nix and openssl. Programs that the completers run are
+# stand-ins in ~/bin, and files such as Cargo.toml are made here, so that
+# nothing depends on what is installed.
 __luish_internal plugin load "$STD_PLUGINS/completion"
 echo "load $?"
 c() {
@@ -216,6 +216,14 @@ c 'gh pr list --state='
 c 'gh pr list --state '
 c 'gh pr checkout n'
 c 'gh nosuch '
+w frob '[ "$1" = __complete ] && printf "up\tStart\ndown\tStop\n:4\n"'
+c 'frob n'
+complete-cobra frob
+echo "complete-cobra $?"
+c 'frob '
+complete-cobra | grep -x -e gh -e frob
+complete-cobra a/b 2>/dev/null
+echo "complete-cobra $?"
 
 echo "=== nix"
 w nix 'case "$NIX_GET_COMPLETIONS:$*" in

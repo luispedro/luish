@@ -13,7 +13,7 @@ Unreleased
       uv, conda, pixi, npm, yarn, pnpm, apt, dpkg, dnf, rpm, pacman,
       zypper, apk, brew, snap, flatpak ...
     * std.completion asks Cobra programs (gh, docker, kubectl ...) and nix
-      for their completions
+      for their completions; `complete-cobra PROG...` adds more programs
     * std.git-completion is now part of std.completion
 
 Version 0.2.0 2026-09-29 by luispedro

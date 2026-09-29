@@ -431,6 +431,8 @@ The `std` library is tied to the version of luish, so it is not affected by
     restore --staged`, ...);
   - programs that complete themselves: those built with Cobra (gh, glab,
     docker, podman, kubectl, helm, minikube, kind, hugo, rclone, ...) and nix.
+    For another program built with Cobra, `complete-cobra PROG...` (in
+    a file of `rc.d`, for instance) adds it; without arguments, it lists them.
 
   The options of cargo's subcommands, rustup, uv, pixi and openssl's commands
   are read from their `-h`, so they follow the installed version. Short
