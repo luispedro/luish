@@ -1,52 +1,13 @@
 // The engine of the completers: a command is described by a spec, a map,
 // and `complete(spec, words, i)` completes the word `words[i]` of it.
 //
-// A spec has these fields, all optional:
-//
-// - `opts`: the options, as a table in the style of `--help`: one line per
-//   option, with its names (`-a, --all`), then at least two spaces and its
-//   description. `--name=ARG`, `--name ARG`, `--name <ARG>` or `-n ARG`
-//   means that the option takes a value (with all its names), and
-//   `--name[=ARG]` that its long name can take one after `=`.
-// - `values`: what the values of options complete to, by one of the
-//   option's names: a kind (see `kinds.rhai`) or an array of candidates.
-//   By default, filenames.
-// - `args`: the kinds of the arguments that aren't options, in order; the
-//   last one repeats. By default, `["files"]`.
-// - `args_if`: the `args` to use instead when an option is given, by one
-//   of the option's names (such as `grep -e PATTERN`, after which the
-//   first argument is a file).
-// - `single_dash`: true for a command whose long options start with a
-//   single `-` and can't be combined (`find -name`, `gcc -Wall`). An
-//   option written `-name=ARG` takes its value after `=`, and `-name ARG`
-//   as the next word.
-// - `commands`: the subcommands (`cargo build`), as a table like `opts`:
-//   one line per subcommand, with its names (`build, b`), two spaces and
-//   its description. The first word that isn't an option is the
-//   subcommand, and the rest of the line is completed with its spec.
-// - `subs`: the specs of the subcommands, by their first name (by default,
-//   a spec with no options and files as arguments).
-// - `sub_spec`: for the subcommands not in `subs`, `MODULE:NAME` for
-//   `MODULE::sub_spec(NAME, SUBCOMMAND)`, which gives the spec of a
-//   subcommand when it is needed (from its `--help`, for instance).
-// - `common`: options that are also valid after the subcommand, in any
-//   subcommand (and in theirs), as a table like `opts`.
-// - `strict_eq`: true for a command whose long options take their value
-//   after `=` only if the table says so (`--name=ARG`, not `--name ARG`).
-//   Otherwise a long option that takes a value is offered as `--name=`.
-// - `guess_values`: true to complete the values of the options that have
-//   none in `values` by the name of their argument: filenames for a name
-//   with `FILE` or `PATH` in it (in any case), directories for one with
-//   `DIR`, and nothing otherwise (rather than filenames).
-// - `skip`: prefixes of words that are neither options nor arguments, such
-//   as `+` for `cargo +nightly`, with the kinds they complete to (after
-//   the prefix).
-// - `modes`: specs by the name of an option that chooses an operation
-//   (`pacman -S`): once it is given, the line is completed with its spec,
-//   whose options are added to the command's.
-//
-// The values in `values` of a command are also those of its subcommands
-// and modes, unless they have their own.
+// The fields of a spec, the format of its option tables and the kinds are
+// documented in docs/plugins.md ("Reusing std's completion engine"), as
+// other plugins use them (with `import "@std/completion/lib"`): new fields
+// and kinds can be added, but those there must keep their meaning. Two
+// fields are internal: `line`, the whole command line (for the kinds of a
+// subcommand, whose `words` start at its name), and `hide`, the options
+// that are valid in a mode but not offered.
 
 import "kinds" as kinds;
 

@@ -175,7 +175,8 @@ reads `hts/common.rhai`). This holds wherever the code runs: in a function or cl
 extension calls it. `NAME` can also be an absolute path, without `.rhai`.
 
 A plugin can use the modules of another plugin: `import "@SOURCE/PLUGIN/MODULE"` reads `MODULE.rhai` in the
-directory of `PLUGIN`, such as `import "@std/completion/lib"` for std's completion engine. That plugin must be loaded, so list it in the `[dependencies]` of
+directory of `PLUGIN`, such as `import "@std/completion/lib"` for std's completion engine (see
+[Reusing std's completion engine](#reusing-stds-completion-engine)). That plugin must be loaded, so list it in the `[dependencies]` of
 your `plugin.toml` (here `std.completion = "*"`), which loads it first. It is found by its name, whether it was
 loaded from its source, by `plugin load` or from a path; `SOURCE` is written as in `[dependencies]`. The module's own
 imports are relative to its files, as above.
@@ -457,6 +458,8 @@ The `std` library is tied to the version of luish, so it is not affected by
   options can be combined: `ls -la` offers the options that can follow. Each
   of its modules is compiled on the first Tab
   for one of its commands (a few milliseconds), so loading it costs little.
+  Other plugins can complete their commands with its engine (see
+  [below](#reusing-stds-completion-engine)).
 - **`bash-completion`** uses
   [bash-completion](https://github.com/scop/bash-completion), which completes
   the arguments of about a thousand commands, and for which many programs
@@ -660,3 +663,193 @@ sh::completer("git", |words, i| {
 });
 ```
 
+
+## Reusing std's completion engine
+
+`std.completion` completes its commands from **specs**, maps that describe a command's options, their values, its
+subcommands and its arguments, with an engine that other plugins can use for their own commands:
+`lib::complete(spec, words, i)`, from `import "@std/completion/lib"`, completes the word `words[i]` of the command
+`words`, as a completer does.
+
+The spec format, the kinds and `lib::complete` are part of luish's interface: std is tied to the version of luish,
+and later versions keep accepting the specs of earlier ones.
+
+### Specs
+
+A spec has these fields, all optional:
+
+| Field | Meaning |
+|---|---|
+| `opts` | The options, as a table in the style of `--help` (see below). |
+| `values` | What the values of options complete to, by one of the option's names: a kind or an array of candidates. By default, filenames. |
+| `args` | The kinds of the arguments that aren't options, in order; the last one repeats. By default, `["files"]`. |
+| `args_if` | The `args` to use instead when an option is given, by one of the option's names (such as `grep -e PATTERN`, after which the first argument is a file). |
+| `commands` | The subcommands (`cargo build`), as a table like `opts`: one line per subcommand, with its names (`build, b`), two spaces and its description. The first word that isn't an option is the subcommand, and the rest of the line is completed with its spec. |
+| `subs` | The specs of the subcommands, by their first name (by default, a spec with no options and files as arguments). |
+| `sub_spec` | For the subcommands not in `subs`: `MODULE:NAME`, for `MODULE::sub_spec(NAME, SUBCOMMAND)`, which gives the spec of a subcommand (or `()`) when it is needed (from its `--help`, for instance). |
+| `common` | Options that are also valid after the subcommand, in any subcommand (and in theirs), as a table like `opts`. |
+| `modes` | Specs by the name of an option that chooses an operation (`pacman -S`): once it is given, the line is completed with its spec, whose options are added to the command's. |
+| `single_dash` | True for a command whose long options start with a single `-` and can't be combined (`find -name`, `gcc -Wall`). An option written `-name=ARG` takes its value after `=`, and `-name ARG` as the next word. |
+| `strict_eq` | True for a command whose long options take their value after `=` only if the table says so (`--name=ARG`, not `--name ARG`). Otherwise a long option that takes a value is offered as `--name=`. |
+| `guess_values` | True to complete the values of the options that have none in `values` by the name of their argument: filenames for a name with `FILE` or `PATH` in it (in any case), directories for one with `DIR`, and nothing otherwise (rather than filenames). |
+| `skip` | Prefixes of words that are neither options nor arguments, such as `+` for `cargo +nightly`, with the kinds they complete to (after the prefix). |
+
+The `values` of a command are also those of its subcommands and modes, unless they have their own.
+
+An options table has one line per option: its names (`-a, --all`), then at least two spaces and its description.
+`--name=ARG`, `--name ARG`, `--name <ARG>` or `-n ARG` means that the option takes a value (with all its names), and
+`--name[=ARG]` that its long name can take one after `=`:
+
+```rhai
+let opts = `
+    -a, --all             do not ignore entries starting with .
+    --color[=WHEN]        colorize the output
+    -I, --ignore=PATTERN  do not list entries matching PATTERN
+    -w, --width COLS      set the output width
+`;
+```
+
+### Kinds
+
+A kind says what a value or an argument completes to:
+
+| Kind | Candidates |
+|---|---|
+| `files` | filenames (luish's own) |
+| `dirs` | directories |
+| `none` | nothing: a value to type, such as a number |
+| `users`, `groups` | the users and groups in `/etc/passwd` and `/etc/group` |
+| `owner` | `USER` or `USER:GROUP` (chown) |
+| `mode` | file modes (chmod) |
+| `signals` | signal names |
+| `processes`, `pids` | the names and the IDs of the running processes |
+| `hosts` | ssh's hosts (`~/.ssh/config`) and `/etc/hosts`, after an optional `USER@` |
+| `remote` | files, or `HOST:` for a path on a host (scp, rsync) |
+| `manpages`, `sections` | manual pages (in the section given before, if any) and sections |
+| `targets` | make's targets, from the makefile |
+| `members` | the files in the archive of `tar -f ARCHIVE` |
+| `dd` | dd's operands (`if=FILE`, `bs=BYTES`, `conv=CONVS` ...) and their values |
+| `commands` | the commands in `PATH` |
+| `MODULE:NAME` | `MODULE::kind(NAME, cur, words)` |
+
+An array is its own candidates.
+
+A plugin's own kinds and subcommand specs are functions of its modules, named `@SOURCE/PLUGIN/MODULE:NAME` (a
+`MODULE:NAME` without `@` is one of std's own modules). `MODULE::kind(NAME, cur, words)` completes the word `cur` (the
+value, without an option before it) of the command line `words`, which starts with the command even in a
+subcommand, and returns what a completer returns: candidates, a map with a `prefix`, or `()` for filenames.
+`MODULE::sub_spec(NAME, SUBCOMMAND)` returns the spec of a subcommand, or `()`. A module can use its own functions
+and import its neighbours in these functions, as anywhere else.
+
+### Example
+
+A plugin `bio`, in a collection enabled as `extra` in `config.toml`, completes `samtools`:
+
+```text
+bio/
+├── plugin.toml
+├── extension.rhai
+├── kinds.rhai
+└── specs/
+    └── samtools.rhai
+```
+
+```toml
+# bio/plugin.toml
+description = "Completion for bioinformatics tools"
+
+[dependencies]
+std.completion = "*"
+```
+
+The extension only registers the completer; the modules are compiled on the first Tab:
+
+```rhai
+// bio/extension.rhai
+sh::completer("samtools", |words, i| {
+    import "@std/completion/lib" as lib;
+    import "specs/samtools" as samtools;
+    lib::complete(samtools::spec(), words, i)
+});
+```
+
+```rhai
+// bio/specs/samtools.rhai
+fn spec() {
+    #{
+        commands: `
+            view   view and convert SAM, BAM and CRAM files
+            faidx  index a FASTA file, or extract regions from it
+            index  index a BAM or CRAM file
+        `,
+        sub_spec: "@extra/bio/specs/samtools:sub",
+    }
+}
+
+fn sub_spec(name, sub) {
+    switch sub {
+        "view" => #{
+            opts: `
+                -b, --bam             output BAM
+                -h, --with-header     include the header
+                -H, --header-only     print only the header
+                -o, --output FILE     write to FILE
+                -T, --reference FILE  the reference FASTA
+            `,
+            values: #{"-T": "@extra/bio/kinds:fasta"},
+            args: ["@extra/bio/kinds:alignments", "none"],
+        },
+        "faidx" => #{
+            opts: "-o, --output FILE  write to FILE",
+            args: ["@extra/bio/kinds:fasta", "@extra/bio/kinds:regions"],
+        },
+        "index" => #{args: ["@extra/bio/kinds:alignments"]},
+        _ => (),
+    }
+}
+```
+
+```rhai
+// bio/kinds.rhai
+// The files in the directory of `cur` whose names end in one of `suffixes`,
+// and the directories.
+fn with_suffix(cur, suffixes) {
+    let parts = cur.split_rev("/", 2);   // ["name", "dir"] or ["name"]
+    let name = parts[0];
+    let dir = if parts.len() == 2 { parts[1] + "/" } else { "" };
+    let out = [];
+    for n in fs::list_dir(if dir == "" { "." } else { dir }) ?? [] {
+        if n.starts_with(".") && !name.starts_with(".") {
+            continue;
+        }
+        if fs::is_dir(dir + n) {
+            out.push(#{value: dir + n + "/", suffix: ""});
+        } else if suffixes.some(|s| n.ends_with(s)) {
+            out.push(dir + n);
+        }
+    }
+    out
+}
+
+// The names of the sequences of the FASTA file before, from its index.
+fn regions(words) {
+    for w in words {
+        if w.ends_with(".fa") || w.ends_with(".fasta") {
+            let fai = fs::read_file(w + ".fai") ?? "";
+            return fai.split("\n").filter(|l| l != "").map(|l| l.split("\t")[0]);
+        }
+    }
+    []
+}
+
+fn kind(name, cur, words) {
+    switch name {
+        "fasta" => with_suffix(cur, [".fa", ".fasta", ".fa.gz", ".fasta.gz"]),
+        "alignments" => with_suffix(cur, [".sam", ".bam", ".cram"]),
+        "regions" => regions(words),
+        _ => throw `unknown kind: ${name}`,
+    }
+}
+```
+
+`@extra/bio/...` finds the plugin by its name, `bio`, however the user named its source; `extra` is for the reader.

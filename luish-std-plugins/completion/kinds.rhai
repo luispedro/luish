@@ -2,26 +2,10 @@
 // by kind: `complete(kind, cur, words)` completes the word `cur` (the
 // value, without an option before it) of the command `words`.
 //
-// | Kind | Candidates |
-// |---|---|
-// | `files` | filenames (luish's own) |
-// | `dirs` | directories |
-// | `none` | nothing: a value to type, such as a number |
-// | `users`, `groups` | the users and groups in `/etc/passwd` and `/etc/group` |
-// | `owner` | `USER` or `USER:GROUP` (chown) |
-// | `mode` | file modes (chmod) |
-// | `signals` | signal names |
-// | `processes`, `pids` | the names and the IDs of the running processes |
-// | `hosts` | ssh's hosts (`~/.ssh/config`) and `/etc/hosts`, after an optional `USER@` |
-// | `remote` | files, or `HOST:` for a path on a host (scp, rsync) |
-// | `manpages`, `sections` | manual pages (in the section given before, if any) and sections |
-// | `targets` | make's targets, from the makefile |
-// | `members` | the files in the archive of `tar -f ARCHIVE` |
-// | `dd` | dd's operands (`if=FILE`, `bs=BYTES`, `conv=CONVS` ...) and their values |
-// | `commands` | the commands in `PATH` |
-// | `MODULE:NAME` | `MODULE::kind(NAME, cur, words)`, for the kinds of the commands of one module |
-//
-// An array is its own candidates.
+// The kinds are listed in docs/plugins.md ("Reusing std's completion
+// engine"). `MODULE:NAME` is `MODULE::kind(NAME, cur, words)`: one of
+// std's modules, or `@SOURCE/PLUGIN/MODULE` in another plugin. An array is
+// its own candidates.
 
 fn home() {
     sh::getvar("HOME") ?? ""
