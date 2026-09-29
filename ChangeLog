@@ -15,6 +15,7 @@ Unreleased
     * std.completion asks Cobra programs (gh, docker, kubectl ...) and nix
       for their completions; `complete-cobra PROG...` adds more programs
     * std.git-completion is now part of std.completion
+    * `import` in an extension's module is relative to that module's file
 
 Version 0.2.0 2026-09-29 by luispedro
     * Fix crashes on Tab after a word like `--opt=value`, and on a plugin

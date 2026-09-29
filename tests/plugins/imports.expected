@@ -1,0 +1,12 @@
+p/sub/b runs once
+top: p/b, p/sub/a, p/sub/b
+in a function of a: p/sub/c
+deeper: p/sub/deeper/d, then p/sub/b
+a closure of a: p/sub/c
+load 0
+p/b 
+p/sub/b 
+--- an absolute path
+abs
+--- a missing module in a subdirectory
+status 1

@@ -155,18 +155,27 @@ fn current_dir() -> RhaiResult<Vec<u8>> {
     })
 }
 
-/// Resolves `import "NAME"` to `NAME.rhai` in the plugin's directory (or an
-/// absolute path), whichever file or module does the import.
+/// Resolves `import "NAME"` to `NAME.rhai` in the directory of the file
+/// that does the import (or an absolute path). That file is the source of
+/// the code running (`AST::set_source`, which Rhai also gives the functions
+/// and closures defined in it, and `Module::set_id`), an absolute path; for
+/// code without one, it is the plugin's directory.
 struct Resolver;
 
 impl ModuleResolver for Resolver {
-    fn resolve(&self, engine: &Engine, _: Option<&str>, name: &str, pos: Position) -> RhaiResult<Shared<Module>> {
-        let mut path = match name.starts_with('/') {
-            true => Vec::new(),
-            false => [current_dir()?, b"/".to_vec()].concat(),
+    fn resolve(&self, engine: &Engine, source: Option<&str>, name: &str, pos: Position) -> RhaiResult<Shared<Module>> {
+        let mut path = match (name.starts_with('/'), source.filter(|s| s.starts_with('/'))) {
+            (true, _) => Vec::new(),
+            (false, Some(file)) => {
+                let file = to_bytes(file);
+                file[..file.iter().rposition(|&c| c == b'/').unwrap_or(0) + 1].to_vec()
+            }
+            (false, None) => [current_dir()?, b"/".to_vec()].concat(),
         };
         path.extend(to_bytes(name));
         path.extend_from_slice(b".rhai");
+        // (`import "../x"`: the same file is the same module.)
+        let path = crate::builtins::cd::canonicalize(&path);
         let cached = with_shell(|sh| Ok(host(sh)?.modules.borrow().get(&path).cloned()))?;
         if let Some(m) = cached {
             return Ok(m);
@@ -176,10 +185,12 @@ impl ModuleResolver for Resolver {
             Ok(t) => String::from_utf8(t).map_err(|_| in_module("not valid UTF-8".into()))?,
             Err(_) => return Err(EvalAltResult::ErrorModuleNotFound(name.into(), pos).into()),
         };
-        let ast = engine.compile(&text).map_err(|e| in_module(e.into()))?;
-        let m: Shared<Module> = Module::eval_ast_as_new(Scope::new(), &ast, engine)
-            .map_err(in_module)?
-            .into();
+        let mut ast = engine.compile(&text).map_err(|e| in_module(e.into()))?;
+        ast.set_source(to_str(&path));
+        let mut m = Module::eval_ast_as_new(Scope::new(), &ast, engine).map_err(in_module)?;
+        // The source of calls to its functions (`m::f()`).
+        m.set_id(to_str(&path));
+        let m: Shared<Module> = m.into();
         with_shell(|sh| {
             host(sh)?.modules.borrow_mut().insert(path, m.clone());
             Ok(())
@@ -711,13 +722,15 @@ impl Host {
             sh.berr(cmd, format!("{shown}: not valid UTF-8"));
             return Ok(1);
         };
-        let ast = match self.engine().compile(&text) {
+        let mut ast = match self.engine().compile(&text) {
             Ok(a) => a,
             Err(e) => {
                 sh.error(format!("{shown}: {e}"));
                 return Ok(1);
             }
         };
+        // For `import` (`Resolver`).
+        ast.set_source(to_str(&rhai_abs));
         let ast = Rc::new(ast);
         self.unload(&name);
         self.modules.borrow_mut().clear();

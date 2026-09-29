@@ -165,6 +165,18 @@ undo what the shell files did (aliases, functions, variables).
 2. a single Rhai file, `NAME.rhai`, which is the same as a directory that holds only that file, as `extension.rhai`;
 3. a single shell file, `NAME.lsh`, which is the same as a directory that holds only that file, as `init.lsh`.
 
+## Splitting an extension into modules: `import`
+
+An extension can use Rhai modules, other `.rhai` files of the plugin: `import "NAME" as m;` reads `NAME.rhai`,
+runs its top level once, and makes its functions available as `m::f()`. `NAME` is relative to the directory of
+the file that has the `import`, so `extension.rhai` finds its modules in the plugin's directory, and a module in a
+subdirectory (`import "hts/samtools"`) finds its own neighbours there (`import "common"` in `hts/samtools.rhai`
+reads `hts/common.rhai`). This holds wherever the code runs: in a function or closure of the module, even when an
+extension calls it. `NAME` can also be an absolute path, without `.rhai`.
+
+luish keeps each module once it is compiled, until a plugin is loaded again. An `import` inside a function (a
+completer, for instance) reads the module only when the function first runs, so a large plugin loads quickly.
+
 ## A personal plugin
 
 A plugin of your own, in a git repository, is a good way to keep the same configuration on every machine; see

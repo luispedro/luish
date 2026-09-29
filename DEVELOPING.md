@@ -586,8 +586,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   `cd`. A plugin without an extension doesn't create the Rhai engine. Without the feature, `plugin load` fails with
   "luish was built without plugin support". CI also runs clippy and the tests with `--no-default-features`.
 - `plugins/rhai.rs`: one `Engine` (with call-depth, expression-depth and size limits), one AST per extension, so
-  helpers with the same name in different extensions don't clash. `import` resolves relative to the plugin's
-  directory; imported modules are cached until a plugin is loaded again. SIGINT stops extension code (checked in
+  helpers with the same name in different extensions don't clash. `import` resolves relative to the file that
+  imports (`Resolver`): each extension's AST and each module's AST and `Module` get the file's absolute path as
+  their source and id, which Rhai passes to the resolver and gives the functions and closures defined there, so a
+  module in a subdirectory imports its neighbours wherever its code is called from; code without a source falls back
+  to the running plugin's directory. Imported modules are cached by their lexically canonical path (`../`), until a
+  plugin is loaded again. Test: `tests/plugins/imports.sh`. SIGINT stops extension code (checked in
   `on_progress`), leaving the signal pending for the shell. Rhai installs no signal handlers and has no threads or
   buffered output, so nothing happens around `fork` (built without its `sync` feature). Release builds use
   `panic = "abort"`; a panic in Rhai is a Rhai bug to report, not something to `catch_unwind`.
