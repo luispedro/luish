@@ -796,8 +796,8 @@ follows is what they came from and what is left.
 Per external command, luish makes the same syscalls as dash (before `posix_spawn`, a loop running `/bin/true` 3000
 times took 2.42 s, then 1.80 s as in dash). Startup makes 66 syscalls to dash's 49 (56 without the `plugins`
 feature; it made 140 before `#![no_main]`, lazy signal-disposition lookup, and looking up the executable's path only
-when a script without `#!` needs it). The remaining startup gap (2.0 ms to dash's 1.5 ms per `-c true` in
-`docs/performance.md`) is the dynamic loader: relocating a 4 MB binary and loading `libm` (for Rhai's floats),
+when a script without `#!` needs it). The remaining startup gap (2.1 ms to dash's 1.7 ms per `-c true` in
+`docs/performance.md`) is the dynamic loader: relocating a 4.5 MB binary and loading `libm` (for Rhai's floats),
 `libpthread` and `libgcc_s`. The `plugins` feature accounted for about 250 µs on 2026-09-26, accepted while it stays
 under 1 ms; on the machine of the current tables a build without it starts in the same time, within the noise. A
 static build (`-C target-feature=+crt-static`) started in 1.09 ms to the dynamic build's 1.5 ms, but static glibc
@@ -822,7 +822,7 @@ path). New variable kinds or expansions must keep `Vars::get` and the `$x` fast 
 The `Arith` branch of `expand_part` deliberately doesn't call `arith_word`, which is slower out of line.
 
 Measured this way on 2026-09-29, the features added after 0.1.0 (from `76b9576`, where the tables in
-`docs/performance.md` were last made, to `138cf09`) had cost arith +4.1%, functions +7.9% and textproc +3.8%
+`docs/performance.md` had been made, to `138cf09`) had cost arith +4.1%, functions +7.9% and textproc +3.8%
 (strings got 3.8% faster). Most of functions was `local` becoming `declare` (shared with `typeset`): each variable
 went through the attribute and array-conversion code and two more `Vars::entry` lookups, and each `x="$1"`
 argument was copied into a new word by `split_assignment_with`, whose `ParamExp` had grown. `declare` now skips all
@@ -833,7 +833,12 @@ arith +3.7%, functions +0.9% and textproc +3.4%, spread thinly over the new feat
 in `run_pipeline` (about 11 instructions per pipeline), the stack checks in `run_list_exit` and `Arith::expr`, the
 array arms and the specials' check in `Vars::get` and `Vars::set`, the `typeset` transforms in `try_set_var`, and
 the parameter-flag split of `expand_param`, which is now a function call before its `expand_unflagged` (making it
-`#[inline]` gained nothing measurable).
+`#[inline]` gained nothing measurable). In timings (`bench/run.sh -r 20` with both builds) the two are within the
+noise on all four in-shell benchmarks, as are startup and the single-command loops.
+
+The `arrays` benchmark (`bench/scripts/arrays.sh`) found `${#a[@]}` and `${a[@]:i:n}` copying the whole array
+(`expand_array`), which made them quadratic in a loop over a growing array; see Arrays above. bash's slices are
+linear in the offset (its arrays are linked lists), which is why the benchmark slices arrays of a fixed size.
 
 luish parses large files about three times as slowly as dash (`-n` of nvm's 144 KB `nvm.sh`: about 6 ms to dash's
 2 ms, after startup), and touches about 4 MB of memory doing it (1046 page faults to dash's 228), so the AST or the
