@@ -1,6 +1,6 @@
 # What's new
 
-## Version 0.2.0 (unreleased)
+## Version 0.2.0 (29 September 2026)
 
 This release brings bash's and zsh's scripting extensions to luish. Arrays, associative arrays, `[[ ... ]]`, `typeset`
 and the rest work in scripts and in the interactive shell, and scripts that don't use them run as fast as before (see

@@ -1,4 +1,4 @@
-Unreleased
+Version 0.2.0 2026-09-29 by luispedro
     * Fix crashes on Tab after a word like `--opt=value`, and on a plugin
       source with an empty path
     * zsh's parameter flags: `${(j:,:)a[@]}`, `${(s:,:)x}`, `${(o)a[@]}`,
