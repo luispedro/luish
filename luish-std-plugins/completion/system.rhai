@@ -91,20 +91,9 @@ fn seats() {
     r.out.split("\n").map(|l| l.split()).filter(|w| !w.is_empty()).map(|w| w[0])
 }
 
-// The mount points, from /proc/mounts.
+// The mount points.
 fn mounts() {
-    let out = [];
-    for line in (fs::read_file("/proc/mounts") ?? "").split("\n") {
-        let w = line.split();
-        if w.len() >= 2 {
-            // Spaces and tabs are octal escapes.
-            let p = w[1];
-            p.replace("\\040", " ");
-            p.replace("\\011", "\t");
-            out.push(p);
-        }
-    }
-    out
+    kinds::mount_table().map(|m| m.point)
 }
 
 // The mount options of `mount -o`, after the last comma.

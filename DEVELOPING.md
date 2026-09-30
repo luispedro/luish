@@ -708,8 +708,10 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   ...]` and `[aliases: ...]`), run with `COLUMNS=400` so that clap doesn't wrap; cargo's subcommands, rustup, uv and
   pixi are read this way (each takes about 10 ms), and openssl's commands from their `-help`, but pip, conda and npm
   are written out, as they take 60 to 300 ms to start. `kinds::toml` reads enough TOML for manifests (`Cargo.toml`,
-  `pixi.toml`, `pyproject.toml`). `lib.rhai` scans the words before the cursor for options, values, `--` and the
-  subcommand, and handles `--opt=VALUE`, `-o VALUE`, `-oVALUE` and bundles (`-la` offers the flags that can follow);
+  `pixi.toml`, `pyproject.toml`), and `kinds::mount_table` the file systems of `/proc/mounts`, with all four of the
+  kernel's escapes (`\040`, `\011`, `\012`, `\134`, the last decoded last; test: `tests/plugins/std_mounts.sh`).
+  `lib.rhai` scans the words before the cursor for options, values, `--` and the subcommand, and handles
+  `--opt=VALUE`, `-o VALUE`, `-oVALUE` and bundles (`-la` offers the flags that can follow);
   a word such as `-nv` that is an option (wget) is completed as one. A word `-` offers each option once (its short name
   if it has one), `--` the long names. Package managers list the installable packages only for a word with a letter
   (apt has about 90,000), and not at all for dnf, yum and zypper. `bridges.rhai` asks programs that complete

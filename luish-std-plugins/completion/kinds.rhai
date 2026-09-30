@@ -145,6 +145,35 @@ fn processes(names) {
     out
 }
 
+// A field of /proc/mounts, in which the kernel writes a space, tab, newline
+// or backslash as `\040`, `\011`, `\012` or `\134`. `\134` is decoded last,
+// so that the backslash it makes doesn't start another escape.
+fn unescape_mount(s) {
+    if s.contains("\\") {
+        for e in [["\\040", " "], ["\\011", "\t"], ["\\012", "\n"], ["\\134", "\\"]] {
+            s.replace(e[0], e[1]);
+        }
+    }
+    s
+}
+
+// The mounted file systems, from /proc/mounts (or `text` in its format), as
+// `#{source, point, type}`, decoded.
+fn mount_table(text) {
+    let out = [];
+    for line in text.split("\n") {
+        let f = line.split(" ");
+        if f.len() >= 3 {
+            out.push(#{source: unescape_mount(f[0]), point: unescape_mount(f[1]), type: unescape_mount(f[2])});
+        }
+    }
+    out
+}
+
+fn mount_table() {
+    mount_table(fs::read_file("/proc/mounts") ?? "")
+}
+
 // Whether `name` matches a pattern with `*` in it (as in ssh's `Include`).
 fn glob_match(pat, name) {
     let parts = pat.split("*");

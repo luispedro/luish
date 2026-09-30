@@ -1,0 +1,6 @@
+sysfs|/sys|sysfs
+/dev/sda1|/media/my disk|ext4
+a\040b|/x	y
+z\|fuse.sshfs
+/proc/mounts: true
+load 0
