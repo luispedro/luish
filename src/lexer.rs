@@ -474,6 +474,8 @@ impl Parser {
             b';' => op(self, Op::Semi, 1),
             b'(' => op(self, Op::LParen, 1),
             b')' => op(self, Op::RParen, 1),
+            // A word that starts with `<(` or `>(`; `read_word` reads it.
+            b'<' | b'>' if self.at(1) == Some(b'(') && !self.regex_word => self.lex_word(start, lineno),
             b'<' => match (self.at(1), self.at(2)) {
                 (Some(b'<'), Some(b'-')) => op(self, Op::DLessDash, 3),
                 (Some(b'<'), _) => op(self, Op::DLess, 2),
@@ -528,6 +530,17 @@ impl Parser {
                 {
                     qual = self.read_glob_qualifier();
                     break;
+                }
+                // Process substitution, also inside a word (`--input=<(cmd)`), as
+                // in bash and zsh. It is an error in POSIX sh.
+                b'<' | b'>' if !self.regex_word && self.at(1) == Some(b'(') => {
+                    flush(&mut parts, &mut lit);
+                    self.pos += 2;
+                    let list = self.read_subst_list()?;
+                    parts.push(WordPart::ProcSubst {
+                        output: c == b'>',
+                        list,
+                    });
                 }
                 b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'<' | b'>' | b'(' | b')' => {
                     if !self.regex_word {
@@ -1223,6 +1236,11 @@ impl Parser {
 
     /// After `$(`: parse a nested command list up to the matching `)`.
     fn read_cmdsubst(&mut self) -> PResult<WordPart> {
+        self.read_subst_list().map(WordPart::CmdSubst)
+    }
+
+    /// After `$(`, `<(` or `>(`: the list up to the matching `)`.
+    fn read_subst_list(&mut self) -> PResult<Rc<List>> {
         debug_assert!(self.peeked.is_none());
         let outer_heredocs = std::mem::take(&mut self.pending_heredocs);
         let outer_alias_blank_end = self.alias_blank_end.take();
@@ -1233,7 +1251,7 @@ impl Parser {
         }
         self.pending_heredocs = outer_heredocs;
         self.alias_blank_end = outer_alias_blank_end;
-        Ok(WordPart::CmdSubst(Rc::new(list)))
+        Ok(Rc::new(list))
     }
 
     /// At a backquote: collect the text up to the closing backquote,

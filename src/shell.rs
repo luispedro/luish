@@ -62,6 +62,11 @@ pub struct Shell {
     pub pid: i32,
     /// Exit status of the last command substitution in the current command.
     pub subst_status: Option<i32>,
+    /// The `<(...)` and `>(...)` substitutions of the commands running now,
+    /// closed when their command ends (`exec/procsubst.rs`).
+    pub procsubs: Vec<crate::exec::ProcSub>,
+    /// Processes of substitutions that may outlive their command, to reap.
+    pub procsub_orphans: Vec<i32>,
     /// Saved variables for `local`, one frame per function call.
     pub locals: Vec<Vec<(Vec<u8>, Saved)>>,
     /// Position inside a group of options for `getopts`.
@@ -154,6 +159,8 @@ impl Shell {
             lineno: 0,
             pid,
             subst_status: None,
+            procsubs: Vec::new(),
+            procsub_orphans: Vec::new(),
             locals: Vec::new(),
             optind: 1,
             optoff: None,

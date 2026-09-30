@@ -330,6 +330,10 @@ impl Shell {
                 let out = self.command_subst(list)?;
                 push_result(&out, quoted, f);
             }
+            WordPart::ProcSubst { output, list } => {
+                let path = self.process_subst(*output, list)?;
+                f.push_quoted(&path);
+            }
             WordPart::Arith(w) => {
                 // Not `arith_word`, which is slower here, out of line.
                 let mut s = Vec::new();

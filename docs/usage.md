@@ -46,10 +46,18 @@ let 'n = n * 2 + 1'                        # arithmetic, with the status of its 
 typeset -i count=0                         # variable attributes, also with declare
 builtin cd /tmp                            # run the built-in even if a function has its name
 set -o pipefail                            # a pipeline fails if any of its commands does
+diff <(sort a) <(sort b)                   # process substitution: a file to read the output of a command
 ```
 
 - `[[ ... ]]` has `test`'s operators, `&&`, `||`, `!` and parentheses, patterns on the right of `==` and `!=`, `=~`
   for regular expressions (which sets `MATCH`, `match` and `BASH_REMATCH`) and `-v NAME` for a set variable.
+- Process substitution: `<(list)` is the path of a pipe (`/dev/fd/N`) that gives what the list writes, so a command
+  that wants a file can read from a command. `>(list)` is one that feeds the list's standard input. The list runs
+  in its own process, and the pipe is closed when the command that got it ends. luish then waits for a `>(list)`
+  process, so its output comes before what follows (bash and zsh don't wait); a `<(list)` process isn't waited for.
+  A redirection can take one too: `while read -r l; do ...; done < <(cmd)` (unlike `cmd | while ...`, the loop runs
+  in the shell, so its variables stay), and `exec 3< <(cmd)` reads it later, from `<&3`. The word isn't split or
+  globbed. It can be part of a word, as in bash and zsh: `prog --input=<(cmd)` passes `--input=/dev/fd/N`.
 - [Arrays](#arrays), including associative ones, with `typeset`, `read -A` and zsh's parameter flags.
 - [Parameter expansion](#parameter-expansion): `${x:offset:length}`, `${x/pattern/replacement}`, `${!name}` and more.
 - [Special variables](#special-variables): `RANDOM`, `SECONDS`, `UID`, `pipestatus`, `path` and others.

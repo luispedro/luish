@@ -1,4 +1,5 @@
 Unreleased
+    * Process substitution, `<(cmd)` and `>(cmd)`
     * Rhai extensions can no longer use `eval`
     * On its first run, a menu offers to write a config.toml with the
       recommended settings, or with a personal plugin

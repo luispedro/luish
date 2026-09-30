@@ -113,6 +113,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   table (`NO_ALIASES`), so an `eval` doesn't allocate one. The completer's `Scan` mirrors these rules. Tests:
   `parse/alias_global.sh` (zsh), `parse/alias_suffix.sh` (zsh), unit tests in `complete.rs`.
 - Function bodies may be any command (`f() echo hi`), as in dash.
+- Process substitution: `read_word` reads `<(` and `>(` anywhere in a word (a syntax error in dash, so it is always
+  on, and only `<` and `>` pay for the check) as a `WordPart::ProcSubst`, as bash and zsh do (`--input=<(cmd)`, and
+  `2<(cmd)` is one word, not an fd number); `lex_token` sends a token that starts with one to `lex_word`. Not in
+  `[[ x =~ ... ]]` (`regex_word`). The list is parsed as for `$(` (`read_subst_list`). Tests: `expand/procsubst*.sh`,
+  unit tests in `unparse.rs`.
 - As in dash, a bad `${...}` (such as `${x^^}`) is an error only when expanded, and `$(` in a here-doc delimiter
   is a syntax error. Test: `parse/dash_lenient.sh`.
 - Arrays: `split_assignment_with` also takes `NAME+=` and `NAME[index]=` (the index up to the matching unquoted `]`,
@@ -247,6 +252,15 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   share the parent's stack). glibc's `posix_spawn` doesn't fall back to `/bin/sh` on ENOEXEC; `spawn_argv` retries
   with this shell. A child under job control must call `tcsetpgrp` itself (else it can get SIGTTIN first); glibc
   2.35+ has `posix_spawn_file_actions_addtcsetpgrp_np` if interactive shells ever spawn. Test: `exec/spawn.sh`.
+- Process substitution (`exec/procsubst.rs`): `process_subst` makes a pipe and forks (`NoJob`, like `$(...)`); the
+  child puts its end on fd 1 (`<(`) or 0 (`>(`) after closing the parent's ends of earlier substitutions (a `>(...)`
+  would never see EOF otherwise), and the parent moves its end to fd 64 or higher (`high_fd`, without close-on-exec,
+  so `exec 3< <(cmd)` can't close its own descriptor when it releases the pipe; bash uses 63) and records it in
+  `Shell::procsubs`. `run_command` remembers the length of that list and calls `end_procsubs` when the command is
+  over, error or not: it closes the descriptors, waits for `>(...)` processes, and leaves `<(...)` ones to be reaped
+  without blocking (`procsub_orphans`, since a process that ignores SIGPIPE, or that has more to do, mustn't hold the
+  shell up). `exec` without a command (`exec 3< <(cmd)`) uses `detach_procsubs`, which doesn't wait. `run_external`
+  doesn't `exec` in place while the list is not empty, or nothing would close and wait. Tests: `expand/procsubst*.sh`.
 - The `exit` flag (`run_list_exit`, dash's `EV_EXIT`) is passed to the last element of lists and and-or lists, to
   `if`/`case` bodies and brace groups without redirections, but not to loops, negated pipelines, or compound
   commands with redirections (as in dash). So `$!` is the command itself. Tests: `exec/exec_last.sh`,
@@ -770,6 +784,7 @@ truncates when it relocates the package.
 | `pushd`, `popd`, `dirs` | `builtins/dirstack.sh` (zsh `-o noposixcd`), `builtins/dirstack_interactive.sh` (zsh), `builtins/popd_dir.sh` |
 | `setopt`, `unsetopt` | `options/setopt.sh` (zsh), `options/setopt_list.sh` |
 | `%` sequences in prompts | `misc/prompt_percent.sh`, `misc/prompt_percent_long.sh` |
+| `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | `**/` | `expand/globstar.sh` (zsh), `expand/globstar_off.sh` (dash), `expand/globstar_loop.sh` |
 | Glob qualifiers | `expand/glob_qualifiers.sh`, `expand/glob_qualifier_errors.sh` (zsh `+o shglob -o bareglobqual +o ksharrays`), `builtins/internal_savestate_globqual.sh` |
 | A directory as a command | `builtins/autocd.sh` (zsh) |

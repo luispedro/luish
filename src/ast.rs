@@ -283,6 +283,12 @@ pub enum WordPart {
     Param(Box<ParamExp>),
     /// `$(...)` and `` `...` ``, parsed eagerly.
     CmdSubst(Rc<List>),
+    /// `<(...)` (`output: false`) and `>(...)`: the word is the path of a
+    /// pipe to the list's standard output, or from its standard input.
+    ProcSubst {
+        output: bool,
+        list: Rc<List>,
+    },
     /// `$((...))`: the text is expanded first, then evaluated.
     Arith(Word),
     /// The text inside a trailing `(...)` glob qualifier (only lexed under

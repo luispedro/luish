@@ -229,7 +229,13 @@ impl<'a> Printer<'a> {
             RedirKind::HereDoc => b"<<",
         });
         match &r.target {
-            RedirTarget::Word(w) => self.word(w),
+            RedirTarget::Word(w) => {
+                // `<<(x)` would be read as a here-document.
+                if matches!(w.0.first(), Some(WordPart::ProcSubst { .. })) {
+                    self.w(b" ");
+                }
+                self.word(w)
+            }
             RedirTarget::HereDoc(hd) => {
                 let hd = hd.borrow();
                 let mut body = match (hd.quoted, hd.body.0.as_slice()) {
@@ -392,7 +398,8 @@ impl<'a> Printer<'a> {
                     let joins = matches!(parts.get(i + 1), Some(WordPart::Literal(s)) if s.first().is_some_and(|&c| is_name_char(c)));
                     self.param(pe, joins);
                 }
-                WordPart::CmdSubst(list) => self.cmdsubst(list),
+                WordPart::CmdSubst(list) => self.cmdsubst(b"$(", list),
+                WordPart::ProcSubst { output, list } => self.cmdsubst(if *output { b">(" } else { b"<(" }, list),
                 WordPart::Arith(w) => {
                     self.w(b"$((");
                     self.word(w);
@@ -525,20 +532,24 @@ impl<'a> Printer<'a> {
         }
     }
 
-    fn cmdsubst(&mut self, list: &List) {
+    fn cmdsubst(&mut self, open: &[u8], list: &List) {
         let mut p = Printer::new(self.indent + 1, self.aliases, self.globqual);
         p.seq(list, false);
         let text = p.finish_with(false);
         if !text.contains(&b'\n') {
             // `$( (...) )`, not `$((`
-            self.w(if text.first() == Some(&b'(') { b"$( " } else { b"$(" });
+            self.w(open);
+            if text.first() == Some(&b'(') {
+                self.w(b" ");
+            }
             self.w(&text);
             self.w(b")");
             return;
         }
         // Written directly rather than with `nl`, which would write the
         // bodies of here-documents started before the substitution.
-        self.w(b"$(\n");
+        self.w(open);
+        self.w(b"\n");
         self.out.resize(self.out.len() + 4 * (self.indent + 1), b' ');
         self.w(&text);
         if text.last() != Some(&b'\n') {
@@ -598,7 +609,7 @@ mod tests {
         fn part(p: &mut WordPart) {
             match p {
                 WordPart::DoubleQuoted(ps) => ps.iter_mut().for_each(part),
-                WordPart::CmdSubst(l) => strip_lines(std::rc::Rc::make_mut(l)),
+                WordPart::CmdSubst(l) | WordPart::ProcSubst { list: l, .. } => strip_lines(std::rc::Rc::make_mut(l)),
                 WordPart::Arith(w) => word(w),
                 WordPart::Array(items) => items.iter_mut().for_each(|item| {
                     item.key.iter_mut().for_each(word);
@@ -712,6 +723,21 @@ mod tests {
         strip_lines(&mut b);
         assert_eq!(a, b, "\nsource:\n{src}\nprinted:\n{printed}");
         printed
+    }
+
+    #[test]
+    fn process_substitution() {
+        assert_eq!(
+            round_trip("f() { diff <(sort a) <(sort b) >(cat -n)x; }"),
+            "f() {\n    diff <(sort a) <(sort b) >(cat -n)x\n}\n"
+        );
+        assert_eq!(
+            round_trip("f() { cat <(( echo a ); b); }"),
+            "f() {\n    cat <(\n        (\n            echo a\n        )\n        b\n    )\n}\n"
+        );
+        // A subshell first must not read as `<((`.
+        round_trip("f() { cat <(( echo a )); }");
+        assert!(round_trip("f() { while read x; do :; done < <(cmd); }").contains("< <(cmd)"));
     }
 
     #[test]

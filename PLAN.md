@@ -217,7 +217,7 @@ shell tracks the current file as well as the line, for provenance and for error 
 
 ### Stage 2: beyond POSIX
 
-- **Extensions** (process substitution, brace expansion) behind options, as `glob.star` and
+- **Extensions** (brace expansion; process substitution is done, always on) behind options, as `glob.star` and
   `glob.bare_qualifiers` are, unless their syntax is an error in POSIX sh. With them off, POSIX scripts must parse and
   behave exactly as before and run as fast. The lexer checks such options in one place (as it does
   `Parser::bareglobqual`). Indexed and associative arrays are done, always on (see `DEVELOPING.md`), with bash's

@@ -3,10 +3,12 @@
 mod cond;
 mod fork;
 mod not_found;
+mod procsubst;
 pub mod redirect;
 mod simple;
 
 pub use fork::{ForkKind, report_signaled, signal_description};
+pub use procsubst::ProcSub;
 #[cfg(feature = "plugins")]
 pub use simple::shell_quote;
 pub use simple::{AssignValue, CommandKind};
@@ -214,6 +216,15 @@ impl Shell {
     /// that will exit afterwards, so an external command can be exec'd
     /// directly.
     pub fn run_command(&mut self, cmd: &Command, no_fork: bool) -> ExecResult {
+        let mark = self.procsubs.len();
+        let r = self.run_command_inner(cmd, no_fork);
+        if self.procsubs.len() > mark {
+            self.end_procsubs(mark);
+        }
+        r
+    }
+
+    fn run_command_inner(&mut self, cmd: &Command, no_fork: bool) -> ExecResult {
         match cmd {
             Command::Simple(sc) => self.run_simple(sc, no_fork),
             Command::Compound(cc, redirs) => {

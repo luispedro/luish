@@ -137,6 +137,7 @@ impl Shell {
     pub fn run_simple(&mut self, cmd: &SimpleCommand, no_fork: bool) -> ExecResult {
         self.lineno = cmd.lineno;
         self.subst_status = None;
+        let procsubs = self.procsubs.len();
         let argv = self.expand_command_words(&cmd.words)?;
         let special = argv
             .first()
@@ -144,6 +145,8 @@ impl Shell {
         if special && argv[0] == b"exec" && argv[1..].iter().all(|a| a == b"--") {
             // `exec` without a command: the redirections persist.
             let _ = self.redirect(&cmd.redirs, false)?;
+            // `exec 3< <(cmd)`: the descriptors outlive the command.
+            self.detach_procsubs(procsubs);
             let assigns = self.expand_assigns(cmd, true)?;
             self.trace(2, &assigns, &argv);
             return Ok(0);
@@ -319,8 +322,9 @@ impl Shell {
     }
 
     fn run_external(&mut self, cmd: &SimpleCommand, argv: &[Vec<u8>], no_fork: bool) -> ExecResult {
-        // Replace the shell process only if no trap needs it.
-        let exec_now = no_fork && !self.has_traps();
+        // Replace the shell process only if no trap needs it, and no
+        // `<(...)` or `>(...)` is left to close and wait for.
+        let exec_now = no_fork && !self.has_traps() && self.procsubs.is_empty();
         if !exec_now && self.can_spawn() {
             // Like dash's `vforkexec`.
             return Ok(match self.spawn_argv(argv, None) {

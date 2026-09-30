@@ -67,7 +67,7 @@ pub fn create_error(e: i32) -> String {
     }
 }
 
-fn clear_cloexec(fd: i32) {
+pub(super) fn clear_cloexec(fd: i32) {
     // SAFETY: plain fcntl.
     unsafe {
         libc::fcntl(fd, libc::F_SETFD, 0);
