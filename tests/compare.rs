@@ -23,6 +23,7 @@
 //! with `$SH` set to the shell under test. Set `LUISH_CASE` to a substring
 //! to run only matching cases.
 
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -80,7 +81,8 @@ fn run(shell: &Path, args: &[&str], script: &Path, id: &str, plugin_case: bool) 
     let out_path = dir.join(".stdout");
     let err_path = dir.join(".stderr");
     let std_plugins = Path::new(env!("CARGO_MANIFEST_DIR")).join("luish-std-plugins");
-    let mut child = Command::new(shell)
+    let mut command = Command::new(shell);
+    command
         .args(args)
         .arg(name)
         .current_dir(&dir)
@@ -92,7 +94,20 @@ fn run(shell: &Path, args: &[&str], script: &Path, id: &str, plugin_case: bool) 
         .env("SH", shell)
         .stdin(stdin)
         .stdout(std::fs::File::create(&out_path).unwrap())
-        .stderr(std::fs::File::create(&err_path).unwrap())
+        .stderr(std::fs::File::create(&err_path).unwrap());
+    // A session of its own: without a controlling terminal, a case that
+    // touches the terminal (`luish -i`, `set -m`) fails with ENOTTY instead
+    // of being stopped by SIGTTIN/SIGTTOU when `cargo test` runs in the
+    // background group of a terminal (as under `pixi run`). It also lets a
+    // timeout kill the whole process group.
+    // SAFETY: setsid is async-signal-safe.
+    unsafe {
+        command.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    let mut child = command
         .spawn()
         .unwrap_or_else(|e| panic!("cannot run {}: {e}", shell.display()));
     let start = Instant::now();
@@ -101,7 +116,8 @@ fn run(shell: &Path, args: &[&str], script: &Path, id: &str, plugin_case: bool) 
             break s;
         }
         if start.elapsed() > TIMEOUT {
-            let _ = child.kill();
+            // SAFETY: the child is its own process group leader (setsid).
+            unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) };
             let _ = child.wait();
             let _ = std::fs::remove_dir_all(&dir);
             return Outcome {

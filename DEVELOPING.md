@@ -837,6 +837,10 @@ truncates when it relocates the package.
   `capture-pane -p [-e]`), but run `tmux set -sg escape-time 0` first, or tmux holds Esc for 500 ms and glues it to
   the next key. Wait after Enter before typing: input sent before the next prompt is discarded.
 - pixi task `outputs` caching ignores paths under `.pixi/`.
+- `tests/compare.rs` runs each case in a session of its own (`setsid`), so it has no controlling terminal. Under
+  `pixi run`, `cargo test` is in the background group of the user's terminal, and a case that touched it (`luish -i`,
+  `set -m`) was stopped by SIGTTIN/SIGTTOU and left in state T. Now it gets ENOTTY, and a timeout kills the whole
+  process group, not just the shell.
 - Plugin cases (`tests/plugins/`) get `$STD_PLUGINS`, the path of `luish-std-plugins`, and test completers with
   `__luish_internal complete LINE`, which needs no terminal. Its output has a space at the end of a match that ends
   the word, before the tab of a description.
