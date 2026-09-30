@@ -136,6 +136,12 @@ fn revisions(g, cur) {
     #{prefix: cur.sub_string(0, end), candidates: refs(g)}
 }
 
+// Revisions, and when the word isn't a range, `other` (files) as well.
+fn revisions_and(g, cur, other) {
+    let r = revisions(g, cur);
+    if type_of(r) == "map" { r } else { r + other }
+}
+
 fn stashes(g) {
     let out = [];
     for l in git_lines(g, ["stash", "list", "--format=%gd%x09%gs"]) {
@@ -178,6 +184,10 @@ fn files(g, args, cur) {
         }
     }
     out
+}
+
+fn tracked(g, cur) {
+    files(g, ["ls-files"], cur)
 }
 
 fn modified(g, cur) {
@@ -281,8 +291,23 @@ fn arguments(g, cmd, args, cur, depth) {
                 revisions(g, cur)
             }
         }
-        "diff" => if dd { modified(g, cur) } else { revisions(g, cur) + modified(g, cur) },
-        "reset" => if dd { staged(g, cur) } else { revisions(g, cur) + staged(g, cur) },
+        "diff" => {
+            // The revisions given so far (a range counts as two), after which
+            // any tracked file can differ.
+            let revs = (if dd { args.extract(0, args.index_of("--")) } else { args })
+                .filter(|a| !a.starts_with("-"))
+                .map(|a| if a.contains("..") { 2 } else { 1 })
+                .reduce(|sum, n| sum + n, 0);
+            let changed = if revs > 0 {
+                tracked(g, cur)
+            } else if has.call(["--cached", "--staged"]) {
+                staged(g, cur)
+            } else {
+                modified(g, cur)
+            };
+            if dd || revs >= 2 { changed } else { revisions_and(g, cur, changed) }
+        }
+        "reset" => if dd { staged(g, cur) } else { revisions_and(g, cur, staged(g, cur)) },
         "log" | "show" | "shortlog" | "whatchanged" | "cherry" | "range-diff" | "format-patch" | "describe" | "merge"
         | "rebase" | "cherry-pick" | "revert" | "merge-base" | "rev-list" => {
             if dd { () } else { revisions(g, cur) }

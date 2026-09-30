@@ -684,7 +684,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
 - Examples: `docs/examples/cobra.rhai` (programs built with Cobra). Plugins for use, in the collection
   `luish-std-plugins/` (to become a repository of its own; the source `std`): `completion/git.rhai`
   (lists commands from `LC_ALL=C git help -a` without the low-level and guide sections, options from
-  `git CMD --git-completion-helper`, files from `ls-files`/`diff --cached`, collapsed to the next directory) and
+  `git CMD --git-completion-helper`, files from `ls-files`/`diff --cached`, collapsed to the next directory; `git diff`
+  offers all tracked files once a revision or range is given, and only revisions within a range word; tested in
+  `tests/plugins/git_completion.sh`) and
   `bash-completion/` (a default completer that runs bash-completion in bash through `bridge.bash`; about 50 ms per
   Tab, since bash sources `bash_completion` each time). Outside bash's own completion, compgen doesn't undo
   the quoting bash-completion gives the word (`~` as `\~`), so the bridge replaces the quoting functions; its

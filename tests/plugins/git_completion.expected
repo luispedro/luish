@@ -1,0 +1,59 @@
+=== revisions and modified files
+--- git diff 
+HEAD 
+main 
+sub/
+tracked 
+v1 
+status 0
+--- git diff HEAD
+HEAD 
+status 0
+--- git diff --cached 
+HEAD 
+main 
+tracked 
+v1 
+status 0
+=== a range
+--- git diff HEAD^..
+HEAD^..HEAD 
+HEAD^..main 
+HEAD^..v1 
+status 0
+--- git diff HEAD^...v
+HEAD^...v1 
+status 0
+--- git log main..
+main..HEAD 
+main..main 
+main..v1 
+status 0
+--- git reset HEAD^..
+HEAD^..HEAD 
+HEAD^..main 
+HEAD^..v1 
+status 0
+=== files after a revision or a range
+--- git diff HEAD^.. 
+sub/
+tracked 
+status 0
+--- git diff HEAD^.. s
+sub/
+status 0
+--- git diff v1 
+HEAD 
+main 
+sub/
+tracked 
+v1 
+status 0
+--- git diff v1 main 
+sub/
+tracked 
+status 0
+--- git diff v1 -- 
+sub/
+tracked 
+status 0
