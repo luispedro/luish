@@ -260,7 +260,7 @@ fn remote(cur) {
 fn man_dirs() {
     let path = sh::getvar("MANPATH") ?? "";
     if path == "" || path.starts_with(":") || path.ends_with(":") || path.contains("::") {
-        let r = sh::capture("manpath -q 2>/dev/null");
+        let r = sh::capture(["manpath", "-q"]);
         let found = if r.status == 0 { r.out } else { "/usr/local/share/man:/usr/share/man" };
         path = if path == "" { found } else { path + ":" + found };
     }
@@ -447,7 +447,7 @@ fn members(cur, words) {
     if mode != "x" || archive == () || !fs::is_file(tilde(archive)) {
         return ();
     }
-    let r = sh::capture(`tar -tf ${sh::quote(tilde(archive))} 2>/dev/null`);
+    let r = sh::capture(["tar", "-tf", tilde(archive)]);
     if r.status != 0 {
         return [];
     }

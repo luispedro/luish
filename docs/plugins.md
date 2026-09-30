@@ -492,7 +492,8 @@ Extensions reach the shell through the `sh` module:
 | `sh::last_status()` | `$?` |
 | `sh::interactive()` | Whether the shell is interactive |
 | `sh::run(script)` | Run shell code in the current shell, as `eval` does, and return its status. If it runs `exit`, the extension stops and the shell exits |
-| `sh::capture(script)` | Run shell code in a subshell, as `$(...)` does, and return `#{status, out}`, with trailing newlines removed from `out` |
+| `sh::capture(argv)`, `sh::capture(argv, stderr)` | Run a program, `argv[0]` (found in `PATH`, never a function or a built-in), with the arguments `argv[1..]`, none of which is parsed as shell code, and standard input from /dev/null. Return `#{status, out}`, with trailing newlines removed from `out`. Its standard error is discarded, or with `stderr`: `"discard"`, `"inherit"` (the shell's), `"merge"` (into `out`, as `2>&1`) or `"return"` (as `err`, without trailing newlines). Set variables for it with `env`: `["env", "COLUMNS=400", "prog", "-h"]` |
+| `sh::capture_sh(script)` | Run shell code in a subshell, as `$(...)` does, and return `#{status, out}`, with trailing newlines removed from `out`. Build it with `sh::quote` |
 | `sh::quote(text)` | `text` quoted for the shell (in single quotes). Given an array, its strings quoted and separated by spaces |
 | `sh::write(fd, text)` | Write text, unbuffered, to fd 1 or 2 |
 
@@ -662,7 +663,7 @@ sh::completer("git", |words, i| {
         ];
     }
     if words[1] == "switch" {
-        let r = sh::capture("git branch --format='%(refname:short)' 2>/dev/null");
+        let r = sh::capture(["git", "branch", "--format=%(refname:short)"]);
         return if r.status == 0 { r.out.split("\n") } else { [] };
     }
     ()   // the default: filenames

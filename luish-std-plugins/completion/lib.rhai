@@ -150,7 +150,7 @@ fn help_of(path) {
             }
         }
     }
-    sh::capture("COLUMNS=400 " + sh::quote(words) + " -h 2>/dev/null").out
+    sh::capture(["env", "COLUMNS=400"] + words + ["-h"]).out
 }
 
 // A spec from the `--help` output of a program, in the style of clap or

@@ -3,3 +3,22 @@ out changed, X is kept
 empty [] 0
 bytes 1  ff
 load: 0 X=kept
+0 [a b]
+[it's]
+[$X;x]
+[*] err: false
+discard: 3 [out]
+return: 3 [out] [err]
+merge: [out
+err]
+inherit: [out]
+stdin: [] 0
+env: set
+missing: 127 true
+both pipes: 100000 100000
+capture: takes an array, the program and its arguments (sh::capture_sh runs shell code)
+capture: the array is empty (it holds the program and its arguments)
+capture: the array must hold strings
+capture: stderr is "discard", "inherit", "merge" or "return", not "bogus"
+load: 0
+inherited

@@ -32,7 +32,7 @@ fn zip_members(cur, words) {
     if !fs::is_file(archive) && fs::is_file(archive + ".zip") {
         archive += ".zip";
     }
-    let r = sh::capture(`unzip -Z1 ${sh::quote(archive)} 2>/dev/null`);
+    let r = sh::capture(["unzip", "-Z1", archive]);
     if r.status != 0 {
         return ();
     }
@@ -66,7 +66,7 @@ fn fstypes() {
 
 // ripgrep's file types.
 fn rg_types() {
-    let r = sh::capture("rg --type-list 2>/dev/null");
+    let r = sh::capture(["rg", "--type-list"]);
     let out = [];
     for line in r.out.split("\n") {
         let c = line.index_of(":");

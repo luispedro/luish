@@ -21,9 +21,10 @@ fn tilde(p) {
     p
 }
 
-// The lines git prints, without its errors, or [] if it fails.
+// The lines git prints, without its errors, or [] if it fails (`g` is git
+// and its options, and `args` the words after them).
 fn git_lines(g, args) {
-    let r = sh::capture(`${g} ${args} 2>/dev/null`);
+    let r = sh::capture(g + args);
     if r.status != 0 || r.out == "" {
         return [];
     }
@@ -35,7 +36,7 @@ fn git_lines(g, args) {
 fn commands(g) {
     let out = [];
     let section = "";
-    for line in git_lines("LC_ALL=C " + g, "help -a") {
+    for line in git_lines(["env", "LC_ALL=C"] + g, ["help", "-a"]) {
         if !line.starts_with("   ") {
             if line != "" {
                 section = line;
@@ -64,7 +65,7 @@ fn commands(g) {
 // What an alias stands for (its first word), or () for an alias that runs a
 // shell command or for a command that isn't an alias.
 fn alias_of(g, name) {
-    let v = git_lines(g, "config --get " + sh::quote("alias." + name));
+    let v = git_lines(g, ["config", "--get", "alias." + name]);
     if v.is_empty() || v[0].starts_with("!") {
         return ();
     }
@@ -78,7 +79,7 @@ fn options(g, cmd, cur, extra) {
     let out = [];
     let negated = false;
     let listed = [];
-    for l in git_lines(g, sh::quote(cmd) + " --git-completion-helper") {
+    for l in git_lines(g, [cmd, "--git-completion-helper"]) {
         listed += l.split();
     }
     for o in listed + extra {
@@ -92,22 +93,22 @@ fn options(g, cmd, cur, extra) {
 }
 
 fn short_refs(g, patterns) {
-    git_lines(g, "for-each-ref --format='%(refname:short)' " + patterns)
+    git_lines(g, ["for-each-ref", "--format=%(refname:short)"] + patterns)
 }
 
 fn branches(g) {
-    short_refs(g, "refs/heads")
+    short_refs(g, ["refs/heads"])
 }
 
 fn remotes(g) {
-    git_lines(g, "remote")
+    git_lines(g, ["remote"])
 }
 
 // The branches of the remotes without the remote's name (`main` for
 // `origin/main`), which `git switch` and `git checkout` create a branch for.
 fn remote_names(g) {
     let out = [];
-    for r in git_lines(g, "for-each-ref --format='%(refname:lstrip=3)' refs/remotes") {
+    for r in git_lines(g, ["for-each-ref", "--format=%(refname:lstrip=3)", "refs/remotes"]) {
         if r != "HEAD" && !(r in out) {
             out.push(r);
         }
@@ -116,7 +117,7 @@ fn remote_names(g) {
 }
 
 fn refs(g) {
-    let out = short_refs(g, "refs/heads refs/tags refs/remotes");
+    let out = short_refs(g, ["refs/heads", "refs/tags", "refs/remotes"]);
     out.insert(0, "HEAD");
     out
 }
@@ -137,7 +138,7 @@ fn revisions(g, cur) {
 
 fn stashes(g) {
     let out = [];
-    for l in git_lines(g, "stash list --format='%gd%x09%gs'") {
+    for l in git_lines(g, ["stash", "list", "--format=%gd%x09%gs"]) {
         let tab = l.index_of('\t');
         out.push(#{value: l.sub_string(0, tab), desc: l.sub_string(tab + 1)});
     }
@@ -146,7 +147,7 @@ fn stashes(g) {
 
 fn worktrees(g) {
     let out = [];
-    for l in git_lines(g, "worktree list --porcelain") {
+    for l in git_lines(g, ["worktree", "list", "--porcelain"]) {
         if l.starts_with("worktree ") {
             out.push(l.sub_string(9));
         }
@@ -160,7 +161,7 @@ fn worktrees(g) {
 fn files(g, args, cur) {
     let out = [];
     let seen = #{};
-    for f in git_lines(g, "-c core.quotePath=false " + args) {
+    for f in git_lines(g, ["-c", "core.quotePath=false"] + args) {
         if f == "" || !f.starts_with(cur) || seen.contains(f) {
             continue;
         }
@@ -180,11 +181,11 @@ fn files(g, args, cur) {
 }
 
 fn modified(g, cur) {
-    files(g, "ls-files --modified", cur)
+    files(g, ["ls-files", "--modified"], cur)
 }
 
 fn staged(g, cur) {
-    files(g, "diff --cached --name-only --relative", cur)
+    files(g, ["diff", "--cached", "--name-only", "--relative"], cur)
 }
 
 // Values for `--option=`, as a completion of the part after `=`.
@@ -226,9 +227,9 @@ fn arguments(g, cmd, args, cur, depth) {
     let pos = args.filter(|a| !a.starts_with("-")).len();
     let has = |opts| args.some(|a| a in opts);
     switch cmd {
-        "add" | "stage" => files(g, "ls-files --modified --others --exclude-standard", cur),
+        "add" | "stage" => files(g, ["ls-files", "--modified", "--others", "--exclude-standard"], cur),
         "restore" => if has.call(["--staged", "-S"]) { staged(g, cur) } else { modified(g, cur) },
-        "rm" => files(g, "ls-files", cur),
+        "rm" => files(g, ["ls-files"], cur),
         "commit" => if prev in ["-m", "--message", "-F", "--file", "-C", "-c", "--author"] { [] } else { () },
         "switch" => {
             if prev in ["-c", "-C", "--create", "--force-create", "--orphan"] {
@@ -262,7 +263,7 @@ fn arguments(g, cmd, args, cur, depth) {
         }
         "branch" => {
             if prev in ["-u", "--set-upstream-to"] {
-                short_refs(g, "refs/remotes")
+                short_refs(g, ["refs/remotes"])
             } else if has.call(["-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy", "--edit-description"]) {
                 branches(g)
             } else if pos == 0 {
@@ -273,7 +274,7 @@ fn arguments(g, cmd, args, cur, depth) {
         }
         "tag" => {
             if has.call(["-d", "--delete", "-v", "--verify"]) {
-                short_refs(g, "refs/tags")
+                short_refs(g, ["refs/tags"])
             } else if pos == 0 || prev in ["-m", "--message", "-F", "--file"] {
                 []
             } else {
@@ -291,11 +292,11 @@ fn arguments(g, cmd, args, cur, depth) {
                 remotes(g)
             } else {
                 let remote = args.filter(|a| !a.starts_with("-"))[0];
-                git_lines(g, "for-each-ref --format='%(refname:lstrip=3)' " + sh::quote("refs/remotes/" + remote))
+                git_lines(g, ["for-each-ref", "--format=%(refname:lstrip=3)", "refs/remotes/" + remote])
                     .filter(|r| r != "HEAD")
             }
         }
-        "push" => if pos == 0 { remotes(g) } else { branches(g) + short_refs(g, "refs/tags") },
+        "push" => if pos == 0 { remotes(g) } else { branches(g) + short_refs(g, ["refs/tags"]) },
         "remote" => {
             if pos == 0 {
                 [
@@ -382,7 +383,7 @@ fn complete(words, i) {
     let cur = words[i];
     // git's own options, which come before the command, and those of them
     // that choose the repository.
-    let g = "command git";
+    let g = ["git"];
     let j = 1;
     while j < i {
         let w = words[j];
@@ -391,14 +392,14 @@ fn complete(words, i) {
                 // The option's value.
                 return if w in ["-C", "--git-dir", "--work-tree", "--exec-path"] { () } else { [] };
             }
-            g += " " + sh::quote(w) + " " + sh::quote(if w == "-c" { words[j + 1] } else { tilde(words[j + 1]) });
+            g += [w, if w == "-c" { words[j + 1] } else { tilde(words[j + 1]) }];
             j += 2;
         } else if w.starts_with("-") {
             if w.starts_with("--git-dir=") || w.starts_with("--work-tree=") {
                 let eq = w.index_of('=');
-                g += " " + sh::quote(w.sub_string(0, eq + 1) + tilde(w.sub_string(eq + 1)));
+                g.push(w.sub_string(0, eq + 1) + tilde(w.sub_string(eq + 1)));
             } else if w.starts_with("--namespace=") || w == "--bare" {
-                g += " " + sh::quote(w);
+                g.push(w);
             }
             j += 1;
         } else {

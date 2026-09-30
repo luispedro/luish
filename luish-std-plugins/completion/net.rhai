@@ -68,7 +68,7 @@ fn dig_args(cur) {
 // The e-mail addresses of the keys in the keyring (the secret ones for
 // `secret`), with their names.
 fn gpg_keys(secret) {
-    let r = sh::capture("gpg --list-" + (if secret { "secret-" } else { "" }) + "keys --with-colons 2>/dev/null");
+    let r = sh::capture(["gpg", "--list-" + (if secret { "secret-" } else { "" }) + "keys", "--with-colons"]);
     let out = [];
     for line in r.out.split("\n") {
         if !line.starts_with("uid:") {
@@ -95,7 +95,7 @@ fn sub_spec(name, sub) {
     if name != "openssl" {
         throw `unknown sub_spec: ${name}`;
     }
-    let r = sh::capture(`openssl ${sh::quote(sub)} -help 2>&1`);
+    let r = sh::capture(["openssl", sub, "-help"], "merge");
     let opts = "";
     for line in r.out.split("\n") {
         if line.starts_with(" -") {

@@ -9,25 +9,26 @@
 
 import "kinds" as kinds;
 
-// The lines of the output of a command, without empty ones.
-fn lines(cmd) {
-    sh::capture(cmd + " 2>/dev/null").out.split("\n").filter(|l| l != "")
+// The lines of the output of a command (the program and its arguments),
+// without empty ones.
+fn lines(argv) {
+    sh::capture(argv).out.split("\n").filter(|l| l != "")
 }
 
 fn apt_available(cur) {
-    if cur == "" { [] } else { lines(`apt-cache --no-generate pkgnames ${sh::quote(cur)}`) }
+    if cur == "" { [] } else { lines(["apt-cache", "--no-generate", "pkgnames", cur]) }
 }
 
 fn deb_installed() {
-    lines("dpkg-query -W -f='${db:Status-Abbrev} ${Package}\\n'").filter(|l| l.starts_with("i")).map(|l| l.split()[-1])
+    lines(["dpkg-query", "-W", "-f=${db:Status-Abbrev} ${Package}\\n"]).filter(|l| l.starts_with("i")).map(|l| l.split()[-1])
 }
 
 fn rpm_installed() {
-    lines("rpm -qa --qf '%{NAME}\\n'")
+    lines(["rpm", "-qa", "--qf", "%{NAME}\\n"])
 }
 
 fn pacman_available(cur) {
-    if cur == "" { [] } else { lines("pacman -Slq").filter(|p| p.starts_with(cur)) }
+    if cur == "" { [] } else { lines(["pacman", "-Slq"]).filter(|p| p.starts_with(cur)) }
 }
 
 // The prefix of Homebrew.
@@ -96,7 +97,7 @@ fn brew_taps() {
 
 fn snaps() {
     let out = [];
-    for line in lines("snap list").extract(1) {
+    for line in lines(["snap", "list"]).extract(1) {
         let w = line.split();
         if !w.is_empty() {
             out.push(#{value: w[0], desc: if w.len() > 1 { w[1] } else { "" }});
@@ -107,7 +108,7 @@ fn snaps() {
 
 fn flatpak_installed() {
     let out = [];
-    for line in lines("flatpak list --columns=application,name") {
+    for line in lines(["flatpak", "list", "--columns=application,name"]) {
         let tab = line.index_of("\t");
         out.push(if tab > 0 { #{value: line.sub_string(0, tab), desc: line.sub_string(tab + 1)} } else { line });
     }
@@ -118,11 +119,11 @@ fn flatpak_available(cur) {
     if cur == "" {
         return [];
     }
-    lines("flatpak remote-ls --app --cached --columns=application").filter(|a| a.starts_with(cur))
+    lines(["flatpak", "remote-ls", "--app", "--cached", "--columns=application"]).filter(|a| a.starts_with(cur))
 }
 
 fn flatpak_remotes() {
-    lines("flatpak remotes --columns=name")
+    lines(["flatpak", "remotes", "--columns=name"])
 }
 
 fn kind(name, cur, words) {
@@ -146,11 +147,11 @@ fn kind(name, cur, words) {
         }
         "rpm_installed" => rpm_installed(),
         "pacman" => pacman_available(cur),
-        "pacman_installed" => lines("pacman -Qq"),
-        "pacman_groups" => lines("pacman -Sgq"),
-        "pacman_repos" => lines("pacman-conf --repo-list"),
-        "apk" => if cur == "" { [] } else { lines(`apk search -q ${sh::quote(cur + "*")}`) },
-        "apk_installed" => lines("apk info -q"),
+        "pacman_installed" => lines(["pacman", "-Qq"]),
+        "pacman_groups" => lines(["pacman", "-Sgq"]),
+        "pacman_repos" => lines(["pacman-conf", "--repo-list"]),
+        "apk" => if cur == "" { [] } else { lines(["apk", "search", "-q", cur + "*"]) },
+        "apk_installed" => lines(["apk", "info", "-q"]),
         "brew" => brew_available(cur),
         "brew_installed" => brew_installed(),
         "brew_taps" => brew_taps(),

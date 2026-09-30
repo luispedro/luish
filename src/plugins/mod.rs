@@ -605,16 +605,135 @@ fn capture(sh: &mut Shell, script: &[u8]) -> Result<(i32, Vec<u8>), &'static str
         sh.child_exit(res);
     }
     sys::close(w);
-    let mut out = Vec::new();
+    let out = read_pipes(&[r]).swap_remove(0);
+    Ok((sh.wait_for(pid), out))
+}
+
+/// Where the standard error of a program run by [`capture_argv`] goes.
+#[cfg(feature = "plugins")]
+#[derive(Clone, Copy, PartialEq)]
+enum Stderr {
+    /// To /dev/null.
+    Discard,
+    /// To the shell's standard error.
+    Inherit,
+    /// Into the output, as `2>&1` does.
+    Merge,
+    /// Read, and returned apart from the output.
+    Return,
+}
+
+#[cfg(feature = "plugins")]
+/// Runs the program `argv[0]` (a file, found in `PATH` if its name has no
+/// `/`: never a function or a built-in) with the arguments `argv[1..]`, its
+/// standard input from /dev/null, and returns its status, its output, and
+/// its standard error if `stderr` is [`Stderr::Return`] (else empty). No
+/// word is parsed as shell code.
+fn capture_argv(sh: &mut Shell, argv: &[Vec<u8>], stderr: Stderr) -> Result<(i32, Vec<u8>, Vec<u8>), &'static str> {
+    use crate::sys;
+    let Ok((r, w)) = sys::pipe() else {
+        return Err("cannot create a pipe");
+    };
+    let err_pipe = match stderr {
+        Stderr::Return => match sys::pipe() {
+            Ok(p) => Some(p),
+            Err(_) => {
+                sys::close(r);
+                sys::close(w);
+                return Err("cannot create a pipe");
+            }
+        },
+        _ => None,
+    };
+    let pid = match sh.fork_or_error() {
+        Ok(pid) => pid,
+        Err(_) => {
+            for fd in [Some((r, w)), err_pipe].into_iter().flatten().flat_map(|(a, b)| [a, b]) {
+                sys::close(fd);
+            }
+            return Err("cannot fork");
+        }
+    };
+    if pid == 0 {
+        sys::close(r);
+        if let Ok(fd) = sys::open(b"/dev/null", libc::O_RDONLY, 0) {
+            let _ = sys::dup2(fd, 0);
+            sys::close(fd);
+        }
+        let _ = sys::dup2(w, 1);
+        sys::close(w);
+        match (stderr, err_pipe) {
+            (Stderr::Discard, _) => {
+                if let Ok(fd) = sys::open(b"/dev/null", libc::O_WRONLY, 0) {
+                    let _ = sys::dup2(fd, 2);
+                    sys::close(fd);
+                }
+            }
+            (Stderr::Merge, _) => {
+                let _ = sys::dup2(1, 2);
+            }
+            (Stderr::Return, Some((er, ew))) => {
+                sys::close(er);
+                let _ = sys::dup2(ew, 2);
+                sys::close(ew);
+            }
+            _ => {}
+        }
+        sh.exec_argv(argv, None);
+    }
+    sys::close(w);
+    let mut fds = vec![r];
+    if let Some((er, ew)) = err_pipe {
+        sys::close(ew);
+        fds.push(er);
+    }
+    let mut read = read_pipes(&fds);
+    let err = if read.len() > 1 {
+        read.pop().unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let out = read.pop().unwrap_or_default();
+    Ok((sh.wait_for(pid), out, err))
+}
+
+#[cfg(feature = "plugins")]
+/// Reads the pipes `fds` to their ends, together, so that a writer that
+/// fills one while another is being read doesn't block, and closes them.
+fn read_pipes(fds: &[i32]) -> Vec<Vec<u8>> {
+    use crate::sys;
+    let mut data = vec![Vec::new(); fds.len()];
+    let mut open: Vec<usize> = (0..fds.len()).collect();
     let mut buf = [0u8; 4096];
-    while let Ok(n) = sys::read(r, &mut buf, false) {
-        if n == 0 {
+    while !open.is_empty() {
+        let mut polled: Vec<_> = open
+            .iter()
+            .map(|&i| libc::pollfd {
+                fd: fds[i],
+                events: libc::POLLIN,
+                revents: 0,
+            })
+            .collect();
+        if sys::poll(&mut polled).is_err() {
             break;
         }
-        out.extend_from_slice(&buf[..n]);
+        let mut still = Vec::with_capacity(open.len());
+        for (p, &i) in polled.iter().zip(&open) {
+            if p.revents == 0 {
+                still.push(i);
+                continue;
+            }
+            if let Ok(n @ 1..) = sys::read(fds[i], &mut buf, false) {
+                data[i].extend_from_slice(&buf[..n]);
+                still.push(i);
+            }
+        }
+        open = still;
     }
-    sys::close(r);
-    Ok((sh.wait_for(pid), out))
+    for &fd in fds {
+        sys::close(fd);
+    }
+    data
 }
 
 /// The plugins of the sources in `config.toml` that are installed.

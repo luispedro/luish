@@ -6,8 +6,7 @@
 fn cobra(words, i) {
     // The words up to the one being completed (the words after the cursor
     // are left out).
-    let args = sh::quote(words.extract(1, i));
-    let r = sh::capture(sh::quote(words[0]) + " __complete " + args + " 2>/dev/null");
+    let r = sh::capture([words[0], "__complete"] + words.extract(1, i));
     let lines = r.out.split("\n");
     let last = lines.pop();
     if r.status != 0 || !last.starts_with(":") {

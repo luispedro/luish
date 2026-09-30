@@ -19,8 +19,7 @@ fn with_ext(cur, exts) {
 // candidates are extensions of filenames, 16: directories only). For a
 // word `--flag=VALUE`, the candidates are the values.
 fn cobra(words, i) {
-    let args = sh::quote(words.extract(1, i));
-    let r = sh::capture(sh::quote(words[0]) + " __complete " + args + " 2>/dev/null");
+    let r = sh::capture([words[0], "__complete"] + words.extract(1, i));
     let lines = r.out.split("\n");
     let last = lines.pop();
     if r.status != 0 || last == () || !last.starts_with(":") {
@@ -97,7 +96,7 @@ fn click(words, i) {
     let cur = words[i];
     // (as fish gives them: the word to complete is in COMP_WORDS only if it isn't empty.)
     let line = sh::quote(words.extract(0, if cur == "" { i } else { i + 1 })) + (if cur == "" { " " } else { "" });
-    let r = sh::capture(`${envvar}=fish_complete COMP_WORDS=${sh::quote(line)} COMP_CWORD=${sh::quote(cur)} ${sh::quote(words[0])} </dev/null 2>/dev/null`);
+    let r = sh::capture(["env", envvar + "=fish_complete", "COMP_WORDS=" + line, "COMP_CWORD=" + cur, words[0]]);
     if r.status != 0 {
         return ();
     }
@@ -172,8 +171,7 @@ fn plain(desc) {
 // `filenames`, or `attrs` for attribute paths, which go on), then one
 // candidate per line, with a tab and its description.
 fn nix(words, i) {
-    let args = sh::quote(words.extract(1, i));
-    let r = sh::capture(`NIX_GET_COMPLETIONS=${i} ${sh::quote(words[0])} ${args} 2>/dev/null`);
+    let r = sh::capture(["env", `NIX_GET_COMPLETIONS=${i}`, words[0]] + words.extract(1, i));
     let lines = r.out.split("\n");
     if lines.is_empty() || lines[0] == "" {
         return ();

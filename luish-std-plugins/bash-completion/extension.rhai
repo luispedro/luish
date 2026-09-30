@@ -2,10 +2,10 @@
 // of their own: bridge.bash runs the command's bash completion and prints
 // what it gives.
 
-let bridge = sh::quote(sh::plugin_dir() + "/bridge.bash");
+let bridge = sh::plugin_dir() + "/bridge.bash";
 
 sh::completer("-default-", |words, i| {
-    let r = sh::capture(`BASH_ENV= bash ${bridge} ${i} ${sh::quote(words)} 2>/dev/null`);
+    let r = sh::capture(["env", "BASH_ENV=", "bash", bridge, `${i}`] + words);
     if r.status != 0 {
         return ();   // filenames
     }

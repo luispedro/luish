@@ -652,6 +652,14 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   once Rhai's interner is full, each new short string scans it, which cost a built-in returning a new short string
   each call about 19% of its instructions. Tests: `tests/plugins/builtins.sh`, `interrupt.sh`; benchmark against
   shell functions: `bench/extensions/` (results in `docs/performance.md`).
+- **`sh::capture`** takes the program and its arguments as an array, so that no word from the command line is parsed
+  as shell code (`capture_argv`): the child is forked as for `$(...)`, then `exec_argv` runs the program, so a function
+  or built-in of that name is never called, a script without `#!` runs with luish, and "not found" is reported to its
+  standard error (status 127). Standard input is /dev/null (a completer must never read the terminal); standard error
+  is discarded, inherited, merged (`2>&1`) or read through a second pipe, the two read together with `poll`
+  (`read_pipes`) so that a program filling one doesn't block. There is no way to set variables other than running
+  `env`. Shell code goes through `sh::capture_sh`, the earlier `sh::capture`; a string given to `sh::capture` is an
+  error that names it. Test: `tests/plugins/capture.sh`.
 - Arrays: `sh::getvar` gives `$a` (a string), so existing extensions are unaffected; `sh::getarray` and `sh::getmap`
   read the elements and keys, and `sh::setvar` is overloaded on Rhai's `Array` and `Map`, going through
   `Shell::try_set_var_value` (the variable's attributes, the local scope and the `path` tie apply, and errors are

@@ -200,6 +200,21 @@ pub fn pipe() -> Result<(i32, i32), i32> {
     }
 }
 
+/// `poll(2)` on `fds`, without a timeout, retried on EINTR.
+#[cfg(feature = "plugins")]
+pub fn poll(fds: &mut [libc::pollfd]) -> Result<(), i32> {
+    loop {
+        // SAFETY: a valid array of `pollfd`s, of the length given.
+        if unsafe { libc::poll(fds.as_mut_ptr(), fds.len() as libc::nfds_t, -1) } >= 0 {
+            return Ok(());
+        }
+        let e = errno();
+        if e != libc::EINTR {
+            return Err(e);
+        }
+    }
+}
+
 pub fn isatty(fd: i32) -> bool {
     // SAFETY: plain isatty.
     unsafe { libc::isatty(fd) == 1 }

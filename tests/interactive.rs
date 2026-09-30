@@ -589,7 +589,7 @@ fn plugin_completer() {
     if i == 1 {
         // An external command, and one whose output is captured.
         sh::run("/bin/true");
-        let r = sh::capture("echo captured");
+        let r = sh::capture(["echo", "captured"]);
         [r.out, "alpha", #{value: "beta", desc: "the second"}, #{value: "--opt=", suffix: ""}]
     } else if w == "boom" {
         throw "bad completer";

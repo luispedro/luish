@@ -140,7 +140,7 @@ fn cargo_profiles() {
 
 // The installed toolchains of rustup.
 fn toolchains() {
-    let r = sh::capture("rustup toolchain list 2>/dev/null");
+    let r = sh::capture(["rustup", "toolchain", "list"]);
     let out = ["stable", "beta", "nightly"];
     for line in r.out.split("\n") {
         let t = line.split();
@@ -152,12 +152,12 @@ fn toolchains() {
 }
 
 fn rust_targets() {
-    let r = sh::capture("rustc --print target-list 2>/dev/null");
+    let r = sh::capture(["rustc", "--print", "target-list"]);
     r.out.split("\n").filter(|t| t != "")
 }
 
 fn rust_components() {
-    let r = sh::capture("rustup component list 2>/dev/null");
+    let r = sh::capture(["rustup", "component", "list"]);
     let out = [];
     for line in r.out.split("\n") {
         let w = line.split();
@@ -174,8 +174,8 @@ fn rust_components() {
 fn ninja_targets(words) {
     let dir = kinds::option_value(words, "-C", "");
     let file = kinds::option_value(words, "-f", "");
-    let cmd = "ninja" + (if dir == () { "" } else { " -C " + sh::quote(kinds::tilde(dir)) })
-        + (if file == () { "" } else { " -f " + sh::quote(kinds::tilde(file)) }) + " -t targets all 2>/dev/null";
+    let cmd = ["ninja"] + (if dir == () { [] } else { ["-C", kinds::tilde(dir)] })
+        + (if file == () { [] } else { ["-f", kinds::tilde(file)] }) + ["-t", "targets", "all"];
     let out = [];
     for line in sh::capture(cmd).out.split("\n") {
         let c = line.index_of(": ");
@@ -284,7 +284,7 @@ fn cargo() {
     let names = #{};
     let order = [];
     let descs = #{};
-    for line in sh::capture("cargo --list 2>/dev/null").out.split("\n") {
+    for line in sh::capture(["cargo", "--list"]).out.split("\n") {
         if !line.starts_with(" ") {
             continue;
         }

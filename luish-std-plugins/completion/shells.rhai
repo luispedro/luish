@@ -45,7 +45,7 @@ fn shopt_options() {
 
 // zsh's options, from zsh.
 fn zsh_options() {
-    let r = sh::capture("zsh -fc 'print -l ${(ko)options}' 2>/dev/null");
+    let r = sh::capture(["zsh", "-fc", "print -l ${(ko)options}"]);
     if r.status == 0 { r.out.split("\n") } else { [] }
 }
 

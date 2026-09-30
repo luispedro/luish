@@ -299,21 +299,65 @@ fn register(f: FnPtr, add: impl FnOnce(&Host, Callback)) -> RhaiResult<()> {
     })
 }
 
-/// Runs `script` in a subshell, as `$(...)` does, and returns its status
-/// and its output without trailing newlines.
-fn capture(sh: &mut Shell, script: &[u8]) -> RhaiResult<rhai::Map> {
-    let (status, mut out) = match super::capture(sh, script) {
-        Ok(r) => r,
-        Err(e) => return error(format!("capture: {e}")),
-    };
-    out.retain(|&b| b != 0);
-    while out.last() == Some(&b'\n') {
-        out.pop();
+/// `sh::capture_sh(script)`: runs `script` in a subshell, as `$(...)` does,
+/// and returns its status and its output without trailing newlines.
+fn capture_sh(sh: &mut Shell, script: &[u8]) -> RhaiResult<rhai::Map> {
+    match super::capture(sh, script) {
+        Ok((status, out)) => Ok(captured(status, out, None)),
+        Err(e) => error(format!("capture_sh: {e}")),
     }
+}
+
+/// `sh::capture(argv, stderr)`: runs the program `argv[0]` with the
+/// arguments `argv[1..]` (see [`super::capture_argv`]) and returns its
+/// status and its output, and with `stderr` "return", its standard error,
+/// without trailing newlines.
+fn capture(argv: rhai::Array, stderr: &str) -> RhaiResult<rhai::Map> {
+    use super::Stderr;
+    let mode = match stderr {
+        "discard" => Stderr::Discard,
+        "inherit" => Stderr::Inherit,
+        "merge" => Stderr::Merge,
+        "return" => Stderr::Return,
+        _ => {
+            return error(format!(
+                r#"capture: stderr is "discard", "inherit", "merge" or "return", not "{stderr}""#
+            ));
+        }
+    };
+    if argv.is_empty() {
+        return error("capture: the array is empty (it holds the program and its arguments)");
+    }
+    let mut words = Vec::with_capacity(argv.len());
+    for w in argv {
+        let Ok(w) = w.into_immutable_string() else {
+            return error("capture: the array must hold strings");
+        };
+        words.push(to_shell(&w)?);
+    }
+    with_shell(|sh| match super::capture_argv(sh, &words, mode) {
+        Ok((status, out, err)) => Ok(captured(status, out, (mode == Stderr::Return).then_some(err))),
+        Err(e) => error(format!("capture: {e}")),
+    })
+}
+
+/// `#{status, out}`, and `err` if there is one, with NUL bytes and trailing
+/// newlines removed, as `$(...)` removes them.
+fn captured(status: i32, out: Vec<u8>, err: Option<Vec<u8>>) -> rhai::Map {
+    let text = |mut b: Vec<u8>| {
+        b.retain(|&c| c != 0);
+        while b.last() == Some(&b'\n') {
+            b.pop();
+        }
+        to_str(&b)
+    };
     let mut m = rhai::Map::new();
     m.insert("status".into(), (status as i64).into());
-    m.insert("out".into(), to_str(&out).into());
-    Ok(m)
+    m.insert("out".into(), text(out).into());
+    if let Some(err) = err {
+        m.insert("err".into(), text(err).into());
+    }
+    m
 }
 
 /// `sh::read_line()`: a line from fd 0 without its newline, or `()` at end
@@ -447,9 +491,14 @@ fn sh_module() -> Module {
         })
     });
     m.set_native_fn("read_line", read_line);
-    m.set_native_fn("capture", |script: &str| {
+    m.set_native_fn("capture", |argv: rhai::Array| capture(argv, "discard"));
+    m.set_native_fn("capture", capture);
+    m.set_native_fn("capture", |_: &str| -> RhaiResult<rhai::Map> {
+        error("capture: takes an array, the program and its arguments (sh::capture_sh runs shell code)")
+    });
+    m.set_native_fn("capture_sh", |script: &str| {
         let script = to_shell(script)?;
-        with_shell(|sh| capture(sh, &script))
+        with_shell(|sh| capture_sh(sh, &script))
     });
     m.set_native_fn("quote", |s: &str| {
         Ok(to_str(&crate::builtins::single_quote(&to_bytes(s))))

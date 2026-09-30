@@ -33,8 +33,8 @@ fn units(cur, words, loaded, suffix) {
     let out = [];
     let seen = #{};
     let r = sh::capture(
-        "systemctl" + (if user { " --user" } else { "" }) +
-            " list-units --all --plain --no-legend --full --no-pager 2>/dev/null",
+        ["systemctl"] + (if user { ["--user"] } else { [] }) +
+            ["list-units", "--all", "--plain", "--no-legend", "--full", "--no-pager"],
     );
     for line in r.out.split("\n") {
         let w = line.split();
@@ -68,14 +68,14 @@ fn units(cur, words, loaded, suffix) {
 
 // The variables of the manager's environment.
 fn manager_env(words) {
-    let user = if user_mode(words) { " --user" } else { "" };
-    let r = sh::capture("systemctl" + user + " show-environment 2>/dev/null");
+    let user = if user_mode(words) { ["--user"] } else { [] };
+    let r = sh::capture(["systemctl"] + user + ["show-environment"]);
     r.out.split("\n").filter(|l| l.contains("=")).map(|l| l.sub_string(0, l.index_of("=")))
 }
 
 // The IDs of the login sessions, with their users.
 fn sessions() {
-    let r = sh::capture("loginctl list-sessions --no-legend --no-pager 2>/dev/null");
+    let r = sh::capture(["loginctl", "list-sessions", "--no-legend", "--no-pager"]);
     let out = [];
     for line in r.out.split("\n") {
         let w = line.split();
@@ -87,7 +87,7 @@ fn sessions() {
 }
 
 fn seats() {
-    let r = sh::capture("loginctl list-seats --no-legend --no-pager 2>/dev/null");
+    let r = sh::capture(["loginctl", "list-seats", "--no-legend", "--no-pager"]);
     r.out.split("\n").map(|l| l.split()).filter(|w| !w.is_empty()).map(|w| w[0])
 }
 
@@ -133,7 +133,7 @@ fn tmux_targets(cur) {
     let colon = cur.index_of(":");
     if colon >= 0 {
         let s = cur.sub_string(0, colon);
-        let r = sh::capture(`tmux list-windows -t ${sh::quote(s)} -F '#I	#W' 2>/dev/null`);
+        let r = sh::capture(["tmux", "list-windows", "-t", s, "-F", "#I\t#W"]);
         let out = [];
         for line in r.out.split("\n") {
             let tab = line.index_of("\t");
@@ -143,7 +143,7 @@ fn tmux_targets(cur) {
         }
         return #{prefix: cur.sub_string(0, colon + 1), candidates: out};
     }
-    let r = sh::capture("tmux list-sessions -F '#S	#{session_windows} windows' 2>/dev/null");
+    let r = sh::capture(["tmux", "list-sessions", "-F", "#S\t#{session_windows} windows"]);
     let out = [];
     for line in r.out.split("\n") {
         let tab = line.index_of("\t");
