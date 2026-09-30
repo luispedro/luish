@@ -926,6 +926,67 @@ fn fc_history() {
 }
 
 #[test]
+fn history_expansion() {
+    let mut sh = Pty::spawn("bang");
+    sh.expect("$ ");
+    // Off by default, as `!` isn't special in dash.
+    sh.run("echo one two three");
+    assert_eq!(sh.run("echo !!"), "echo !!\n!!\n$ ");
+    sh.run("setopt history.expand");
+    sh.run("echo one two three");
+    // The expanded line is echoed, run, and added to the history.
+    assert_eq!(sh.run("!!"), "!!\necho one two three\none two three\n$ ");
+    assert_eq!(sh.run("echo !$ !^"), "echo !$ !^\necho three one\nthree one\n$ ");
+    assert_eq!(sh.run("^one^ONE"), "^one^ONE\necho three ONE\nthree ONE\n$ ");
+    // (`!!` repeated the command before, which isn't added again.)
+    assert_eq!(sh.run("fc -l -2"), "fc -l -2\n5\techo three one\n6\techo three ONE\n$ ");
+    // Not in single quotes, nor for `$!` or `[!...]`.
+    assert_eq!(sh.run("echo 'a!!' $! [!.]"), "echo 'a!!' $! [!.]\na!! [!.]\n$ ");
+    // A reference that fails drops the command, which isn't recorded, and
+    // leaves `$?` alone.
+    sh.run("false");
+    let err = sh.run("echo !nosuch");
+    assert_has(&err, "!nosuch: event not found\n");
+    assert_has(&sh.run("echo st=$?"), "st=1\n");
+    assert_eq!(sh.run("fc -ln -1"), "fc -ln -1\n\techo st=$?\n$ ");
+    // `:p` prints and records without running.
+    assert_eq!(sh.run("echo x !-2:0:p"), "echo x !-2:0:p\necho x echo\n$ ");
+    assert_eq!(sh.run("fc -ln -1"), "fc -ln -1\n\techo x echo\n$ ");
+    // Each line of a command is expanded as it is read, following quotes
+    // and here-documents from the lines before.
+    let lines = |sh: &mut Pty, lines: &[&str]| {
+        for l in &lines[..lines.len() - 1] {
+            sh.send(&format!("{l}\n"));
+            sh.expect("\n> ");
+        }
+        sh.run(lines[lines.len() - 1])
+    };
+    assert_eq!(
+        lines(&mut sh, &["echo 'a", "!!' \"", "!!\""]),
+        "!!\"\nfc -ln -1\"\na\n!! \nfc -ln -1\n$ "
+    );
+    assert_eq!(lines(&mut sh, &["cat <<E", "!!", "E"]), "E\n!!\n$ ");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+
+    // With `history.verify`, the expansion is edited before it runs (on a
+    // terminal the line editor supports).
+    let mut sh = Pty::spawn_term("bang-verify", "vt100");
+    sh.expect("$ ");
+    sh.send("setopt history.expand history.verify\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("echo verified\n");
+    sh.expect("\nverified\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("!! again\n");
+    sh.expect("echo\x1b[0m verified again");
+    sh.send("\n");
+    sh.expect("\nverified again\n");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
 fn history_file() {
     let mut sh = Pty::spawn("histfile");
     sh.expect("$ ");
@@ -1186,7 +1247,10 @@ fn first_run() {
     let text = std::fs::read_to_string(&config).unwrap();
     assert_has(&text, "\n[options.editor]\nautosuggest = true\n");
     assert_has(&text, "\n[options.prompt]\npercent = true\n");
-    assert_has(&text, "\n[options.history]\n# file = \"~/.local/state/luish/history\"");
+    assert_has(
+        &text,
+        "\n[options.history]\nexpand = true\n# file = \"~/.local/state/luish/history\"",
+    );
     assert_has(&text, "\n[plugins.enabled]\nstd.completion = \"*\"");
     sh4.send("exit\n");
     assert_eq!(sh4.exit_status(), 0);

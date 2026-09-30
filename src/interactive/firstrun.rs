@@ -1,8 +1,8 @@
 //! The first run (DEVELOPING.md): an interactive shell on a terminal whose
 //! configuration directory (`$XDG_CONFIG_HOME/luish`) is missing or empty
 //! offers to write `config.toml` there, before reading it: the recommended
-//! settings (the standard plugins, autosuggestions, `prompt.percent` and
-//! `history.file`, commented out, at its default), the same file with
+//! settings (the standard plugins, autosuggestions, `prompt.percent`,
+//! `history.expand` and `history.file`, commented out, at its default), the same file with
 //! everything commented out (so the question isn't asked again), a
 //! minimal file with only a personal plugin (as `plugin add` takes it), or
 //! nothing (so the question is asked again), in a menu.
@@ -61,7 +61,9 @@ fn config_text(history: &str, bash_completion: bool, on: bool) -> String {
         "=[options.prompt]",
         "=percent = true",
         "",
+        "# !! for the previous command, !$ for its last word, ^old^new to run it with old replaced by new.",
         "=[options.history]",
+        "=expand = true",
         &format!("# file = {history}   # the default"),
     ];
     let plugins = [
@@ -336,7 +338,7 @@ mod tests {
         let on = config_text("~/.local/state/luish/history", true, true);
         assert!(on.contains("\n[options.editor]\nautosuggest = true\n"), "{on}");
         assert!(
-            on.contains("\n[options.history]\n# file = \"~/.local/state/luish/history\""),
+            on.contains("\n[options.history]\nexpand = true\n# file = \"~/.local/state/luish/history\""),
             "{on}"
         );
         #[cfg(feature = "plugins")]

@@ -96,6 +96,15 @@ The history options (see the user documentation on history):
 : As `history.inc_append`, and also read the commands that other shells
   have added to the history file, before each prompt.
 
+`history.expand` (`banghist`, `histexpand`)
+: In an interactive shell, expand history references such as `!!`, `!$`
+  and `^old^new` in the lines typed, as zsh and bash do (see the user
+  documentation on history expansion).
+
+`history.verify` (`histverify`)
+: With `history.expand`, put a line whose references were expanded back
+  in the line editor, rather than running it.
+
 Settings with a value, which are the shell variables in parentheses:
 `setopt name=value` sets the variable (a number must be a non-negative
 decimal number), and `unsetopt name` unsets it, which gives the default

@@ -16,7 +16,8 @@ The first time luish starts in a terminal (when `~/.config/luish/` is missing or
 Down choose, Enter confirms; or press an item's number):
 
 1. **Write the recommended configuration** to `config.toml`: Tab completion from the standard plugins (see below),
-   suggestions from the history as you type, and zsh's `%` sequences in prompts. luish then runs `plugin sync` to
+   suggestions from the history as you type, zsh's `%` sequences in prompts, and history expansion (`!!`, `!$`,
+   `^old^new`). luish then runs `plugin sync` to
    fetch the plugins.
 2. **Write an empty configuration**: the recommended one, all commented out to turn on later, so that the menu isn't
    shown again.

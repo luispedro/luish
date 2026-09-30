@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::ast::FunctionBody;
 use crate::input::{Input, Line};
+use crate::interactive::Expanded;
 use crate::jobs::{JobTable, Terminal};
 use crate::lexer::{AliasMap, ParseError, Parser};
 use crate::options::{Opt, Options};
@@ -802,6 +803,16 @@ impl Shell {
                     }
                     match input.read_line(self, continuation, &buf) {
                         Line::Text(line) => {
+                            let line = match input.expand_history(self, &buf, line) {
+                                Expanded::Line(line) => line,
+                                Expanded::Again => continue,
+                                Expanded::Drop => {
+                                    lineno += buf.iter().filter(|&&c| c == b'\n').count() as u32;
+                                    buf.clear();
+                                    continuation = false;
+                                    continue;
+                                }
+                            };
                             if self.interactive {
                                 self.check_path_dirs();
                             }

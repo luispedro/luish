@@ -8,8 +8,8 @@ fn luish_options() {
         "allexport", "emacs", "errexit", "hashall", "ignoreeof", "monitor", "noclobber", "noexec", "noglob", "nolog",
         "notify", "nounset", "pipefail", "privileged", "verbose", "vi", "xtrace", "prompt.percent", "glob.star",
         "glob.bare_qualifiers", "cd.auto", "history.ignore_space", "history.reduce_blanks", "history.save_no_dups",
-        "history.inc_append", "history.share", "editor.autosuggest", "pushd.auto", "pushd.ignore_dups",
-        "pushd.silent",
+        "history.inc_append", "history.share", "history.expand", "history.verify", "editor.autosuggest", "pushd.auto",
+        "pushd.ignore_dups", "pushd.silent",
     ]
 }
 

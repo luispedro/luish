@@ -1,5 +1,6 @@
 //! Interactive mode: prompts, the line editor, history, and startup files.
 
+mod bang;
 mod complete;
 pub mod firstrun;
 mod highlight;
@@ -38,6 +39,14 @@ thread_local! {
     /// The event number of the history entry to start the next command
     /// line with (after `accept-line-and-down-history`).
     static NEXT: Cell<Option<usize>> = const { Cell::new(None) };
+    /// The text to start the next line with: a line whose history
+    /// references were expanded, with `history.verify`.
+    static REFILL: RefCell<Option<String>> = const { RefCell::new(None) };
+    /// What history expansion keeps from one line to the next.
+    static BANG: RefCell<bang::Memory> = RefCell::default();
+    /// Whether the editor can start a line with text: not on the terminals
+    /// rustyline doesn't support, where it reads lines without editing.
+    static EDITS: Cell<bool> = const { Cell::new(true) };
 }
 
 /// `$HISTFILE`, or by default `$XDG_STATE_HOME/luish/history` (or
@@ -91,6 +100,13 @@ pub fn init_editor() -> bool {
     keys::bind(&mut ed, &helper.menu, &helper.keys);
     ed.set_helper(Some(helper));
     ed.set_completion_type(CompletionType::List);
+    // As rustyline's `is_unsupported_term`.
+    let term = std::env::var("TERM").unwrap_or_default();
+    EDITS.set(
+        !["dumb", "cons25", "emacs"]
+            .iter()
+            .any(|t| t.eq_ignore_ascii_case(&term)),
+    );
     EDITOR.with(|e| *e.borrow_mut() = Some(ed));
     true
 }
@@ -134,6 +150,45 @@ pub fn add_history(sh: &Shell, text: &[u8]) {
     with_history(|h| h.add_current(text, private));
     if sh.opt(Opt::IncAppendHistory) || sh.opt(Opt::ShareHistory) {
         save_history(sh);
+    }
+}
+
+/// What to do with a line after history expansion.
+pub enum Expanded {
+    /// Go on with the line: as it was read, or with its history references
+    /// replaced (and then echoed).
+    Line(Vec<u8>),
+    /// Read the line again, starting from its expansion (`history.verify`).
+    Again,
+    /// Drop the command: expansion failed (and the error was reported), or
+    /// `:p` printed the line and added it to the history.
+    Drop,
+}
+
+/// History expansion (`history.expand`, see `bang.rs`) of a line read by
+/// the editor, after `pending`, the lines read before it of the command.
+pub fn expand_history(sh: &Shell, pending: &[u8], line: Vec<u8>) -> Expanded {
+    let r = with_history(|h| BANG.with_borrow_mut(|mem| bang::expand(h, mem, pending, &line)));
+    match r {
+        None | Some(Ok(None)) => Expanded::Line(line),
+        Some(Err(msg)) => {
+            sh.error(msg);
+            Expanded::Drop
+        }
+        Some(Ok(Some(x))) if x.print => {
+            sys::write_all(2, &x.text);
+            add_history(sh, &[pending, &x.text].concat());
+            Expanded::Drop
+        }
+        Some(Ok(Some(x))) if sh.opt(Opt::HistVerify) && EDITS.get() => {
+            let text = x.text.strip_suffix(b"\n").unwrap_or(&x.text);
+            REFILL.set(Some(String::from_utf8_lossy(text).into_owned()));
+            Expanded::Again
+        }
+        Some(Ok(Some(x))) => {
+            sys::write_all(2, &x.text);
+            Expanded::Line(x.text)
+        }
     }
 }
 
@@ -194,6 +249,7 @@ fn names(sh: &Shell) -> Names {
         plugin_dir: crate::plugins::plugin_dir(sh),
         cdpath: sh.get_var(b"CDPATH").unwrap_or_default(),
         autocd: sh.opt(crate::options::Opt::Autocd),
+        history_expand: sh.opt(Opt::HistExpand),
         options: crate::options::Options::all_names()
             .filter(|o| !matches!(o.0, crate::options::Opt::Interactive | crate::options::Opt::Stdin))
             .map(|(o, name)| (name, sh.opt(o)))
@@ -343,8 +399,9 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
             return Line::Eof;
         };
         keys::update(ed, &menu, &keys, &keymap, wordchars);
+        let refill = REFILL.take();
         // The history entry to start with, after `accept-line-and-down-history`.
-        let initial = (!continuation)
+        let initial = (!continuation && refill.is_none())
             .then(|| NEXT.take())
             .flatten()
             .and_then(|n| Some((ed.history().index_of(n)?, ed.history().event(n)?.to_owned())));
@@ -374,7 +431,10 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
         // insert mode Esc then a key is the same as Meta and the key, so
         // the wait can be shorter.
         ed.set_keyseq_timeout(Some(if vi { 100 } else { 400 }));
-        let start = initial.as_ref().map_or("", |(_, t)| t.as_str());
+        let start = refill
+            .as_deref()
+            .or(initial.as_ref().map(|(_, t)| t.as_str()))
+            .unwrap_or("");
         let r = match &plain {
             Some(plain) => ed.readline_with_initial(&(plain, &text), (start, "")),
             None => ed.readline_with_initial(&text, (start, "")),

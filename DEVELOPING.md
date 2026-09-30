@@ -468,6 +468,20 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   replaced. It is read after the startup files, so they can set `HISTFILE`/`HISTSIZE`. Tests: `history_file` and
   `share_history` in `tests/interactive.rs`, unit tests in `histfile.rs` (including lines written by zsh),
   `builtins/fc_noninteractive.sh`, `fc_history` in `tests/interactive.rs`.
+- **History expansion** (`bang.rs`, `history.expand`): runs on each line the editor returns, in `run_incremental`
+  through `Input::expand_history` (only for `Input::Editor`, so scripts, `-c` and piped input never reach it), before
+  the line joins the pending text; a line without `!` (or a leading `^`) costs one `contains`. The line's quoting
+  context is found by scanning the pending text of the command first (`Scanner`: quotes, `$'...'`, `$(...)`,
+  `$((...))`, backquotes, comments and here-document bodies). `!` is literal where bash's
+  `bash_history_inhibit_expansion` makes it so (`$!`, `${!`, `[!`) and before `"`, `=`, `(`, blanks and operators.
+  Results: the line (echoed to stderr, as bash and zsh do), `Again` (`history.verify`: `REFILL` starts the next
+  `read_line` with it, unless rustyline doesn't support the terminal, where it would be lost), or `Drop` (an error,
+  or `:p`), which clears the pending text. `bang::Memory` keeps the last substitution and `?str?` across lines. The
+  highlighter takes command names with `!` (or a leading `^`) as known when the option is on
+  (`Names::history_expand`). Behaviour was checked against bash 5.2 and zsh 5.9 on a pty; where they differ, luish
+  follows zsh, except where zsh's reading collides with sh syntax (`!"`, `[!`) or zsh fails where bash gives a result
+  (`:h`, `:r`, `:e`), where it follows bash, as it does for comments (`docs/compatibility.md`). Tests: unit
+  tests in `bang.rs`, `history_expansion` in `tests/interactive.rs`.
 - **Prompts** (`prompt.rs`): the expansion keeps escape sequences apart from the text, and gives rustyline both (its
   `(raw, styled)` prompt), so the cursor position doesn't count them. Nothing is done unless the option is on and the
   prompt has a `%`. Tests: `misc/prompt_percent.sh` (checked against zsh while written; zsh can't be the reference
@@ -529,7 +543,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
 - **First run** (`interactive/firstrun.rs`): before `config.toml` is read, an interactive shell reading from the line
   editor, with stderr a terminal (and without `--no-rcs` or `--no-plugins`), whose configuration directory is missing
   or empty (only `.` and `..`) shows a menu on stderr (`choose`): write `config.toml` with the recommended settings
-  (`config_text`: `editor.autosuggest`, `prompt.percent`, the default `history.file` as a comment, `std.completion`,
+  (`config_text`: `editor.autosuggest`, `prompt.percent`, `history.expand`, the default `history.file` as a comment, `std.completion`,
   plus `std.bash-completion` if bash-completion is where `bridge.bash` looks for it; the plugins only with the
   `plugins` feature), write the same text commented out (so the directory isn't empty next time), write a minimal
   file with only a personal plugin, or write nothing. The menu puts the terminal in raw mode (`Raw`, restored on drop;
@@ -790,6 +804,7 @@ truncates when it relocates the package.
 | A directory as a command | `builtins/autocd.sh` (zsh) |
 | `bindkey` | `builtins/bindkey.sh` (same as dash), `builtins/internal_bindkey.sh`, `line_editor_keys` in `tests/interactive.rs` |
 | History file | `history_file` and `share_history` in `tests/interactive.rs`, unit tests in `interactive/histfile.rs` |
+| History expansion | `history_expansion` in `tests/interactive.rs`, unit tests in `interactive/bang.rs` |
 | `alias`, `unalias` options | `builtins/alias_options.sh` (zsh), `builtins/alias_deviations.sh` |
 | Global aliases | `parse/alias_global.sh` (zsh), `builtins/alias_deviations.sh` (here-document delimiter), `builtins/internal_savestate_aliases.sh` |
 | Suffix aliases | `parse/alias_suffix.sh` (zsh), `builtins/alias_deviations.sh` (`command -v`) |

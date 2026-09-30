@@ -738,6 +738,10 @@ pub fn render(line: &[u8], cls: &[Class], colors: &Colors) -> Vec<u8> {
 
 impl ShellHelper {
     fn is_known(&self, name: &[u8]) -> bool {
+        // A history reference, expanded once the line is entered.
+        if self.names.history_expand && (name.contains(&b'!') || name.starts_with(b"^")) {
+            return true;
+        }
         if let Some(&k) = self.highlight.known.borrow().get(name) {
             return k;
         }

@@ -57,6 +57,9 @@ pub struct Names {
     pub cdpath: Vec<u8>,
     /// `setopt cd.auto`: directories are commands too.
     pub autocd: bool,
+    /// `history.expand`: the highlighter takes a command name with a `!`,
+    /// or one starting with `^`, for a history reference.
+    pub history_expand: bool,
     /// The options `setopt` and `unsetopt` can change, named as they list
     /// them, and whether each is on.
     pub options: Vec<(&'static str, bool)>,
@@ -1838,6 +1841,7 @@ mod tests {
                 plugin_dir: Some(dir.join("plugins").as_os_str().as_bytes().to_vec()),
                 cdpath: format!("/nonexistent::{d}").into_bytes(),
                 autocd: false,
+                history_expand: false,
                 options: vec![
                     ("errexit", false),
                     ("noglob", false),

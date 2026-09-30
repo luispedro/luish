@@ -8,6 +8,7 @@ history.inc_append on
 tilde expanded
 through command
 100
+unsetopt history.expand
 setopt history.file='it'"'"'s'
 unsetopt history.ignore_space
 setopt history.inc_append
@@ -15,11 +16,14 @@ setopt history.reduce_blanks
 unsetopt history.save_no_dups
 setopt history.share
 setopt history.size='100'
+unsetopt history.verify
+unsetopt history.expand
 unsetopt history.ignore_space
 setopt history.inc_append
 setopt history.reduce_blanks
 unsetopt history.save_no_dups
 setopt history.share
+unsetopt history.verify
 unsetopt glob.bare_qualifiers
 unsetopt glob.star
 setopt_group.sh: 23: setopt: no such option: history.bogus

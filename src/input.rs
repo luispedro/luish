@@ -2,6 +2,7 @@
 //! a time, or the interactive line editor.
 
 use crate::interactive;
+use crate::options::Opt;
 use crate::shell::Shell;
 use crate::sys;
 
@@ -52,6 +53,15 @@ impl Input {
                 }
             }
             Input::Editor => interactive::read_line(sh, continuation, pending),
+        }
+    }
+
+    /// History expansion of a line read, with `history.expand` in the line
+    /// editor. `pending` is the text read before it of the same command.
+    pub fn expand_history(&mut self, sh: &Shell, pending: &[u8], line: Vec<u8>) -> interactive::Expanded {
+        match self {
+            Input::Editor if sh.opt(Opt::HistExpand) => interactive::expand_history(sh, pending, line),
+            _ => interactive::Expanded::Line(line),
         }
     }
 

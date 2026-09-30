@@ -344,6 +344,63 @@ setopt history.reduce_blanks
 Unlike zsh, luish saves the history by default: zsh keeps no file unless
 `HISTFILE` and `SAVEHIST` are set.
 
+### History expansion
+
+With `setopt history.expand` (zsh's `banghist` and bash's `histexpand` are
+the same option), `!` refers to earlier commands, as in bash and zsh. It is
+off by default, since `!` isn't special in POSIX sh, but the recommended
+`config.toml` that luish offers on its first run turns it on.
+
+```sh
+$ echo one two three
+one two three
+$ sudo !!             # the previous command
+$ ls !$               # its last word, three
+$ echo !^ !:2 !*      # its first, second and all arguments
+$ !ec                 # the newest command starting with ec
+$ !?two?              # the newest command containing two
+$ !-2                 # the command before the previous one
+$ !42                 # command 42, as fc -l numbers them
+$ ^three^four         # the previous command, with three replaced by four
+```
+
+A line with a reference is shown as expanded before it runs, and goes into
+the history that way. Each line of a multi-line command is expanded as it is
+read.
+
+- **Events**: `!!`, `!n`, `!-n`, `!str`, `!?str?`, `!#` (the line typed so far),
+  and `!{...}` around any of them to separate it from the text after it. A
+  `!` alone before a word designator or modifier (`!$`, `!:2`) is the event
+  of the reference before it in the line, or else the previous command, as
+  in zsh (bash always uses the previous command).
+- **Word designators**, after `:` (which can be left out before `^`, `$`, `*`,
+  `%` and `-`): `n`, `^` (1), `$` (the last), `%` (the word `!?str?` found),
+  `x-y`, `-y` (`0-y`), `x*` (`x-$`), `*` (`1-$`, empty if there are no
+  arguments) and `x-` (`x*` without the last word). Words are split as the
+  shell splits them, with operators (`|`, `&&`, `>`) as words of their own,
+  and a range keeps the text between its words.
+- **Modifiers**, each after a `:`: `h` (the directory: without the last `/`
+  and what follows), `t` (the last component), `r` (without the
+  extension), `e` (only the extension; `h`, `r` and `e` leave the text as it
+  is when there is no `/` or extension), `s/old/new/` (the first `old`, or
+  each with `gs`; `&` in `new` is `old`, an empty `old` is the previous one,
+  and the last `/` can be left out at the end of the line), `&` (the
+  previous substitution again; `g&` for each), `q` (quoted), `x` (each word
+  quoted) and `p` (print the line and add it to the history, but don't run
+  it).
+
+A `!` doesn't start a reference in single quotes or `$'...'`, after a
+backslash, in here-document bodies, comments or `$((...))`, before a blank,
+`=`, `(`, `"` or an operator (so `echo hi!` and `[ a != b ]` work), nor in
+`$!`, `${!name}` and `[!...]`. In double quotes it does. A reference that
+can't be expanded is an error, and the line (with the lines before it of the
+same command) is dropped without going into the history.
+
+With `setopt history.verify` as well, the expanded line is put back in the
+line editor instead of running, so that it can be checked or changed first
+(Enter runs it). On terminals the editor doesn't support (`TERM=dumb`), it
+runs at once.
+
 ## Tab completion
 
 In an interactive shell, Tab starts completion.

@@ -1,4 +1,5 @@
 --- an interactive shell reads it
+unsetopt history.expand
 setopt history.file='~/hist'
 unsetopt history.ignore_space
 unsetopt history.inc_append
@@ -6,15 +7,18 @@ unsetopt history.reduce_blanks
 unsetopt history.save_no_dups
 setopt history.share
 setopt history.size='50'
+unsetopt history.verify
 unsetopt glob.bare_qualifiers
 setopt glob.star
 HISTFILE=~/hist
 --- a script and -c do not
+unsetopt history.expand
 unsetopt history.ignore_space
 unsetopt history.inc_append
 unsetopt history.reduce_blanks
 unsetopt history.save_no_dups
 unsetopt history.share
+unsetopt history.verify
 unsetopt glob.bare_qualifiers
 unsetopt glob.star
 HISTFILE=
@@ -30,12 +34,14 @@ luish: ~/.config/luish/config.toml: line 6: no such option: history.bogus
 luish: ~/.config/luish/config.toml: line 8: history.reduce_blanks: expected a boolean, found string
 luish: ~/.config/luish/config.toml: line 9: no such group: nosuch
 luish: ~/.config/luish/config.toml: line 14: no such option: cd
+unsetopt history.expand
 unsetopt history.ignore_space
 unsetopt history.inc_append
 unsetopt history.reduce_blanks
 unsetopt history.save_no_dups
 setopt history.save_size='20'
 unsetopt history.share
+unsetopt history.verify
 unsetopt glob.bare_qualifiers
 setopt glob.star
 --- not TOML

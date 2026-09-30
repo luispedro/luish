@@ -10,11 +10,13 @@ errexit
 glob.bare_qualifiers
 glob.star
 hashall
+history.expand
 history.ignore_space
 history.inc_append
 history.reduce_blanks
 history.save_no_dups
 history.share
+history.verify
 ignoreeof
 interactive
 monitor
