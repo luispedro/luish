@@ -672,7 +672,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   extensions, 16 directories; the values of `--flag=` come without the prefix, which the bridge adds back; the
   extension's `complete-cobra PROG...` built-in registers more of them, and lists them without arguments) and nix's
   (`NIX_GET_COMPLETIONS=N`, whose first line is `normal`, `filenames` or `attrs`, the last with no space after, and
-  whose descriptions are Markdown). The extension only registers the commands (a map from command to module, which the
+  whose descriptions are Markdown), and Click's (Python: `_PROG_COMPLETE=fish_complete COMP_WORDS=LINE COMP_CWORD=WORD`
+  prints `TYPE,VALUE` and a tab and a description, TYPE being `plain`, or `file` or `dir`, which the bridge completes
+  itself; fish's format because its lines are one candidate each, while zsh's three lines break on a help of several
+  lines and bash's has no descriptions. As fish does, COMP_WORDS ends before the word to complete when it is empty,
+  or Click takes `''` for an argument. A program that doesn't know the protocol just runs, so `complete-click PROG...`
+  is only for programs built with Click, and what doesn't look like candidates is ignored). The extension only registers the commands (a map from command to module, which the
   closures share); a completer imports its module, so each is compiled on its first Tab (5 to 10 ms; later ones take
   about 1 ms, plus the programs they run: 15 ms for `systemctl stop`, 30 ms for `cargo build --`) instead of at every
   start (loading the plugin takes about 0.4 ms). xargs gets no plugin completer, as luish's own completer skips it as a

@@ -150,7 +150,7 @@ Still to build, in this order:
      install (their lists take seconds; zsh keeps a cache), and options for `xargs` (luish's completer skips it as a
      precommand, so no plugin sees it).
    - **A generic bridge**, so that most programs get completion without a hand-written completer: programs that
-     complete themselves (Cobra and nix: done, in `completion`; still to do: clap's `COMPLETE=`, `argcomplete`),
+     complete themselves (Cobra, Click and nix: done, in `completion`; still to do: clap's `COMPLETE=`, `argcomplete`, Typer's),
      bash-completion scripts (as in `luish-std-plugins/bash-completion/`, but faster), and `--help` parsing for
      options only (as fish does). This needs a design note before building.
    - **Typing to narrow the menu** (zsh's `menu select interactive`): while the menu is open, printable keys filter

@@ -455,6 +455,9 @@ The `std` library is tied to the version of luish, so it is not affected by
     docker, podman, kubectl, helm, minikube, kind, hugo, rclone, ...) and nix.
     For another program built with Cobra, `complete-cobra PROG...` (in
     a file of `rc.d`, for instance) adds it; without arguments, it lists them.
+    The same for Python programs built with Click (black, flask, uvicorn,
+    pip-compile, hatch, mkdocs, celery, llm ...) and `complete-click PROG...`.
+    Each Tab runs the program, so only register programs built with Click.
 
   The options of cargo's subcommands, rustup, uv, pixi and openssl's commands
   are read from their `-h`, so they follow the installed version. Short

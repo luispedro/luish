@@ -225,6 +225,46 @@ complete-cobra | grep -x -e gh -e frob
 complete-cobra a/b 2>/dev/null
 echo "complete-cobra $?"
 
+echo "=== Click programs"
+w clk '[ "$_CLK_COMPLETE" = fish_complete ] || { echo "Usage: clk [OPTIONS]"; exit 0; }
+W=$(printf "%s" "$COMP_WORDS" | sed "s/\x27\([A-Za-z0-9_=.\/-]*\)\x27/\1/g")
+case "$W|$COMP_CWORD" in
+"clk |") printf "plain,run\tDo it.\nplain,other\tOther one.\n" ;;
+"clk ru|ru") printf "plain,run\tDo it.\n" ;;
+"clk run --|--") printf "plain,--mode\tLine one\\\\nline two\nplain,--nohelp\nplain,--in-file\nplain,--outdir\n" ;;
+"clk run --mode |") printf "plain,fast\nplain,slow mode\n" ;;
+"clk run --mode=s|--mode=s") printf "plain,slow mode\n" ;;
+"clk run -i n|n") printf "file,n\n" ;;
+"clk run --in-file=n|--in-file=n") printf "file,n\n" ;;
+"clk run --outdir |") printf "dir,\n" ;;
+"clk run --outdir=s|--outdir=s") printf "dir,\n" ;;
+"clk run "*) printf "plain,%s\nplain,[%s]\n" "$W" "$COMP_CWORD" ;;
+*) ;;
+esac'
+w ign 'echo "Usage: ign [OPTIONS]"; echo "Options:, none"'
+mkdir -p sub
+complete-click clk
+c 'clk '
+c 'clk ru'
+c 'clk run --'
+c 'clk run --mode '
+c 'clk run --mode=s'
+c 'clk run -i n'
+c 'clk run --in-file=n'
+c 'clk run --outdir '
+c 'clk run --outdir=s'
+c "clk run 'a b' "
+c "clk run '\$(touch pwned)'"
+c "clk run x '\$(touch pwned)"
+test -e pwned && echo INJECTED || echo "no injection"
+c 'clk nosuch '
+complete-click ign
+echo "complete-click $?"
+c 'ign n'
+complete-click | grep -x -e black -e ign
+complete-click a/b 2>/dev/null
+echo "complete-click $?"
+
 echo "=== nix"
 w nix 'case "$NIX_GET_COMPLETIONS:$*" in
 "1:bu") printf "normal\nbuild\t\nbundle\t\n" ;;

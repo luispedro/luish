@@ -454,6 +454,81 @@ status 0
 gh
 frob
 complete-cobra 1
+=== Click programs
+--- clk 
+other 	Other one.
+run 	Do it.
+status 0
+--- clk ru
+run 	Do it.
+status 0
+--- clk run --
+--in-file 
+--mode 	Line one
+--nohelp 
+--outdir 
+status 0
+--- clk run --mode 
+fast 
+slow\ mode 
+status 0
+--- clk run --mode=s
+--mode=slow\ mode 
+status 0
+--- clk run -i n
+notes.txt 
+status 0
+--- clk run --in-file=n
+--in-file=notes.txt 
+status 0
+--- clk run --outdir 
+bin/
+conda/
+examples/
+src/
+sub/
+status 0
+--- clk run --outdir=s
+--outdir=src/
+--outdir=sub/
+status 0
+--- clk run 'a b' 
+\[] 
+clk\ run\ \'a\ b\'\  
+status 0
+--- clk run '$(touch pwned)'
+\[\$\(touch\ pwned\)] 
+clk\ run\ \'\$\(touch\ pwned\)\' 
+status 0
+--- clk run x '$(touch pwned)
+'[$(touch pwned)]' 
+'clk run x '\''$(touch pwned)'\''' 
+status 0
+no injection
+--- clk nosuch 
+Cargo.toml 
+a.gz 
+b.txt.gz 
+bin/
+conda/
+examples/
+notes.txt 
+package.json 
+pixi.toml 
+src/
+std_completion_more.sh 
+sub/
+x.deb 
+y.rpm 
+z.pkg.tar.zst 
+status 0
+complete-click 0
+--- ign n
+notes.txt 
+status 0
+black
+ign
+complete-click 1
 === nix
 --- nix bu
 build 

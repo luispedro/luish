@@ -1,9 +1,9 @@
 // Completion for common commands. Each command is described by a spec in
 // one of the modules below (specs.rhai for coreutils, grep, diffutils, tar,
 // make, rsync, man, ssh ...), and completed by lib.rhai. Programs that
-// complete themselves (those built with Cobra, and nix) are asked, in
-// bridges.rhai; `complete-cobra PROG...` adds more of them. git is
-// completed by git.rhai.
+// complete themselves (those built with Cobra or Click, and nix) are asked,
+// in bridges.rhai; `complete-cobra PROG...` and `complete-click PROG...` add
+// more of them. git is completed by git.rhai.
 //
 // The modules are imported by the completer, so that they are compiled on
 // the first Tab for one of their commands rather than whenever a shell
@@ -88,6 +88,41 @@ sh::builtin("complete-cobra", |argv| {
         cobra_completer(cmd);
         if !cobra.contains(cmd) {
             cobra.push(cmd);
+        }
+    }
+});
+// Programs built with Click (Python), which complete themselves. Not the
+// ones that take seconds to start (dbt, mlflow ...): `complete-click` adds them.
+let click = [
+    "black", "flask", "uvicorn", "pip-compile", "pip-sync", "hatch", "mkdocs", "cookiecutter", "celery",
+    "datasette", "sqlite-utils", "llm", "pgcli", "mycli", "litecli", "streamlit", "wandb",
+];
+fn click_completer(cmd) {
+    sh::completer(cmd, |words, i| {
+        import "bridges" as bridges;
+        bridges::click(words, i)
+    });
+}
+for cmd in click {
+    click_completer(cmd);
+}
+// complete-click PROG...: complete PROG... as programs built with Click;
+// without arguments, list those programs. (Each Tab runs the program, so
+// only for programs that are built with Click.)
+sh::builtin("complete-click", |argv| {
+    if argv.len() < 2 {
+        for cmd in click {
+            print(cmd);
+        }
+        return;
+    }
+    for cmd in argv.extract(1) {
+        if cmd == "" || cmd.contains("/") {
+            throw `${cmd}: bad command name`;
+        }
+        click_completer(cmd);
+        if !click.contains(cmd) {
+            click.push(cmd);
         }
     }
 });
