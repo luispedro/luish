@@ -8,6 +8,8 @@ In luish, plugins are part of the shell and managed in a modern way:
 declaratively and reproducibly, with a lock file that records the exact commits
 of each plugin.
 
+- `plugin add` adds a plugin from GitHub, another git repository or a path to
+  `config.toml` and fetches it.
 - A plugin's `plugin.toml` lists its dependencies, which are loaded first, and
   can set options, aliases and key bindings.
 - A plugin can have extensions written in [Rhai](https://rhai.rs) that runs

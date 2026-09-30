@@ -60,7 +60,7 @@ and on a plugin source with an empty path. luish no longer prints git's error
 for a locked plugin commit that isn't fetched yet.
 
 **Known problem.** The startup cache records what your files changed relative
-to the environment of the shell that built it. . If `conda` or `nvm` fail in
+to the environment of the shell that built it. If `conda` or `nvm` fail in
 new terminals, remove the caches (`rm ~/.cache/luish/rc-*
 ~/.cache/luish/login-*`) and start luish once from a terminal that isn't
 running another shell with the same setup. See [Cached startup

@@ -69,7 +69,7 @@ Most coverage is differential (`tests/compare.rs`): each `tests/cases/**/*.sh` r
   matches. Record every deviation in `docs/compatibility.md`, and its tests in `DEVELOPING.md`. `NAME.stdin` is fed
   to standard input.
 - Each script runs in a fresh temporary directory that is also `$HOME`, with a cleared environment, `LC_ALL=C`, and
-  `$SH` set to the shell under test.
+  `$SH` set to the shell under test, in a session of its own (so without a controlling terminal).
 - When fixing a bug, add a case first. Every behaviour listed in `DEVELOPING.md` must stay covered.
 - Jobs in cases must be deterministic: either finished (after `wait`) or long-running and killed. `kill $!` on a
   background pipeline only kills its last process, so use `: | sleep 10`, not `sleep 10 | sleep 10`.
@@ -105,9 +105,9 @@ state on the `Shell` struct in `shell.rs`.
   are a `fn` table in `builtins/mod.rs`, flagged special or regular; the flag decides assignment scope and whether
   errors exit the shell.
 - **Forking**: all forks go through `exec/fork.rs::fork_child` with a `ForkKind` (a foreground or background job's
-  process, with its process group, or `NoJob` for command substitution), which sets up process groups and the
-  terminal under job control. Children reset traps and signal dispositions in `child_reset`, with signals blocked
-  across the fork when anything is trapped or ignored. An `exit` flag (dash's `EV_EXIT`, `run_list_exit`) marks
+  process, with its process group, or `NoJob` for command and process substitution), which sets up process groups
+  and the terminal under job control. Children reset traps and signal dispositions in `child_reset`, with signals
+  blocked across the fork when anything is trapped or ignored. An `exit` flag (dash's `EV_EXIT`, `run_list_exit`) marks
   code after which the process exits (a forked child, the end of `-c`); its last external command then execs
   without forking (`no_fork` in `run_command`), unless a trap is set.
 - **Redirections** for in-process commands save the original fds at fd ≥ 10 (close-on-exec) and restore them
@@ -122,7 +122,8 @@ state on the `Shell` struct in `shell.rs`.
   syntax highlighter (`interactive/highlight.rs`) never see `Shell`: `read_line` hands them a `Names` snapshot (and
   the colours and pending text) before each prompt.
   The history store (`interactive/history.rs`) is luish's own rustyline `History`, so that `fc` gets stable event
-  numbers and can replace its own entry.
+  numbers and can replace its own entry. History expansion (`interactive/bang.rs`) rewrites each line the editor
+  returns, before it is parsed.
 - **Jobs** (`jobs.rs`) follow dash's model: numbered slots plus a "current job" order, finished jobs kept until
   reported. Without job control only background jobs are recorded; foreground commands are waited for directly.
   With job control (`Shell::jobctl` holds the terminal) every job is recorded while it runs and waited for with

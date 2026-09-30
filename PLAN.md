@@ -4,7 +4,7 @@
 plugin system from Stage 2, and sketches of the later stages with the constraints they put on the design now. What
 is already built, and how, is in `DEVELOPING.md`; the user documentation is in `docs/`.
 
-## Status (2026-09-29)
+## Status (2026-10-01)
 
 | Phase | Stage | Status |
 |---|---|---|
@@ -18,7 +18,7 @@ is already built, and how, is in `DEVELOPING.md`; the user documentation is in `
 | 7 Functions, `eval`, `.`, control flow | 1 | Done |
 | 8 Signals and traps | 1 | Done, with the limitations in `docs/compatibility.md` |
 | 9 Options and `set -e` | 1 | Done |
-| 10 Interactive mode and job control | 1 | Done, and beyond the plan: a zsh-style completion menu, syntax highlighting, zsh's `%` prompt sequences, a history file shared with zsh, `pushd`/`popd`, `bindkey`, autosuggestions, `**/` and glob qualifiers |
+| 10 Interactive mode and job control | 1 | Done, and beyond the plan: a zsh-style completion menu, syntax highlighting, zsh's `%` prompt sequences, a history file shared with zsh, history expansion, `pushd`/`popd`, `bindkey`, autosuggestions, `**/`, glob qualifiers and a first-run menu |
 | 11 Plugins | 2 | Started (below), because the daily driver's prompt and completion build on it |
 | 12 Conformance and performance | 1 | Under way (below) |
 | 13 Replacing zsh | 1 | **Current focus** (below) |
@@ -28,8 +28,8 @@ second (nvm) are otherwise a daily cost.
 
 ### Next steps, in priority order
 
-1. **Phase 13, in its order**: a generic completion bridge (needs a design note first) and typing to narrow the
-   menu; shell-function `chpwd`/`precmd`/`preexec`; lazy function parsing of the startup cache.
+1. **Phase 13, in its order**: the rest of the generic completion bridge (needs a design note first) and typing to
+   narrow the menu; shell-function `chpwd`/`precmd`/`preexec`; lazy function parsing of the startup cache.
 2. **Startup cost** (deferred by the user for now; see Performance in `DEVELOPING.md`): the dynamic loader's share,
    and parsing large files (the rc cache, `nvm.sh`) about three times as slowly as dash.
 3. **More conformance**: larger `configure` scripts (coreutils), other Oils files that don't list dash, the smoosh
@@ -42,10 +42,12 @@ second (nvm) are otherwise a daily cost.
 
 ## Phase 11 — Plugin system (Stage 2)
 
-Done: the `plugin` built-in (`load`, `list-loaded`, `list-available`, `unload`, `add`, `sync`, `update`, and `restore` for
-the startup cache), directory plugins, plugin packages (below), the byte conversion, the Rhai engine with its limits
-and interrupts, the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks, completers, extension built-ins
-(`sh::builtin`, with `sh::read_line`), part of the `sh` module, and the `fs` and `vcs` modules. Still to do:
+Done: the `plugin` built-in (`load`, `list-loaded`, `list-available`, `unload`, `add`, `sync`, `update`, `check`, and
+`restore` for the startup cache), directory plugins, plugin packages (below), the byte conversion, the Rhai engine
+with its limits and interrupts (and without `eval`), `import` relative to the importing file and of another plugin's
+modules (`@SOURCE/PLUGIN/MODULE`), the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks, completers,
+extension built-ins (`sh::builtin`, with `sh::read_line`), most of the `sh` module (with `sh::capture` taking an argv,
+`sh::capture_sh`, `sh::which` and `sh::commands`), and the `fs` and `vcs` modules. Still to do:
 
 1. A plugin-agnostic `Builtin` trait, with the Rust built-ins moved onto it, so that extension and native built-ins
    go through the same code path (extension built-ins are now a separate `CommandKind::Extension`, looked up after
@@ -87,8 +89,8 @@ and interrupts, the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks
    ```
 
 4. Example plugins: a git-aware prompt, a `json` query built-in, and a command-timing `preexec`/`precmd` pair (M5).
-5. Plugin packages: `plugin add`/`remove`/`gc` and `login.lsh` (below; the table, the lock, `sync` and `update` are
-   done).
+5. Plugin packages: `plugin remove`/`gc` and `login.lsh` (below; the table, the lock, `add`, `sync`, `update` and
+   `check` are done).
 
 ### Plugin packages
 
@@ -97,9 +99,10 @@ Done (see `DEVELOPING.md` and the plugins page of the user docs): the `[plugins]
 `plugins.enabled` (`NAME`, `SOURCE.NAME` or `"SOURCE/NAME"`, and inline sources, all `= "*"`); dependencies in a
 directory plugin's `plugin.toml`, resolved recursively, and its `[options]`, `[alias]` and `[bindkey]` tables;
 `plugins.lock` (pins and the resolved plugins); `plugin sync` and `plugin update`, which run git into
-`$XDG_DATA_HOME/luish/plugins/`; `plugin load SOURCE/NAME` with dependencies; enabled plugins loaded at startup before
+`$XDG_DATA_HOME/luish/plugins/`, and `plugin check`, which asks the git sources for newer commits;
+`plugin load SOURCE/NAME` with dependencies; enabled plugins loaded at startup before
 `rc.d`, cached with it; `post-rc.lsh` and the `post-rc` hook; `plugin add SPEC [NAME]`, which edits
-`config.toml` as text. Still to do:
+`config.toml` as text; a first-run menu that writes `config.toml`. Still to do:
 
 1. `plugin remove NAME...`, editing `config.toml` as text as `plugin add` does, and `plugin gc` for the repositories and checkouts the lock doesn't use (`sync` and `update`
    never remove them, since a running shell may still read their files).
@@ -132,14 +135,15 @@ Already done: the prompt, the line-editor keys (`bindkey`, with keys by name and
 autosuggestions, `auto_pushd` (with `pushd_ignore_dups` and `pushd_silent`), `CDPATH`, the directory stack, aliases
 (with zsh's options, global and suffix aliases, and an `[alias]` table in `config.toml`), the conda, nvm and
 home-manager setup scripts (through the `rc.d` cache), `**/`, `autocd`, menu completion, the history shared with zsh
-through `~/.histfile`, and grouped settings with `config.toml`.
+through `~/.histfile`, history expansion (`!!`, `!$`, `^old^new`, with `setopt history.expand`), process
+substitution, and grouped settings with `config.toml`.
 
 Still to build, in this order:
 
 1. **Completion content**, the biggest gap by volume (zsh gets git, ssh, make, man, cargo ... from `compinit` and
    zsh-completions):
-   - **git**: done, in `completion` in `luish-std-plugins/`. Still missing: `REV:PATH`, `git config` keys, and
-     values for most `--option=` words.
+   - **git**: done, in `completion` in `luish-std-plugins/` (with ranges, and the tracked files after a revision in
+     `git diff REV`). Still missing: `REV:PATH`, `git config` keys, and values for most `--option=` words.
    - **Common commands**: done, as `completion` in `luish-std-plugins/` (about 230: coreutils, grep, diffutils, tar,
      make, rsync, man, ssh/scp/sftp, pkill, shells, find, sed, awk, jq, rg, compressors, systemctl, journalctl,
      loginctl, ps, mount, tmux, curl, wget, ip, gpg, openssl, cargo, rustup, go, gcc, cmake, gdb, python, editors,

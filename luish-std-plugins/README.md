@@ -7,7 +7,7 @@ and will become a repository of its own, as an example of how a plugin collectio
 
 | Plugin | What it does | Needs |
 |---|---|---|
-| `completion` | Tab completion for about 230 common commands: their options (with descriptions), the values of options, their subcommands, and their other arguments (directories for `mkdir`, users and groups for `chown`, make's targets, ssh's hosts, man pages, the files in an archive for `tar -xf`, systemd's units, installed and available packages, cargo's targets and features, pixi's and npm's tasks ...). Programs built with Cobra (gh, docker, kubectl ..., and more with `complete-cobra PROG...`) or Click (black, flask ..., and more with `complete-click PROG...`) and nix are asked for their own completions. git: its commands (with descriptions) and aliases, the options of each command, and the arguments each command takes (branches, tags, ranges such as `main..`, remotes, stashes, worktrees, and the files it can act on: modified and untracked files for `git add`, staged ones for `git restore --staged`, ...) | |
+| `completion` | Tab completion for about 230 common commands: their options (with descriptions), the values of options, their subcommands, and their other arguments (directories for `mkdir`, users and groups for `chown`, make's targets, ssh's hosts, man pages, the files in an archive for `tar -xf`, systemd's units, installed and available packages, cargo's targets and features, pixi's and npm's tasks ...). Programs built with Cobra (gh, docker, kubectl ..., and more with `complete-cobra PROG...`) or Click (black, flask ..., and more with `complete-click PROG...`) and nix are asked for their own completions. git: its commands (with descriptions) and aliases, the options of each command, and the arguments each command takes (branches, tags, ranges such as `main..`, remotes, stashes, worktrees, and the files it can act on: modified and untracked files for `git add`, staged ones for `git restore --staged`, tracked ones after a revision for `git diff`, ...) | |
 | `bash-completion` | Completion from [bash-completion](https://github.com/scop/bash-completion), for the commands that have no completer of their own | bash, bash-completion |
 
 For git, `completion` runs git with the options of the command line that choose the repository (`-C DIR`,
@@ -73,11 +73,23 @@ luish-std-plugins/
 │   └── bridge.bash            # run by extension.rhai, through sh::plugin_dir()
 └── completion/
     ├── plugin.toml            # its description
-    ├── extension.rhai         # registers the completers
-    ├── lib.rhai               # modules that extension.rhai imports
-    ├── kinds.rhai
-    └── specs.rhai
+    ├── extension.rhai         # registers the completers, and complete-cobra and complete-click
+    ├── lib.rhai               # the engine: completes a command line from a spec
+    ├── kinds.rhai             # what arguments complete to (dirs, users, hosts ...)
+    ├── specs.rhai             # the specs of one group of commands each, imported on the first Tab
+    ├── shells.rhai            #   for one of their commands
+    ├── tools.rhai
+    ├── system.rhai
+    ├── net.rhai
+    ├── dev.rhai
+    ├── langs.rhai
+    ├── packages.rhai
+    ├── git.rhai
+    └── bridges.rhai           # programs that complete themselves (Cobra, Click, nix)
 ```
+
+Other plugins can use the engine with `import "@std/completion/lib"` (see "Reusing std's completion engine" in the
+plugins page of luish's documentation).
 
 ## Using them
 

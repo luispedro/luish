@@ -66,14 +66,15 @@ src/
 ├── expand/             # mod.rs (driver, parameters, command substitution), arith.rs, split.rs, pattern.rs, glob.rs,
 │                       # qual.rs
 ├── exec/               # mod.rs (lists, pipelines, compound commands), simple.rs (commands, lookup), fork.rs,
-│                       # redirect.rs, cond.rs (`[[ ... ]]`), not_found.rs (hints for commands of other shells)
+│                       # redirect.rs, cond.rs (`[[ ... ]]`), procsubst.rs (`<(...)`, `>(...)`), not_found.rs
+│                       # (hints for commands of other shells)
 ├── vars.rs, options.rs, jobs.rs, signals.rs, path.rs
 ├── hash.rs             # the hash for the shell's tables (not SipHash)
 ├── builtins/           # mod.rs (table, special vs regular), one file per built-in or small group; help.rs
-├── interactive/        # mod.rs (REPL, rustyline helper), history.rs, histfile.rs, complete.rs, menu.rs,
-│                       # keys.rs, highlight.rs
+├── interactive/        # mod.rs (REPL, rustyline helper), history.rs, histfile.rs, bang.rs (history expansion),
+│                       # complete.rs, menu.rs, keys.rs, highlight.rs, firstrun.rs (the first-run menu)
 └── plugins/            # mod.rs (the `plugin` built-in), package.rs (config.toml's [plugins], plugin.toml,
-                        # plugins.lock), fetch.rs (git), rhai.rs, fs.rs, vcs.rs, bytes.rs
+                        # plugins.lock), fetch.rs (git), add.rs (`plugin add`), rhai.rs, fs.rs, vcs.rs, bytes.rs
 tests/
 ├── cases/              # differential cases (*.sh, with .expected/.status/.stdin where needed)
 ├── plugins/            # plugin cases (*.sh with .expected, .stderr)

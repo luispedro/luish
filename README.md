@@ -12,12 +12,15 @@ fast as [dash](http://gondor.apana.org.au/~herbert/dash/).
   Where POSIX is ambiguous, luish matches dash.
 - **As fast as dash, with zsh's features.** Scripts run as fast as under dash (faster on arithmetic and function
   calls), and up to six times faster than under bash or zsh. Interactively: zsh's keys, syntax highlighting,
-  autosuggestions, shared history in zsh's format, completion with a menu, zsh's prompts and glob qualifiers.
-- **A modern plugin architecture**: plugins in shell and [Rhai](https://rhai.rs), listed in `config.toml`, fetched
-  from git and pinned in a lock file. Anything beyond POSIX that changes behaviour is opt-in, and none of it costs
-  anything when it is not used.
+  autosuggestions, shared history in zsh's format with history expansion (`!!`, `!$`), completion with a menu (for
+  about 230 commands with the standard plugins), zsh's prompts and glob qualifiers.
+- **A modern plugin architecture**: plugins in shell and [Rhai](https://rhai.rs), listed in `config.toml` (or added
+  with `plugin add`), fetched from git and pinned in a lock file. Plugins can add hooks, prompt variables, completion
+  and commands. Anything beyond POSIX that changes behaviour is opt-in, and none of it costs anything when it is not
+  used.
 - **bash's and zsh's scripting extensions**: arrays and associative arrays, `[[ ... ]]`, `${x/pattern/replacement}`,
-  `typeset`, zsh's parameter flags and more. Scripts that use them run up to six times faster than under bash or zsh.
+  process substitution (`<(...)`), `typeset`, zsh's parameter flags and more. Scripts that use them run up to six
+  times faster than under bash or zsh.
 - **Instant startup**: luish caches the effect of your startup files, so a shell starts in milliseconds even with
   `conda`, `nvm` and the like set up.
 - **Modern configuration** in a TOML file, with options named in groups (`history.share`) and settings in layers
@@ -37,7 +40,8 @@ curl -fsSL https://raw.githubusercontent.com/luispedro/luish/main/install.sh | s
 
 [docs/installation.md](docs/installation.md) has its options, such as the static musl build (`sh -s -- --musl`), and
 how to install luish with Nix (`nix profile install github:luispedro/luish`). Then
-[docs/getting-started.md](docs/getting-started.md) sets up a first configuration.
+[docs/getting-started.md](docs/getting-started.md) sets up a first configuration (the first interactive run
+offers to write one).
 
 ## Building
 
@@ -91,7 +95,7 @@ The goals are grouped into stages, described in [GOALS.md](GOALS.md):
 1. **Reproduce existing functionality** (current focus): POSIX conformance, dash-level speed, and a usable
    interactive shell.
 2. **Beyond POSIX**: lazily loaded plugins, process substitution, modern terminal features, better error messages and
-   strict mode, and richer history and completion. Plugins and arrays are already built.
+   strict mode, and richer history and completion. Plugins, arrays and process substitution are already built.
 3. **New capabilities**: caching the effects of login scripts for near-instant startup, and a built-in SSH mode
    where the line editor runs locally.
 

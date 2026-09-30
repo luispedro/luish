@@ -450,7 +450,7 @@ The `std` library is tied to the version of luish, so it is not affected by
     each command, and its arguments: branches, tags, the end of a range
     (`main..`), remotes, stashes, worktrees, and the files the command can act
     on (modified and untracked files for `git add`, staged ones for `git
-    restore --staged`, ...);
+    restore --staged`, the tracked ones after a revision for `git diff`, ...);
   - programs that complete themselves: those built with Cobra (gh, glab,
     docker, podman, kubectl, helm, minikube, kind, hugo, rclone, ...) and nix.
     For another program built with Cobra, `complete-cobra PROG...` (in
