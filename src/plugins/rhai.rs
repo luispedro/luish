@@ -496,6 +496,20 @@ fn sh_module() -> Module {
     m.set_native_fn("capture", |_: &str| -> RhaiResult<rhai::Map> {
         error("capture: takes an array, the program and its arguments (sh::capture_sh runs shell code)")
     });
+    m.set_native_fn("which", |name: &str| {
+        let name = to_shell(name)?;
+        with_shell(|sh| Ok(sh.which(&name).map_or(Dynamic::UNIT, |p| to_str(&p).into())))
+    });
+    m.set_native_fn("commands", |prefix: &str| {
+        let prefix = to_shell(prefix)?;
+        with_shell(|sh| {
+            let path = sh.get_var(b"PATH").unwrap_or_default();
+            Ok(crate::path::executables(&path, &prefix)
+                .iter()
+                .map(|n| Dynamic::from(to_str(n)))
+                .collect::<rhai::Array>())
+        })
+    });
     m.set_native_fn("capture_sh", |script: &str| {
         let script = to_shell(script)?;
         with_shell(|sh| capture_sh(sh, &script))

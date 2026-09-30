@@ -595,22 +595,10 @@ fn toml(text) {
     out
 }
 
-// The commands in `PATH` that start with `cur`.
+// The commands in `PATH` that start with `cur` (the executables, as the
+// command line completes them), or () for a path.
 fn commands(cur) {
-    if cur.contains("/") {
-        return ();
-    }
-    let out = [];
-    let seen = #{};
-    for d in (sh::getvar("PATH") ?? "").split(":") {
-        for n in fs::list_dir(if d == "" { "." } else { d }) ?? [] {
-            if n.starts_with(cur) && !seen.contains(n) {
-                seen[n] = true;
-                out.push(n);
-            }
-        }
-    }
-    out
+    if cur.contains("/") { () } else { sh::commands(cur) }
 }
 
 fn complete(kind, cur, words) {

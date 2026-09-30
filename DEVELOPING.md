@@ -660,6 +660,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   (`read_pipes`) so that a program filling one doesn't block. There is no way to set variables other than running
   `env`. Shell code goes through `sh::capture_sh`, the earlier `sh::capture`; a string given to `sh::capture` is an
   error that names it. Test: `tests/plugins/capture.sh`.
+- **`sh::which`** is `Shell::which` (`path.rs`): the `PATH` search that running a command does (`find_in_path`, so
+  the `hash` table and an empty entry meaning `.` apply), without its fallback to a file that can't be executed, and,
+  for a remembered command that is gone, the search again (as `with_command_path` tries the later directories); a name
+  with a `/` is taken as it is. **`sh::commands`** lists `path::executables`, which also fills the editor's
+  `PathCache`, and the highlighter uses `path::search`, so extensions, completion and highlighting agree on what
+  a command is (a regular file with execute permission). Test: `tests/plugins/which.sh`.
 - Arrays: `sh::getvar` gives `$a` (a string), so existing extensions are unaffected; `sh::getarray` and `sh::getmap`
   read the elements and keys, and `sh::setvar` is overloaded on Rhai's `Array` and `Map`, going through
   `Shell::try_set_var_value` (the variable's attributes, the local scope and the `path` tie apply, and errors are

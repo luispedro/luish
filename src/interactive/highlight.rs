@@ -756,10 +756,7 @@ impl ShellHelper {
                 || self.names.functions.iter().any(|c| c == name)
                 || self.names.aliases.contains(name)
                 || self.names.aliases.for_suffix(name).is_some()
-                || self.names.path.split(|&c| c == b':').any(|d| {
-                    let d: &[u8] = if d.is_empty() { b"." } else { d };
-                    is_executable(&[d, b"/", name].concat())
-                })
+                || crate::path::search(&self.names.path, name).is_some_and(|(_, _, exec)| exec)
         };
         let k = k || (self.names.autocd && self.is_autocd_dir(name));
         self.highlight.known.borrow_mut().insert(name.to_vec(), k);

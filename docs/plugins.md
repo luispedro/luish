@@ -491,6 +491,8 @@ Extensions reach the shell through the `sh` module:
 | `sh::plugin_dir()` | The plugin's directory |
 | `sh::last_status()` | `$?` |
 | `sh::interactive()` | Whether the shell is interactive |
+| `sh::which(name)` | The file that running `name` executes, found as the shell finds it (in `PATH`, or `name` itself if it has a `/`), but never a function or a built-in; `()` if there is no such executable |
+| `sh::commands(prefix)` | The names of the executables in `PATH` that start with `prefix`, sorted: those that the command line completes |
 | `sh::run(script)` | Run shell code in the current shell, as `eval` does, and return its status. If it runs `exit`, the extension stops and the shell exits |
 | `sh::capture(argv)`, `sh::capture(argv, stderr)` | Run a program, `argv[0]` (found in `PATH`, never a function or a built-in), with the arguments `argv[1..]`, none of which is parsed as shell code, and standard input from /dev/null. Return `#{status, out}`, with trailing newlines removed from `out`. Its standard error is discarded, or with `stderr`: `"discard"`, `"inherit"` (the shell's), `"merge"` (into `out`, as `2>&1`) or `"return"` (as `err`, without trailing newlines). Set variables for it with `env`: `["env", "COLUMNS=400", "prog", "-h"]` |
 | `sh::capture_sh(script)` | Run shell code in a subshell, as `$(...)` does, and return `#{status, out}`, with trailing newlines removed from `out`. Build it with `sh::quote` |

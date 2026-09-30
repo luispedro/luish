@@ -923,9 +923,7 @@ fn common_prefix(items: &[Item]) -> &str {
     &first[..n]
 }
 
-pub(super) fn is_executable(path: &[u8]) -> bool {
-    sys::stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) && sys::access(path, libc::X_OK)
-}
+pub(super) use crate::path::is_executable;
 
 /// Where `-p` leaves the arguments of `setopt` and `unsetopt`.
 enum SetoptGroup<'a> {
@@ -1011,20 +1009,7 @@ impl PathCache {
         if self.path == path && self.stamps == stamps {
             return;
         }
-        let dirs: Vec<&[u8]> = path.split(|&c| c == b':').collect();
-        self.names.clear();
-        for d in &dirs {
-            for name in read_dir(d) {
-                let mut full = if d.is_empty() { b".".to_vec() } else { d.to_vec() };
-                full.push(b'/');
-                full.extend_from_slice(&name);
-                if is_executable(&full) {
-                    self.names.push(name);
-                }
-            }
-        }
-        self.names.sort_unstable();
-        self.names.dedup();
+        self.names = crate::path::executables(path, b"");
         self.path = path.to_vec();
         self.stamps = stamps;
     }

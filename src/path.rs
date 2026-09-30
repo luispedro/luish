@@ -18,6 +18,32 @@ fn join(dir: &[u8], name: &[u8]) -> Vec<u8> {
     cand
 }
 
+/// Whether `path` is a regular file that can be executed: what a `PATH`
+/// search takes as a command.
+pub fn is_executable(path: &[u8]) -> bool {
+    is_regular(path) && sys::access(path, libc::X_OK)
+}
+
+fn is_regular(path: &[u8]) -> bool {
+    sys::stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG)
+}
+
+/// The names of the executables in the directories of `path` (a `PATH`)
+/// that start with `prefix`, sorted and without duplicates.
+pub fn executables(path: &[u8], prefix: &[u8]) -> Vec<Vec<u8>> {
+    let mut names = Vec::new();
+    for dir in path.split(|&c| c == b':') {
+        for name in sys::read_dir(dir).unwrap_or_default() {
+            if name.starts_with(prefix) && name != b"." && name != b".." && is_executable(&join(dir, &name)) {
+                names.push(name);
+            }
+        }
+    }
+    names.sort_unstable();
+    names.dedup();
+    names
+}
+
 /// Searches `path` for `name`. Returns the file and the index of its
 /// directory in `path`, and whether it is executable. Falls back to a
 /// non-executable regular file (so that exec reports "Permission denied").
@@ -26,7 +52,7 @@ pub fn search(path: &[u8], name: &[u8]) -> Option<(Vec<u8>, usize, bool)> {
     for (i, dir) in path.split(|&c| c == b':').enumerate() {
         let cand = join(dir, name);
         // One `stat` per directory, and an `access` only for a regular file.
-        if !sys::stat(&cand).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG) {
+        if !is_regular(&cand) {
             continue;
         }
         if sys::access(&cand, libc::X_OK) {
@@ -79,6 +105,32 @@ impl Shell {
             self.hash.insert(name.to_vec(), (found.clone(), i));
         }
         Some((found, i))
+    }
+
+    /// The file that running `name` would execute, as `command -v` finds it
+    /// but never a function or built-in: `name` itself if it has a `/`,
+    /// else the executable found in `PATH` (a remembered one if it is
+    /// still there). `None` if there is none.
+    #[cfg(feature = "plugins")]
+    pub fn which(&mut self, name: &[u8]) -> Option<Vec<u8>> {
+        if name.contains(&b'/') {
+            return is_executable(name).then(|| name.to_vec());
+        }
+        if name.is_empty() {
+            return None;
+        }
+        if let Some((found, _)) = self.find_in_path(name)
+            && is_executable(&found)
+        {
+            return Some(found);
+        }
+        // A remembered command that is gone, or no executable file.
+        self.hash.remove(name);
+        let (found, i, exec) = search(&self.get_var(b"PATH").unwrap_or_default(), name)?;
+        exec.then(|| {
+            self.hash.insert(name.to_vec(), (found.clone(), i));
+            found
+        })
     }
 
     /// Runs `f` (which execs or spawns) on the file for command `name`. As

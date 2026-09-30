@@ -1,0 +1,15 @@
+tool: HOME/a/tool
+plain: HOME/b/plain
+dir-tool: ()
+fn_tool: ()
+cd: ()
+here: ./here
+./here: ./here
+sub/noexec: ()
+missing: ()
+: ()
+commands t: ["tool", "tool2"]
+commands: ["here", "plain", "tool", "tool2"]
+a
+gone: HOME/b/tool
+b

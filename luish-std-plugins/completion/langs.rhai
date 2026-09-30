@@ -5,16 +5,6 @@
 import "kinds" as kinds;
 import "lib" as lib;
 
-// The path of a command in PATH, or ().
-fn which(cmd) {
-    for d in (sh::getvar("PATH") ?? "").split(":") {
-        if d != "" && fs::is_executable(d + "/" + cmd) && fs::is_file(d + "/" + cmd) {
-            return d + "/" + cmd;
-        }
-    }
-    ()
-}
-
 // The name of a Python distribution from its `.dist-info` directory
 // (`numpy-2.1.0.dist-info` is `numpy`).
 fn dist_name(d) {
@@ -109,7 +99,7 @@ fn conda_root() {
     if root != () && root != "" {
         return root + "/";
     }
-    let conda = which("conda") ?? which("mamba");
+    let conda = sh::which("conda") ?? sh::which("mamba");
     if conda == () {
         return ();
     }
@@ -300,7 +290,7 @@ fn npm_bins() {
 
 fn kind(name, cur, words) {
     switch name {
-        "pip_installed" => python_packages(which(words[0])),
+        "pip_installed" => python_packages(sh::which(words[0])),
         "venv_installed" => python_packages(if fs::is_file(".venv/bin/python") { ".venv/bin/python" } else { () }),
         "pyproject_deps" => pyproject_deps(),
         "conda_envs" => conda_envs(),
