@@ -2,7 +2,7 @@
 // by kind: `complete(kind, cur, words)` completes the word `cur` (the
 // value, without an option before it) of the command `words`.
 //
-// The kinds are listed in docs/plugins.md ("Reusing std's completion
+// The kinds are listed in docs/extensions.md ("Reusing std's completion
 // engine"). `MODULE:NAME` is `MODULE::kind(NAME, cur, words)`: one of
 // std's modules, or `@SOURCE/PLUGIN/MODULE` in another plugin. An array is
 // its own candidates.

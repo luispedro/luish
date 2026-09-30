@@ -9,9 +9,9 @@ It is fast, and full featured: tab completion, history, line editing, globbing, 
 
 ## Highlights
 
-**A modern plugin architecture.** Plugins can include shell files, and
-extensions written in [Rhai](https://rhai.rs), a small embedded language, for
-hooks, prompt variables and Tab completion. They can be automatically fetched
+**A modern plugin architecture.** Plugins package configuration and shell files,
+and can include an extension written in [Rhai](https://rhai.rs), a small embedded
+language, for hooks, prompt variables, Tab completion and commands (see [](extensions.md)). They can be automatically fetched
 from github or other git repositories and pinned to specific commits.
 
 **As fast as dash, with zsh's features.** Scripts run as fast as under dash
@@ -71,6 +71,7 @@ usage
 globbing
 builtins
 plugins
+extensions
 improvements
 performance
 compatibility

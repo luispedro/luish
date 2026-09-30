@@ -132,8 +132,8 @@ Interactive use:
   changed in the environment of the shell that built it: a variable set to the value that environment already had
   isn't saved, and one that changed is saved with its inherited parts (`PATH`). Neither is detected by
   `check-cache`; see [Cached startup files](usage.md#cached-startup-files) for how to avoid them.
-- Extensions have only the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks and completers: no built-ins
-  of their own, no `precmd`, `preexec` or `exit` hooks, and no time limit except for completers, so a slow prompt
+- Extensions have only the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks, completers and commands:
+  no `precmd`, `preexec` or `exit` hooks, and no time limit except for completers, so a slow prompt
   hook or `prompt-vars.lsh` delays the prompt. Completers can't be interrupted with Ctrl-C, only by their time limit.
 
 The static musl build (see [](installation.md)) differs from the usual build, which uses glibc as dash does:

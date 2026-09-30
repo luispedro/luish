@@ -92,7 +92,7 @@ dash, which is most of the difference in sourcing it without the cache.
 
 ## Commands in Rhai
 
-A plugin can add commands written in Rhai ([`sh::builtin`](plugins.md#commands-written-in-rhai-shbuiltin)).
+A plugin can add commands written in Rhai ([`sh::builtin`](extensions.md#commands-written-in-rhai-shbuiltin)).
 `bench/extensions/` has four commands written both ways, as luish shell functions (`tasks.lsh`, using `local`,
 arrays and associative arrays) and as an extension's built-ins (`ext.rhai`), which must print the same output:
 

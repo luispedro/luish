@@ -201,6 +201,7 @@ about 50 ms, as it runs bash), and gives no descriptions.
 - [](usage.md): the command line, the prompt, line editing, history, Tab completion and the startup files in detail.
 - [](personal-plugin.md): keep your configuration in a plugin of your own, to use the same one on every machine.
 - [](plugins.md): other plugins, and writing your own.
+- [](extensions.md): code in Rhai for your plugins: hooks, Tab completion and commands.
 - [](globbing.md): `**/` and zsh's glob qualifiers, such as `vi *(.om[0])` to edit the newest file.
 
 - `help` lists the built-in commands, and `help NAME` shows the help for one of them.

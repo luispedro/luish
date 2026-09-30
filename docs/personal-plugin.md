@@ -124,6 +124,6 @@ personal = { path = "~/src/luish-personal-plugin" }
 - **`post-rc.lsh`**: what must run after the machine's own `rc.d` (see
   [After the startup files](plugins.md#after-the-startup-files-post-rc)).
 
-A plugin can also have Rhai code, for hooks, prompt variables and completion,
-but this is not needed for most configurations.
+A plugin can also have an extension, code in Rhai, for hooks, prompt variables and completion
+(see [](extensions.md)), but this is not needed for most configurations.
 

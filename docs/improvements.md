@@ -12,8 +12,9 @@ of each plugin.
   `config.toml` and fetches it.
 - A plugin's `plugin.toml` lists its dependencies, which are loaded first, and
   can set options, aliases and key bindings.
-- A plugin can have extensions written in [Rhai](https://rhai.rs) that runs
-  inside the shell, avoiding the overhead of starting a separate process.
+- A plugin can have an extension, code written in [Rhai](https://rhai.rs) that
+  runs inside the shell, avoiding the overhead of starting a separate process
+  (see [](extensions.md)).
 - Plugins are opt-in: a shell that loads none, as every script, pays nothing
   for them, and a plugin written only in shell doesn't start Rhai.
 

@@ -68,4 +68,5 @@ sync`, `plugin update` and `plugin check` do nothing.
 
 `plugin` is a built-in only in interactive shells (and their subshells).
 Anywhere, `__luish_internal plugin` does the same. See the plugins page of
-the documentation for how to write plugins and list them in `config.toml`.
+the documentation for how to write plugins and list them in `config.toml`,
+and the extensions page for their Rhai code.

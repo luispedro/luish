@@ -2,7 +2,7 @@
 // and `complete(spec, words, i)` completes the word `words[i]` of it.
 //
 // The fields of a spec, the format of its option tables and the kinds are
-// documented in docs/plugins.md ("Reusing std's completion engine"), as
+// documented in docs/extensions.md ("Reusing std's completion engine"), as
 // other plugins use them (with `import "@std/completion/lib"`): new fields
 // and kinds can be added, but those there must keep their meaning. Two
 // fields are internal: `line`, the whole command line (for the kinds of a

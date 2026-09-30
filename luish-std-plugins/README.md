@@ -89,7 +89,7 @@ luish-std-plugins/
 ```
 
 Other plugins can use the engine with `import "@std/completion/lib"` (see "Reusing std's completion engine" in the
-plugins page of luish's documentation).
+extensions page of luish's documentation).
 
 ## Using them
 

@@ -422,7 +422,7 @@ In an interactive shell, Tab starts completion.
 - `plugin load` completes the plugins in the plugin directory, and `plugin unload` the loaded ones.
 
 Plugins, through their extensions, can provide completion for other commands
-(see [Plugins](plugins.md)). Aliases are followed: if `g` is an alias for
+(see [Completing a command's arguments](extensions.md#completing-a-commands-arguments)). Aliases are followed: if `g` is an alias for
 `git`, then `g ` completes as `git ` does.
 
 As in zsh, a word with a glob, a `$` or a command substitution in it is expanded instead: `ls *.md` Tab becomes
