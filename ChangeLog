@@ -1,4 +1,5 @@
 Unreleased
+    * Rhai extensions can no longer use `eval`
     * On its first run, a menu offers to write a config.toml with the
       recommended settings, or with a personal plugin
     * `plugin add`: adds a plugin (a GitHub repository, git or file

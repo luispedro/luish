@@ -628,6 +628,9 @@ fn new_engine() -> Engine {
     engine.register_static_module("fs", super::fs::module().into());
     engine.register_static_module("vcs", super::vcs::module().into());
     engine.set_module_resolver(Resolver);
+    // `eval` compiles and runs a string, which would bypass the source and
+    // id that `import` resolves relative to.
+    engine.disable_symbol("eval");
     engine.on_print(|s| write_line(1, s));
     engine.on_debug(|s, _, _| write_line(2, s));
     // Ctrl-C (or a trapped SIGINT) stops extension code, as it would a

@@ -184,6 +184,9 @@ imports are relative to its files, as above.
 luish keeps each module once it is compiled, until a plugin is loaded again. An `import` inside a function (a
 completer, for instance) reads the module only when the function first runs, so a large plugin loads quickly.
 
+Rhai's `eval`, which compiles and runs a string as code, is disabled in
+extensions. If you need very flexible code, use a shell file instead.
+
 ## A personal plugin
 
 A plugin of your own, in a git repository, is a good way to keep the same configuration on every machine; see

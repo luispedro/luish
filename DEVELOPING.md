@@ -585,7 +585,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
 - Until the first `plugin load`, the only state is `Shell::plugins` (`None`) and the only cost is the `None` check in
   `cd`. A plugin without an extension doesn't create the Rhai engine. Without the feature, `plugin load` fails with
   "luish was built without plugin support". CI also runs clippy and the tests with `--no-default-features`.
-- `plugins/rhai.rs`: one `Engine` (with call-depth, expression-depth and size limits), one AST per extension, so
+- `plugins/rhai.rs`: one `Engine` (with call-depth, expression-depth and size limits, and `eval` disabled: tests/plugins/noeval.sh), one AST per extension, so
   helpers with the same name in different extensions don't clash. `import` resolves relative to the file that
   imports (`Resolver`): each extension's AST and each module's AST and `Module` get the file's absolute path as
   their source and id, which Rhai passes to the resolver and gives the functions and closures defined there, so a
