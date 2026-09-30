@@ -520,6 +520,7 @@ that doesn't exist gives `false` or `()` (use `??` for a default), not an error.
 | `fs::read_file(path)` | The file's contents, or `()` if it can't be read |
 | `fs::list_dir(path)` | The names in a directory, sorted, without `.` and `..`, or `()` if it can't be read |
 | `fs::readlink(path)` | Where a symbolic link points, or `()` |
+| `fs::realpath(path)` | The absolute path of the file, with every symbolic link (in the file's name and in its directories), `.` and `..` resolved, as `realpath`; `()` if it doesn't exist |
 | `fs::find_up(name)`, `fs::find_up(name, dir)` | The path of the nearest `name` in the current directory (or `dir`) or one of its parents, or `()`. For example, `fs::find_up(".git")` |
 
 ```rhai

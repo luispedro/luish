@@ -8,6 +8,8 @@ mkfifo fifo
 touch -d '2020-01-01 00:00:00 UTC' old
 touch -d '2021-01-01 00:00:00 UTC' new
 mkdir l l/dir
+ln -s d ld
+ln -s ../../f d/sub/rel
 touch l/b l/a l/.hidden
 printf 'x\377y' > "l/$(printf 'bin\377')"
 cat > fs.rhai <<'P'
@@ -25,6 +27,13 @@ print(`read_file: ${fs::read_file("f")}${fs::read_file("missing") ?? "none"} ${f
 print(`list_dir: ${fs::list_dir("l")}`);
 print(`list_dir: ${fs::list_dir("d")} ${fs::list_dir("f") ?? "none"} ${fs::list_dir("") ?? "none"}`);
 print(`readlink: ${fs::readlink("link")} ${fs::readlink("broken")} ${fs::readlink("f") ?? "none"}`);
+// realpath follows links in every component (a relative target is taken
+// from the link's directory), and `..` after a link is the target's parent.
+let home = fs::realpath(sh::getvar("HOME"));
+for p in ["f", "link", "ld/sub/rel", "ld/sub/../sub/rel", "ld/sub/../f", ".", "broken", "missing", ""] {
+    let r = fs::realpath(p);
+    print(`realpath ${p}: ${if r == () { "none" } else { r.replace(home, "HOME"); r }}`);
+}
 // Bytes that aren't UTF-8 round-trip.
 let name = "l/" + fs::list_dir("l").filter(|n| n.starts_with("bin"))[0];
 print(`binary name: ${fs::is_file(name)} ${fs::read_file(name).len()}`);

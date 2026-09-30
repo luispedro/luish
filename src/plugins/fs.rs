@@ -144,6 +144,12 @@ pub fn module() -> Module {
         Ok(std::fs::read_link(std::ffi::OsStr::from_bytes(&p))
             .map_or(Dynamic::UNIT, |t| to_str(t.as_os_str().as_bytes()).into()))
     });
+    m.set_native_fn("realpath", |p: &str| {
+        use std::os::unix::ffi::OsStrExt;
+        let p = to_shell(p)?;
+        Ok(std::fs::canonicalize(std::ffi::OsStr::from_bytes(&p))
+            .map_or(Dynamic::UNIT, |t| to_str(t.as_os_str().as_bytes()).into()))
+    });
     m.set_native_fn("find_up", |name: &str| find_up(name, None));
     m.set_native_fn("find_up", |name: &str, dir: &str| find_up(name, Some(dir)));
     m

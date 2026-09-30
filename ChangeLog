@@ -4,6 +4,7 @@ Unreleased
       or returned; `sh::capture_sh` runs shell code, as `sh::capture` did
     * `sh::which(name)` finds a program as the shell does, and
       `sh::commands(prefix)` lists the executables in PATH
+    * `fs::realpath(path)` resolves every symbolic link in a path
     * History expansion (`!!`, `!$`, `^old^new` ...), with
       `setopt history.expand`, and `history.verify`
     * Process substitution, `<(cmd)` and `>(cmd)`

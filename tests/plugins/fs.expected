@@ -18,6 +18,15 @@ none none
 list_dir: [".hidden", "a", "b", "bin\u{10ffff}", "dir"]
 list_dir: ["sub"] none none
 readlink: f nowhere none
+realpath f: HOME/f
+realpath link: HOME/f
+realpath ld/sub/rel: HOME/f
+realpath ld/sub/../sub/rel: HOME/f
+realpath ld/sub/../f: none
+realpath .: HOME
+realpath broken: none
+realpath missing: none
+realpath : none
 binary name: true 3
 find_up: /f none
 find_up: /f /a/b /a/b/c

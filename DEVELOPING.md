@@ -666,6 +666,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   with a `/` is taken as it is. **`sh::commands`** lists `path::executables`, which also fills the editor's
   `PathCache`, and the highlighter uses `path::search`, so extensions, completion and highlighting agree on what
   a command is (a regular file with execute permission). Test: `tests/plugins/which.sh`.
+- **`fs::realpath`** is `realpath(3)` (Rust's `canonicalize`): physical, so `..` after a symbolic link is the target's
+  parent (unlike `cd`'s logical paths and `fs::find_up`), and relative to the process's directory, which `cd` keeps
+  as the shell's. A path that doesn't exist gives `()`. Test: `tests/plugins/fs.sh`.
 - Arrays: `sh::getvar` gives `$a` (a string), so existing extensions are unaffected; `sh::getarray` and `sh::getmap`
   read the elements and keys, and `sh::setvar` is overloaded on Rhai's `Array` and `Map`, going through
   `Shell::try_set_var_value` (the variable's attributes, the local scope and the `path` tie apply, and errors are
