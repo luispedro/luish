@@ -13,6 +13,7 @@ const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
     (b"complete", complete),
     (b"help", help),
     (b"plugin", plugin),
+    (b"print", print),
     (b"print-git-rev", print_git_rev),
     (b"print-git-rev-short", print_git_rev_short),
     (b"savestate", savestate),
@@ -93,6 +94,12 @@ fn help(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 /// that aren't interactive.
 fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     crate::plugins::run(sh, b"__luish_internal plugin", &argv[1..])
+}
+
+/// `print`: the `print` built-in, which is also available here in shells
+/// that aren't interactive.
+fn print(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    super::print::run(sh, b"__luish_internal print", &argv[1..])
 }
 
 /// Fails with status 2 if there are arguments after the subcommand's name.

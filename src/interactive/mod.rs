@@ -42,6 +42,9 @@ thread_local! {
     /// The text to start the next line with: a line whose history
     /// references were expanded, with `history.verify`.
     static REFILL: RefCell<Option<String>> = const { RefCell::new(None) };
+    /// zsh's buffer stack: text that `print -z` pushed, the last of which
+    /// starts the next command line.
+    static PUSHED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     /// What history expansion keeps from one line to the next.
     static BANG: RefCell<bang::Memory> = RefCell::default();
     /// Whether the editor can start a line with text: not on the terminals
@@ -151,6 +154,24 @@ pub fn add_history(sh: &Shell, text: &[u8]) {
     if sh.opt(Opt::IncAppendHistory) || sh.opt(Opt::ShareHistory) {
         save_history(sh);
     }
+}
+
+/// Adds `text` to the history as an entry of its own, after the command
+/// being run (`print -s`).
+pub fn add_history_entry(sh: &Shell, text: &str) {
+    if text.trim().is_empty() {
+        return;
+    }
+    with_history(|h| h.add_entry(text));
+    if sh.opt(Opt::IncAppendHistory) || sh.opt(Opt::ShareHistory) {
+        save_history(sh);
+    }
+}
+
+/// Pushes text onto the buffer stack, to start a command line with
+/// (`print -z`).
+pub fn push_buffer(text: String) {
+    PUSHED.with_borrow_mut(|p| p.push(text));
 }
 
 /// What to do with a line after history expansion.
@@ -399,7 +420,9 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
             return Line::Eof;
         };
         keys::update(ed, &menu, &keys, &keymap, wordchars);
-        let refill = REFILL.take();
+        let refill = REFILL
+            .take()
+            .or_else(|| (!continuation).then(|| PUSHED.with_borrow_mut(Vec::pop)).flatten());
         // The history entry to start with, after `accept-line-and-down-history`.
         let initial = (!continuation && refill.is_none())
             .then(|| NEXT.take())

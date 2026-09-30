@@ -1150,6 +1150,37 @@ fn help_builtin() {
 }
 
 #[test]
+fn print_builtin() {
+    let mut sh = Pty::spawn("print");
+    sh.expect("$ ");
+    // `print` is a built-in only in interactive shells.
+    assert_has(&sh.run("type print"), "print is a shell builtin");
+    assert_has(&sh.run("print -P '%%|%(?.ok.bad)'"), "%|ok\n");
+    // `-s` adds an entry after the command's own.
+    sh.run("print -s echo pushed");
+    assert_eq!(
+        sh.run("fc -l -2"),
+        "fc -l -2\n3\tprint -s echo pushed\n4\techo pushed\n$ "
+    );
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+
+    // `-z` pushes text that the next command lines start with, the last
+    // pushed first (on a terminal the line editor supports).
+    let mut sh = Pty::spawn_term("print-z", "vt100");
+    sh.expect("$ ");
+    sh.send("print -z echo first; print -z echo second\n");
+    sh.expect("second");
+    sh.send("\n");
+    sh.expect("\nsecond\n");
+    sh.expect("first");
+    sh.send("\n");
+    sh.expect("\nfirst\n");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
 fn plugin_builtin() {
     let mut sh = Pty::spawn("plugin");
     sh.expect("$ ");

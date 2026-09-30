@@ -48,6 +48,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"local", page!("local")),
     (b"plugin", page!("plugin")),
     (b"popd", page!("dirs")),
+    (b"print", page!("print")),
     (b"printf", page!("printf")),
     (b"pushd", page!("dirs")),
     (b"pwd", page!("pwd")),

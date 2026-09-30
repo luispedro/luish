@@ -161,8 +161,8 @@ Still to build, in this order:
      the matches instead of closing the menu.
 2. **Shell-function hooks**: functions named `chpwd`, `precmd` and `preexec` run at the same points as the Rhai hooks
    of the same names (the setup sets the terminal title in `chpwd`). Only interactive shells look them up, and only
-   when a function with that name exists. `precmd` and `preexec` need the Rhai hooks of Phase 11. zsh's `print -P`
-   comes with this, as a `__luish_internal` subcommand or a `print` built-in in interactive shells.
+   when a function with that name exists. `precmd` and `preexec` need the Rhai hooks of Phase 11. (zsh's `print -P`,
+   which such functions use, is done: `print` is a built-in in interactive shells.)
 3. **Lazy function parsing for the startup cache**, below.
 
 Not planned, because the history shows they aren't used or they are easy to rewrite in POSIX sh: the `:h`/`:t`

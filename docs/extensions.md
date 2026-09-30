@@ -328,6 +328,7 @@ Extensions reach the shell through the `sh` module:
 | `sh::capture_sh(script)` | Run shell code in a subshell, as `$(...)` does, and return `#{status, out}`, with trailing newlines removed from `out`. Build it with `sh::quote` |
 | `sh::quote(text)` | `text` quoted for the shell (in single quotes). Given an array, its strings quoted and separated by spaces |
 | `sh::write(fd, text)` | Write text, unbuffered, to fd 1 or 2 |
+| `sh::expand_prompt(text)` | `text` with its `%` sequences expanded, as in prompts and `print -P` (whether or not `prompt.percent` is on): `sh::write(1, "\x1b]0;" + sh::expand_prompt("%n@%m: %~") + "\x07")` sets the terminal's title |
 
 Rhai's `print(text)` and `debug(text)` write a line to standard output and standard error.
 

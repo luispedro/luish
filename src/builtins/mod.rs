@@ -8,6 +8,7 @@ mod help;
 pub mod internal;
 mod jobs;
 pub(crate) mod misc;
+mod print;
 mod printf;
 mod read;
 pub(crate) mod test;
@@ -109,6 +110,7 @@ const INTERACTIVE: &[(&[u8], BuiltinFn)] = &[
     (b"bindkey", crate::interactive::keys::bindkey),
     (b"help", help::help),
     (b"plugin", crate::plugins::plugin),
+    (b"print", print::print),
 ];
 
 /// The names of all built-ins, including the interactive-only ones (for

@@ -1,0 +1,16 @@
+status 127
+a
+b	c
+[~] % ok [32mg[39m
+x
+status 1
+status 1 1
+status 1
+status 1
+status 0
+|
+fd3
+0
+status 1
+__luish_internal print: bad option: -q
+print [-abcDilmnNoOPrsz] [-C cols] [-f format] [-u fd] [-v name]

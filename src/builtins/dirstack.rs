@@ -249,7 +249,7 @@ fn print_stack(sh: &Shell, full: bool, format: Format) {
 
 /// `dir` with `home` replaced by `~` at its start. As in zsh, a `HOME` of
 /// `/` is not replaced.
-fn abbreviate(home: Option<&[u8]>, dir: &[u8]) -> Vec<u8> {
+pub(super) fn abbreviate(home: Option<&[u8]>, dir: &[u8]) -> Vec<u8> {
     if let Some(h) = home
         && h.len() > 1
         && let Some(rest) = dir.strip_prefix(h)

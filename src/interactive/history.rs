@@ -100,6 +100,18 @@ impl ShellHistory {
         self.private = added && private;
     }
 
+    /// Adds an entry after the command being run (`print -s`), which is
+    /// then no longer the newest.
+    pub fn add_entry(&mut self, line: &str) {
+        if std::mem::take(&mut self.private) {
+            self.pop();
+            self.current = false;
+        }
+        if self.push(line.to_owned(), crate::sys::now()) {
+            self.current = false;
+        }
+    }
+
     /// Removes the entry of the command being run: `fc` replaces its own
     /// entry with the commands it runs.
     pub fn remove_current(&mut self) {

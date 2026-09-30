@@ -310,8 +310,16 @@ pub fn printf(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         sh.berr(&argv[0], "usage: printf format [arg ...]");
         return Ok(2);
     };
+    let (out, status) = format(sh, fmt, &rest[1..]);
+    sh.out(&out);
+    Ok(status)
+}
+
+/// Formats `args` as `printf` does with `fmt`, reusing it while arguments
+/// remain. Returns the output and the status.
+pub fn format(sh: &Shell, fmt: &[u8], args: &[Vec<u8>]) -> (Vec<u8>, i32) {
     let mut args = Args {
-        args: &rest[1..],
+        args,
         next: 0,
         status: 0,
     };
@@ -325,6 +333,5 @@ pub fn printf(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             break;
         }
     }
-    sh.out(&out);
-    Ok(args.status)
+    (out, args.status)
 }

@@ -530,6 +530,10 @@ fn sh_module() -> Module {
         }
         Ok(to_str(&out))
     });
+    m.set_native_fn("expand_prompt", |text: &str| {
+        let text = to_shell(text)?;
+        with_shell(|sh| Ok(to_str(&crate::prompt::expand(sh, &text).text)))
+    });
     m.set_native_fn("getvar", |name: &str| {
         with_shell(|sh| Ok(sh.get_var(&to_bytes(name)).map_or(Dynamic::UNIT, |v| to_str(&v).into())))
     });

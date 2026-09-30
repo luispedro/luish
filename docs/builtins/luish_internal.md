@@ -6,6 +6,7 @@ __luish_internal check-cache [-q] [rc|login]...
 __luish_internal complete line
 __luish_internal help [name...]
 __luish_internal plugin subcommand [arg...]
+__luish_internal print [arg...]
 __luish_internal print-git-rev
 __luish_internal print-git-rev-short
 __luish_internal savestate
@@ -42,6 +43,9 @@ take names that scripts might use for something else.
 
 `plugin`
 : Load, list, unload and fetch plugins (see `help plugin`).
+
+`print`
+: Write the arguments, as zsh's `print` (see `help print`).
 
 `print-git-rev`, `print-git-rev-short`
 : Print the git revision luish was built from (the full or abbreviated

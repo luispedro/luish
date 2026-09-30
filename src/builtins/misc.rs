@@ -145,9 +145,9 @@ pub fn alias_command(name: &[u8], value: &[u8], kind: AliasKind) -> Vec<u8> {
     l
 }
 
-/// A pattern for `alias -m` and `unalias -m`, where a backslash quotes the
+/// A pattern for `alias -m`, `unalias -m` and `print -m`, where a backslash quotes the
 /// next character.
-fn name_pattern(p: &[u8]) -> Pattern {
+pub(super) fn name_pattern(p: &[u8]) -> Pattern {
     let mut x = Vec::with_capacity(p.len());
     let mut it = p.iter();
     while let Some(&b) = it.next() {

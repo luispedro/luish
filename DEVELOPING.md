@@ -437,6 +437,17 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   summary (the first paragraph after the synopsis) is at most 60 characters and rendered lines at most 79; the page
   must not contain relative links (Sphinx rejects them). After a failing `pixi run docs`, `rm -rf docs/_build`
   before rebuilding, or the cached build hides the warnings.
+- `print` (`print.rs`) is zsh's, a built-in only in shells started with `-i`, as `help` is, and
+  `__luish_internal print` anywhere. Its options are parsed as zsh parses them (`options`), not with
+  `builtins::options`: an option's argument is the rest of its word or the next word, a word such as `-1` ends the
+  options, and after `-R` only words of `e` and `n` are options. Its escapes are zsh's `getkeystring` (`key`), not
+  `echo`'s. Each argument goes through the escapes, then `prompt::expand` (`-P`), then `dirstack::abbreviate`
+  (`-D`), in that order, as in zsh; `\c` drops the arguments after its own. `-f` is `printf::format`, `-m` uses
+  `name_pattern` (as `alias -m`), `-c`/`-C` lay out columns as zsh's `bin_print` does. `-s` adds a history entry
+  after the command's own (`ShellHistory::add_entry`), which is then no longer current, so `fc` doesn't replace it;
+  `-z` pushes onto a stack (`PUSHED` in `interactive/mod.rs`) that `read_line` pops to start a command line, after
+  a `history.verify` refill. Tests: `builtins/print.sh` (zsh, through `$SH -i +m -c`, as the zsh reference runs
+  natively there), `builtins/print_luish.sh`, `print_builtin` in `tests/interactive.rs`, unit tests in `print.rs`.
 - `local x` keeps the current value, as in dash (also an array's, and with `-a`).
 
 ### Options (`options.rs`)
@@ -667,6 +678,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   with a `/` is taken as it is. **`sh::commands`** lists `path::executables`, which also fills the editor's
   `PathCache`, and the highlighter uses `path::search`, so extensions, completion and highlighting agree on what
   a command is (a regular file with execute permission). Test: `tests/plugins/which.sh`.
+- **`sh::expand_prompt`** is `prompt::expand`, as `print -P` uses it: `%` sequences only, whatever
+  `prompt.percent` is (parameters are the extension's to expand). Test: `tests/plugins/expand_prompt.sh`.
 - **`fs::realpath`** is `realpath(3)` (Rust's `canonicalize`): physical, so `..` after a symbolic link is the target's
   parent (unlike `cd`'s logical paths and `fs::find_up`), and relative to the process's directory, which `cd` keeps
   as the shell's. A path that doesn't exist gives `()`. Test: `tests/plugins/fs.sh`.
@@ -864,6 +877,7 @@ truncates when it relocates the package.
 | Startup files | `misc/startup_cache.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `tests/plugins/startup_cache_check.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
+| `print` | `builtins/print.sh` (zsh), `builtins/print_luish.sh`, `print_builtin` in `tests/interactive.rs` |
 | `plugin` | `builtins/internal_plugin.sh`, `builtins/plugin.sh` (same as dash), `plugin_builtin` in `tests/interactive.rs` |
 | Hints for commands not found | `exec/not_found_hint.sh` |
 
