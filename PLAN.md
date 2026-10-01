@@ -268,41 +268,92 @@ built (`rc.d`, `login.d` and `_uncached.lsh`, one cache per directory keyed on f
 with two known faults to fix first, both because the cache replays a difference onto an environment other than the one
 it was built in: a variable the files set to the value the build shell already had isn't saved (so `CONDA_EXE` and
 `NVM_DIR` are unset in a shell started outside the one that built the cache), and one they changed is saved with its
-inherited parts (`PATH`). `check-cache` can't see them. The fixes are to save every variable the files assign, and to
-key the cache on the inherited values the files read (below).
+inherited parts (`PATH`). `check-cache` can't see them. The fixes are to save every variable the files assign
+(tracked while a cache is built), and explicit cache keys: `__luish_cache` blocks and per-file entries (below,
+designed 2026-10-01). These replace the earlier plan of keying automatically on the inherited values the files read,
+since the shell can't see what the commands they run read (`brew shellenv`, `starship init`).
 The rest of the design is stale-while-revalidate: a shell starts from the cached state at once, reruns the scripts in
 the background, and applies any difference at a later prompt, so invalidation doesn't have to be perfect.
 `__luish_internal check-cache` is a first, manual form of the background run: it reruns the files in the environment
 the cache was built in (which the cache records), compares the result with what the cache restores, and rebuilds the
 cache or touches it, so that its modification time says when it was last validated.
 
-- **Per-file entries**, so editing one file reruns only it and the files that depend on it. An entry records the
-  file's changes and its key: the fingerprints of the file and every file it sourced, the mtimes of directories it
-  globbed (`/etc/profile.d/*`), the user and host, and the values of the inherited variables, functions and aliases
-  the file read before setting them. Keying on the input environment is what makes it correct to store final values;
-  keying only on what was *read* keeps `TMUX_PANE` or `SSH_CONNECTION` from splitting the cache unless a file uses
-  them. A few entries are kept per file (e.g. SSH and console logins). Reads are recorded by the shell (variable
-  expansion, `PATH` lookup, function calls, aliases while parsing), at no cost when no cache is being built. Cached
-  files should print nothing: output is discarded in the background, with a warning that it belongs in
-  `_uncached.lsh`.
+#### `__luish_cache` blocks
+
+```sh
+__luish_cache env=(NVM_DIR) files=(~/.nvmrc) {
+    . "$NVM_DIR/nvm.sh"
+}
+```
+
+- **Syntax**: `__luish_cache`, options of the form `NAME=(...)` (each at most once, in any order, all optional), then
+  a `{ ... }` body. The parser reads the options as it does `local a=(x y)` (`is_declaration`, `parse_array`), then
+  the body. It is a syntax error in dash, so it is always on and costs nothing in scripts that don't use it. Unknown
+  options, any other body (a subshell can't change the state) and command substitution in an option are syntax
+  errors: the key is computed at every start, and `$(...)` would fork.
+- **`env=(...)`**: literal variable names, checked when parsed. The key has each one's value as a shell variable when
+  the block starts (so it can be one that an earlier file set), unset being distinct from empty.
+- **`files=(...)`**: words expanded when the block starts (tilde, parameters, globs). The key has each path and its
+  fingerprint (device, inode, size, mtime, as now); a missing file has a fingerprint of its own, so creating it
+  invalidates the entry, and a directory's changes when entries are added or removed. With a glob, the list of
+  matches is part of the key. This is for files that commands read (`eval "$(dircolors ~/.dircolors)"`); files read
+  with `.` are tracked without it.
+- **Always in the key**: the block's text, the fingerprints of the files it read with `.`, and the build of luish.
+- **What is cached** is the block's effect on the state (as `state.rs` computes it now), which replaces running the
+  body when the key matches. Output and other side effects happen only when the body runs; a background run or
+  `check-cache` warns about a cached block that prints.
+- **Where**: in the startup files of interactive shells (`rc.d`, `login.d`, `$ENV`, `luishrc`, plugins' `rc.lsh`).
+  An entry is identified by its file, the block's index in it and the hash of its text. Elsewhere (scripts, `-c`)
+  the body runs as if there were no block. A block inside another runs as part of the outer one.
+- **Later, if asked for**: `commands=(...)`, the resolved path of each command and its fingerprint, for
+  `eval "$(starship init sh)"` and the like without spelling out the path; and a time to live.
+
+#### Files in `rc.d` and `login.d`
+
+- **A file without a top-level block** is cached whole, as if it were in `__luish_cache env=(PATH HOME) { ... }`.
+  Its key also has the fingerprints of every earlier file in its directory and the keys of the entries used before it
+  in that startup. This chain keeps per-file entries as safe as the single cache now: editing `10-env.lsh` reruns it
+  and every file after it, but not the files before it.
+- **A file with top-level blocks** runs every time, in its place in the order, apart from its blocks, which depend
+  only on their own keys: what a block depends on outside its key is for `check-cache` to find. There is no way to
+  give a whole file another key except wrapping it in a block (decided 2026-10-01; a header line would be too
+  implicit).
+- **`_uncached.lsh`** stays as it is, for code that is never cached: it runs every time, after the directory's other
+  files.
+- **`config.toml`** and the plugins it enables are an entry of their own (keyed on `config.toml`, `plugins.lock` and
+  the plugins' files), first in `rc.d`'s chain. Plugins' `post-rc.lsh` are in the chain after the last file.
+- **`login.d`** follows the same rules.
+
+#### Storage and checking
+
+- One cache file per directory, as now, and one for blocks in other files. Each holds the entries of its files and
+  blocks, with the few most recent keys of each (say 4), so that login and other shells, or shells started with and
+  without `conda activate`, don't evict each other's entries. Warm path: one read per cache file, and a stat per
+  startup file and per `files=` path.
+- Each entry records the environment of the shell that built it (stored once per build, not per entry), so that
+  `check-cache` can rerun the startup as that shell would, without reading the caches, and report which entries
+  differ. While checking (so at no cost otherwise) it can also record the inherited variables a block expands without
+  listing them, and warn: `rc.d/20-nvm.lsh: block 1 reads SSH_CONNECTION, which is not in its key`.
+
+#### Later
+
 - **Parallel builds**: each file runs in its own forked child from the input state, and the results are merged in
-  byte order. A file that read something an earlier file wrote is rerun on top of it, and the dependency recorded.
-  Colon-separated lists are merged as edits (components added or removed), so a read of `PATH` only within an
-  assignment to `PATH` doesn't count as a dependency.
-- **Startup**: fork the background run first (from the inherited state); use each file's matching entry, and run the
-  files without one in the foreground, in parallel; apply the merged changes, run `_uncached.lsh`, show the prompt.
-  The merged result is also stored as one snapshot, so the warm path is a stat per file and one read.
+  byte order. This needs to know which files read what an earlier one wrote, so read tracking during builds, which
+  the chain of keys otherwise makes unnecessary. Colon-separated lists would be merged as edits (components added or
+  removed), so a read of `PATH` only within an assignment to `PATH` doesn't count as a dependency.
+- **Startup**: fork the background run first (from the inherited state); use each matching entry and run what has
+  none in the foreground; apply the changes, run the uncached parts, show the prompt.
 - **Background run**: stdin from `/dev/null`, its own session, captured output, a timeout; writes entries with
   write-and-rename; skipped if another shell validated the cache recently (a minute) or is doing so now.
 - **Many shells at once**: building is guarded by `flock`; a shell that must build in the foreground waits for the
-  lock, then checks the cache again. Interactive shells stat the snapshot before each prompt and merge a newer one.
+  lock, then checks the cache again. Interactive shells stat the cache files before each prompt and merge newer ones.
 - **Merging into a running shell**: a three-way merge of the state the shell loaded, the new result, and the current
   state. What hasn't changed since startup takes the new value, with a one-line note; conflicts are left alone and
   reported, and a built-in shows and applies them. This happens before a prompt, like job notifications.
 - **Volatile values** (from `$(date)`, `$$`, `$RANDOM`) differ between two runs with the same key: reported once,
   with the file and line from provenance, and left out of change notes.
-- **Parse cache**: parsed ASTs of sourced files, keyed by fingerprint and the alias table, for `_uncached.lsh`,
-  `$ENV` and `luishrc`. Functions in the effect cache are parsed lazily (Phase 13).
+- **Parse cache**: parsed ASTs of sourced files, keyed by fingerprint and the alias table, for the uncached parts of
+  startup files, `$ENV` and `luishrc`. Functions in the effect cache are parsed lazily (Phase 13).
 
 ### Stage 3: SSH client/server mode
 

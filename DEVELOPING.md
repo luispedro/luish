@@ -599,11 +599,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   never saved, so the variable is unset in a shell started elsewhere; and one that does change it is saved with its
   whole final value, inherited parts included (`PATH`). Reproduce with `FOO=bar luish -i -c :` building a cache whose
   file has `export FOO=bar`, then `env -i luish -i -c 'echo ${FOO-unset}'`. The fixes: save every variable the files
-  assign (tracked while the cache is built), and key the cache on the inherited values the files read.
-- Not yet done (see `PLAN.md`, Stage 3): keying on the inherited values the files read (so `PATH=$HOME/bin:$PATH`
-  keeps the rest of `PATH` from when the cache was built, and an `rc.d` cache built in a login shell, before
-  `login.d` ran, is used in shells started from it), changes a fingerprint can't show (other than by `check-cache`),
-  per-file entries, background revalidation, `flock` for many shells at once, and merging into running shells.
+  assign (tracked while the cache is built), and explicit keys (`__luish_cache` blocks and per-file entries keyed on
+  `PATH` and `HOME`; see `PLAN.md`, Stage 3).
+- Not yet done (see `PLAN.md`, Stage 3): explicit keys (so `PATH=$HOME/bin:$PATH` keeps the rest of `PATH` from
+  when the cache was built, and an `rc.d` cache built in a login shell, before `login.d` ran, is used in shells
+  started from it), per-file entries, changes a fingerprint can't show (other than by `check-cache`), background
+  revalidation, `flock` for many shells at once, and merging into running shells.
 - `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. A key directly
   under `[options]` is a setting by its `setopt` name. The `alias` table defines regular aliases, and its `global` and
   `suffix` tables the other kinds (so a string named `global` or `suffix` is a regular alias, and TOML won't have both
