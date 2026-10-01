@@ -37,6 +37,27 @@
 //! "^X^E" = "undo"
 //! ```
 //!
+//! The `env` table sets exported variables, and its `interactive` table
+//! those only for interactive shells; `vars` sets shell variables that
+//! aren't exported. `path` adds directories to `PATH`, before or after
+//! those it has, skipping those it has already (so that a shell started by
+//! `pixi shell` keeps its environment's directories first):
+//!
+//! ```toml
+//! [env]
+//! EDITOR = "nvim"
+//! [env.interactive]
+//! LESS = "-R"
+//! [vars]
+//! WORDCHARS = "*?_-."
+//! [path]
+//! before = ["~/bin"]
+//! after = ["/opt/tools/bin"]
+//! ```
+//!
+//! A login shell that isn't interactive reads only `env` (not
+//! `env.interactive`) and `path` (`load_login`).
+//!
 //! A directory plugin's `plugin.toml` can have `options`, `alias` and
 //! `bindkey` tables too (`load_plugin_manifest`).
 //!
@@ -75,14 +96,164 @@ pub fn toml_str(s: &str) -> String {
 
 /// Reads the file at `path`, if there is one, and applies its settings.
 pub fn load(sh: &mut Shell, path: &[u8]) {
+    let mut dirs = Dirs::default();
     read(sh, path, true, |sh, key, value, err| match &*key.name {
         "plugins" => {}
+        "env" | "vars" | "path" => environment(sh, &key.name, value, true, &mut dirs, err),
         name => {
             if !shared_table(sh, &key, value, err) {
                 err(sh, key.span.start, &format!("unknown key: {name}"));
             }
         }
     });
+    dirs.apply(sh);
+}
+
+/// For a login shell that isn't interactive: only the `env` table, without
+/// `env.interactive`, and `path`.
+pub fn load_login(sh: &mut Shell) {
+    let Some(path) = path(sh) else {
+        return;
+    };
+    let mut dirs = Dirs::default();
+    read(sh, &path, true, |sh, key, value, err| {
+        if let name @ ("env" | "path") = &*key.name {
+            environment(sh, name, value, false, &mut dirs, err);
+        }
+    });
+    dirs.apply(sh);
+}
+
+/// The tables `env`, `vars` and `path` (whose directories are added to
+/// `dirs`, so that they apply after the variables, wherever they are).
+fn environment(
+    sh: &mut Shell,
+    name: &str,
+    mut value: Value<'_>,
+    interactive: bool,
+    dirs: &mut Dirs,
+    err: &dyn Fn(&Shell, usize, &str),
+) {
+    if value.as_table().is_none() {
+        return err(sh, value.span.start, &format!("{name}: not a table"));
+    }
+    let ValueInner::Table(entries) = value.take() else {
+        return;
+    };
+    for (key, mut value) in in_order(entries) {
+        let result = match name {
+            "path" => dirs.add(sh, &key.name, &mut value, err),
+            "env" if &*key.name == "interactive" && value.as_table().is_some() => {
+                if interactive && let ValueInner::Table(entries) = value.take() {
+                    for (key, value) in in_order(entries) {
+                        assign(sh, "env.interactive", &key.name, &value, true)
+                            .unwrap_or_else(|msg| err(sh, key.span.start, &msg));
+                    }
+                }
+                Ok(())
+            }
+            _ => assign(sh, name, &key.name, &value, name == "env"),
+        };
+        result.unwrap_or_else(|msg| err(sh, key.span.start, &msg));
+    }
+}
+
+/// Sets the variable `name` of `table` from a TOML string (with a leading
+/// `~` expanded) or integer.
+fn assign(sh: &mut Shell, table: &str, name: &str, value: &Value<'_>, export: bool) -> Result<(), String> {
+    let value = match value.as_ref() {
+        ValueInner::String(s) => tilde(sh, s.as_bytes()),
+        ValueInner::Integer(n) => n.to_string().into_bytes(),
+        v => return Err(format!("{table}.{name}: expected a string, found {}", v.type_str())),
+    };
+    if !crate::lexer::is_valid_name(name.as_bytes()) {
+        return Err(format!("{table}: bad variable name: {name:?}"));
+    }
+    sh.try_set_var(name.as_bytes(), value)?;
+    if export {
+        sh.vars.entry(name.as_bytes()).exported = true;
+    }
+    Ok(())
+}
+
+/// The directories of the `path` table.
+#[derive(Default)]
+struct Dirs {
+    before: Vec<Vec<u8>>,
+    after: Vec<Vec<u8>>,
+}
+
+impl Dirs {
+    /// Adds the directories of `before` or `after` (`key`), skipping (and
+    /// reporting) those that aren't non-empty strings.
+    fn add(
+        &mut self,
+        sh: &Shell,
+        key: &str,
+        value: &mut Value<'_>,
+        err: &dyn Fn(&Shell, usize, &str),
+    ) -> Result<(), String> {
+        let list = match key {
+            "before" => &mut self.before,
+            "after" => &mut self.after,
+            _ => return Err(format!("path: unknown key: {key}")),
+        };
+        if !matches!(value.as_ref(), ValueInner::Array(_)) {
+            return Err(format!(
+                "path.{key}: expected an array, found {}",
+                value.as_ref().type_str()
+            ));
+        }
+        let ValueInner::Array(items) = value.take() else {
+            return Ok(());
+        };
+        for item in &items {
+            match item.as_ref() {
+                ValueInner::String(s) if !s.is_empty() => list.push(tilde(sh, s.as_bytes())),
+                ValueInner::String(_) => err(sh, item.span.start, &format!("path.{key}: empty directory")),
+                v => err(
+                    sh,
+                    item.span.start,
+                    &format!("path.{key}: expected a string, found {}", v.type_str()),
+                ),
+            }
+        }
+        Ok(())
+    }
+
+    /// Puts the directories in `PATH`, and exports it. A directory that it
+    /// has already stays where it is, so that a shell started from one
+    /// whose `PATH` has another directory first (as `pixi shell` or
+    /// `nix-shell` do) keeps it first.
+    fn apply(self, sh: &mut Shell) {
+        if self.before.is_empty() && self.after.is_empty() {
+            return;
+        }
+        let old = sh.get_var(b"PATH").unwrap_or_default();
+        let mut dirs: Vec<Vec<u8>> = Vec::new();
+        let has = |dirs: &[Vec<u8>], d: &[u8]| dirs.iter().any(|e| e == d);
+        let old_dirs: Vec<Vec<u8>> = match &old[..] {
+            b"" => Vec::new(),
+            p => p.split(|&c| c == b':').map(<[u8]>::to_vec).collect(),
+        };
+        for d in self.before {
+            if !has(&dirs, &d) && !has(&old_dirs, &d) {
+                dirs.push(d);
+            }
+        }
+        dirs.extend(old_dirs);
+        for d in self.after {
+            if !has(&dirs, &d) {
+                dirs.push(d);
+            }
+        }
+        let new = dirs.join(&b':');
+        if new != old {
+            // PATH can't be readonly this early.
+            let _ = sh.try_set_var(b"PATH", new);
+            sh.vars.entry(b"PATH").exported = true;
+        }
+    }
 }
 
 /// Applies the `options`, `alias` and `bindkey` tables of a plugin's

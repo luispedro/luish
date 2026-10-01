@@ -676,6 +676,15 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   in one file). The `bindkey` table goes through `keys::bind_widget`, as `bindkey KEY WIDGET` does. A directory
   plugin's `plugin.toml` shares the `options`, `alias` and `bindkey` tables (`config::load_plugin_manifest`, see
   Plugins). Test: `misc/config_toml.sh`.
+- `config.toml`'s `env`, `vars` and `path` tables (`config::environment`): `env` exports, `vars` doesn't (a variable
+  inherited exported stays so), and a table named `interactive` in `env` is `env.interactive` (a string of that name is
+  a variable, as for `alias.global`). Values are strings, with `tilde`, or integers. `path`'s directories are
+  collected (`Dirs`) and applied after the whole file, so they add to a `PATH` set in `env` wherever the tables are;
+  a directory `PATH` has already is skipped rather than moved, so that a shell started by `pixi shell` or
+  `nix-shell` keeps the environment's directories first, and `PATH` is set (and exported) only if it changed. In an
+  interactive shell they are part of the `config` cache entry (`PATH` and `HOME` are in its key already). A login
+  shell that isn't interactive applies `env`, without `env.interactive`, and `path`, uncached
+  (`config::load_login`, before the login files). Test: `misc/config_toml_env.sh`.
 - The rc stage (`interactive::rc_d`, `startcache::run` with `config`) is: `config.toml`'s options, the plugins it
   enables (`plugins::load_enabled`), `rc.d`'s files, then every loaded plugin's `post-rc.lsh` (`post_rc_files`), all
   inside the cache; then, outside it and so in every shell, the `post-rc` hooks (`post_rc_hooks`), then
@@ -971,7 +980,7 @@ truncates when it relocates the package.
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |
 | `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `builtins/internal_complete_expand.sh`, `builtins/internal_complete_subscript.sh`, `tests/plugins/complete.sh` |
-| Startup files | `misc/startup_cache.sh`, `misc/startup_cache_assigned.sh`, `misc/startup_cache_blocks.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `tests/plugins/startup_cache_check.sh`, `tests/plugins/startup_cache_blocks.sh` |
+| Startup files | `misc/startup_cache.sh`, `misc/startup_cache_assigned.sh`, `misc/startup_cache_blocks.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `misc/config_toml_env.sh`, `tests/plugins/startup_cache_check.sh`, `tests/plugins/startup_cache_blocks.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
 | `print` | `builtins/print.sh` (zsh), `builtins/print_luish.sh`, `print_builtin` in `tests/interactive.rs` |

@@ -272,6 +272,8 @@ fn run(args: Vec<Vec<u8>>) -> ! {
         }
         if interactive {
             interactive::rc_d(&mut sh);
+        } else if login {
+            config::load_login(&mut sh);
         }
         if login {
             interactive::login_profiles(&mut sh);

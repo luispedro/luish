@@ -1,4 +1,6 @@
 Unreleased
+    * config.toml: [env], [env.interactive] and [vars] set variables, and
+      [path] adds directories to PATH (before = [...], after = [...])
     * Plugins of a collection load as SOURCE/NAME (std/completion), so
       their names don't clash
     * Collections can have sub-collections: SOURCE/SUB/NAME, or

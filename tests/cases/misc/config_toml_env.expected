@@ -1,0 +1,60 @@
+--- interactive
+EDITOR=nvim exported
+GOPATH=~/go:~/x exported
+NUM=42 exported
+LESS=-R exported
+WORDCHARS=*?_-. local
+PATH=~/bin:/b1:/usr/bin:/bin:/a1:/a2
+--- from the cache
+EDITOR=nvim exported
+GOPATH=~/go:~/x exported
+NUM=42 exported
+LESS=-R exported
+WORDCHARS=*?_-. local
+PATH=~/bin:/b1:/usr/bin:/bin:/a1:/a2
+--- a login shell that is not interactive: env and path only
+EDITOR=nvim exported
+GOPATH=~/go:~/x exported
+NUM=42 exported
+LESS=unset local
+WORDCHARS=unset local
+PATH=~/bin:/b1:/usr/bin:/bin:/a1:/a2
+--- not -c or a script
+EDITOR=unset local
+GOPATH=unset local
+NUM=unset local
+LESS=unset local
+WORDCHARS=unset local
+PATH=/usr/bin:/bin
+--- --no-rcs
+EDITOR=unset local
+GOPATH=unset local
+NUM=unset local
+LESS=unset local
+WORDCHARS=unset local
+PATH=/usr/bin:/bin
+--- directories that PATH has already stay where they are
+~/.local/bin:/env/bin:~/bin:/usr/bin:/bin:/opt/bin
+~/.local/bin:/env/bin:~/bin:/usr/bin:/bin:/opt/bin
+~/bin:~/.local/bin:/usr/bin:/bin:/opt/bin
+~/bin:~/.local/bin:/usr/bin:/bin:/opt/bin
+--- errors
+luish: ~/.config/luish/config.toml: line 2: env.A: expected a string, found boolean
+luish: ~/.config/luish/config.toml: line 3: env: bad variable name: "B-C"
+luish: ~/.config/luish/config.toml: line 7: vars.E: expected a string, found array
+luish: ~/.config/luish/config.toml: line 9: path.before: expected an array, found string
+luish: ~/.config/luish/config.toml: line 10: path.after: expected a string, found integer
+luish: ~/.config/luish/config.toml: line 10: path.after: empty directory
+luish: ~/.config/luish/config.toml: line 11: path: unknown key: around
+D=ok interactive=x PATH=/usr/bin:/bin:/x:/y
+luish: ~/.config/luish/config.toml: line 2: env.A: expected a string, found boolean
+luish: ~/.config/luish/config.toml: line 3: env: bad variable name: "B-C"
+luish: ~/.config/luish/config.toml: line 9: path.before: expected an array, found string
+luish: ~/.config/luish/config.toml: line 10: path.after: expected a string, found integer
+luish: ~/.config/luish/config.toml: line 10: path.after: empty directory
+luish: ~/.config/luish/config.toml: line 11: path: unknown key: around
+D=ok interactive=x PATH=/usr/bin:/bin:/x:/y
+luish: ~/.config/luish/config.toml: line 1: env: not a table
+luish: ~/.config/luish/config.toml: line 2: vars: not a table
+luish: ~/.config/luish/config.toml: line 3: path: not a table
+ok

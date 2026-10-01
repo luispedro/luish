@@ -532,9 +532,42 @@ Down = "down-line-or-history"
 "^[[1;5C" = "forward-word"   # Ctrl-Right, as zsh writes it
 ```
 
+Variables go in the `env` table, which exports them, and in its `interactive`
+table those that only interactive shells should set; the `vars` table sets
+shell variables that aren't exported (for prompts and plugins, say). The
+`path` table adds directories to `PATH`, in the order given, `before` or
+`after` those it has:
+
+```toml
+[env]                     # interactive and login shells
+EDITOR = "nvim"
+GOPATH = "~/go"
+
+[env.interactive]         # interactive shells only
+LESS = "-R"
+
+[vars]                    # interactive shells, not exported
+WORDCHARS = "*?_-."
+
+[path]
+before = ["~/bin", "~/.cargo/bin"]
+after = ["/opt/tools/bin"]
+```
+
+Values are strings (or integers), where only a leading `~` is expanded.
+Interactive shells apply all four tables; login shells that aren't
+interactive (which read nothing else of `config.toml`) apply `env`, without
+`env.interactive`, and `path`. Scripts and `luish -c` read none of them, but
+inherit what their shell exported. `path` applies after the variables, so it
+adds to a `PATH` set in `[env]`. A directory that `PATH` has already is
+skipped, wherever it is, so a shell started from another doesn't add it
+again, and one started by `pixi shell`, `nix-shell` or a Python virtual
+environment's activation keeps that environment's directories first.
+
 A key that isn't a setting, a value of the wrong type, an alias name with `=`
-in it or a key or widget that `bindkey` doesn't take is reported with its line
-and skipped; a file that isn't valid TOML is reported and ignored.
+in it, a variable name that isn't one, or a key or widget that `bindkey`
+doesn't take is reported with its line and skipped; a file that isn't valid
+TOML is reported and ignored.
 
 You also [install plugins in
 config.toml](plugins.md#installing-plugins-with-configtoml)).
