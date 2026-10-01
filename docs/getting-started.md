@@ -200,8 +200,8 @@ For about 270 more commands with luish-native completion, in bioinformatics (sam
 [luish-extra](plugins.md#more-completion-luish-extra):
 
 ```console
-$ plugin add https://github.com/luispedro/luish-extra/tree/main/complete extra-complete
-$ plugin add extra-complete/all
+$ plugin add luispedro/luish-extra extra
+$ plugin add extra/complete/all
 ```
 
 

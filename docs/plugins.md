@@ -196,9 +196,9 @@ The `std` library is tied to the version of luish, so it is not affected by
 
 ## More completion: luish-extra
 
-[luish-extra](https://github.com/luispedro/luish-extra) is a separate collection of completion plugins, called
-`extra-complete`, for the programs that `std.completion` leaves out. It completes about 270 more commands, in five
-plugins that can each be enabled on its own:
+[luish-extra](https://github.com/luispedro/luish-extra) is a separate collection of completion plugins (in its
+sub-collection `complete`) for the programs that `std.completion` leaves out. It completes about 270 more commands,
+in five plugins that can each be enabled on its own:
 
 - **`bio`**: bioinformatics tools, such as samtools, bcftools, bedtools, bwa, bowtie2, minimap2, STAR, BLAST+, diamond,
   fastp, cutadapt, assemblers (spades, megahit, flye), and the tools of metagenomics (kraken2, metaphlan, checkm,
@@ -217,27 +217,28 @@ file, `ruff check --select F4` the rule codes `F401`, `F403`, ..., and `libreoff
 installed LibreOffice writes. Each module is compiled the first time Tab is pressed for one of its commands, so
 enabling all of them costs little.
 
-To install it, add the collection under the name `extra-complete` (its plugins refer to each other by that name, so
-they don't load under another), then enable `all`, which loads the five plugins:
+To install it, add the repository as a source (under any name, here `extra`), then enable `all`, which loads the
+five plugins:
 
 ```console
-$ plugin add https://github.com/luispedro/luish-extra/tree/main/complete extra-complete
-$ plugin add extra-complete/all
+$ plugin add luispedro/luish-extra extra
+$ plugin add extra/complete/all
 ```
 
 Or, by hand, in `config.toml` (then run `plugin sync`):
 
 ```toml
 [plugins.available]
-extra-complete = { gh = "luispedro/luish-extra", subdir = "complete" }
+extra = { gh = "luispedro/luish-extra" }
 
 [plugins.enabled]
-extra-complete.all = "*"        # or only some: extra-complete.bio = "*", ...
+extra.complete.all = "*"        # or only some: extra.complete.bio = "*", ...
 ```
 
 The plugins depend on `std.completion`, whose engine they use, so luish loads it too.
 
-luish-extra requires luish 0.3.0 or later. Unlike `std`, it is not tied to the version of luish, so `plugin update`
+Adding the whole repository needs a luish newer than 0.3.0, which has sub-collections; with luish 0.3.0, add its
+`complete` directory instead (see its README). Unlike `std`, it is not tied to the version of luish, so `plugin update`
 updates it. Its [README](https://github.com/luispedro/luish-extra#readme) lists every command it completes.
 
 ## Plugin formats
