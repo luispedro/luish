@@ -73,6 +73,7 @@ builtins
 plugins
 extensions
 improvements
+comparison/index
 performance
 compatibility
 whatsnew
