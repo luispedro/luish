@@ -505,9 +505,12 @@ fn right_prompt() {
     sh.expect("\nhi\n");
     sh.expect("$ \x1b7\x1b[18G[2]\x1b8");
     // It sees the variables that plugins give the prompt.
-    std::fs::write(sh.path("vars.rhai"), "sh::hook(\"prompt-vars\", || #{ pv: \"x\" });\n").unwrap();
-    sh.send("ZLE_RPROMPT_INDENT=1 RPROMPT='[$pv]'; plugin load ~/vars.rhai\n");
-    sh.expect("$ \x1b7\x1b[17G[x]\x1b8");
+    #[cfg(feature = "plugins")]
+    {
+        std::fs::write(sh.path("vars.rhai"), "sh::hook(\"prompt-vars\", || #{ pv: \"x\" });\n").unwrap();
+        sh.send("ZLE_RPROMPT_INDENT=1 RPROMPT='[$pv]'; plugin load ~/vars.rhai\n");
+        sh.expect("$ \x1b7\x1b[17G[x]\x1b8");
+    }
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
 }
