@@ -512,9 +512,14 @@ pub fn source_file(sh: &mut Shell, path: &[u8]) {
 
 /// Runs the text of a startup file in the current shell.
 pub fn run_file(sh: &mut Shell, text: &[u8]) {
+    run_text(sh, text, true);
+}
+
+/// [`run_file`], without expanding aliases if not `aliases`.
+pub fn run_text(sh: &mut Shell, text: &[u8], aliases: bool) {
     let saved = sh.lineno;
     sh.lineno = 1;
-    let r = sh.run_string(text);
+    let r = sh.run_text(text, aliases);
     sh.lineno = saved;
     if let Err(crate::shell::Flow::Exit(n)) = r {
         sh.exit(n);

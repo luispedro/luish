@@ -300,6 +300,11 @@ thread_local! {
     static NO_ALIASES: Rc<AliasMap> = Rc::new(AliasMap::default());
 }
 
+/// The shared empty alias table.
+pub fn no_aliases() -> Rc<AliasMap> {
+    NO_ALIASES.with(Rc::clone)
+}
+
 impl Parser {
     pub fn new(src: Vec<u8>, lineno: u32, source_eof: bool) -> Parser {
         Parser {
@@ -309,7 +314,7 @@ impl Parser {
             source_eof,
             peeked: None,
             pending_heredocs: Vec::new(),
-            aliases: NO_ALIASES.with(Rc::clone),
+            aliases: no_aliases(),
             active_aliases: Vec::new(),
             alias_blank_end: None,
             raw_word: false,

@@ -1,4 +1,10 @@
 Unreleased
+    * The startup cache has an entry per file of rc.d and login.d, keyed
+      on PATH and HOME: a changed file reruns only it and the files
+      after it, and PATH=$HOME/bin:$PATH adds to the PATH of each shell
+    * `__luish_cache env=(...) files=(...) { ... }` blocks cache part of
+      a startup file, keyed on the variables and files they list
+    * check-cache reports differences by file and block
     * The startup cache saves variables that the files set to the value
       they already had
     * Library plugins (`library = true` in plugin.toml), which

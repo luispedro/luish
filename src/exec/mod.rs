@@ -255,6 +255,7 @@ impl Shell {
                 }
                 Ok(0)
             }
+            Command::Cache(block) if self.startcache.is_some() => crate::startcache::run_block(self, block),
             Command::Cache(block) => self.run_list_exit(&block.body, no_fork),
         }
     }

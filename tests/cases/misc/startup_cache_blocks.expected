@@ -1,0 +1,82 @@
+--- built, then used
+running 10-path
+uncached 20-tools
+building tools for a
+block status 1
+outer block
+inner block
+running 30-after
+uncached block
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf1 AFTER=after a conf1 U=a
+uncached 20-tools
+block status 1
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf1 AFTER=after a conf1 U=a
+--- another TOOL: only the blocks that use it run again
+uncached 20-tools
+building tools for b
+block status 1
+running 30-after
+uncached block
+PATH=~/bin:/usr/bin:/bin TOOLS=b conf1 AFTER=after b conf1 U=b
+--- both are kept
+uncached 20-tools
+block status 1
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf1 AFTER=after a conf1 U=a
+uncached 20-tools
+block status 1
+PATH=~/bin:/usr/bin:/bin TOOLS=b conf1 AFTER=after b conf1 U=b
+--- another PATH: the files run again, with the PATH they are given
+running 10-path
+uncached 20-tools
+block status 1
+running 30-after
+PATH=~/bin:/bin TOOLS=a conf1 AFTER=after a conf1 U=a
+uncached 20-tools
+block status 1
+PATH=~/bin:/bin TOOLS=a conf1 AFTER=after a conf1 U=a
+uncached 20-tools
+block status 1
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf1 AFTER=after a conf1 U=a
+--- a file in files=(...) changed or created
+uncached 20-tools
+building tools for a
+block status 1
+running 30-after
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf2 AFTER=after a conf2 U=a
+uncached 20-tools
+building tools for a
+block status 1
+running 30-after
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf2 AFTER=after a conf2 U=a
+uncached 20-tools
+block status 1
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf2 AFTER=after a conf2 U=a
+--- a comment changed: the block doesn't run again
+uncached 20-tools
+block status 1
+running 30-after
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf2 AFTER=after a conf2 U=a
+--- the block changed: it runs again, and the files after it
+uncached 20-tools
+now building tools for a
+block status 1
+running 30-after
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf2 AFTER=after a conf2 U=a
+uncached 20-tools
+block status 1
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf2 AFTER=after a conf2 U=a
+--- check-cache rebuilds a block whose result changed
+uncached 20-tools
+block status 1
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf2 AFTER=after a conf2 U=a
+login: ~/.cache/luish/login-HOST
+  generated
+  block at ~/.config/luish/login.d/20-tools.lsh:2: variable TOOLS: changed
+  rebuilt
+status 1
+uncached 20-tools
+block status 1
+PATH=~/bin:/usr/bin:/bin TOOLS=a conf3 AFTER=after a conf3 U=a
+--- outside the startup files, a block just runs
+luishrc block
+luishrc block

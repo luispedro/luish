@@ -20,7 +20,7 @@ uncached
 V=1
 login: ~/.cache/luish/login-HOST
   generated NOW
-  variable V: changed
+  10-a.lsh: variable V: changed
   rebuilt
 status 1
 uncached
@@ -29,16 +29,16 @@ status 0
 --- a variable added, then removed
 login: ~/.cache/luish/login-HOST
   generated NOW
-  variable FLAG: added
+  10-a.lsh: variable FLAG: added
   rebuilt
 login: ~/.cache/luish/login-HOST
   generated NOW
-  variable FLAG: removed
+  10-a.lsh: variable FLAG: removed
   rebuilt
 --- an alias, in rc
 rc: ~/.cache/luish/rc-HOST
   generated NOW
-  alias origin: changed
+  rc.lsh: alias origin: changed
   rebuilt
 status 1
 rc2
@@ -50,16 +50,14 @@ login: ~/.cache/luish/login-HOST
 --- a file changed, and another build of luish
 login: ~/.cache/luish/login-HOST
   generated Sun Sep  9 01:46:40 2001 (N days ago)
-  built by another build of luish (another-build)
-  file changed: 10-a.lsh
-  variable W: added
+  built by another build of luish (OTHER)
   rebuilt
 status 0
 --- built by a non-interactive login shell: without rc
 running 10-a
 uncached
 V=2
-m -l
+-l
 status 0
 --- errors
 luish: 1: __luish_internal check-cache: illegal option -x

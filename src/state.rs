@@ -52,7 +52,33 @@ pub enum Kind {
     Option,
 }
 
+/// Every kind, in order (for [`Kind::code`]).
+const KINDS: [Kind; 13] = [
+    Kind::Dir,
+    Kind::DirStack,
+    Kind::Umask,
+    Kind::Var,
+    Kind::Readonly,
+    Kind::Trap,
+    Kind::SyntaxOption,
+    Kind::Function,
+    Kind::Alias,
+    Kind::SuffixAlias,
+    Kind::Plugin,
+    Kind::Binding,
+    Kind::Option,
+];
+
 impl Kind {
+    /// A letter for the kind, in the startup cache.
+    pub fn code(self) -> u8 {
+        b'a' + self as u8
+    }
+
+    pub fn from_code(c: u8) -> Option<Kind> {
+        KINDS.get(c.wrapping_sub(b'a') as usize).copied()
+    }
+
     /// What the kind is called in reports (`__luish_internal check-cache`).
     pub fn label(self) -> &'static str {
         match self {
@@ -87,7 +113,11 @@ impl Shell {
     /// The shell's state, as commands.
     pub fn dump_state(&self) -> Vec<u8> {
         let mut out = Vec::new();
-        join(&mut out, &self.state_entries().iter().collect::<Vec<_>>());
+        let entries = self.state_entries();
+        join(
+            &mut out,
+            &entries.iter().map(|e| (e.kind, &e.text[..])).collect::<Vec<_>>(),
+        );
         out
     }
 
@@ -249,10 +279,21 @@ impl Shell {
     }
 }
 
-/// Commands that turn state `before` into state `after`: removals first,
-/// then everything new or changed (or assigned), in order. A read-only
-/// variable can't be removed, so it is left alone.
-pub fn difference(before: &[Entry], after: &[Entry]) -> Vec<u8> {
+/// One difference between two states: an entry that is new or changed (or
+/// assigned), with the commands that restore it, or one that was removed,
+/// with the commands that remove it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Change {
+    pub kind: Kind,
+    pub name: Vec<u8>,
+    pub text: Vec<u8>,
+    pub removed: bool,
+}
+
+/// What turns state `before` into state `after`: removals first, then
+/// everything new or changed (or assigned), in order. A read-only variable
+/// can't be removed, so it is left alone.
+pub fn changes(before: &[Entry], after: &[Entry]) -> Vec<Change> {
     use std::collections::HashMap;
     let index = |entries: &[Entry]| -> HashMap<(Kind, Vec<u8>), usize> {
         entries
@@ -268,31 +309,40 @@ pub fn difference(before: &[Entry], after: &[Entry]) -> Vec<u8> {
             continue;
         }
         let quoted = || single_quote(&e.name);
-        match e.kind {
-            Kind::Var => out.extend([b"unset -v ".to_vec(), e.name.clone()].concat()),
-            Kind::Function => out.extend([b"unset -f ".to_vec(), e.name.clone()].concat()),
-            Kind::Alias => out.extend([b"command unalias -- ".to_vec(), quoted()].concat()),
-            Kind::SuffixAlias => out.extend([b"command unalias -s -- ".to_vec(), quoted()].concat()),
-            Kind::Trap => out.extend([b"trap - ".to_vec(), e.name.clone()].concat()),
-            Kind::Plugin => out.extend([b"__luish_internal plugin unload ".to_vec(), quoted()].concat()),
-            Kind::DirStack => out.extend_from_slice(b"command dirs -c"),
-            Kind::Binding => {
-                out.extend(crate::interactive::keys::restore_command(&e.name));
-                continue;
-            }
+        let mut text = match e.kind {
+            Kind::Var => [b"unset -v ".to_vec(), e.name.clone()].concat(),
+            Kind::Function => [b"unset -f ".to_vec(), e.name.clone()].concat(),
+            Kind::Alias => [b"command unalias -- ".to_vec(), quoted()].concat(),
+            Kind::SuffixAlias => [b"command unalias -s -- ".to_vec(), quoted()].concat(),
+            Kind::Trap => [b"trap - ".to_vec(), e.name.clone()].concat(),
+            Kind::Plugin => [b"__luish_internal plugin unload ".to_vec(), quoted()].concat(),
+            Kind::DirStack => b"command dirs -c".to_vec(),
+            Kind::Binding => crate::interactive::keys::restore_command(&e.name),
             Kind::Dir | Kind::Umask | Kind::Readonly | Kind::SyntaxOption | Kind::Option => continue,
+        };
+        if e.kind != Kind::Binding {
+            text.push(b'\n');
         }
-        out.push(b'\n');
+        out.push(Change {
+            kind: e.kind,
+            name: e.name.clone(),
+            text,
+            removed: true,
+        });
     }
-    let changed: Vec<_> = (after.iter())
-        .filter(|e| {
-            e.assigned
-                || !old
-                    .get(&(e.kind, e.name.clone()))
-                    .is_some_and(|&i| before[i].text == e.text)
-        })
-        .collect();
-    join(&mut out, &changed);
+    for e in after {
+        let same = old
+            .get(&(e.kind, e.name.clone()))
+            .is_some_and(|&i| before[i].text == e.text);
+        if e.assigned || !same {
+            out.push(Change {
+                kind: e.kind,
+                name: e.name.clone(),
+                text: e.text.clone(),
+                removed: false,
+            });
+        }
+    }
     out
 }
 
@@ -300,19 +350,14 @@ pub fn difference(before: &[Entry], after: &[Entry]) -> Vec<u8> {
 /// from the aliases on are grouped in braces: the group is parsed before
 /// any of it runs, so that the aliases don't change the commands after
 /// them (a global alias could be any word).
-fn join(out: &mut Vec<u8>, entries: &[&Entry]) {
-    let has_aliases = entries
-        .iter()
-        .any(|e| matches!(e.kind, Kind::Alias | Kind::SuffixAlias));
-    let group = entries
-        .iter()
-        .position(|e| e.kind >= Kind::Alias)
-        .filter(|_| has_aliases);
+pub fn join(out: &mut Vec<u8>, entries: &[(Kind, &[u8])]) {
+    let has_aliases = entries.iter().any(|e| matches!(e.0, Kind::Alias | Kind::SuffixAlias));
+    let group = entries.iter().position(|e| e.0 >= Kind::Alias).filter(|_| has_aliases);
     for (i, e) in entries.iter().enumerate() {
         if group == Some(i) {
             out.extend_from_slice(b"{\n");
         }
-        out.extend_from_slice(&e.text);
+        out.extend_from_slice(e.1);
     }
     if group.is_some() {
         out.extend_from_slice(b"}\n");

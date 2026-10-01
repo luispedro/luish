@@ -4,6 +4,8 @@
 # the changes that the files' fingerprints miss. A current cache is
 # touched; one that differs is rebuilt. Status 0, 1 if any was rebuilt.
 export TZ=UTC
+# The entries of files are keyed on PATH: the same for every shell here.
+PATH=/usr/bin:/bin
 mkdir -p .config/luish/login.d .config/luish/rc.d bin
 cd .config/luish/login.d
 cat > 10-a.lsh <<'X'
@@ -23,12 +25,16 @@ echo 1 > value
 echo rc > origin
 # Hide the cache's directory, its host and the times (a check within
 # the minute may or may not come a second after the cache was written).
+# A field of the cache: its tag and length on a line, then the value.
+field() {
+    grep -A1 "^$1 " "$2" | tail -n 1
+}
 report() {
     sed -e "s|^$SH:|luish:|" -e "s|$HOME|~|" -e 's|\(cache/luish/[a-z]*\)-[^:]*|\1-HOST|' \
         -e 's/[0-9]* days ago/N days ago/' -e 's/generated .* (just now)$/generated NOW/' \
-        -e '/last checked .* (just now)$/d'
+        -e '/last checked .* (just now)$/d' -e 's/another build of luish (.*)/another build of luish (OTHER)/'
 }
-PATH=/usr/bin:/bin $SH -il -c 'echo "$PATH V=$V" | sed "s|$HOME|~|"' 2>/dev/null
+$SH -il -c 'echo "$PATH V=$V" | sed "s|$HOME|~|"' 2>/dev/null
 rm uncached-ran
 echo '--- both are current, whatever the PATH and directory of the check'
 cd bin
@@ -43,10 +49,10 @@ set -- .cache/luish/login-*
 login=$1
 touch -t 200001010000 "$login"
 touch -t 200101010000 reference
-t=$(grep '^t ' "$login")
+t=$(field t "$login")
 $SH -c '__luish_internal check-cache -q login'
 [ "$login" -nt reference ] && echo touched
-[ "$(grep '^t ' "$login")" = "$t" ] && echo 'same time'
+[ "$(field t "$login")" = "$t" ] && echo 'same time'
 echo '--- output that no fingerprint shows'
 echo 2 > value
 $SH -l -c 'echo "V=$V"'
@@ -63,20 +69,21 @@ echo rc2 > origin
 $SH -c '__luish_internal check-cache -q; echo "status $?"' | report
 $SH -i -c 'origin' 2>/dev/null
 echo '--- the time it was generated and last checked, as local time'
-sed 's/^t .*/t 1000000000/' "$login" > tmp
+sed "s/^$(field t "$login")\$/1000000000/" "$login" > tmp
 cat tmp > "$login"
 touch -t 200109100000 "$login"
 $SH -c '__luish_internal check-cache login' | report
 echo '--- a file changed, and another build of luish'
 echo 'W=w' >> .config/luish/login.d/10-a.lsh
-sed 's/^b .*/b another-build/' "$login" > tmp
+rev=$(field b "$login")
+sed "s/^$rev\$/$(printf %s "$rev" | tr 0-9a-f g-v)/" "$login" > tmp
 cat tmp > "$login"
 $SH -c '__luish_internal check-cache -q' | report
 $SH -c '__luish_internal check-cache -q; echo "status $?"'
 echo '--- built by a non-interactive login shell: without rc'
 rm "$login"
 $SH -l -c 'echo "V=$V"'
-grep '^m ' "$login"
+field m "$login"
 echo rc3 > origin
 $SH -c '__luish_internal check-cache -q login; echo "status $?"'
 echo '--- errors'

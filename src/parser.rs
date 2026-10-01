@@ -777,7 +777,7 @@ impl Parser {
     /// at most once, are arrays as in `local a=(x y)`. Their words are
     /// expanded at every start, so command substitution is an error there.
     fn parse_cache_block(&mut self) -> PResult<Command> {
-        self.next()?;
+        let lineno = self.next()?.lineno;
         let mut env = None;
         let mut files = None;
         loop {
@@ -823,7 +823,12 @@ impl Parser {
         let CompoundCommand::BraceGroup(body) = self.parse_compound()? else {
             unreachable!()
         };
-        Ok(Command::Cache(Rc::new(CacheBlock { env, files, body })))
+        Ok(Command::Cache(Rc::new(CacheBlock {
+            env,
+            files,
+            body,
+            lineno,
+        })))
     }
 }
 

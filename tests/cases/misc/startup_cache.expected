@@ -49,20 +49,18 @@ extra2
 uncached
 extra2
 --- a file added, then removed
-running 10-a
 running 15-d
 running 20-b
 uncached
 B=1-b D=d
 uncached
 B=1-b D=d
-running 10-a
-running 20-b
 uncached
 B=1-b D=unset
 uncached
 B=1-b D=unset
 --- a cache written by another build of luish
+1
 1
 running 10-a
 running 20-b

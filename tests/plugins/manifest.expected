@@ -27,12 +27,7 @@ TXT a.txt
 qq
 "^X^E" undo
 --- a changed plugin.toml, of a plugin that rc.d loads, is read again
-dep
 p extension
-luish: ~/.config/luish/plugins/p/plugin.toml: line 7: no such option: nosuch
-luish: ~/.config/luish/plugins/p/plugin.toml: line 10: alias.bad: expected a string, found integer
-luish: ~/.config/luish/plugins/p/plugin.toml: line 17: bindkey.Up: no such widget `nosuch'
-p rc.lsh: ll='echo ll' setopt glob.star
 q
 qq2
 p extension
@@ -48,12 +43,7 @@ p extension
 luish: 1: ~/.config/luish/plugins/bad/extension.rhai: Runtime error: no 
 luish: 1: alias: bb: not found
 --- not TOML: reported once
-dep
 p extension
-luish: ~/.config/luish/plugins/p/plugin.toml: line 7: no such option: nosuch
-luish: ~/.config/luish/plugins/p/plugin.toml: line 10: alias.bad: expected a string, found integer
-luish: ~/.config/luish/plugins/p/plugin.toml: line 17: bindkey.Up: no such widget `nosuch'
-p rc.lsh: ll='echo ll' setopt glob.star
 luish: ~/.config/luish/plugins/q/plugin.toml: line 1: expected a right bracket, found a newline
 q
 luish: 1: alias: qq: not found

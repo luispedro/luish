@@ -548,37 +548,71 @@ echo "alias ll='ls -l'" > ~/.config/luish/rc.d/aliases.lsh
 ```
 
 The caches are `~/.cache/luish/rc-HOST` and `~/.cache/luish/login-HOST` (or
-under `$XDG_CACHE_HOME`). A cache is used as long as the `.lsh` files, the
-files they read with `.` and (for `rc.d`) `config.toml`, `plugins.lock` and the
-plugins it loads are unchanged, and luish itself is the same build.
+under `$XDG_CACHE_HOME`). Each file has its own entry, which a new shell uses
+as long as:
 
-When one of them changes (luish compares their size and modification time), or
-after luish is upgraded, the next shell reruns the files and updates the cache.
+- the file, and the files it reads with `.`, are unchanged (luish compares
+  their size and modification time);
+- `PATH` and `HOME` have the values they had when the entry was built;
+- the files before it in the directory did the same as then (and, for
+  `rc.d`, `config.toml`, `plugins.lock` and the plugins it loads are
+  unchanged);
+- luish itself is the same build.
+
+Otherwise the shell runs the file again, and the files after it, and saves
+what they did. luish keeps a few entries for each file, so that shells started
+with different values of `PATH` each find theirs: `PATH=$HOME/bin:$PATH` adds
+to the `PATH` that the shell was started with.
 
 The cache directory holds nothing that can't be rebuilt: it can be removed at
 any time. luish marks it with a `CACHEDIR.TAG` file, so that backup tools that
 honour the [convention](https://bford.info/cachedir/) skip it.
 
-For elements that cannot be cached, put them into a file called
-`_uncached.lsh`, which runs every time, after that directory's cached state is
-restored. For example:
+### Caching part of a file
+
+A file with `__luish_cache` blocks isn't cached as a whole: it runs every
+time, except for its blocks, each cached on its own, with what it depends on
+listed:
+
+```sh
+# ~/.config/luish/rc.d/nvm.lsh
+export NVM_DIR=$HOME/.nvm
+__luish_cache env=(NVM_DIR) files=("$NVM_DIR/alias/default") {
+    . "$NVM_DIR/nvm.sh"
+}
+export GPG_TTY=$(tty)
+```
+
+A block's entry is used as long as:
+
+- the variables of `env=(...)` have the values they had when it was built
+  (unset is not the same as empty);
+- the files of `files=(...)` are unchanged. The words are expanded (`~`,
+  variables, patterns) at every start, so command substitution isn't allowed
+  there. A file that doesn't exist is unchanged until it is created, and a
+  directory changes when files are added to it or removed from it;
+- the files it reads with `.` are unchanged, and its text is the same
+  (comments and layout don't count).
+
+Both lists are optional: `__luish_cache { ... }` is cached until its text or
+the files it reads change. Unlike a file's entry, a block's doesn't depend on
+`PATH`, nor on what ran before it: only on what it lists. Its exit status is
+saved too, but what it prints is shown only when it runs. Blocks are cached in
+the files of `rc.d` and `login.d`; elsewhere (in `luishrc` or a script), and
+inside another block, the body just runs.
+
+For code that should never be cached, use `_uncached.lsh`, which runs every
+time, after the other files of its directory:
 
 - anything with side effects, such as starting `ssh-agent` or printing a message;
 - values that differ between shells, such as `GPG_TTY=$(tty)`;
 - anything that depends on the environment the shell was started in, such as
-  `$SSH_CONNECTION` or `$DISPLAY`. The cached values are those from when the
-  cache was built, so, for example, `PATH=$HOME/bin:$PATH` keeps the rest of
-  the `PATH` that the shell had then.
+  `$SSH_CONNECTION` or `$DISPLAY`.
 
-Currently (v0.2.0), the cache system is very optimistic. In particular, if
-startup files themselves depend on the starting environment in significant
-ways, this can lead to problems.
-
-Furthermore, luish can't see what a command does, so it can't know how it
-depends on the environment.
-
-In the future, luish may use more sophisticated ways to detect changes, but for
-now, it only checks the files it reads, unless you check the caches yourself.
+luish can't see what a command reads (an environment variable, a file), so
+the keys are for you to get right: a file's entry depends only on `PATH` and
+`HOME`, and a block's only on what it lists. `__luish_internal check-cache`
+finds what they miss.
 
 ### Checking the caches
 
@@ -595,26 +629,30 @@ rc: /home/me/.cache/luish/rc-myhost
 login: /home/me/.cache/luish/login-myhost
   generated Fri 25 Sep 2026 18:40:51 CEST (2 days ago)
   last checked Mon 28 Sep 2026 08:00:02 CEST (3 hours ago)
-  file changed: /home/me/.config/luish/login.d/10-env.lsh
-  variable NVM_BIN: changed
-  alias ll: added
+  file changed: /home/me/.config/luish/shared/env.sh
+  10-env.lsh: alias ll: added
+  block at /home/me/.config/luish/login.d/20-nvm.lsh:2: variable NVM_BIN: changed
   rebuilt
 ```
 
-For each cache, it shows when it was generated and, if it was checked since,
+For each cache, it shows when it was last built and, if it was checked since,
 when it was last found up to date (in local time, in the format of the
 locale), then what differs: files changed, added or removed, a different
-build of luish, and the variables, functions, aliases, options and so on
-that the cache restores differently. A cache that is up to date is kept and
-touched (its modification time is when it was last checked); one that
-differs is rebuilt, so that the next shell uses the new one. Shells already
-running keep what they started with.
+build of luish, and, for each entry, the variables, functions, aliases,
+options and so on that it restores differently. An entry is shown by its file
+(`config.toml` for `config.toml` and its plugins, `post-rc.lsh` for the
+plugins' `post-rc.lsh`), and a block by its file and line. A cache that is up
+to date is kept and touched (its modification time is when it was last
+checked); one that differs is rebuilt, so that the next shell uses the new
+entries. Shells already running keep what they started with.
 
-The files run in a new shell, started as the one that built the cache: with
-the same options (interactive, login) and the environment it started with,
-which the cache records for this. So a check gives the same result wherever
-it runs (another directory, a shell whose `PATH` the files already changed,
-or `cron`). Their output is discarded, and `_uncached.lsh` doesn't run.
+The files run in a new shell, started as the last one that built an entry of
+the cache: with the same options (interactive, login) and the environment it
+started with, which the cache records for this. So a check gives the same
+result wherever it runs (another directory, a shell whose `PATH` the files
+already changed, or `cron`). It rebuilds every entry it reaches, and keeps
+those for other keys. Their output is discarded, and `_uncached.lsh` doesn't
+run.
 
 With `-q` (or `--quiet`), it prints only the reports of the caches it
 rebuilt. The exit status is 0 if every cache was up to date, 1 if any was
@@ -624,7 +662,7 @@ rebuilt, and 2 on errors, so it can run from `cron` or a systemd timer:
 __luish_internal check-cache -q || echo 'startup cache rebuilt'
 ```
 
-The cache files hold the environment of the shell that built them (mode
+The cache files hold the environment of the shell that last built them (mode
 0600, as they already hold the variables the files export).
 
 

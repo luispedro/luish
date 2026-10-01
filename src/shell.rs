@@ -88,8 +88,8 @@ pub struct Shell {
     pub optoff: Option<usize>,
     /// Currently running the EXIT trap.
     pub in_exit_trap: bool,
-    /// While the login cache is built: the absolute paths of the files
-    /// read by `.`.
+    /// While an entry of a startup cache is built: the absolute paths of
+    /// the files read by `.`.
     pub sourced_files: Option<Vec<Vec<u8>>>,
     /// The plugin host, created by the first `plugin load`.
     pub plugins: Option<Rc<crate::plugins::Host>>,
@@ -103,6 +103,9 @@ pub struct Shell {
     /// `__luish_internal check-cache` starts: rebuild the startup cache
     /// `NAME` into `PATH` and exit (`startcache::check_child`).
     pub check_cache: Option<(Vec<u8>, Vec<u8>)>,
+    /// While a startup file with `__luish_cache` blocks runs: the cache
+    /// they use (`startcache::run_block`).
+    pub startcache: Option<Box<crate::startcache::Run>>,
 }
 
 impl Shell {
@@ -176,6 +179,7 @@ impl Shell {
             no_plugins: false,
             in_rc: false,
             check_cache: None,
+            startcache: None,
         }
     }
 
@@ -633,11 +637,21 @@ impl Shell {
 
     /// Parses and runs a string in the current shell (`eval`, `.`, traps).
     pub fn run_string(&mut self, text: &[u8]) -> ExecResult {
+        self.run_text(text, true)
+    }
+
+    /// [`Shell::run_string`], without expanding aliases if not `aliases`
+    /// (for text that luish wrote, such as the startup cache's).
+    pub fn run_text(&mut self, text: &[u8], aliases: bool) -> ExecResult {
         let lineno = self.lineno;
         let mut p = Parser::new(text.to_vec(), lineno.max(1), true);
         let mut status = 0;
         loop {
-            let aliases = self.aliases.clone();
+            let aliases = if aliases {
+                self.aliases.clone()
+            } else {
+                crate::lexer::no_aliases()
+            };
             p.bareglobqual = self.opt(Opt::Bareglobqual);
             match p.parse_next(&aliases) {
                 Ok(Some(list)) => {

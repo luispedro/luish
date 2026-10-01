@@ -23,6 +23,16 @@ pub fn function(name: &[u8], body: &FunctionBody, aliases: &AliasMap) -> (Vec<u8
     (p.finish(), globqual.get())
 }
 
+/// The text of a `__luish_cache` block, for the startup cache's key (so
+/// that editing comments or the layout doesn't change it).
+pub fn cache_block(block: &CacheBlock) -> Vec<u8> {
+    let globqual = Cell::new(false);
+    let aliases = AliasMap::default();
+    let mut p = Printer::new(0, &aliases, &globqual);
+    p.cache_block(block);
+    p.finish()
+}
+
 struct Printer<'a> {
     out: Vec<u8>,
     indent: usize,
@@ -734,6 +744,7 @@ mod tests {
                         }
                         Command::Cache(block) => {
                             let b = std::rc::Rc::make_mut(block);
+                            b.lineno = 0;
                             words(&mut b.files);
                             strip_lines(&mut b.body);
                         }

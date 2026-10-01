@@ -114,9 +114,9 @@ Interactive use:
   `set -m`.
 - Syntax highlighting doesn't expand aliases, and a function or alias defined earlier on the same line is shown as
   unknown until the next prompt.
-- The state that `__luish_internal savestate` prints (and the startup cache) can be changed by aliases the shell
-  reading it has already: a global alias there may be any word of it. Function bodies are safe, since their words
-  that are aliases are quoted, apart from a `for` variable named like a global alias.
+- The state that `__luish_internal savestate` prints can be changed by aliases the shell reading it has already: a
+  global alias there may be any word of it (the startup cache reads its own without aliases). Function bodies are
+  safe, since their words that are aliases are quoted, apart from a `for` variable named like a global alias.
 - Completion skips filenames that are not valid UTF-8. Matching has no fuzzy matching and no ranking, and isn't
   configurable. The menu has no groups (such as zsh's headings for commands, files and so on), no colours by file
   type (`LS_COLORS`), no narrowing by typing, and no mouse. After Ctrl-C it stays on the screen above the next
@@ -129,10 +129,10 @@ Interactive use:
   widths relative to the terminal's (negative truncation lengths).
 - Glob qualifiers lack zsh's `e`, `+`, `f`, `F`, `Y` and `P`, `(#q...)`, most modifiers, and `EXTENDED_GLOB`
   patterns.
-- The startup cache doesn't see changes that don't show in a file's fingerprint. It also saves what the files
-  changed in the environment of the shell that built it: a variable is saved with its inherited parts (`PATH`).
-  This isn't detected by `check-cache`; see [Cached startup files](usage.md#cached-startup-files) for how to
-  avoid it.
+- The startup cache trusts its keys: a file's entry depends on `PATH`, `HOME`, the files before it and the files it
+  reads with `.`, and a `__luish_cache` block's only on what it lists. What else they read (other variables, files
+  that commands read) isn't seen, other than by `check-cache`; see
+  [Cached startup files](usage.md#cached-startup-files).
 - Extensions have only the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks, completers and commands:
   no `precmd`, `preexec` or `exit` hooks, and no time limit except for completers, so a slow prompt
   hook or `prompt-vars.lsh` delays the prompt. Completers can't be interrupted with Ctrl-C, only by their time limit.

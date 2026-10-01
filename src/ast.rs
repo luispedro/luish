@@ -53,6 +53,8 @@ pub struct CacheBlock {
     /// The words of `files=(...)`, expanded when the block runs.
     pub files: Vec<Word>,
     pub body: List,
+    /// The line of `__luish_cache`, for reports.
+    pub lineno: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]

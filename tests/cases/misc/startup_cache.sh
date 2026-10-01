@@ -46,6 +46,8 @@ echo '--- a sourced file changed'
 echo 'E=extra2' > extra.sh
 $SH -l -c 'echo $E'
 $SH -l -c 'echo $E'
+# Only the files from the one added on run; once it is removed, the entries
+# from before are used again.
 echo '--- a file added, then removed'
 echo 'echo running 15-d; D=d' > .config/luish/login.d/15-d.lsh
 $SH -l -c 'echo "B=$B D=$D"'
@@ -54,15 +56,20 @@ rm .config/luish/login.d/15-d.lsh
 $SH -l -c 'echo "B=$B D=${D-unset}"'
 $SH -l -c 'echo "B=$B D=${D-unset}"'
 echo '--- a cache written by another build of luish'
-# The cache records the build (\`b ID\`); on a mismatch, the files rerun,
-# silently (stderr is shown here).
+# The cache records the build (in a field \`b LEN\`, then the id on a line
+# of its own, which starts with the git revision); on a mismatch, the files
+# rerun, silently (stderr is shown here). The other build's id has the same
+# length.
 set -- .cache/luish/login-*
-grep -c "^b $(__luish_internal print-git-rev)" "$1"
-sed 's/^b .*/b another-build/' "$1" > ../other
+rev=$(__luish_internal print-git-rev)
+other=$(printf %s "$rev" | tr 0-9a-f g-v)
+grep -c "^$rev" "$1"
+sed "s/^$rev/$other/" "$1" > ../other
 cat ../other > "$1"
+grep -c "^$other" "$1"
 $SH -l -c 'echo $E' 2>&1
 $SH -l -c 'echo $E' 2>&1
-grep -c '^b another-build' "$1"
+grep -c "^$other" "$1"
 echo '--- a file changed, in an interactive shell'
 echo "echo running rc; alias origin='echo rc2'" > .config/luish/rc.d/rc.lsh
 $SH -i -c 'origin' 2>/dev/null

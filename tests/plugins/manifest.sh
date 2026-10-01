@@ -5,7 +5,8 @@
 # and come after extension.rhai (not if it fails) and just before rc.lsh.
 # Errors are reported with their lines and skipped; plugin.toml's
 # dependencies still load first. The startup cache keeps what they did, and
-# a changed plugin.toml invalidates it, also for a plugin that rc.d loads.
+# a changed plugin.toml invalidates its entry, also for a plugin that rc.d
+# loads (only the entry of the file that loads it).
 C=$HOME/.config/luish
 P=$C/plugins
 mkdir -p "$C/rc.d" "$P/p" "$P/q" "$P/bad"

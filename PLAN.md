@@ -263,13 +263,12 @@ shell tracks the current file as well as the line, for provenance and for error 
 ### Stage 3: caching of login scripts
 
 The goal is to cache the *effects* of login scripts. With a warm cache, a new shell should start almost instantly,
-and many shells started at once (a desktop login can start 40) should not each run the scripts. The first version is
-built (`rc.d`, `login.d` and `_uncached.lsh`, one cache per directory keyed on fingerprints; see `DEVELOPING.md`),
-with a known fault to fix first, because the cache replays a difference onto an environment other than the one it
-was built in: a variable the files changed is saved with its inherited parts (`PATH`). `check-cache` can't see it.
-(A second fault, that a variable set to the value it had wasn't saved, is fixed: every variable the files assign is
-saved.) The fix is explicit cache keys: `__luish_cache` blocks and per-file entries (below, designed 2026-10-01). These replace the earlier plan of keying automatically on the inherited values the files read,
-since the shell can't see what the commands they run read (`brew shellenv`, `starship init`).
+and many shells started at once (a desktop login can start 40) should not each run the scripts. Built so far (see
+`DEVELOPING.md`): `rc.d`, `login.d` and `_uncached.lsh`, with an entry per file keyed on `PATH`, `HOME` and the
+chain, and `__luish_cache` blocks keyed on what they list (below, designed 2026-10-01). Explicit keys replace the
+earlier plan of keying automatically on the inherited values the files read, since the shell can't see what the
+commands they run read (`brew shellenv`, `starship init`). Every variable an entry assigns is saved, even with the
+value it had.
 The rest of the design is stale-while-revalidate: a shell starts from the cached state at once, reruns the scripts in
 the background, and applies any difference at a later prompt, so invalidation doesn't have to be perfect.
 `__luish_internal check-cache` is a first, manual form of the background run: it reruns the files in the environment
@@ -298,20 +297,21 @@ __luish_cache env=(NVM_DIR) files=(~/.nvmrc) {
   with `.` are tracked without it.
 - **Always in the key**: the block's text, the fingerprints of the files it read with `.`, and the build of luish.
 - **What is cached** is the block's effect on the state (as `state.rs` computes it now), which replaces running the
-  body when the key matches. Output and other side effects happen only when the body runs; a background run or
-  `check-cache` warns about a cached block that prints.
-- **Where**: in the startup files of interactive shells (`rc.d`, `login.d`, `$ENV`, `luishrc`, plugins' `rc.lsh`).
-  An entry is identified by its file, the block's index in it and the hash of its text. Elsewhere (scripts, `-c`)
-  the body runs as if there were no block. A block inside another runs as part of the outer one.
+  body when the key matches. Output and other side effects happen only when the body runs. Still to do: a
+  background run or `check-cache` warns about a cached block that prints.
+- **Where**: built for the files of `rc.d` and `login.d` (with `_uncached.lsh`); an entry is identified by the hash
+  of the block's unparsed text and its file. Still to do: `$ENV`, `luishrc` and the `rc.lsh` of plugins loaded
+  there, in a cache of their own. Elsewhere (scripts, `-c`) the body runs as if there were no block. A block inside
+  another runs as part of the outer one.
 - **Later, if asked for**: `commands=(...)`, the resolved path of each command and its fingerprint, for
   `eval "$(starship init sh)"` and the like without spelling out the path; and a time to live.
 
 #### Files in `rc.d` and `login.d`
 
 - **A file without a top-level block** is cached whole, as if it were in `__luish_cache env=(PATH HOME) { ... }`.
-  Its key also has the fingerprints of every earlier file in its directory and the keys of the entries used before it
-  in that startup. This chain keeps per-file entries as safe as the single cache now: editing `10-env.lsh` reruns it
-  and every file after it, but not the files before it.
+  Its key also has the chain: a hash of the ids, keys and changes of the entries before it in its directory. This
+  keeps per-file entries as safe as a single cache: editing `10-env.lsh` reruns it and every file after it, but not
+  the files before it. (Built.)
 - **A file with top-level blocks** runs every time, in its place in the order, apart from its blocks, which depend
   only on their own keys: what a block depends on outside its key is for `check-cache` to find. There is no way to
   give a whole file another key except wrapping it in a block (decided 2026-10-01; a header line would be too
@@ -324,14 +324,16 @@ __luish_cache env=(NVM_DIR) files=(~/.nvmrc) {
 
 #### Storage and checking
 
-- One cache file per directory, as now, and one for blocks in other files. Each holds the entries of its files and
-  blocks, with the few most recent keys of each (say 4), so that login and other shells, or shells started with and
+- One cache file per directory (built), and one for blocks in other files (to do). Each holds the entries of its
+  files and blocks, with the 4 most recent keys of each, so that login and other shells, or shells started with and
   without `conda activate`, don't evict each other's entries. Warm path: one read per cache file, and a stat per
   startup file and per `files=` path.
-- Each entry records the environment of the shell that built it (stored once per build, not per entry), so that
-  `check-cache` can rerun the startup as that shell would, without reading the caches, and report which entries
-  differ. While checking (so at no cost otherwise) it can also record the inherited variables a block expands without
-  listing them, and warn: `rc.d/20-nvm.lsh: block 1 reads SSH_CONNECTION, which is not in its key`.
+- The cache records the environment of the last shell that built an entry, and `check-cache` reruns the startup as
+  that shell would, rebuilding every entry it reaches, and reports which differ (built). Entries built in other
+  environments are kept, but not checked: recording each build's environment (stored once per build, not per entry)
+  would check them too. Still to do: while checking (so at no cost otherwise), record the inherited variables a block
+  expands without listing them, and warn: `rc.d/20-nvm.lsh:2: the block reads SSH_CONNECTION, which is not in its
+  key`.
 
 #### Later
 
