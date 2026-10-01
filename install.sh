@@ -4,10 +4,10 @@
 #   curl -fsSL https://raw.githubusercontent.com/luispedro/luish/main/install.sh | sh
 #   curl -fsSL https://raw.githubusercontent.com/luispedro/luish/main/install.sh | sh -s -- --musl
 #
-# Options, each also settable with an environment variable:
+# Options, most also settable with an environment variable:
 #
 #   --dir DIR        LUISH_INSTALL_DIR  where to put `luish` (default: ~/.local/bin)
-#   --version TAG    LUISH_VERSION      a release tag such as v0.1.0 (default: the latest release)
+#   --version TAG                       a release tag such as v0.1.0 (default: the latest release)
 #   --gnu, --musl    LUISH_LIBC         which build: gnu (dynamically linked against glibc 2.17 or later) or musl
 #                                       (static, runs anywhere but is slower); by default gnu where it can run
 #
@@ -31,7 +31,7 @@ usage() {
 usage: install.sh [--dir DIR] [--version TAG] [--gnu | --musl]
 
   --dir DIR      where to put luish (default: ~/.local/bin; or LUISH_INSTALL_DIR)
-  --version TAG  a release tag such as v0.1.0 (default: the latest; or LUISH_VERSION)
+  --version TAG  a release tag such as v0.1.0 (default: the latest)
   --gnu          the build linked against glibc 2.17 or later (the default where it runs)
   --musl         the static build, which runs anywhere but is slower (or LUISH_LIBC=gnu/musl)
 END
@@ -86,7 +86,7 @@ fetch() {
 
 main() {
     dir=${LUISH_INSTALL_DIR:-${HOME:?}/.local/bin}
-    version=${LUISH_VERSION:-latest}
+    version=latest
     libc=${LUISH_LIBC:-}
     while [ $# -gt 0 ]; do
         case $1 in

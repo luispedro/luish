@@ -1,4 +1,7 @@
 Unreleased
+    * LUISH_VERSION and LUISH_PATCHLEVEL (as zsh's ZSH_VERSION and
+      ZSH_PATCHLEVEL), MACHTYPE, HOSTTYPE and OSTYPE
+    * install.sh no longer reads LUISH_VERSION (use --version)
     * The right prompt (RPROMPT, RPS1, RPROMPT2), as in zsh, with
       ZLE_RPROMPT_INDENT and `setopt prompt.transient_rprompt`
     * `__luish_cache` blocks in $ENV, luishrc and the rc.lsh of plugins

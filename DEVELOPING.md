@@ -216,7 +216,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   `expand/glob_qualifier_errors.sh`, `builtins/internal_savestate_globqual.sh`, unit tests in `qual.rs` and
   `parser.rs`.
 - zsh's special parameters (`RANDOM`, `SECONDS`, `EPOCH*`, `UID`/`EUID`/`GID`/`EGID`, `HISTCMD`, `pipestatus`
-  and bash's `PIPESTATUS`, in `vars.rs`) are not in the variable map, so plain lookups and assignments of other names cost only a check of the
+  and bash's `PIPESTATUS`, and the constants `LUISH_VERSION`, `LUISH_PATCHLEVEL` (`GIT_REV` from `build.rs`),
+  `MACHTYPE`, `HOSTTYPE` and `OSTYPE`, in `vars.rs`) are not in the variable map, so plain lookups and assignments of other names cost only a check of the
   first byte. They are computed on a miss (`Shell::special_value`, also in arithmetic), and a bit per special
   records whether it is set (`unset` clears it, assigning `RANDOM` or `SECONDS` sets it; assigning another makes it
   an ordinary variable). `RANDOM` is libc's `rand() & 0x7fff`, as in zsh, seeded on first use, and again in a
@@ -226,6 +227,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   in zsh); for several, `wait_foreground` (without job control) or `wait_job` does. `local` and temporary
   assignments save a variable with its special bit (`Vars::save`, `Shell::restore_saved`), so that a special made
   ordinary there is special again afterwards. Tests: `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`,
+  `expand/version_vars_luish.sh`,
   `expand/pipestatus.sh`, `misc/shlvl.sh`, `histcmd_shlvl` and `pipefail_job_control` in `tests/interactive.rs`.
 - zsh's `path` is a special too, read as `PATH` split at colons (`Shell::tied_elements`). Only array assignments
   tie it, as they are errors in dash: `Shell::set_var_value`, `append_elements` and `set_element` turn them into an
@@ -905,7 +907,7 @@ truncates when it relocates the package.
 | `alias`, `unalias` options | `builtins/alias_options.sh` (zsh), `builtins/alias_deviations.sh` |
 | Global aliases | `parse/alias_global.sh` (zsh), `builtins/alias_deviations.sh` (here-document delimiter), `builtins/internal_savestate_aliases.sh` |
 | Suffix aliases | `parse/alias_suffix.sh` (zsh), `builtins/alias_deviations.sh` (`command -v`) |
-| `RANDOM`, `SECONDS` and the other specials | `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
+| `RANDOM`, `SECONDS` and the other specials | `expand/special_vars.sh` (zsh), `expand/special_vars_luish.sh`, `expand/version_vars_luish.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | `pipestatus`, `PIPESTATUS` | `expand/pipestatus.sh`, `pipefail_job_control` in `tests/interactive.rs` |
 | `path` tied to `PATH` by array assignments | `expand/path_tied.sh`, `expand/path_ordinary.sh` (dash) |
 | `dirstack` tied to the directory stack by array assignments | `expand/dirstack_tied.sh`, `expand/dirstack_ordinary.sh` (dash) |

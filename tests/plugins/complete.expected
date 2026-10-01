@@ -33,6 +33,7 @@ dir/
 status 0
 --- echo $HO
 HOME
+HOSTTYPE
 status 0
 --- echo ~/a\ 
 ~/a\ file 

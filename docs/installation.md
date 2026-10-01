@@ -17,7 +17,7 @@ Options go after `sh -s --`, such as `curl -fsSL .../install.sh | sh -s --
 | Option | Environment variable | Meaning |
 |---|---|---|
 | `--dir DIR` | `LUISH_INSTALL_DIR` | Where to put `luish` (default: `~/.local/bin`) |
-| `--version TAG` | `LUISH_VERSION` | A release tag such as `v0.1.0` (default: the latest release) |
+| `--version TAG` | | A release tag such as `v0.1.0` (default: the latest release) |
 | `--gnu`, `--musl` | `LUISH_LIBC` (`gnu` or `musl`) | Which build (see below) |
 
 The script checks the download's SHA-256 checksum, and replaces an existing

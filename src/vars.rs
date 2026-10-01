@@ -213,6 +213,11 @@ pub struct Vars {
 /// by `local`, and taken from the environment as an ordinary variable.
 /// `dirstack` (zsh's directory stack, without the current directory) is
 /// tied to `Shell::dirstack` in the same way.
+///
+/// `LUISH_VERSION` and `LUISH_PATCHLEVEL` (zsh's `ZSH_VERSION` and
+/// `ZSH_PATCHLEVEL`), `MACHTYPE`, `OSTYPE` and bash's `HOSTTYPE` are
+/// constants. Like the others, they are not exported, so that a script
+/// can tell which shell runs it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Special {
     Random,
@@ -229,6 +234,11 @@ pub enum Special {
     PipestatusBash,
     Path,
     Dirstack,
+    LuishVersion,
+    LuishPatchlevel,
+    Machtype,
+    Hosttype,
+    Ostype,
 }
 
 pub const SPECIALS: &[(&[u8], Special)] = &[
@@ -245,22 +255,34 @@ pub const SPECIALS: &[(&[u8], Special)] = &[
     (b"PIPESTATUS", Special::PipestatusBash),
     (b"path", Special::Path),
     (b"dirstack", Special::Dirstack),
+    (b"LUISH_VERSION", Special::LuishVersion),
+    (b"LUISH_PATCHLEVEL", Special::LuishPatchlevel),
+    (b"MACHTYPE", Special::Machtype),
+    (b"HOSTTYPE", Special::Hosttype),
+    (b"OSTYPE", Special::Ostype),
 ];
+
+/// The operating system, as in zsh and bash (`linux-gnu` or `linux-musl`).
+const OSTYPE: &str = if cfg!(target_env = "musl") {
+    "linux-musl"
+} else {
+    "linux-gnu"
+};
 
 impl Special {
     pub fn from_name(name: &[u8]) -> Option<Special> {
         // Most names are rejected on their first byte.
         if !matches!(
             name.first(),
-            Some(b'E' | b'G' | b'H' | b'P' | b'R' | b'S' | b'U' | b'd' | b'p')
+            Some(b'E' | b'G' | b'H' | b'L' | b'M' | b'O' | b'P' | b'R' | b'S' | b'U' | b'd' | b'p')
         ) {
             return None;
         }
         SPECIALS.iter().find(|(n, _)| *n == name).map(|&(_, s)| s)
     }
 
-    fn bit(self) -> u16 {
-        1 << self as u16
+    fn bit(self) -> u32 {
+        1 << self as u32
     }
 
     pub fn name(self) -> &'static [u8] {
@@ -277,7 +299,7 @@ impl Special {
 #[derive(Debug, Clone)]
 struct Specials {
     /// The specials that are set, one bit each.
-    active: u16,
+    active: u32,
     random: std::cell::Cell<RandomSeed>,
     /// `SECONDS` is `seconds.1` plus the seconds since `seconds.0`.
     seconds: (std::time::Instant, i64),
@@ -414,6 +436,11 @@ impl Vars {
             Special::Euid => crate::sys::geteuid().into(),
             Special::Gid => crate::sys::getgid().into(),
             Special::Egid => crate::sys::getegid().into(),
+            Special::LuishVersion => return env!("CARGO_PKG_VERSION").into(),
+            Special::LuishPatchlevel => return crate::builtins::internal::GIT_REV.into(),
+            // zsh's `MACHTYPE` is the processor, bash's `HOSTTYPE`.
+            Special::Machtype | Special::Hosttype => return std::env::consts::ARCH.into(),
+            Special::Ostype => return OSTYPE.into(),
             Special::Histcmd | Special::Pipestatus | Special::PipestatusBash | Special::Path | Special::Dirstack => 0,
         };
         n.to_string().into_bytes()

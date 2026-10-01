@@ -12,7 +12,7 @@ x86_64 | amd64) arch=x86_64 ;;
 aarch64 | arm64) arch=aarch64 ;;
 esac
 dist=file://$top/target/dist
-unset LUISH_INSTALL_DIR LUISH_VERSION LUISH_LIBC
+unset LUISH_INSTALL_DIR LUISH_LIBC
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 failed=0

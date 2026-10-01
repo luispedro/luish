@@ -30,3 +30,10 @@ echo $SECONDS
 echo $((UID == $(id -u)))
 unset UID
 echo "[${UID-unset}]"
+# MACHTYPE and OSTYPE, which the environment doesn't set.
+case $OSTYPE in linux-*) echo $MACHTYPE linux;; *) echo $OSTYPE;; esac
+MACHTYPE=x OSTYPE=y $SH -c 'echo $MACHTYPE $OSTYPE' | grep -c y
+OSTYPE=z
+echo $OSTYPE
+unset MACHTYPE
+echo "[${MACHTYPE-unset}]"

@@ -79,11 +79,15 @@ Besides POSIX's (`$?`, `$$`, `$!`, `$-`, `$#`, `$0`, `$@`, `$*`, `LINENO`, `PPID
 | `pipestatus`, `PIPESTATUS` (bash's name) | An array of the statuses of the commands of the last pipeline: after `true \| false`, `${pipestatus[@]}` is `0 1`. As in zsh, every pipeline sets it, a single command or an `if` too, but not an assignment (so it survives `s=$?`) or `[[ ... ]]` |
 | `path` | An array of the directories in `PATH`: `path=(~/bin "${path[@]}")` prepends one, and `path+=(/opt/bin)` appends one. An array assignment to it sets `PATH`, but `path=x` (valid in any POSIX shell) makes it an ordinary variable, as does `unset path`, and a `local path` is an ordinary variable of the function |
 | `dirstack` | An array of the directory stack of `pushd` and `popd`, without the current directory (`dirs` shows it first): `${dirstack[0]}` is where `popd` goes. An array assignment (`dirstack=(~/src /tmp)`) replaces the stack; as for `path`, `dirstack=x`, `unset dirstack` and `local dirstack` make it an ordinary variable |
+| `LUISH_VERSION` | luish's version (`0.2.0`), as zsh's `ZSH_VERSION` and bash's `BASH_VERSION` |
+| `LUISH_PATCHLEVEL` | The git commit luish was built from, with `-dirty` if the sources had changes (`unknown` outside a git checkout), as zsh's `ZSH_PATCHLEVEL` |
+| `MACHTYPE`, `HOSTTYPE` | The processor (`x86_64` or `aarch64`), as zsh's `MACHTYPE` and bash's `HOSTTYPE` |
+| `OSTYPE` | The operating system: `linux-gnu`, or `linux-musl` for the musl build |
 | `SHLVL` | How deeply shells are nested: incremented at startup, and set to 1 by an interactive shell where it wasn't set |
 
-Unset, they read as unset until they are assigned again. Assigning to `UID`, `EUID`, `GID`, `EGID`, `EPOCHSECONDS`,
-`EPOCHREALTIME`, `pipestatus` or `PIPESTATUS` makes it an ordinary variable, so that scripts that use these names still
-work. Made ordinary by `local` in a function or by an assignment before a command, it is special again afterwards.
+Their values in the environment are ignored, and they are not exported, so `[ -n "$LUISH_VERSION" ]` tells a script
+whether luish runs it. Unset, they read as unset until they are assigned again. Assigning to one other than `RANDOM`
+and `SECONDS` makes it an ordinary variable, so that scripts that use these names still work. Made ordinary by `local` in a function or by an assignment before a command, it is special again afterwards.
 
 ## Parameter expansion
 
