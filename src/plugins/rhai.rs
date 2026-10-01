@@ -156,39 +156,46 @@ fn current_dir() -> RhaiResult<Vec<u8>> {
     })
 }
 
-/// The file of `import "@SOURCE/PLUGIN/MODULE"` (`name`), without `.rhai`:
-/// MODULE in the directory of the loaded plugin PLUGIN. Loaded plugins have
-/// different names, so the plugin is found by its name alone, however it
-/// was loaded; SOURCE is written as in `[dependencies]`.
+/// The file of `import "@SOURCE/PATH/MODULE"` (`name`), without `.rhai`:
+/// MODULE in the directory of the loaded plugin `SOURCE/PATH`, the one
+/// with the longest name that fits (MODULE can be in a subdirectory). A
+/// plugin loaded under a name without its source (from the plugin
+/// directory, by path, or a source of its own) is `PATH` (only the source
+/// is left out, so a plugin of a collection can't stand in for another).
 fn other_plugin(name: &str, pos: Position) -> RhaiResult<Vec<u8>> {
     // (Not `ErrorModuleNotFound`, which Rhai replaces with its own, without
     // the reason.)
     let not_found = |why: String| EvalAltResult::ErrorRuntime(format!("import {name}: {why}").into(), pos).into();
-    let parts: Vec<&str> = name[1..].splitn(3, '/').collect();
-    let [source, plugin, module] = parts[..] else {
-        return Err(not_found("write @SOURCE/PLUGIN/MODULE".into()));
-    };
-    if [source, plugin, module].contains(&"") {
+    let parts: Vec<&str> = name[1..].split('/').collect();
+    if parts.len() < 3 || parts.contains(&"") {
         return Err(not_found("write @SOURCE/PLUGIN/MODULE".into()));
     }
-    let dir = with_shell(|sh| {
+    let found = with_shell(|sh| {
         let host = host(sh)?;
         let plugins = host.plugins.borrow();
-        Ok(plugins
-            .iter()
-            .find(|p| p.name == to_bytes(plugin))
-            .map(|p| p.dir.clone()))
+        // The plugin is `parts[from..end]`, and has at least PLUGIN.
+        let find = |from: usize| {
+            (2..parts.len()).rev().find_map(|end| {
+                let want = to_bytes(&parts[from..end].join("/"));
+                let p = plugins.iter().find(|p| p.name == want)?;
+                Some((p.dir.clone(), end))
+            })
+        };
+        Ok(find(0).or_else(|| find(1)))
     })?;
-    match dir {
-        Some(dir) => Ok([dir, b"/".to_vec(), to_bytes(module)].concat()),
-        None => Err(not_found(format!(
-            "the plugin {plugin} is not loaded (add {source}.{plugin} to [dependencies] in plugin.toml)"
-        ))),
+    match found {
+        Some((dir, end)) => Ok([dir, b"/".to_vec(), to_bytes(&parts[end..].join("/"))].concat()),
+        None => {
+            let plugin = parts[..parts.len() - 1].join("/");
+            Err(not_found(format!(
+                "the plugin {plugin} is not loaded (add \"{plugin}\" to [dependencies] in plugin.toml)"
+            )))
+        }
     }
 }
 
 /// Resolves `import "NAME"` to `NAME.rhai` in the directory of the file
-/// that does the import (or an absolute path, or `@SOURCE/PLUGIN/MODULE`,
+/// that does the import (or an absolute path, or `@SOURCE/PATH/MODULE`,
 /// in another plugin). That file is the source of the code running
 /// (`AST::set_source`, which Rhai also gives the functions and closures
 /// defined in it, and `Module::set_id`), an absolute path; for code without

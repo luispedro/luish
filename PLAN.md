@@ -96,7 +96,8 @@ extension built-ins (`sh::builtin`, with `sh::read_line`), most of the `sh` modu
 
 Done (see `DEVELOPING.md` and the plugins page of the user docs): the `[plugins]` table of `config.toml`, with
 `plugins.available` (named sources: `gh`, `git` or `path`, with `branch`/`tag`/`rev` and `subdir`; `std` built in) and
-`plugins.enabled` (`NAME`, `SOURCE.NAME` or `"SOURCE/NAME"`, and inline sources, all `= "*"`); dependencies in a
+`plugins.enabled` (`NAME`, `SOURCE.NAME` or `"SOURCE/NAME"`, and inline sources, all `= "*"`; collections with
+sub-collections, `SOURCE/SUB/NAME`, which is also the loaded plugin's name); dependencies in a
 directory plugin's `plugin.toml`, resolved recursively, and its `[options]`, `[alias]` and `[bindkey]` tables;
 `plugins.lock` (pins and the resolved plugins); `plugin sync` and `plugin update`, which run git into
 `$XDG_DATA_HOME/luish/plugins/`, and `plugin check`, which asks the git sources for newer commits;

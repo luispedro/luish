@@ -29,3 +29,6 @@ data/sub/
 data/
 --- seqtool faidx --ref=data/o
 --ref=data/other.fna 
+--- seqfmt 
+fasta 	sequences
+sam 	alignments

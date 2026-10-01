@@ -1,4 +1,9 @@
 Unreleased
+    * Plugins of a collection load as SOURCE/NAME (std/completion), so
+      their names don't clash
+    * Collections can have sub-collections: SOURCE/SUB/NAME, or
+      SOURCE.SUB.NAME in TOML
+    * "/PATH" = "*" in plugin.toml: a plugin of the same source
     * `plugin add` refuses a source without plugins, and directories
       without a plugin's files are no longer taken for plugins
 

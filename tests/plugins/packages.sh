@@ -1,8 +1,9 @@
 # config.toml's [plugins] table: plugins.enabled lists the plugins that
 # interactive shells load at startup (after rc.d, cached with it), as NAME (a
 # source in plugins.available, else a plugin in the plugin directory),
-# SOURCE/NAME or SOURCE.NAME (a plugin of a collection), or a source of its
-# own. A directory plugin's plugin.toml lists its dependencies, which load
+# SOURCE/NAME or SOURCE.NAME (a plugin of a collection, loaded as
+# SOURCE/NAME), or a source of its own. (tests/plugins/nested.sh has
+# sub-collections.) A directory plugin's plugin.toml lists its dependencies, which load
 # first; a plain NAME there is in the same collection. Local plugins need no
 # lock. (tests/plugins/git_packages.sh has git sources.)
 C=$HOME/.config/luish
@@ -89,6 +90,8 @@ u = { gh = "a/b", colour = "blue" }
 [plugins.enabled]
 greet = "1.0"
 "a/b/c" = "*"
+"a/b//c" = "*"
+"/x" = "*"
 nosuch = "*"
 nosrc.x = "*"
 helper = "*"
@@ -97,7 +100,7 @@ run '__luish_internal plugin list-loaded'
 echo '--- SOURCE/NAME must be quoted in TOML'
 printf '[plugins.enabled]\ncoll/lib = "*"\n' > "$C/config.toml"
 run '__luish_internal plugin list-loaded'
-echo '--- the same name for two plugins'
+echo '--- plugins of a collection are named SOURCE/NAME, so these differ'
 cat > "$C/config.toml" <<'X'
 [plugins.available]
 coll = { path = "~/src/coll" }
@@ -106,4 +109,13 @@ helper = "*"
 coll.helper = "*"
 X
 echo 'echo other helper' > "$HOME/src/coll/helper.lsh"
+run '__luish_internal plugin list-loaded'
+echo '--- the same name for two plugins: those of a source without a name are'
+echo '--- named after their files'
+cat > "$C/config.toml" <<'X'
+[plugins.enabled]
+lib = "*"
+t = { path = "~/src/coll", plugin = "tool" }
+X
+echo 'echo local lib' > "$P/lib.lsh"
 run '__luish_internal plugin list-loaded'

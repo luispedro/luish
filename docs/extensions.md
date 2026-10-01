@@ -293,11 +293,14 @@ reads `hts/common.rhai`). This holds wherever the code runs: in a function or cl
 extension calls it. `NAME` can also be an absolute path, without `.rhai`.
 
 A plugin can use the modules of another plugin: `import "@SOURCE/PLUGIN/MODULE"` reads `MODULE.rhai` in the
-directory of `PLUGIN`, such as `import "@std/completion/lib"` for std's completion engine (see
-[Reusing std's completion engine](#reusing-stds-completion-engine)). That plugin must be loaded, so list it in the `[dependencies]` of
-your [`plugin.toml`](plugins.md#dependencies-options-aliases-and-key-bindings-plugintoml) (here `std.completion = "*"`), which loads it first. It is found by its name, whether it was
-loaded from its source, by `plugin load` or from a path; `SOURCE` is written as in `[dependencies]`. The module's own
-imports are relative to its files, as above.
+directory of the plugin `SOURCE/PLUGIN`, such as `import "@std/completion/lib"` for std's completion engine (see
+[Reusing std's completion engine](#reusing-stds-completion-engine)). `PLUGIN` is the plugin's path in its collection
+(`@extra/complete/bio/specs` is `specs.rhai` in `extra/complete/bio`). That plugin must be loaded, so list it in the
+`[dependencies]` of your [`plugin.toml`](plugins.md#dependencies-options-aliases-and-key-bindings-plugintoml) (here
+`std.completion = "*"`), which loads it first. It is found by its name (see [](plugins.md#names)), or, for a plugin
+whose name has no source (one of the plugin directory, or loaded by path), by `PLUGIN` alone. The module's own imports
+are relative to its files, as above. Within your own source, prefer relative imports (`import "../lib/util"`): the
+user names the source.
 
 luish keeps each module once it is compiled, until a plugin is loaded again. An `import` inside a function (a
 completer, for instance) reads the module only when the function first runs, so a large plugin loads quickly.
@@ -505,7 +508,9 @@ A kind says what a value or an argument completes to:
 
 An array is its own candidates.
 
-A plugin's own kinds and subcommand specs are functions of its modules, named `@SOURCE/PLUGIN/MODULE:NAME` (a
+A plugin's own kinds and subcommand specs are functions of its modules, named `@SOURCE/PLUGIN/MODULE:NAME` (or by
+the module's absolute path, without `.rhai`: `sh::plugin_dir() + "/kinds:NAME"`, which doesn't depend on the name
+the user gives the source; a
 `MODULE:NAME` without `@` is one of std's own modules). `MODULE::kind(NAME, cur, words)` completes the word `cur` (the
 value, without an option before it) of the command line `words`, which starts with the command even in a
 subcommand, and returns what a completer returns: candidates, a map with a `prefix`, or `()` for filenames.

@@ -1,0 +1,45 @@
+--- startup: SOURCE.SUB.NAME, its siblings, and /PATH
+util
+hello, bio
+gui
+nest/lib/util
+nest/complete/bio
+nest/complete/gui
+nest/complete/all
+--- the same, quoted
+util
+hello, bio
+gui
+nest/lib/util
+nest/complete/bio
+nest/complete/gui
+nest/complete/all
+--- list-available looks into sub-collections
+nest/complete/all
+nest/complete/bio
+nest/complete/gui
+nest/lib/util
+nest/x
+--- plugin load and unload SOURCE/PATH
+gui
+nest/complete/gui
+0
+--- @SOURCE/PATH/MODULE needs the whole name
+luish: 1: ./wrong.rhai: Runtime error: import @other/lib/util/greet: the plugin other/lib/util is not loaded (add "other/lib/util" to [dependencies] in plugin.toml) (line 1, position 8)
+--- errors
+luish: 1: __luish_internal plugin: nest/x/y: no such plugin in nest
+status 1
+luish: 1: __luish_internal plugin: nest/nosuch/y: no such plugin in nest
+status 1
+luish: 1: __luish_internal plugin: nest/complete: a collection, not a plugin
+status 1
+luish: 1: __luish_internal plugin: cannot open nest/a//b: No such file
+status 1
+--- plugin add SOURCE/PATH
+0 git sources locked, 1 plugin enabled: nest/complete/gui
+gui
+[plugins.available]
+nest = { path = "~/src/nest" }
+
+[plugins.enabled]
+"nest/complete/gui" = "*"

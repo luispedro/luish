@@ -1,6 +1,7 @@
 # Another plugin reusing std's completion engine: `@std/completion/lib`
 # completes from its own specs, whose kinds and sub_spec name modules of
-# that plugin as `@SOURCE/PLUGIN/MODULE:NAME`. Those modules' functions
+# that plugin as `@SOURCE/PLUGIN/MODULE:NAME` (here loaded by path, so
+# named bio), or by the module's absolute path. Those modules' functions
 # call their own helpers and import their neighbours (and std's kinds).
 C=$HOME/.config/luish
 B=extra/bio
@@ -12,6 +13,11 @@ sh::completer("seqtool", |words, i| {
     import "@std/completion/lib" as lib;
     import "specs/seqtool" as s;
     lib::complete(s::spec(), words, i)
+});
+let kinds = sh::plugin_dir() + "/kinds";
+sh::completer("seqfmt", |words, i| {
+    import "@std/completion/lib" as lib;
+    lib::complete(#{args: [kinds + ":formats"]}, words, i)
 });
 X
 cat > "$B/specs/seqtool.rhai" <<'X'
@@ -86,3 +92,4 @@ c 'seqtool view data/genome.fa '
 c 'seqtool index data/'
 c 'seqtool faidx -o data/genome.fa d'
 c 'seqtool faidx --ref=data/o'
+c 'seqfmt '

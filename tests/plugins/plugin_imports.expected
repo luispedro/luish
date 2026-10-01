@@ -1,6 +1,6 @@
 at load time: all
 load 0
-completion
+std/completion
 ext
 --- mytool --c
 --color=	when to colour

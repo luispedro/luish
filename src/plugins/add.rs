@@ -5,7 +5,7 @@
 //! or a URL, with `/tree/REF/SUBDIR` as GitHub shows a directory), another
 //! git URL, a local path (also as a `file://` URL, which is a git source if
 //! it is a repository), or a plugin of a source that `config.toml` names
-//! (`SOURCE/NAME`, such as `std/NAME`, or `NAME`). A git source is fetched
+//! (`SOURCE/PATH`, such as `std/NAME`, or `NAME`). A git source is fetched
 //! into a temporary directory first, to see what it holds. A source goes to
 //! `plugins.enabled` as `NAME = { gh = ... }`, except a collection of more
 //! than one plugin, which goes to `plugins.available`. The file is edited
@@ -13,7 +13,7 @@
 //! the result.
 
 use super::fetch;
-use super::package::{self, GitRef, toml_str, valid_name};
+use super::package::{self, GitRef, toml_str, valid_name, valid_path};
 use crate::interactive::to_path;
 use crate::shell::{ExecResult, Shell};
 use crate::sys;
@@ -21,7 +21,7 @@ use crate::sys;
 /// What a `SPEC` names.
 #[derive(Debug, PartialEq)]
 enum Spec {
-    /// A plugin of a named source (`SOURCE/NAME`), or `NAME`: a source
+    /// A plugin of a named source (`SOURCE/PATH`), or `NAME`: a source
     /// that is one plugin, or a plugin in the plugin directory.
     Named(Option<String>, String),
     /// A git source: its `gh` or `git` field, the ref and subdirectory,
@@ -175,8 +175,8 @@ fn parse(
         });
     }
     match spec.split_once('/') {
-        Some((src, name)) if !name.contains('/') && named(src) => {
-            return Ok(Spec::Named(Some(src.into()), name.into()));
+        Some((src, path)) if valid_path(path) && named(src) => {
+            return Ok(Spec::Named(Some(src.into()), path.into()));
         }
         None if named(spec) => return Ok(Spec::Named(None, spec.into())),
         _ => {}
@@ -350,12 +350,17 @@ pub fn prepare(sh: &mut Shell, spec: &str, given: Option<String>) -> Result<Addi
         |p| sys::stat(&expand(sh, p)).is_some(),
         |p| is_repo(p.as_bytes()),
     )?;
+    let named = matches!(parsed, Spec::Named(..));
     // The key and value of the line to add, and what the source holds.
     let (name, line, holds) = match parsed {
         Spec::Named(src, name) => {
-            let key = match &src {
-                Some(src) => toml_str(&format!("{src}/{name}")),
-                None => toml_key(&name),
+            let (name, key) = match &src {
+                Some(src) => {
+                    let full = format!("{src}/{name}");
+                    let key = toml_str(&full);
+                    (full, key)
+                }
+                None => (name.clone(), toml_key(&name)),
             };
             if given.is_some() {
                 return Err(format!("{spec}: a plugin of a source keeps its name"));
@@ -406,7 +411,8 @@ pub fn prepare(sh: &mut Shell, spec: &str, given: Option<String>) -> Result<Addi
             (name, line, holds)
         }
     };
-    if !valid_name(&name) {
+    // (`parse` checked a plugin of a source.)
+    if !named && !valid_name(&name) {
         return Err(format!("{name:?}: bad plugin name (give one as the second argument)"));
     }
     let table = match holds {
@@ -589,6 +595,7 @@ mod tests {
         }
         assert!(p("nothing").is_err());
         assert!(p("a/b/c").is_err());
+        assert_eq!(p("std/a/b"), Ok(Spec::Named(Some("std".into()), "a/b".into())));
     }
 
     #[test]

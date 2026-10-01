@@ -38,7 +38,28 @@ z = { gh = "bob/luish-z" }     # a source of its own
 | `path = "DIR"` | A local file or directory, used where it is. A leading `~` is the home directory, and a relative path is relative to the file that has it |
 | `branch`, `tag`, `rev` | At most one, for `gh` and `git`: which commit to use. `rev` is a full commit hash. By default, the repository's default branch (its `HEAD`) |
 | `subdir = "DIR"` | Where in the repository (or `path`) the plugin or collection is |
-| `plugin = "NAME"` | In `plugins.enabled`: which plugin of a collection. By default the one with the entry's name, or the only one |
+| `plugin = "NAME"` | In `plugins.enabled`: which plugin of a collection (`SUB/NAME` in a sub-collection). By default the one with the entry's name, or the only one |
+
+### Names
+
+A source is either one plugin or a collection of plugins: its `.rhai` and `.lsh` files and its directories that are
+plugins. A collection's other directories are sub-collections, which hold more plugins (directories that hold none,
+such as a repository's `docs`, are ignored). A plugin of a collection is written `SOURCE/PATH`, where `PATH` is its
+name, or `SUB/NAME` in a sub-collection, and it is loaded under that name:
+
+```toml
+[plugins.available]
+extra = { gh = "luispedro/luish-extra" }
+
+[plugins.enabled]
+extra.complete.all = "*"           # the plugin all of extra's sub-collection complete
+"extra/complete/bio" = "*"         # the same with / (quoted, as TOML's bare keys can't have it)
+```
+
+`plugin list-loaded` shows `extra/complete/all`, `plugin unload extra/complete/all` unloads it, and other plugins
+import its modules as `@extra/complete/all/MODULE`. std's plugins are `std/completion` and `std/bash-completion`.
+Other plugins are named after the entry (a source that is one plugin, or `NAME = { gh = ... }`), or after their file
+or directory (those of the plugin directory, or loaded by path).
 
 ### Adding plugins: `plugin add`
 
@@ -244,8 +265,8 @@ A plugin directory can have multiple files which luish uses the following ways:
 | `post-rc.lsh` | Last, as `rc.lsh`, but after the startup files in `rc.d` (see [below](#after-the-startup-files-post-rc)) |
 | `prompt-vars.lsh` | Before each prompt, to set variables for `PS1` (see [below](#variables-for-the-prompt-prompt-varslsh)) |
 
-A directory needs at least one of them. Other directories (such as a repository's `docs` or `src`) are not plugins,
-and a collection's plugins are only its `.rhai` and `.lsh` files and its plugin directories.
+A directory needs at least one of them. Other directories (such as a repository's `docs` or `src`) are not plugins:
+in a collection, they are sub-collections if they hold plugins, and are ignored otherwise.
 
 While `init.lsh`, `extension.rhai`, `rc.lsh` and `prompt-vars.lsh` run,
 `LUISH_PLUGIN_DIR` is the plugin's directory (an absolute path) and
@@ -265,6 +286,7 @@ description = "Sets the proxy variables for the office network."
 
 [dependencies]
 netutils = "*"                        # the plugin netutils of the same collection
+"/lib/util" = "*"                     # a plugin of the same source, from its top
 std.completion = "*"                  # a plugin of a source that luish knows
 fzf = { gh = "bob/luish-fzf" }        # a source of its own
 ```

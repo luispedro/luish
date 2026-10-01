@@ -59,20 +59,20 @@ Locking file://~/mixed at 4b05bff
 mixed one loaded
 status 0
 --- a plugin of a named source, and one of the plugin directory
-4 git sources locked, 3 plugins enabled: single, mixed, hello
+4 git sources locked, 3 plugins enabled: single, mixed, std/hello
 hello from std
 status 0
-4 git sources locked, 4 plugins enabled: single, mixed, hello, mine
+4 git sources locked, 4 plugins enabled: single, mixed, std/hello, mine
 mine loaded
 status 0
 --- a local path, with a name; a local collection
-4 git sources locked, 5 plugins enabled: single, mixed, hello, mine, first
+4 git sources locked, 5 plugins enabled: single, mixed, std/hello, mine, first
 a
 status 0
-4 git sources locked, 5 plugins enabled: single, mixed, hello, mine, first
+4 git sources locked, 5 plugins enabled: single, mixed, std/hello, mine, first
 coll has 2 plugins: a, b. Load one with plugin load coll/a, or enable it with plugin add coll/a
 status 0
-4 git sources locked, 6 plugins enabled: single, mixed, hello, mine, first, b
+4 git sources locked, 6 plugins enabled: single, mixed, std/hello, mine, first, b
 b
 status 0
 # My configuration.

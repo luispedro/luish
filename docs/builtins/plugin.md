@@ -1,7 +1,7 @@
 # `plugin`
 
 ```text
-plugin load name|source/name|path...
+plugin load name|source/path|path...
 plugin list-loaded
 plugin list-available [-a]
 plugin unload name...
@@ -17,9 +17,12 @@ Load, unload and fetch plugins.
 `config.toml`'s `plugins.available` (or `std`), else the first of the Rhai
 file `name.rhai`, the shell file `name.lsh` and the directory `name` in
 `$XDG_CONFIG_HOME/luish/plugins` (by default `~/.config/luish/plugins`);
-`source/name` is the plugin `name` of the collection `source`; and any other
-argument that contains a `/` is a path. A directory plugin runs its
-`init.lsh`, then its `extension.rhai`, then (in interactive shells) its
+`source/path` is the plugin at `path` in the collection `source` (`name`,
+or `sub/name` in its sub-collection `sub`); and any other argument that
+contains a `/` is a path. A plugin of a collection is loaded under the name
+`source/path`, others under their file's or directory's name. A directory
+plugin runs its `init.lsh`, then its `extension.rhai`, then (in interactive
+shells) its
 `rc.lsh` and `post-rc.lsh`; during the startup files of `rc.d`,
 `post-rc.lsh` waits for their end. The dependencies that a plugin's
 `plugin.toml` lists are loaded first, unless they are already loaded.
@@ -39,14 +42,14 @@ GitHub repository (`owner/repo`, `gh:owner/repo`, or a URL such as
 and a directory), another git URL (`https://...`, `git@host:path`), a
 local path (one that exists, or starts with `/`, `./`, `../` or `~`, or a
 `file:///path` URL, which is a git source if `path` is a git repository),
-or a plugin of a source that `config.toml` names (`source/name`, such as
+or a plugin of a source that `config.toml` names (`source/path`, such as
 `std/name`) or of the plugin directory (`name`). A git source is fetched
 first, into a temporary directory, to see what it holds: a source that is
 neither a plugin nor has any (a `.rhai` or `.lsh` file, or a directory with
 one of a plugin's files) is not added. It is added to
 `plugins.enabled`, as `name = { gh = "owner/repo" }` for a source (a
 collection of more than one plugin goes to `plugins.available`, to load
-its plugins with `plugin load source/name`), keeping the file's comments.
+its plugins with `plugin load source/path`), keeping the file's comments.
 The name is the repository's, file's or directory's, unless `name` is
 given. It prints the line it adds and asks before changing the file
 (reading the answer from standard input), unless `-y` (or `--yes`) is

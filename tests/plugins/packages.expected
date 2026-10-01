@@ -5,16 +5,16 @@ one
 tool (lib: yes, one: yes)
 greet (helper: yes, tool: yes)
 helper
-lib
+coll/lib
 one
-tool
+coll/tool
 greet
 --- a later shell uses the cache (the extension is loaded again)
 one
 helper
-lib
+coll/lib
 one
-tool
+coll/tool
 greet
 --- changing a manifest is noticed
 helper
@@ -22,7 +22,7 @@ greet (helper: yes, tool: )
 lib
 helper
 greet
-lib
+coll/lib
 --- scripts and --no-plugins load nothing
 --- plugin list-available adds the plugins of the sources
 greet
@@ -37,9 +37,9 @@ lib
 one
 tool (lib: yes, one: yes)
 helper
-lib
+coll/lib
 one
-tool
+coll/tool
 --- plugin list-available leaves out the loaded plugins, SOURCE/NAME too
 greet
 coll/cyc1
@@ -59,7 +59,7 @@ lib
 one
 tool
 --- a dependency cycle
-luish: ~/src/coll/cyc2/plugin.toml: line 2: dependency cycle: cyc1 -> cyc2 -> cyc1
+luish: ~/src/coll/cyc2/plugin.toml: line 2: dependency cycle: coll/cyc1 -> coll/cyc2 -> coll/cyc1
 status 1
 --- a source that is one plugin, and a plugin of a source of its own
 one
@@ -78,14 +78,24 @@ luish: ~/.config/luish/config.toml: line 8: w.rev: not a full commit hash
 luish: ~/.config/luish/config.toml: line 9: v.subdir: must be a relative path inside the source
 luish: ~/.config/luish/config.toml: line 10: u: unknown key: colour
 luish: ~/.config/luish/config.toml: line 12: greet: unsupported version requirement "1.0" (only "*")
-luish: ~/.config/luish/config.toml: line 13: a/b/c: bad plugin name (NAME or SOURCE/NAME)
-luish: ~/.config/luish/config.toml: line 14: nosuch: no such plugin
-luish: ~/.config/luish/config.toml: line 15: nosrc/x: no source called nosrc
+luish: ~/.config/luish/config.toml: line 14: a/b//c: bad plugin name (NAME or SOURCE/PATH)
+luish: ~/.config/luish/config.toml: line 13: a/b/c: no source called a
+luish: ~/.config/luish/config.toml: line 15: /x: only in the plugin.toml of a plugin of a collection
+luish: ~/.config/luish/config.toml: line 16: nosuch: no such plugin
+luish: ~/.config/luish/config.toml: line 17: nosrc/x: no source called nosrc
 helper
 helper
 --- SOURCE/NAME must be quoted in TOML
 luish: ~/.config/luish/config.toml: line 2: unexpected character found: `/`
---- the same name for two plugins
-luish: ~/.config/luish/config.toml: line 5: helper: two different plugins with this name (from local and coll)
+--- plugins of a collection are named SOURCE/NAME, so these differ
 helper
+other helper
 helper
+coll/helper
+--- the same name for two plugins: those of a source without a name are
+--- named after their files
+luish: ~/src/coll/tool/plugin.toml: line 2: lib: two different plugins with this name (from local and ~/src/coll)
+local lib
+one
+lib
+one

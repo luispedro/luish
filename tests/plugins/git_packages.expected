@@ -11,7 +11,7 @@ Fetching coll
 Locking std at d0ea6cf
 Locking file://~/single at b2201bb
 Locking coll at 14cfcbd
-3 git sources locked, 2 plugins enabled: rhai-only, single
+3 git sources locked, 2 plugins enabled: std/rhai-only, single
 status 0
 # Written by luish (plugin sync, plugin update). Don't edit.
 version = 1
@@ -30,23 +30,23 @@ branch = "main"
 commit = "b2201bb3130aa17c95e5fde956bcc5cd8502334e"
 
 [[plugin]]
-name = "rhai-only"
-source = "std"
-path = "rhai-only.rhai"
-dependencies = []
-
-[[plugin]]
 name = "single"
 source = "file://~/single"
 path = "."
 dependencies = []
+
+[[plugin]]
+name = "std/rhai-only"
+source = "std"
+path = "rhai-only.rhai"
+dependencies = []
 --- startup
 rhai from std
 single v1
-rhai-only
+std/rhai-only
 single
 rhai from std
-rhai-only
+std/rhai-only
 single
 --- the plugins of the available sources can be loaded
 std/hello
@@ -54,8 +54,8 @@ std/rhai-only
 coll/x
 hello from std
 x (needs hello)
-hello
-x
+std/hello
+coll/x
 --- plugin check
 3 git sources up to date
 status 0
@@ -65,7 +65,7 @@ status 0
 luish: 1: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
 status 2
 --- plugin sync does not move a pinned source
-3 git sources locked, 2 plugins enabled: rhai-only, single
+3 git sources locked, 2 plugins enabled: std/rhai-only, single
 status 0
 status 0
 luish: 1: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
@@ -74,7 +74,7 @@ rhai from std
 --- plugin update does
 Fetching file://~/single
 Updating file://~/single b2201bb..d602781
-3 git sources locked, 2 plugins enabled: rhai-only, single
+3 git sources locked, 2 plugins enabled: std/rhai-only, single
 status 0
 rhai from std
 single v2
@@ -82,7 +82,7 @@ Fetching std
 Fetching file://~/single
 Fetching coll
 No updates
-3 git sources locked, 2 plugins enabled: rhai-only, single
+3 git sources locked, 2 plugins enabled: std/rhai-only, single
 status 0
 3 git sources up to date
 status 0
@@ -93,7 +93,7 @@ luish: plugin sources not installed: file://~/single, std (run plugin sync)
 Installing std at d0ea6cf
 Installing file://~/single at d602781
 Installing coll at 14cfcbd
-3 git sources locked, 2 plugins enabled: rhai-only, single
+3 git sources locked, 2 plugins enabled: std/rhai-only, single
 status 0
 rhai from std
 single v2
@@ -107,7 +107,7 @@ This directory holds the plugins that luish, the shell, fetched with git:
 Installing std at d0ea6cf
 Installing file://~/single at 036d918
 Installing coll at 14cfcbd
-3 git sources locked, 2 plugins enabled: rhai-only, single
+3 git sources locked, 2 plugins enabled: std/rhai-only, single
 status 0
 rhai from std
 single v3

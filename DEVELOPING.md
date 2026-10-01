@@ -34,7 +34,9 @@ brings C code into the build.
 positions of keys and values, which give the lines for errors and the order of the keys (its tables are sorted maps,
 so `config.rs` sorts entries by position; the order matters for `plugins.enabled`, which loads in the file's
 order). TOML's bare keys can't contain `/`, so `plugins.enabled` takes `SOURCE.NAME = "*"` (a table, told apart from
-an inline source by having none of `gh`, `git` and `path`) as well as the quoted `"SOURCE/NAME" = "*"`.
+an inline source by having none of `gh`, `git` and `path`; `SOURCE.SUB.NAME` nests, `Reader::nested`) as well as the
+quoted `"SOURCE/NAME" = "*"`. `/` is the canonical form (plugins' names, `plugin load`, `@` imports), so names can
+keep their dots.
 
 **Why git plugins are fetched by running `git`**, not with libgit2 or gitoxide: no dependency, and git's own
 configuration applies (credentials, SSH keys, proxies, `insteadOf`). Only `plugin sync`, `plugin update` and `plugin check` run it;
@@ -682,10 +684,14 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   imports (`Resolver`): each extension's AST and each module's AST and `Module` get the file's absolute path as
   their source and id, which Rhai passes to the resolver and gives the functions and closures defined there, so a
   module in a subdirectory imports its neighbours wherever its code is called from; code without a source falls back
-  to the running plugin's directory. `import "@SOURCE/PLUGIN/MODULE"` is `MODULE.rhai` in the directory of the loaded
-  plugin called `PLUGIN` (`other_plugin`): loaded plugins have unique names (loading one replaces another of the same
-  name), so `SOURCE` isn't checked, and a plugin loaded from `std`, by `plugin load` or by path is found the same way;
-  an error that isn't `ErrorModuleNotFound` (which Rhai replaces with its own) says to add the dependency. Imported
+  to the running plugin's directory. `import "@SOURCE/PATH/MODULE"` is `MODULE.rhai` in the directory of the loaded
+  plugin called `SOURCE/PATH` (`other_plugin`), the longest name that fits, as MODULE can have a `/`; a plugin's path
+  can't be the start of another's, as a directory is a plugin or a sub-collection, not both. Failing that, the
+  plugin is `PATH` without the source, for plugins loaded under a name of their own (from the plugin directory, by
+  path, an entry's own source): `@std/completion/lib` also finds std's completion loaded by path, but a plugin of
+  one collection can't stand in for another's (`@x/completion/gui/kinds` isn't std's `completion` with the module
+  `gui/kinds`, as it would be if `SOURCE` were ignored). An error that isn't `ErrorModuleNotFound` (which Rhai
+  replaces with its own) says to add the dependency. Imported
   modules are cached by their lexically canonical path (`../`), until a plugin is loaded again. Tests:
   `tests/plugins/imports.sh`, `plugin_imports.sh`. SIGINT stops extension code (checked in
   `on_progress`), leaving the signal pending for the shell. Rhai installs no signal handlers and has no threads or
@@ -806,7 +812,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   `switch`, `go` ...) can't be map keys or function names without quotes; `replace` and `trim` change the string in
   place and return `()`; a closure that captures a map it is iterating is a data race.
   Other plugins use the engine through `import "@std/completion/lib"`, and name their own kinds and `sub_spec` as
-  `@SOURCE/PLUGIN/MODULE:NAME`, which `kinds.rhai` and `lib.rhai` import as they do std's `MODULE:NAME`. Kinds aren't
+  `@SOURCE/PATH/MODULE:NAME`, which `kinds.rhai` and `lib.rhai` import as they do std's `MODULE:NAME`. Kinds aren't
   closures because Rhai (1.26) links a closure to its function only through the caller's `global.lib[0]` (or by name
   while a function of its module runs): a closure made in a module fails with `Function not found: anon$...` when
   `lib.rhai` calls it. The spec format is public (`docs/extensions.md`), so changes to it must stay backward-compatible.
@@ -828,8 +834,19 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   commits), so it touches neither the cache nor the data directory. The lock is written only if its text
   changed (so the rc cache, which fingerprints it, stays valid). Messages about manifests of git plugins show
   `SOURCE:PATH/plugin.toml` rather than the data directory.
-- A loaded plugin is named after its file or directory (`std/bash-completion` loads as `bash-completion`), so
-  `plugin list-available` leaves out the loaded plugins by absolute path, and `plugin unload ARG`, if no plugin is
+- **Names.** A plugin of a named collection is loaded as `SOURCE/PATH` (`std/completion`, `extra/complete/all`), the
+  name it is written with, so short names such as `all` don't clash. Others are named after the entry (a source
+  that is one plugin, `NAME = { gh = ... }`), or after their file or directory (the plugin directory, a path, and
+  the dependencies of plugins of a source without a name): `Coll::name_of`, with `Coll::src` the source's name or
+  `None`. The resolver checks that names are unique (`add`). A collection's directories that aren't plugins and
+  hold no `NAME.rhai` or `NAME.lsh` beside them are sub-collections (`is_collection`), to a depth of 8:
+  `collection_names` lists their plugins as paths (for `plugin list-available`, `plugin sync`, `plugin add`'s
+  `holds` and a source's only plugin), skipping hidden directories, and `find_path` follows a path only through
+  them, so `std/completion/lib` isn't `lib.rhai` inside the plugin `completion`; `Resolver::find` reports a
+  collection named as a plugin. A plain `NAME` in a manifest is a sibling (`Coll::dir`, the plugin's parent),
+  `"/PATH"` is from the top of the same source (`Target::InSource`, only in manifests), and `SOURCE/PATH` from the
+  top of a named one. Tests: `tests/plugins/packages.sh`, `nested.sh`.
+- `plugin list-available` leaves out the loaded plugins by absolute path, and `plugin unload ARG`, if no plugin is
   loaded under the name ARG, unloads the one at the path that `plugin load ARG` would load (`package::location`,
   else `find`). Test: `tests/plugins/packages.sh`.
 - A **library** is a directory plugin whose `plugin.toml` has `library = true` (`is_library`, which reads the file
@@ -854,7 +871,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   them).
 - `plugin add` (`add.rs`) turns its argument into one line of `config.toml` (`parse`, unit-tested with the
   GitHub URL forms: a `file:` URL is a path, percent-decoded, unless it is a git repository (a `.git`, or `HEAD`
-  and `objects`); a path if it starts with `/`, `.` or `~`; `gh:`/GitHub URLs; other URLs; `SOURCE/NAME` of a
+  and `objects`); a path if it starts with `/`, `.` or `~`; `gh:`/GitHub URLs; other URLs; `SOURCE/PATH` of a
   named source; an existing relative path; then `OWNER/REPO`), adds it as text after the last non-blank line of its
   table (`insert`, keeping comments; a new table at the end if there is none), and reads the new text with
   `package::config_names` before writing (`prepare` and `add_to`, which the first run shares): if the entry isn't there (say `[plugins]` has `enabled = {...}`, which a new
@@ -869,7 +886,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   `tests/plugins/add.sh`.
 - Not yet done (see `PLAN.md`): `plugin remove`/`gc`, version requirements other than `"*"`, `flock` for
   concurrent syncs, `login.lsh`.
-- Tests: `tests/plugins/*` (packages: `packages.sh` for local sources, `git_packages.sh` for git ones with
+- Tests: `tests/plugins/*` (packages: `packages.sh` for local sources, `nested.sh` for sub-collections,
+  `git_packages.sh` for git ones with
   `file://` repositories, `add.sh`, `post_rc.sh`, `manifest.sh`; completers through `__luish_internal complete`:
   `complete.sh`, and `std_completion.sh` and `std_completion_more.sh` for `luish-std-plugins/completion`, found through
   `$STD_PLUGINS`, the latter with stand-ins for the programs it runs), `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit

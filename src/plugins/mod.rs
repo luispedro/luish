@@ -310,13 +310,55 @@ pub fn is_library(path: &[u8]) -> bool {
 }
 
 #[cfg(feature = "plugins")]
-/// The plugins of the collection `dir` that count when looking for its
-/// only one: those that aren't libraries, or, if all are, the libraries.
+/// The plugins of the collection `dir` (a source's) that count when looking
+/// for its only one: those that aren't libraries, or, if all are, the
+/// libraries.
 fn main_names(dir: &[u8]) -> Vec<Vec<u8>> {
-    match visible_names(dir) {
-        v if v.is_empty() => available_names(dir),
-        v => v,
+    let all = collection_names(dir);
+    let visible: Vec<_> = (all.iter()).filter(|n| !is_library_in(dir, n)).cloned().collect();
+    match visible.is_empty() {
+        true => all,
+        false => visible,
     }
+}
+
+/// How deep [`collection_names`] looks for sub-collections.
+#[cfg(feature = "plugins")]
+const MAX_DEPTH: usize = 8;
+
+#[cfg(feature = "plugins")]
+/// The plugins of the collection `dir` (a source's), as paths from it,
+/// sorted: its own ([`available_names`]), and those of its sub-collections
+/// (its directories that aren't plugins) as `SUB/NAME`.
+fn collection_names(dir: &[u8]) -> Vec<Vec<u8>> {
+    fn collect(dir: &[u8], prefix: &[u8], depth: usize, out: &mut Vec<Vec<u8>>) {
+        let own = available_names(dir);
+        if depth < MAX_DEPTH {
+            for n in crate::sys::read_dir(dir).unwrap_or_default() {
+                if !n.starts_with(b".") && is_collection(dir, &n) {
+                    collect(&[dir, b"/", &n].concat(), &[prefix, &n, b"/"].concat(), depth + 1, out);
+                }
+            }
+        }
+        out.extend(own.into_iter().map(|n| [prefix, &n].concat()));
+    }
+    let mut out = Vec::new();
+    collect(dir, b"", 0, &mut out);
+    out.sort_unstable();
+    out
+}
+
+#[cfg(feature = "plugins")]
+/// Whether `name` in the collection `dir` is a sub-collection: a directory
+/// that isn't a plugin, without a `NAME.rhai` or `NAME.lsh` that would be
+/// the plugin `name`.
+fn is_collection(dir: &[u8], name: &[u8]) -> bool {
+    let p = [dir, b"/", name].concat();
+    is_dir(&p)
+        && !is_plugin_dir(&p)
+        && [&b".rhai"[..], b".lsh"]
+            .iter()
+            .all(|s| crate::sys::stat(&[&p[..], *s].concat()).is_none())
 }
 
 #[cfg(feature = "plugins")]
@@ -387,6 +429,23 @@ fn find_in(dir: &[u8], name: &[u8]) -> Option<Found> {
     } else {
         None
     }
+}
+
+#[cfg(feature = "plugins")]
+/// The plugin at `path` in the collection `dir`: `NAME` ([`find_in`]), or
+/// `SUB/.../NAME` in its sub-collections.
+fn find_path(dir: &[u8], path: &[u8]) -> Option<Found> {
+    let mut dir = dir.to_vec();
+    let mut parts: Vec<&[u8]> = path.split(|&c| c == b'/').collect();
+    let name = parts.pop()?;
+    for sub in parts {
+        if !is_collection(&dir, sub) {
+            return None;
+        }
+        dir.push(b'/');
+        dir.extend_from_slice(sub);
+    }
+    find_in(&dir, name)
 }
 
 #[cfg(feature = "plugins")]
@@ -796,7 +855,8 @@ fn read_pipes(fds: &[i32]) -> Vec<Vec<u8>> {
 
 /// For `plugin list-available`: the plugins in the plugin directory and
 /// those of the sources that are installed, less those loaded (by path, as
-/// `std/NAME` loads as `NAME`) and, unless `all`, the libraries.
+/// a plugin can be loaded under another name) and, unless `all`, the
+/// libraries.
 #[cfg(feature = "plugins")]
 fn not_loaded(sh: &mut Shell, all: bool) -> Vec<Vec<u8>> {
     let mut found: Vec<_> = match plugin_dir(sh) {
@@ -934,7 +994,7 @@ fn load(sh: &mut Shell, name: &[u8], arg: &[u8], _: Option<Vec<u8>>) -> ExecResu
 }
 
 /// `plugin unload ARG`: the plugin loaded under the name ARG, else the one
-/// that `plugin load ARG` would load (so `std/NAME` unloads `NAME`).
+/// that `plugin load ARG` would load (such as a path).
 #[cfg(feature = "plugins")]
 fn unload(sh: &mut Shell, arg: &[u8]) -> bool {
     let Some(host) = sh.plugins.clone() else {

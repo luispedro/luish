@@ -14,13 +14,15 @@
 //! branch, a tag, a commit or its `HEAD`, or a local `path`, with an
 //! optional `subdir`. A source is one plugin if it holds an entry point
 //! (`init.lsh`, `extension.rhai`, ...), and otherwise a collection of
-//! plugins (`NAME.rhai`, `NAME.lsh`, `NAME/`). `plugins.available` names
-//! sources, and `std` names luish's own collection. `plugins.enabled` lists
-//! the plugins that interactive shells load, as `SOURCE/NAME` (a plugin of a
-//! collection), `NAME` (a named source, else a plugin in the plugin
-//! directory) or `NAME = { gh = ... }` (a source of its own). A directory
-//! plugin's `plugin.toml` lists its dependencies in the same way, where a
-//! plain `NAME` is a plugin of the same collection.
+//! plugins (`NAME.rhai`, `NAME.lsh`, `NAME/`) and of sub-collections (its
+//! other directories). `plugins.available` names sources, and `std` names
+//! luish's own collection. `plugins.enabled` lists the plugins that
+//! interactive shells load, as `SOURCE/PATH` (a plugin of a collection,
+//! `NAME` or `SUB/.../NAME`, which is also its name once loaded), `NAME` (a
+//! named source, else a plugin in the plugin directory) or `NAME = { gh =
+//! ... }` (a source of its own). A directory plugin's `plugin.toml` lists its
+//! dependencies in the same way, where a plain `NAME` is a plugin of the same
+//! collection, and `/PATH` one of the same source.
 //!
 //! `plugin sync` resolves all of these (fetching with git, `fetch.rs`) and
 //! writes `plugins.lock`, which pins each git source to a commit; startup and
@@ -101,8 +103,10 @@ struct Loc {
 /// What an entry of `plugins.enabled` or `dependencies` names.
 #[derive(Clone, Debug)]
 enum Target {
-    /// `NAME = "*"` (`None`) or `SOURCE/NAME = "*"`.
+    /// `NAME = "*"` (`None`) or `SOURCE/PATH = "*"`.
     Named(Option<String>),
+    /// `"/PATH" = "*"` in a manifest: a plugin of the same source.
+    InSource,
     /// `NAME = { gh = ..., plugin = ... }`.
     Inline(Source, Option<String>),
 }
@@ -110,7 +114,8 @@ enum Target {
 /// An entry of `plugins.enabled` or of a manifest's `dependencies`.
 #[derive(Clone, Debug)]
 struct Entry {
-    /// The plugin's name: the last part of the key.
+    /// The plugin's name, or its path in a source: the key less the source
+    /// (`SOURCE/PATH`) or the leading `/`.
     name: String,
     target: Target,
     loc: Option<Loc>,
@@ -121,6 +126,17 @@ struct Entry {
 struct Config {
     available: Vec<(String, Source)>,
     enabled: Vec<Entry>,
+}
+
+impl Entry {
+    /// The entry's key, with `/` for TOML's dots.
+    fn key(&self) -> String {
+        match &self.target {
+            Target::Named(Some(src)) => format!("{src}/{}", self.name),
+            Target::InSource => format!("/{}", self.name),
+            _ => self.name.clone(),
+        }
+    }
 }
 
 impl Config {
@@ -166,6 +182,12 @@ pub(super) fn github_url(repo: &str) -> String {
 /// with `.`.
 pub(super) fn valid_name(s: &str) -> bool {
     !s.is_empty() && !s.starts_with('.') && !s.contains(['/', '\0', '\n'])
+}
+
+/// A plugin's path in a collection: `NAME`, or `SUB/.../NAME` in its
+/// sub-collections.
+pub(super) fn valid_path(s: &str) -> bool {
+    s.split('/').all(valid_name)
 }
 
 // ----------------------------------------------------------------------
@@ -238,17 +260,19 @@ impl Reader<'_> {
                     if !self.requirement(start, key, req) {
                         continue;
                     }
-                    let (source, name) = match key.split_once('/') {
-                        Some((s, n)) => (Some(s), n),
-                        None => (None, key),
+                    let (target, name) = match (key.strip_prefix('/'), key.split_once('/')) {
+                        (Some(path), _) => (Target::InSource, path),
+                        (None, Some((s, n))) if valid_name(s) => (Target::Named(Some(s.into())), n),
+                        (None, Some(_)) => (Target::Named(None), ""),
+                        (None, None) => (Target::Named(None), key),
                     };
-                    if !valid_name(name) || source.is_some_and(|s| !valid_name(s)) {
-                        self.err(start, format!("{key}: bad plugin name (NAME or SOURCE/NAME)"));
+                    if !valid_path(name) {
+                        self.err(start, format!("{key}: bad plugin name (NAME or SOURCE/PATH)"));
                         continue;
                     }
                     out.push(Entry {
                         name: name.into(),
-                        target: Target::Named(source.map(Into::into)),
+                        target,
                         loc: Some(self.loc(start)),
                     });
                 }
@@ -263,38 +287,47 @@ impl Reader<'_> {
                         });
                     }
                 }
-                // `SOURCE.NAME = "*"`, which TOML reads as a table.
+                // `SOURCE.PATH = "*"`, which TOML reads as tables.
                 ValueInner::Table(t) => {
                     if !valid_name(key) {
                         self.err(start, format!("{key}: bad source name"));
                         continue;
                     }
-                    let mut plugins: Vec<_> = t.iter().collect();
-                    plugins.sort_by_key(|(k, _)| k.span.start);
-                    for (k, v) in plugins {
-                        let name = &*k.name;
-                        let full = format!("{key}.{name}");
-                        match v.as_ref() {
-                            ValueInner::String(req) if self.requirement(k.span.start, &full, req) => {
-                                if !valid_name(name) {
-                                    self.err(k.span.start, format!("{full}: bad plugin name"));
-                                    continue;
-                                }
-                                out.push(Entry {
-                                    name: name.into(),
-                                    target: Target::Named(Some(key.into())),
-                                    loc: Some(self.loc(k.span.start)),
-                                });
-                            }
-                            ValueInner::String(_) => {}
-                            _ => self.err(k.span.start, format!("{full}: expected \"*\"")),
-                        }
-                    }
+                    self.nested(key, "", key, t, out);
                 }
                 other => self.err(
                     start,
                     format!("{key}: expected \"*\" or a table, found {}", other.type_str()),
                 ),
+            }
+        }
+    }
+
+    /// The entries of `SOURCE.PATH = "*"`: those of the table `t`, at `path`
+    /// in the source `src` (`shown` as written).
+    fn nested(&mut self, src: &str, path: &str, shown: &str, t: &Table<'_>, out: &mut Vec<Entry>) {
+        let mut plugins: Vec<_> = t.iter().collect();
+        plugins.sort_by_key(|(k, _)| k.span.start);
+        for (k, v) in plugins {
+            let name = &*k.name;
+            let full = format!("{shown}.{name}");
+            if !valid_name(name) {
+                self.err(k.span.start, format!("{full}: bad plugin name"));
+                continue;
+            }
+            let path = match path {
+                "" => name.to_string(),
+                _ => format!("{path}/{name}"),
+            };
+            match v.as_ref() {
+                ValueInner::String(req) if self.requirement(k.span.start, &full, req) => out.push(Entry {
+                    name: path,
+                    target: Target::Named(Some(src.into())),
+                    loc: Some(self.loc(k.span.start)),
+                }),
+                ValueInner::String(_) => {}
+                ValueInner::Table(t) => self.nested(src, &path, &full, t, out),
+                _ => self.err(k.span.start, format!("{full}: expected \"*\"")),
             }
         }
     }
@@ -443,7 +476,7 @@ impl Reader<'_> {
         }
         let label = if plugin { label } else { name.to_string() };
         let which = get("plugin").map(|(p, _)| p);
-        if let Some(p) = which.as_ref().filter(|p| !valid_name(p)) {
+        if let Some(p) = which.as_ref().filter(|p| !valid_path(p)) {
             self.err(start, format!("{name}.plugin: bad plugin name {p:?}"));
             return None;
         }
@@ -452,7 +485,7 @@ impl Reader<'_> {
 }
 
 /// Whether a table in `plugins.enabled` or `dependencies` is a source (and
-/// not `SOURCE.NAME = "*"`).
+/// not `SOURCE.PATH = "*"`).
 fn is_source(t: &Table<'_>) -> bool {
     t.keys().any(|k| ["gh", "git", "path"].contains(&&*k.name))
 }
@@ -703,11 +736,55 @@ enum Scope {
     /// In `plugins.enabled` and for `plugin load NAME`: a named source, else
     /// the plugin directory.
     Config,
-    /// In the collection `dir` of the source `label`, whose files are in
-    /// `root`.
-    Collection { dir: Vec<u8>, root: Vec<u8>, label: String },
+    /// In the collection of the plugin.
+    Collection(Coll),
     /// Nowhere: the plugin isn't in a collection.
     None,
+}
+
+/// The collection a plugin is in, for its dependencies.
+#[derive(Clone)]
+struct Coll {
+    /// The collection's directory.
+    dir: Vec<u8>,
+    /// The files of its source (`/PATH` is from there), and the source's
+    /// label.
+    root: Vec<u8>,
+    label: String,
+    /// The source's name, if its plugins are named `SOURCE/PATH`; otherwise
+    /// (the plugin directory, a path, a source of an entry's own) they are
+    /// named after their files.
+    src: Option<String>,
+}
+
+impl Coll {
+    /// The collection of the plugin `found` of the source `label`, whose
+    /// files are in `root`.
+    fn of(found: &Found, root: &[u8], label: &str, src: Option<&str>) -> Coll {
+        Coll {
+            dir: parent(&found.path).to_vec(),
+            root: root.to_vec(),
+            label: label.to_string(),
+            src: src.map(Into::into),
+        }
+    }
+
+    /// The path from the top of the source of the plugin `name` of this
+    /// collection.
+    fn path_of(&self, name: &str) -> String {
+        match self.dir.strip_prefix(&self.root[..]).and_then(|r| r.strip_prefix(b"/")) {
+            Some(r) if !r.is_empty() => format!("{}/{name}", String::from_utf8_lossy(r)),
+            _ => name.to_string(),
+        }
+    }
+
+    /// The name of the plugin at `path` from the top of the source.
+    fn name_of(&self, path: &str) -> String {
+        match &self.src {
+            Some(src) => format!("{src}/{path}"),
+            None => path.rsplit('/').next().unwrap_or(path).to_string(),
+        }
+    }
 }
 
 /// Whether and how git sources are fetched.
@@ -875,26 +952,33 @@ impl<'a> Resolver<'a> {
     }
 
     /// The plugin `want` in the files `root` of the source `label`: the
-    /// source itself if it is one plugin, else the plugin `want` of the
-    /// collection, or (with `only`) its only plugin. Gives the collection
-    /// too, for the plugin's dependencies.
-    fn pick(&mut self, root: &[u8], label: &str, want: &str, only: bool, loc: Option<&Loc>) -> Result<Picked, ()> {
+    /// source itself if it is one plugin, else the plugin at the path `want`
+    /// in the collection, or (with `only`) its only plugin. Also says
+    /// whether it is in a collection.
+    fn pick(
+        &mut self,
+        root: &[u8],
+        label: &str,
+        want: &str,
+        only: bool,
+        loc: Option<&Loc>,
+    ) -> Result<(Found, bool), ()> {
         if !super::is_dir(root) {
-            return Ok((super::at_path(root), None));
+            return Ok((super::at_path(root), false));
         }
         if super::is_plugin_dir(root) {
             let found = Found {
                 path: root.to_vec(),
                 kind: Kind::Dir,
             };
-            return Ok((found, None));
+            return Ok((found, false));
         }
-        let found = find_in(root, want).or_else(|| match super::main_names(root).as_slice() {
-            [one] if only => find_in(root, &String::from_utf8_lossy(one)),
+        let found = find_path(root, want).or_else(|| match super::main_names(root).as_slice() {
+            [one] if only => super::find_path(root, one),
             _ => None,
         });
         match found {
-            Some(f) => Ok((f, Some(root.to_vec()))),
+            Some(f) => Ok((f, true)),
             None => {
                 self.problem(loc, format!("{want}: no such plugin in {label}"));
                 Err(())
@@ -902,11 +986,30 @@ impl<'a> Resolver<'a> {
         }
     }
 
+    /// The plugin at `path` in the collection `root` of the source `label`,
+    /// which messages call `shown`.
+    fn find(&mut self, root: &[u8], path: &str, shown: &str, label: &str, loc: Option<&Loc>) -> Result<Found, ()> {
+        let msg = match find_path(root, path) {
+            // (A directory with no plugins either fails to load, saying so.)
+            Some(f)
+                if f.kind == Kind::Dir
+                    && !super::is_plugin_dir(&f.path)
+                    && !super::collection_names(&f.path).is_empty() =>
+            {
+                format!("{shown}: a collection, not a plugin")
+            }
+            Some(f) => return Ok(f),
+            None => format!("{shown}: no such plugin in {label}"),
+        };
+        self.problem(loc, msg);
+        Err(())
+    }
+
     /// Resolves an entry and its dependencies, from `scope`.
     fn resolve(&mut self, e: &Entry, scope: &Scope) -> Result<(), ()> {
         let loc = e.loc.as_ref();
         let name = e.name.as_str();
-        let (found, label, root, collection) = match (&e.target, scope) {
+        let (found, label, root, coll, full) = match (&e.target, scope) {
             (Target::Named(Some(src)), _) => {
                 let Some(source) = self.config.named(src) else {
                     self.problem(loc, format!("{src}/{name}: no source called {src}"));
@@ -917,17 +1020,16 @@ impl<'a> Resolver<'a> {
                     self.problem(loc, format!("{src}/{name}: {src} is one plugin, not a collection"));
                     return Err(());
                 }
-                let Some(found) = find_in(&root, name) else {
-                    self.problem(loc, format!("{src}/{name}: no such plugin in {src}"));
-                    return Err(());
-                };
-                (found, source.label, root.clone(), Some(root))
+                let found = self.find(&root, name, &format!("{src}/{name}"), src, loc)?;
+                let coll = Coll::of(&found, &root, &source.label, Some(src));
+                (found, source.label, root, Some(coll), format!("{src}/{name}"))
             }
             (Target::Named(None), Scope::Config) => match self.config.named(name) {
                 Some(source) => {
                     let root = self.root(&source, name, loc)?;
-                    let (found, coll) = self.pick(&root, &source.label, name, true, loc)?;
-                    (found, source.label, root, coll)
+                    let (found, member) = self.pick(&root, &source.label, name, true, loc)?;
+                    let coll = member.then(|| Coll::of(&found, &root, &source.label, Some(name)));
+                    (found, source.label, root, coll, name.to_string())
                 }
                 None => {
                     let Some(dir) = super::plugin_dir(self.sh) else {
@@ -938,15 +1040,32 @@ impl<'a> Resolver<'a> {
                         self.problem(loc, format!("{name}: no such plugin"));
                         return Err(());
                     };
-                    (found, "local".to_string(), dir.clone(), Some(dir))
+                    let coll = Coll::of(&found, &dir, "local", None);
+                    (found, "local".to_string(), dir, Some(coll), name.to_string())
                 }
             },
-            (Target::Named(None), Scope::Collection { dir, root, label }) => {
-                let Some(found) = find_in(dir, name) else {
-                    self.problem(loc, format!("{name}: no such plugin in {label}"));
-                    return Err(());
-                };
-                (found, label.clone(), root.clone(), Some(dir.clone()))
+            (Target::Named(None), Scope::Collection(c)) => {
+                let path = c.path_of(name);
+                let found = self.find(&c.root, &path, name, &c.label, loc)?;
+                (
+                    found,
+                    c.label.clone(),
+                    c.root.clone(),
+                    Some(c.clone()),
+                    c.name_of(&path),
+                )
+            }
+            (Target::InSource, Scope::Collection(c)) => {
+                let found = self.find(&c.root, name, &format!("/{name}"), &c.label, loc)?;
+                let coll = Coll::of(&found, &c.root, &c.label, c.src.as_deref());
+                (found, c.label.clone(), c.root.clone(), Some(coll), c.name_of(name))
+            }
+            (Target::InSource, _) => {
+                self.problem(
+                    loc,
+                    format!("/{name}: only in the plugin.toml of a plugin of a collection"),
+                );
+                return Err(());
             }
             (Target::Named(None), Scope::None) => {
                 self.problem(loc, format!("{name}: not in a collection (write SOURCE/{name})"));
@@ -955,22 +1074,24 @@ impl<'a> Resolver<'a> {
             (Target::Inline(source, plugin), _) => {
                 let root = self.root(source, name, loc)?;
                 let want = plugin.as_deref().unwrap_or(name);
-                let (found, coll) = self.pick(&root, &source.label, want, plugin.is_none(), loc)?;
-                (found, source.label.clone(), root, coll)
+                let (found, member) = self.pick(&root, &source.label, want, plugin.is_none(), loc)?;
+                let coll = member.then(|| Coll::of(&found, &root, &source.label, None));
+                (found, source.label.clone(), root, coll, name.to_string())
             }
         };
-        self.add(name, found, &label, &root, collection, loc)
+        self.add(&full, found, &label, &root, coll, loc)
     }
 
     /// Adds a plugin found in the files `root` of its source, after its
-    /// dependencies. `collection` is where plain names in its manifest are.
+    /// dependencies. `coll` is the collection it is in, if any, where plain
+    /// names in its manifest are.
     fn add(
         &mut self,
         name: &str,
         found: Found,
         label: &str,
         root: &[u8],
-        collection: Option<Vec<u8>>,
+        coll: Option<Coll>,
         loc: Option<&Loc>,
     ) -> Result<(), ()> {
         let abs = super::absolute(self.sh, &found.path);
@@ -1019,14 +1140,7 @@ impl<'a> Resolver<'a> {
                 self.manifests.push(file);
             }
             let entries = manifest(self.sh, &abs, &shown, &mut self.problems);
-            let scope = match collection {
-                Some(dir) => Scope::Collection {
-                    dir,
-                    root: root.to_vec(),
-                    label: label.to_string(),
-                },
-                None => Scope::None,
-            };
+            let scope = coll.map_or(Scope::None, Scope::Collection);
             for d in &entries {
                 match self.resolve(d, &scope) {
                     Ok(()) => deps.push(d.name.clone()),
@@ -1064,10 +1178,12 @@ impl<'a> Resolver<'a> {
     }
 }
 
-type Picked = (Found, Option<Vec<u8>>);
-
 fn find_in(dir: &[u8], name: &str) -> Option<Found> {
     super::find_in(dir, name.as_bytes())
+}
+
+fn find_path(dir: &[u8], path: &str) -> Option<Found> {
+    super::find_path(dir, path.as_bytes())
 }
 
 /// The lock's pins, or none (with a problem) if it can't be read.
@@ -1125,7 +1241,7 @@ pub fn load_enabled(sh: &mut Shell) -> bool {
     ok
 }
 
-/// `plugin load ARG`: a plugin of a named source (`SOURCE/NAME`, or
+/// `plugin load ARG`: a plugin of a named source (`SOURCE/PATH`, or
 /// `NAME`), else a plugin in the plugin directory or a path, after its
 /// dependencies that aren't loaded yet.
 pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8]) -> ExecResult {
@@ -1133,7 +1249,7 @@ pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8]) -> ExecResult {
     let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
     let text = String::from_utf8_lossy(arg);
     let named = match text.split_once('/') {
-        Some((src, name)) => config.named(src).is_some() && valid_name(name),
+        Some((src, path)) => config.named(src).is_some() && valid_path(path),
         None => config.named(&text).is_some(),
     };
     // A lock that can't be read shows as plugins that aren't installed.
@@ -1170,7 +1286,13 @@ pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8]) -> ExecResult {
         } else {
             "local".into()
         };
-        r.add(&name, found, &label, &dir.clone(), Some(dir), None).is_ok()
+        let coll = Coll {
+            dir: dir.clone(),
+            root: dir.clone(),
+            label: label.clone(),
+            src: None,
+        };
+        r.add(&name, found, &label, &dir, Some(coll), None).is_ok()
     };
     load_resolved(cmd, r, ok)
 }
@@ -1199,7 +1321,7 @@ fn load_resolved(cmd: &[u8], mut r: Resolver, ok: bool) -> ExecResult {
 /// For `plugin add`: loads the plugin `name` of `plugins.enabled`.
 pub(super) fn load_added(sh: &mut Shell, cmd: &[u8], name: &str) -> ExecResult {
     let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
-    let Some(e) = config.enabled.iter().find(|e| e.name == name) else {
+    let Some(e) = config.enabled.iter().find(|e| e.key() == name) else {
         return Ok(0);
     };
     let pins = read_lock(&lock_path(sh).unwrap_or_default()).unwrap_or_default();
@@ -1208,7 +1330,8 @@ pub(super) fn load_added(sh: &mut Shell, cmd: &[u8], name: &str) -> ExecResult {
     load_resolved(cmd, r, ok)
 }
 
-/// For `plugin add`: the names in `plugins.enabled` and in
+/// For `plugin add`: the keys in `plugins.enabled` (with `/` for TOML's
+/// dots) and the names in
 /// `plugins.available` of the text `bytes` of the configuration file
 /// `file`, or its first problem.
 pub(super) fn config_names(sh: &Shell, file: &[u8], bytes: &[u8]) -> Result<(Vec<String>, Vec<String>), String> {
@@ -1218,7 +1341,7 @@ pub(super) fn config_names(sh: &Shell, file: &[u8], bytes: &[u8]) -> Result<(Vec
         return Err(problem_text(p));
     }
     Ok((
-        config.enabled.into_iter().map(|e| e.name).collect(),
+        config.enabled.iter().map(Entry::key).collect(),
         config.available.into_iter().map(|(n, _)| n).collect(),
     ))
 }
@@ -1302,7 +1425,7 @@ fn resolve_all(r: &mut Resolver, config: &Config) -> (Vec<Resolved>, bool) {
             continue;
         };
         let names = match super::is_dir(&root) && !super::is_plugin_dir(&root) {
-            true => super::available_names(&root)
+            true => super::collection_names(&root)
                 .into_iter()
                 .map(|n| (Some(name.clone()), String::from_utf8_lossy(&n).into_owned()))
                 .collect(),
@@ -1462,12 +1585,12 @@ pub fn check(sh: &mut Shell, cmd: &[u8]) -> ExecResult {
 }
 
 /// The path of the plugin that `plugin load ARG` loads from a source (`ARG`
-/// a source, or `SOURCE/NAME`), if it is installed. For `plugin unload`.
+/// a source, or `SOURCE/PATH`), if it is installed. For `plugin unload`.
 pub fn location(sh: &mut Shell, arg: &[u8]) -> Option<Vec<u8>> {
     let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
     let text = String::from_utf8_lossy(arg);
     let (src, name, only) = match text.split_once('/') {
-        Some((src, name)) if valid_name(name) => (src, name, false),
+        Some((src, path)) if valid_path(path) => (src, path, false),
         Some(_) => return None,
         None => (&*text, &*text, true),
     };
@@ -1480,7 +1603,7 @@ pub fn location(sh: &mut Shell, arg: &[u8]) -> Option<Vec<u8>> {
 
 /// The plugins of the available sources that are installed, for `plugin
 /// list-available`: `SOURCE` for a source that is one plugin, and
-/// `SOURCE/NAME` for each plugin of a collection, with the plugin's path.
+/// `SOURCE/PATH` for each plugin of a collection, with the plugin's path.
 pub fn available(sh: &mut Shell) -> Vec<(Vec<u8>, Vec<u8>)> {
     let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
     let pins = read_lock(&lock_path(sh).unwrap_or_default()).unwrap_or_default();
@@ -1496,8 +1619,8 @@ pub fn available(sh: &mut Shell) -> Vec<(Vec<u8>, Vec<u8>)> {
             continue;
         };
         if super::is_dir(&root) && !super::is_plugin_dir(&root) {
-            for p in super::available_names(&root) {
-                if let Some(found) = super::find_in(&root, &p) {
+            for p in super::collection_names(&root) {
+                if let Some(found) = super::find_path(&root, &p) {
                     out.push((found.path, [name.as_bytes(), b"/", &p].concat()));
                 }
             }

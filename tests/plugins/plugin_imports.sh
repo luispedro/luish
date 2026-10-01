@@ -2,7 +2,7 @@
 # another plugin, which must be loaded (a dependency in plugin.toml, for
 # instance): here std's completion engine, whose own imports (lib.rhai's
 # `import "kinds"`) are relative to its files. The plugin is found by its
-# name, however it was loaded.
+# name (std/completion), or without the source when it was loaded by path.
 C=$HOME/.config/luish
 mkdir -p "$C" ext/sub src/deep
 printf '[plugins.available]\nstd = { path = "%s" }\n' "$STD_PLUGINS" > "$C/config.toml"
