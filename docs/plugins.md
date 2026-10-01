@@ -247,6 +247,22 @@ pdf = "evince"
 "Ctrl-X Ctrl-G" = "undo"
 ```
 
+### Libraries
+
+A plugin can be meant for other plugins to use rather than for users to load: a set of Rhai modules that their
+extensions import (see [Splitting an extension into modules](extensions.md#splitting-an-extension-into-modules-import)),
+or shell functions that their shell files call. It says so in its `plugin.toml`:
+
+```toml
+description = "Helpers for my other plugins"
+library = true
+```
+
+A library loads as any other plugin, usually as a dependency of the plugins that use it, but `plugin list-available`
+and Tab after `plugin load` leave it out (`plugin list-available -a` lists it too), and it doesn't count when a
+collection's only plugin is chosen: a source with one plugin and some libraries is that plugin. A library that is only
+Rhai modules needs no other file than `plugin.toml`.
+
 ## After the startup files: `post-rc`
 
 An interactive shell starts in this order:

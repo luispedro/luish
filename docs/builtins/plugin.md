@@ -3,7 +3,7 @@
 ```text
 plugin load name|source/name|path...
 plugin list-loaded
-plugin list-available
+plugin list-available [-a]
 plugin unload name...
 plugin add [-y] plugin [name]
 plugin sync [-q]
@@ -27,7 +27,9 @@ Loading a plugin again reloads it. The exit status is 1 if a plugin can't
 be loaded. `plugin list-loaded` prints the names of the loaded plugins, and
 `plugin list-available` the names of the plugins that `plugin load` can
 load by name and that aren't loaded: those in the plugin directory, and
-those of the sources in `config.toml` that are installed. `plugin unload`
+those of the sources in `config.toml` that are installed, except the
+libraries (plugins for other plugins to use, whose `plugin.toml` says
+`library = true`), which `-a` (or `--all`) adds. `plugin unload`
 removes plugins and their hooks; each is named as `plugin list-loaded`
 shows it, or as `plugin load` was given it (such as `std/NAME`).
 

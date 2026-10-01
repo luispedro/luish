@@ -1263,6 +1263,7 @@ impl ShellHelper {
                         ),
                         Some(b"load") if w.text.contains(&b'/') => files(Files::All, &mut out),
                         Some(b"load") => words(&self.plugin_files(), &mut out),
+                        Some(b"list-available") if args.len() == 1 => words(&[b"--all".to_vec()], &mut out),
                         Some(b"unload") => words(&self.names.plugins, &mut out),
                         Some(b"add") if w.text.contains(&b'/') => files(Files::All, &mut out),
                         Some(_) => 0,
@@ -1382,9 +1383,9 @@ impl ShellHelper {
     }
 
     /// The names of the plugins in the plugin directory: `.rhai` and `.lsh`
-    /// files, and directories.
+    /// files, and directories, but not libraries.
     fn plugin_files(&self) -> Vec<Vec<u8>> {
-        (self.names.plugin_dir.as_deref()).map_or_else(Vec::new, crate::plugins::available_names)
+        (self.names.plugin_dir.as_deref()).map_or_else(Vec::new, crate::plugins::visible_names)
     }
 
     /// The directories that `text` (a path, unquoted) could complete to as
@@ -1958,6 +1959,8 @@ mod tests {
             std::fs::write(dir.join("plugins").join(f), "").unwrap();
         }
         std::fs::create_dir(dir.join("plugins/work")).unwrap();
+        std::fs::create_dir(dir.join("plugins/lib")).unwrap();
+        std::fs::write(dir.join("plugins/lib/plugin.toml"), "library = true\n").unwrap();
         assert_eq!(complete(&h, "plugin l"), ["list-available ", "list-loaded ", "load "]);
         assert_eq!(complete(&h, "plugin u"), ["unload ", "update "]);
         assert_eq!(complete(&h, "plugin c"), ["check "]);
@@ -1966,6 +1969,7 @@ mod tests {
         assert_eq!(complete(&h, "plugin load ~/plugins/p"), ["~/plugins/prompt.rhai "]);
         assert_eq!(complete(&h, "plugin unload "), ["greet "]);
         assert_eq!(complete(&h, "plugin list-loaded "), Vec::<String>::new());
+        assert_eq!(complete(&h, "plugin list-available -"), ["--all "]);
         // Users' home directories.
         assert_eq!(complete(&h, "ls ~roo"), ["~root/"]);
         assert_eq!(complete(&h, "X=a:~roo"), ["X=a:~root/"]);

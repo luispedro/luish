@@ -525,20 +525,26 @@ fn parse_config(sh: &Shell, file: &[u8], bytes: &[u8], problems: &mut Vec<Proble
 }
 
 /// The dependencies in `plugin.toml`, the manifest of the directory plugin
-/// `dir`, which messages call `shown`. The manifest's other keys (such as
-/// `description`) are ignored.
+/// `dir`, which messages call `shown`. `library` must be a boolean (it is
+/// read by `is_library`); the manifest's other keys (such as `description`)
+/// are ignored.
 fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -> Vec<Entry> {
     let file = [dir, b"/plugin.toml"].concat();
     let r = with_toml(&file, shown, |text, mut root| {
         let mut out = Vec::new();
+        let mut r = Reader {
+            sh,
+            file: shown,
+            text,
+            base: dir,
+            problems,
+        };
+        if let Some(value) = root.remove("library")
+            && !matches!(value.as_ref(), ValueInner::Boolean(_))
+        {
+            r.err(value.span.start, "library: not a boolean");
+        }
         if let Some(value) = root.remove("dependencies") {
-            let mut r = Reader {
-                sh,
-                file: shown,
-                text,
-                base: dir,
-                problems,
-            };
             r.entries(value, "dependencies", &mut out);
         }
         out
@@ -883,7 +889,7 @@ impl<'a> Resolver<'a> {
             };
             return Ok((found, None));
         }
-        let found = find_in(root, want).or_else(|| match super::available_names(root).as_slice() {
+        let found = find_in(root, want).or_else(|| match super::main_names(root).as_slice() {
             [one] if only => find_in(root, &String::from_utf8_lossy(one)),
             _ => None,
         });

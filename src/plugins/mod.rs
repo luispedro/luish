@@ -149,7 +149,7 @@ pub fn complete(sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Compl
     }
 }
 
-const USAGE: &str = "usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available, plugin unload NAME..., \
+const USAGE: &str = "usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., \
                      plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check";
 
 /// The `plugin` built-in (interactive shells only, like `help`).
@@ -157,8 +157,8 @@ pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     run(sh, &argv[0], &argv[1..])
 }
 
-/// `plugin load NAME|PATH...`, `plugin list-loaded`, `plugin list-available`,
-/// `plugin unload NAME...`, `plugin add [-y] PLUGIN [NAME]`, `plugin
+/// `plugin load NAME|PATH...`, `plugin list-loaded`, `plugin list-available
+/// [-a]`, `plugin unload NAME...`, `plugin add [-y] PLUGIN [NAME]`, `plugin
 /// sync [-q]`, `plugin update [-q] [SOURCE...]` and `plugin check`, also available as `__luish_internal
 /// plugin`. `name` is the command, for error messages.
 ///
@@ -183,10 +183,15 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
             }
             load(sh, name, &args[1], Some(args[0].clone()))
         }
-        Some(sub @ (b"list-loaded" | b"list-available")) if args.is_empty() => {
-            let names = match sub {
-                b"list-loaded" => loaded_names(sh),
-                _ => not_loaded(sh),
+        Some(sub @ (b"list-loaded" | b"list-available")) => {
+            let names = match (sub, args) {
+                (b"list-loaded", []) => loaded_names(sh),
+                (b"list-available", []) => not_loaded(sh, false),
+                (b"list-available", [a]) if matches!(a.as_slice(), b"-a" | b"--all") => not_loaded(sh, true),
+                _ => {
+                    sh.berr(name, USAGE);
+                    return Ok(2);
+                }
             };
             let mut out = Vec::new();
             for name in names {
@@ -259,6 +264,58 @@ pub fn available_names(dir: &[u8]) -> Vec<Vec<u8>> {
     names
 }
 
+/// [`available_names`] less the libraries, which `plugin list-available`
+/// (without `-a`) and Tab leave out.
+pub fn visible_names(dir: &[u8]) -> Vec<Vec<u8>> {
+    (available_names(dir).into_iter())
+        .filter(|n| !is_library_in(dir, n))
+        .collect()
+}
+
+/// Whether the plugin `name` of the collection `dir` is a library: a
+/// directory (as `NAME.rhai` and `NAME.lsh` come first) that is one.
+fn is_library_in(dir: &[u8], name: &[u8]) -> bool {
+    let p = [dir, b"/", name].concat();
+    is_library(&p)
+        && [&b".rhai"[..], b".lsh"]
+            .iter()
+            .all(|s| crate::sys::stat(&[&p[..], *s].concat()).is_none())
+}
+
+/// Whether `path` is a library: a directory whose `plugin.toml` says
+/// `library = true`. Libraries are plugins for other plugins to use, which
+/// are loaded as any other but not offered to the user.
+pub fn is_library(path: &[u8]) -> bool {
+    use toml_span::value::ValueInner;
+    let file = [path, b"/plugin.toml"].concat();
+    let Ok(bytes) = std::fs::read(crate::interactive::to_path(&file)) else {
+        return false;
+    };
+    // Most manifests don't have the key: don't parse those.
+    if !bytes.windows(7).any(|w| w == b"library") {
+        return false;
+    }
+    let Some(mut root) = std::str::from_utf8(&bytes).ok().and_then(|t| toml_span::parse(t).ok()) else {
+        return false;
+    };
+    match root.take() {
+        ValueInner::Table(mut t) => t
+            .remove("library")
+            .is_some_and(|mut v| matches!(v.take(), ValueInner::Boolean(true))),
+        _ => false,
+    }
+}
+
+#[cfg(feature = "plugins")]
+/// The plugins of the collection `dir` that count when looking for its
+/// only one: those that aren't libraries, or, if all are, the libraries.
+fn main_names(dir: &[u8]) -> Vec<Vec<u8>> {
+    match visible_names(dir) {
+        v if v.is_empty() => available_names(dir),
+        v => v,
+    }
+}
+
 #[cfg(feature = "plugins")]
 /// The kinds of plugin.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -286,7 +343,8 @@ fn is_dir(path: &[u8]) -> bool {
 
 #[cfg(feature = "plugins")]
 /// The files that make a directory a plugin.
-const ENTRY_POINTS: [&[u8]; 6] = [
+const ENTRY_POINTS: [&[u8]; 7] = [
+    b"plugin.toml",
     b"init.lsh",
     b"extension.rhai",
     b"rc.lsh",
@@ -458,7 +516,7 @@ fn load_found(sh: &mut Shell, cmd: &[u8], found: &Found, name: Option<Vec<u8>>, 
             sh.berr(
                 cmd,
                 format!(
-                    "{}: not a plugin (no init.lsh, extension.rhai, rc.lsh, post-rc.lsh, prompt-vars.lsh or login.lsh)",
+                    "{}: not a plugin (no plugin.toml, init.lsh, extension.rhai, rc.lsh, post-rc.lsh, prompt-vars.lsh or login.lsh)",
                     String::from_utf8_lossy(&path)
                 ),
             );
@@ -736,12 +794,11 @@ fn read_pipes(fds: &[i32]) -> Vec<Vec<u8>> {
     data
 }
 
-/// The plugins of the sources in `config.toml` that are installed.
 /// For `plugin list-available`: the plugins in the plugin directory and
 /// those of the sources that are installed, less those loaded (by path, as
-/// `std/NAME` loads as `NAME`).
+/// `std/NAME` loads as `NAME`) and, unless `all`, the libraries.
 #[cfg(feature = "plugins")]
-fn not_loaded(sh: &mut Shell) -> Vec<Vec<u8>> {
+fn not_loaded(sh: &mut Shell, all: bool) -> Vec<Vec<u8>> {
     let mut found: Vec<_> = match plugin_dir(sh) {
         Some(dir) => (available_names(&dir).into_iter())
             .filter_map(|n| Some((find_in(&dir, &n)?.path, n)))
@@ -753,15 +810,16 @@ fn not_loaded(sh: &mut Shell) -> Vec<Vec<u8>> {
     (found.into_iter())
         .filter(|(path, _)| {
             let abs = absolute(sh, path);
-            !loaded.iter().any(|(_, p)| *p == abs)
+            !loaded.iter().any(|(_, p)| *p == abs) && (all || !is_library(path))
         })
         .map(|(_, name)| name)
         .collect()
 }
 
 #[cfg(not(feature = "plugins"))]
-fn not_loaded(sh: &mut Shell) -> Vec<Vec<u8>> {
-    plugin_dir(sh).map_or_else(Vec::new, |dir| available_names(&dir))
+fn not_loaded(sh: &mut Shell, all: bool) -> Vec<Vec<u8>> {
+    let names = if all { available_names } else { visible_names };
+    plugin_dir(sh).map_or_else(Vec::new, |dir| names(&dir))
 }
 
 /// `plugin sync` and `plugin update`.

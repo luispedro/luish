@@ -1,0 +1,36 @@
+--- list-available leaves out the libraries
+both
+meta
+user
+coll/tool
+--- unless given -a or --all
+both
+meta
+rlib
+shlib
+user
+coll/clib
+coll/tool
+both meta rlib shlib user coll/clib coll/tool 
+--- a bad argument
+status 2
+--- loading a plugin loads the libraries it needs
+hello, user
+rlib
+shlib
+user
+hi!
+--- the loaded libraries are not available any more, even with -a
+0
+--- a library can be loaded by name
+direct!
+--- a directory with only plugin.toml is a plugin
+shlib
+meta
+--- the only plugin of a collection is the one that is no library
+tool
+c
+--- library must be a boolean (reported as other errors in plugin.toml)
+luish: ~/.config/luish/plugins/shlib/plugin.toml: line 1: library: not a boolean
+hello, user
+status 0

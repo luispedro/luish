@@ -264,7 +264,7 @@ fn holds(root: &[u8], label: &str) -> Result<Holds, String> {
     if !super::is_dir(root) || super::is_plugin_dir(root) {
         return Ok(Holds::Plugin);
     }
-    let names: Vec<String> = (super::available_names(root).iter())
+    let names: Vec<String> = (super::main_names(root).iter())
         .map(|n| String::from_utf8_lossy(n).into_owned())
         .collect();
     match names.len() {

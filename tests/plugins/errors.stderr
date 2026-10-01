@@ -7,6 +7,6 @@ errors.sh: 31: ./hooks.rhai: Function not found: nosuchmethod (i64) (line 1, pos
 errors.sh: 31: ./hooks.rhai: Runtime error: string contains a NUL byte
 errors.sh: 31: ./hooks.rhai: Runtime error: bad-name: bad variable name
 errors.sh: 31: ./hooks.rhai: Runtime error: RO: is read only
-errors.sh: 33: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available, plugin unload NAME..., plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
-errors.sh: 35: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available, plugin unload NAME..., plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+errors.sh: 33: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+errors.sh: 35: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
 errors.sh: 37: __luish_internal plugin: nosuch: not loaded

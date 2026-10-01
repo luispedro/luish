@@ -780,6 +780,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   `plugin list-available` leaves out the loaded plugins by absolute path, and `plugin unload ARG`, if no plugin is
   loaded under the name ARG, unloads the one at the path that `plugin load ARG` would load (`package::location`,
   else `find`). Test: `tests/plugins/packages.sh`.
+- A **library** is a directory plugin whose `plugin.toml` has `library = true` (`is_library`, which reads the file
+  only for the key, so it also works without the `plugins` feature, for Tab). The only difference is that it is
+  hidden: `plugin list-available` (unless `-a`) and Tab after `plugin load` use `visible_names`, and `main_names`
+  (`plugin add`'s `holds`, the resolver's `pick` of a source's only plugin) leaves libraries out unless there is
+  nothing else. `plugin.toml` itself counts as an entry point (`ENTRY_POINTS`), so a library of Rhai modules needs
+  no other file; the resolver's `manifest` reports a `library` that isn't a boolean. Test:
+  `tests/plugins/library.sh`.
 - `plugin.toml`'s `options`, `alias` and `bindkey` tables are applied by `load_found` (with `config.rs`'s code), in
   interactive shells, after the extension loads and before `rc.lsh`; its options override `config.toml`'s, by design
   (a plugin can package a set of options). The file is parsed again there (the resolver only keeps the
