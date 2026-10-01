@@ -93,6 +93,8 @@ pub struct ShellHelper {
     pub keys: Arc<Mutex<super::keys::State>>,
     /// Show autosuggestions (`setopt autosuggest`).
     pub suggest: bool,
+    /// The right prompt (`RPROMPT`).
+    pub right: super::rprompt::Right,
     path_cache: RefCell<PathCache>,
 }
 
@@ -1568,10 +1570,16 @@ impl Hinter for ShellHelper {
                 String::from_utf8_lossy(c.sgr(class)).into_owned()
             })
         };
+        self.right.hint.set(0);
         let mut m = self.menu.lock().ok()?;
         if !m.is_open(line, pos) {
             drop(m);
             let rest = self.suggestion(line, pos, ctx.history())?;
+            if self.right.is_set() {
+                // The right prompt makes way for it, as for the line.
+                let (row, col) = menu::position(&rest, usize::MAX);
+                self.right.hint.set(if row > 0 { usize::MAX / 2 } else { col });
+            }
             let style = sgr(super::highlight::Class::Suggest, "90");
             return Some(menu::Drawn {
                 display: format!("\x1b[{style}m{rest}\x1b[0m"),

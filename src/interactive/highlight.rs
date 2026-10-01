@@ -804,7 +804,31 @@ impl ShellHelper {
 }
 
 impl Highlighter for ShellHelper {
+    /// The line in colour, followed by the right prompt if it fits.
     fn highlight<'l>(&self, line: &'l str, pos: usize) -> Cow<'l, str> {
+        let mut out = self.colored(line, pos);
+        if let Some(right) = self.right.draw(&self.prompt, line) {
+            out.to_mut().push_str(&right);
+        }
+        out
+    }
+
+    /// Every change repaints, including cursor moves, since the word under
+    /// the cursor is coloured differently, and the right prompt may have
+    /// to go or come back. Notes whether the line is being accepted (the
+    /// last refresh, without the hint), and drops the autosuggestion when
+    /// it isn't drawn.
+    fn highlight_char(&self, _line: &str, _pos: usize, kind: CmdKind) -> bool {
+        self.right.accepting.set(kind == CmdKind::ForcedRefresh);
+        if kind != CmdKind::Other {
+            self.right.hint.set(0);
+        }
+        self.highlight.colors.is_some() || self.right.is_set()
+    }
+}
+
+impl ShellHelper {
+    fn colored<'l>(&self, line: &'l str, pos: usize) -> Cow<'l, str> {
         let Some(colors) = &self.highlight.colors else {
             return Cow::Borrowed(line);
         };
@@ -814,12 +838,6 @@ impl Highlighter for ShellHelper {
         let cls = classify(&text, Some(context.len() + pos), &|name| self.is_known(name), &is_set);
         String::from_utf8(render(line.as_bytes(), &cls[context.len()..], colors))
             .map_or(Cow::Borrowed(line), Cow::Owned)
-    }
-
-    /// Every change repaints, including cursor moves, since the word under
-    /// the cursor is coloured differently.
-    fn highlight_char(&self, _line: &str, _pos: usize, _kind: CmdKind) -> bool {
-        self.highlight.colors.is_some()
     }
 }
 

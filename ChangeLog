@@ -1,4 +1,6 @@
 Unreleased
+    * The right prompt (RPROMPT, RPS1, RPROMPT2), as in zsh, with
+      ZLE_RPROMPT_INDENT and `setopt prompt.transient_rprompt`
     * `__luish_cache` blocks in $ENV, luishrc and the rc.lsh of plugins
       they load are cached too, in a cache of their own; check-cache
       takes `startup` as well as `rc` and `login`

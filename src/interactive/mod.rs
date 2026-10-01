@@ -8,6 +8,7 @@ mod histfile;
 pub mod history;
 pub mod keys;
 mod menu;
+mod rprompt;
 
 use std::cell::{Cell, RefCell};
 
@@ -241,13 +242,19 @@ pub fn histcmd() -> usize {
 /// The prompt: `PS2` for a continuation line, otherwise `PS1`, built with
 /// the extensions' prompt hooks and the plugins' files if there are any.
 pub fn prompt(sh: &mut Shell, continuation: bool) -> crate::prompt::Prompt {
+    prompts(sh, continuation, false).0
+}
+
+/// The prompt, and with `right` the right prompt that goes with it, if one
+/// is set: expanded with the same prompt variables of the plugins.
+fn prompts(sh: &mut Shell, continuation: bool, right: bool) -> (crate::prompt::Prompt, Option<crate::prompt::Prompt>) {
     if continuation {
-        return sh.prompt(b"PS2");
+        return (sh.prompt(b"PS2"), right.then(|| sh.right_prompt(true)).flatten());
     }
-    match crate::plugins::prompt(sh) {
-        Ok(Some(prompt)) => prompt,
+    match crate::plugins::prompt(sh, right) {
+        Ok(Some(prompts)) => prompts,
         Err(crate::shell::Flow::Exit(n)) => sh.exit(n),
-        _ => sh.prompt(b"PS1"),
+        _ => (sh.prompt(b"PS1"), right.then(|| sh.right_prompt(false)).flatten()),
     }
 }
 
@@ -397,7 +404,7 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
     if !continuation {
         update_history(sh);
     }
-    let p = prompt(sh, continuation);
+    let (p, right) = prompts(sh, continuation, true);
     let text = String::from_utf8_lossy(&p.text).into_owned();
     // The line editor measures the prompt without its escape sequences.
     let plain = p.plain.map(|s| String::from_utf8_lossy(&s).into_owned());
@@ -410,6 +417,12 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
         .get_var(b"WORDCHARS")
         .map(|w| String::from_utf8_lossy(&w).into_owned());
     let keymap = sh.keymap.clone();
+    // zsh's default leaves the last column free.
+    let indent = right.as_ref().map_or(1, |_| {
+        let v = sh.get_var(b"ZLE_RPROMPT_INDENT").unwrap_or_default();
+        std::str::from_utf8(&v).ok().and_then(|v| v.parse().ok()).unwrap_or(1)
+    });
+    let transient = sh.opt(Opt::TransientRprompt);
     SHELL.set(sh as *mut Shell);
     let line = EDITOR.with(|e| {
         let mut e = e.borrow_mut();
@@ -439,6 +452,7 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
             }
             h.highlight.colors = colors;
             h.suggest = suggest;
+            h.right.set(right.as_ref(), indent, transient);
             h.highlight.context.clear();
             h.highlight.context.extend_from_slice(pending);
             h.highlight.known.get_mut().clear();

@@ -351,6 +351,14 @@ fn truncate(s: &str, max: usize) -> (String, usize) {
 /// margin takes another row, where the cursor goes.
 pub fn rows(text: &str, cols: usize) -> usize {
     let cols = if cols == 0 { 80 } else { cols };
+    let (row, col) = position(text, cols);
+    row + 1 + usize::from(col == cols)
+}
+
+/// Where `text` ends on a terminal `cols` wide, as (row, column), counted as
+/// in [`rows`].
+pub fn position(text: &str, cols: usize) -> (usize, usize) {
+    let cols = if cols == 0 { 80 } else { cols };
     let (mut row, mut col) = (0, 0);
     let mut chars = text.chars();
     while let Some(c) = chars.next() {
@@ -374,7 +382,7 @@ pub fn rows(text: &str, cols: usize) -> usize {
             }
         }
     }
-    row + 1 + usize::from(col == cols)
+    (row, col)
 }
 
 /// What is drawn after the line, as rustyline's hint: the menu, or an

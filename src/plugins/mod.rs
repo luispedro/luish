@@ -50,7 +50,7 @@ impl Host {
         match *self {}
     }
 
-    fn prompt(&self, _: &mut Shell) -> Result<Option<Prompt>, Flow> {
+    fn prompt(&self, _: &mut Shell, _: bool) -> Result<Option<(Prompt, Option<Prompt>)>, Flow> {
         match *self {}
     }
 
@@ -108,12 +108,13 @@ pub fn chpwd(sh: &mut Shell, old: &[u8], new: &[u8]) -> Result<(), Flow> {
 }
 
 /// The `PS1` prompt, built with the extensions' `prompt-vars` and
-/// `prompt-rewrite` hooks and the plugins' `prompt-vars.lsh` files, or
+/// `prompt-rewrite` hooks and the plugins' `prompt-vars.lsh` files, and
+/// with `right` the right prompt (`RPROMPT`), with the same variables; or
 /// `None` if there are none.
-pub fn prompt(sh: &mut Shell) -> Result<Option<Prompt>, Flow> {
+pub fn prompt(sh: &mut Shell, right: bool) -> Result<Option<(Prompt, Option<Prompt>)>, Flow> {
     match sh.plugins.clone() {
         None => Ok(None),
-        Some(host) => host.prompt(sh),
+        Some(host) => host.prompt(sh, right),
     }
 }
 

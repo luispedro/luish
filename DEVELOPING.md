@@ -72,7 +72,7 @@ src/
 ├── hash.rs             # the hash for the shell's tables (not SipHash)
 ├── builtins/           # mod.rs (table, special vs regular), one file per built-in or small group; help.rs
 ├── interactive/        # mod.rs (REPL, rustyline helper), history.rs, histfile.rs, bang.rs (history expansion),
-│                       # complete.rs, menu.rs, keys.rs, highlight.rs, firstrun.rs (the first-run menu)
+│                       # complete.rs, menu.rs, keys.rs, highlight.rs, rprompt.rs (RPROMPT), firstrun.rs (the first-run menu)
 └── plugins/            # mod.rs (the `plugin` built-in), package.rs (config.toml's [plugins], plugin.toml,
                         # plugins.lock), fetch.rs (git), add.rs (`plugin add`), rhai.rs, fs.rs, vcs.rs, bytes.rs
 tests/
@@ -507,6 +507,14 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   prompt has a `%`. Tests: `misc/prompt_percent.sh` (checked against zsh while written; zsh can't be the reference
   because its interactive mode writes more than the prompts), `misc/prompt_percent_long.sh`, `prompt_percent` in
   `tests/interactive.rs`, unit tests in `prompt.rs`.
+- **The right prompt** (`rprompt.rs`): rustyline has none, so the highlighter appends it to the line between `ESC 7`
+  and `ESC 8`, which leave the cursor where rustyline's layout (computed from the plain text) expects it. rustyline
+  clears and redraws the line's rows on every refresh, so it is erased with them; `highlight_char` returns true
+  while one is set, so that rustyline doesn't take its shortcut of writing a key typed at the end of the line alone,
+  over the right prompt. The hinter notes the autosuggestion's width (rustyline gets the hint before the highlighted
+  line), and `highlight_char`'s `ForcedRefresh` is rustyline's last refresh of an accepted line, where
+  `prompt.transient_rprompt` leaves it out. It is expanded in `plugins::prompt`, with the prompt variables of
+  plugins. Test: `right_prompt` in `tests/interactive.rs`, unit tests in `rprompt.rs`.
 - **Key bindings** (`keys.rs`): luish's keymap (zsh's widget names and emacs bindings) comes before rustyline's. Keys
   are decoded as rustyline decodes xterm's sequences, so `^[OA` and `^[[A` are the same key. rustyline overwrites the
   count of any `Move`/`Kill` a handler returns with the numeric argument (`cmd.redo(Some(n))`), so only count-1
@@ -555,7 +563,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
 - **Autosuggestions**: the hint while the cursor is at the end of a non-blank, non-continuation line and the menu
   isn't open; accepted with rustyline's `CompleteHint`. The search goes from the newest entry and stops at the first
   match. Test: `autosuggestions` in `tests/interactive.rs`.
-- Tests: `tests/interactive.rs` and unit tests in `complete.rs`, `menu.rs`, `keys.rs`, `highlight.rs`,
+- Tests: `tests/interactive.rs` and unit tests in `complete.rs`, `menu.rs`, `keys.rs`, `highlight.rs`, `rprompt.rs`,
   `history.rs` and `histfile.rs`.
 
 ### Startup files (`main.rs`, `startcache.rs`, `config.rs`)
@@ -886,6 +894,7 @@ truncates when it relocates the package.
 | `pushd`, `popd`, `dirs` | `builtins/dirstack.sh` (zsh `-o noposixcd`), `builtins/dirstack_interactive.sh` (zsh), `builtins/popd_dir.sh` |
 | `setopt`, `unsetopt` | `options/setopt.sh` (zsh), `options/setopt_list.sh` |
 | `%` sequences in prompts | `misc/prompt_percent.sh`, `misc/prompt_percent_long.sh` |
+| The right prompt | `right_prompt` in `tests/interactive.rs` |
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | `**/` | `expand/globstar.sh` (zsh), `expand/globstar_off.sh` (dash), `expand/globstar_loop.sh` |
 | Glob qualifiers | `expand/glob_qualifiers.sh`, `expand/glob_qualifier_errors.sh` (zsh `+o shglob -o bareglobqual +o ksharrays`), `builtins/internal_savestate_globqual.sh` |

@@ -45,6 +45,11 @@ luish's own options, all off by default:
 : Expand `%` sequences in `PS1`, `PS2` and `PS4`, after parameter
   expansion, as zsh does (see the user documentation on prompts).
 
+`prompt.transient_rprompt` (`transientrprompt`)
+: Remove the right prompt (`RPROMPT`) from the screen when a command line
+  is accepted, as zsh's option does, so that it doesn't stay in the
+  scrollback.
+
 `glob.star` (`globstar`)
 : `**/` in a pattern matches any number of directories, as in zsh.
 

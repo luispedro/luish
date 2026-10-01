@@ -247,8 +247,28 @@ luish: unknown prompt sequence %[hostnam]; did you mean %[hostname]?
 
 zsh's deprecated form of truncation, `%[N<text]` (a `[` followed by a number or by `<` or `>`), is `%N<text<`.
 
+### The right prompt
+
+As in zsh, `RPROMPT` (or `RPS1`) is a prompt shown at the right edge of the terminal, on the last line of `PS1`, and
+`RPROMPT2` (or `RPS2`) one that goes with `PS2`. They are expanded as `PS1` is, with `%` sequences if
+`prompt.percent` is on:
+
+```sh
+setopt prompt.percent
+RPROMPT='%[fg:yellow]%[time]%[fg_off]'
+```
+
+The right prompt makes way for the command: it is shown only while the line, and its autosuggestion, leave a column
+free before it, and comes back if the line gets shorter. It leaves `$ZLE_RPROMPT_INDENT` columns (1 by default) free
+at the right edge, as in zsh; some terminals need it, to avoid scrolling when something is written in the last
+column. A right prompt that doesn't fit on one line isn't shown.
+
+By default the right prompt stays on the screen next to the commands that were run, as in zsh. With `setopt
+prompt.transient_rprompt` (zsh's `TRANSIENT_RPROMPT`) it is removed when a command is accepted.
+
 For what `PS1` can't compute by itself, such as the git branch, a plugin can provide variables for it to use, which
-are set only while the prompt is built (see [Customizing the prompt](plugins.md#customizing-the-prompt)).
+are set only while the prompt and the right prompt are built (see
+[Customizing the prompt](plugins.md#customizing-the-prompt)).
 
 ## Line editing
 

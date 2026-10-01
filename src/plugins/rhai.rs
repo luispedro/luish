@@ -963,16 +963,16 @@ impl Host {
             .collect()
     }
 
-    /// Builds the `PS1` prompt, or returns `None` if no extension has a
-    /// `prompt-vars` or `prompt-rewrite` hook and no plugin a
-    /// `prompt-vars.lsh`.
+    /// Builds the `PS1` prompt, and with `right` the right prompt
+    /// (`RPROMPT`), or returns `None` if no extension has a `prompt-vars`
+    /// or `prompt-rewrite` hook and no plugin a `prompt-vars.lsh`.
     ///
     /// In this order: the `prompt-vars` hooks and files set variables
     /// (`prompt_vars`); the `prompt-rewrite` hooks, which see them, give
     /// the prompt (`prompt_from`), or else `PS1` is expanded with them;
     /// then the variables that the first step changed are put back. Each
     /// hook and file sees the `$?` of the last command, which is kept.
-    pub fn prompt(&self, sh: &mut Shell) -> Result<Option<Prompt>, Flow> {
+    pub fn prompt(&self, sh: &mut Shell, right: bool) -> Result<Option<(Prompt, Option<Prompt>)>, Flow> {
         let kinds = [HookKind::PromptVars, HookKind::PromptRewrite];
         if self.running.borrow().iter().any(|k| kinds.contains(k)) {
             return Ok(None);
@@ -1000,10 +1000,11 @@ impl Host {
         let result = result.and_then(|()| {
             let text = self.prompt_from(sh, &rewrite, saved)?;
             sh.last_status = saved;
-            Ok(Some(match text {
+            let left = match text {
                 Some(text) => sh.percent_expand_prompt(text),
                 None => sh.prompt(b"PS1"),
-            }))
+            };
+            Ok(Some((left, right.then(|| sh.right_prompt(false)).flatten())))
         });
         for (name, var) in changed {
             sh.restore_var(name, var);

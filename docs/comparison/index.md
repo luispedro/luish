@@ -103,7 +103,8 @@ luish is usable as a daily shell, and its author is moving to it from zsh. What 
 - **Syntax highlighting and autosuggestions** built in, as zsh's popular plugins provide them.
 - **History** in zsh's file format, so the two shells can share `~/.histfile` during a move, shared between
   sessions, with history expansion (`!!`, `!$`, `^old^new`) and `fc`.
-- **Prompts** with zsh's `%` sequences, also under long names (`%[fg:blue]%[dir]`).
+- **Prompts** with zsh's `%` sequences, also under long names (`%[fg:blue]%[dir]`), and a right prompt
+  (`RPROMPT`).
 - **Tab completion** with a menu, from the standard `completion` plugin: about 230 commands (coreutils, git, ssh
   hosts, package managers, cargo, npm, systemctl ...), and programs that complete themselves (Cobra programs such as
   `gh`, `docker` and `kubectl`, Click programs, nix). bash-completion can serve as a fallback for the rest.
@@ -112,7 +113,7 @@ luish is usable as a daily shell, and its author is moving to it from zsh. What 
 - **Job control** as in dash and bash: `jobs`, `fg`, `bg`, Ctrl-Z.
 
 Still missing compared with a full zsh setup: compsys's breadth of completions and its configuration (`zstyle`),
-grouped and coloured completion menus, user-defined widgets (`zle -N`), a right-side prompt (`RPROMPT`), shell
+grouped and coloured completion menus, user-defined widgets (`zle -N`), shell
 functions as `precmd`/`preexec` hooks, and zsh's modules. Compared with bash, luish lacks readline's `inputrc`
 configuration and the extensions listed above. dash has no line editing in Debian and Ubuntu, so any of these is an
 improvement on it.

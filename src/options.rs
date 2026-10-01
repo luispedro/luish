@@ -23,6 +23,7 @@ pub enum Opt {
     Pipefail,
     // luish's own options, in `EXTENDED`
     PromptPercent,
+    TransientRprompt,
     Globstar,
     Bareglobqual,
     Autocd,
@@ -70,6 +71,7 @@ pub const OPTIONS: &[(Opt, Option<u8>, &str)] = &[
 /// what they apply to, as `group.name`.
 pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::PromptPercent, "prompt.percent"),
+    (Opt::TransientRprompt, "prompt.transient_rprompt"),
     (Opt::Globstar, "glob.star"),
     (Opt::Bareglobqual, "glob.bare_qualifiers"),
     (Opt::Autocd, "cd.auto"),
@@ -90,6 +92,7 @@ pub const EXTENDED: &[(Opt, &str)] = &[
 /// they were grouped.
 const ALIASES: &[(Opt, &str)] = &[
     (Opt::PromptPercent, "promptpercent"),
+    (Opt::TransientRprompt, "transientrprompt"),
     (Opt::Globstar, "globstar"),
     (Opt::Bareglobqual, "bareglobqual"),
     (Opt::Autocd, "autocd"),

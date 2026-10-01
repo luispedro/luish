@@ -455,6 +455,64 @@ fn prompt_percent() {
 }
 
 #[test]
+fn right_prompt() {
+    let mut sh = Pty::spawn_term("rprompt", "vt100");
+    sh.resize(20, 24);
+    sh.expect("$ ");
+    // On a terminal 20 wide, a right prompt 3 wide starts at column 17,
+    // which leaves the last one free (ZLE_RPROMPT_INDENT), between a save
+    // and a restore of the cursor.
+    sh.send("NO_COLOR=1 RPROMPT='[$((1+1))]'\n");
+    sh.expect("$ \x1b7\x1b[17G[2]\x1b8");
+    // Shown while a column is left free before it.
+    sh.send("echo 12345678");
+    sh.expect("$ echo 12345678\x1b7\x1b[17G[2]\x1b8\x1b[15C");
+    sh.send("9");
+    sh.expect("$ echo 123456789\x1b[16C");
+    sh.send("\x7f");
+    sh.expect("$ echo 12345678\x1b7\x1b[17G[2]\x1b8\x1b[15C");
+    // It stays when the line is accepted.
+    sh.send("\n");
+    sh.expect("$ echo 12345678\x1b7\x1b[17G[2]\x1b8\x1b[15C");
+    sh.expect("\n12345678\n");
+    sh.expect("$ \x1b7\x1b[17G[2]\x1b8");
+    // Also with the right prompt of PS2 and an indent of 0.
+    sh.send("ZLE_RPROMPT_INDENT=0 RPS2='<>'\n");
+    sh.expect("$ \x1b7\x1b[18G[2]\x1b8");
+    sh.send("if :\n");
+    sh.expect("> \x1b7\x1b[19G<>\x1b8");
+    sh.send("then echo ok; fi\n");
+    sh.expect("\nok\n");
+    sh.expect("$ \x1b7\x1b[18G[2]\x1b8");
+    // The autosuggestion pushes it out as the line does.
+    sh.send("setopt autosuggest\n");
+    sh.expect("$ \x1b7\x1b[18G[2]\x1b8");
+    sh.send("echo abcdefghijkl\n");
+    sh.expect("\nabcdefghijkl\n");
+    sh.expect("$ \x1b7\x1b[18G[2]\x1b8");
+    sh.send("echo a");
+    sh.expect("$ echo a\x1b[90mbcdefghijkl\x1b[0m");
+    sh.send("\x15");
+    sh.expect("$ \x1b7\x1b[18G[2]\x1b8");
+    // With prompt.transient_rprompt, the line is redrawn without it once
+    // it is accepted.
+    sh.send("setopt prompt.transient_rprompt\n");
+    sh.expect("$ \x1b7\x1b[18G[2]\x1b8");
+    sh.send("echo hi");
+    sh.expect("$ echo hi\x1b7\x1b[18G[2]\x1b8");
+    sh.send("\n");
+    sh.expect("$ echo hi\x1b[9C");
+    sh.expect("\nhi\n");
+    sh.expect("$ \x1b7\x1b[18G[2]\x1b8");
+    // It sees the variables that plugins give the prompt.
+    std::fs::write(sh.path("vars.rhai"), "sh::hook(\"prompt-vars\", || #{ pv: \"x\" });\n").unwrap();
+    sh.send("ZLE_RPROMPT_INDENT=1 RPROMPT='[$pv]'; plugin load ~/vars.rhai\n");
+    sh.expect("$ \x1b7\x1b[17G[x]\x1b8");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
 fn tab_completion() {
     let mut sh = Pty::spawn_term("complete", "vt100");
     std::fs::write(sh.path("completeme file"), "found it\n").unwrap();

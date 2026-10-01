@@ -528,6 +528,20 @@ impl Shell {
         self.percent_expand_prompt(text)
     }
 
+    /// Expands the right prompt that goes with `PS1` (`RPROMPT`, or else
+    /// `RPS1`, as zsh names it too) or with `PS2` (`RPROMPT2` or `RPS2`), or
+    /// `None` if it is unset or empty.
+    pub fn right_prompt(&mut self, continuation: bool) -> Option<crate::prompt::Prompt> {
+        let names: [&[u8]; 2] = match continuation {
+            false => [b"RPROMPT", b"RPS1"],
+            true => [b"RPROMPT2", b"RPS2"],
+        };
+        let var = names
+            .into_iter()
+            .find(|v| self.vars.get(v).is_some_and(|t| !t.is_empty()))?;
+        Some(self.prompt(var)).filter(|p| !p.text.is_empty())
+    }
+
     /// Expands the `%` sequences of a prompt if `prompt.percent` is on.
     pub fn percent_expand_prompt(&self, text: Vec<u8>) -> crate::prompt::Prompt {
         if self.opt(Opt::PromptPercent) && text.contains(&b'%') {

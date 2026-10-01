@@ -26,6 +26,7 @@ nolog
 notify
 pipefail
 privileged
+prompt.transient_rprompt
 pushd.auto
 pushd.ignore_dups
 pushd.silent
