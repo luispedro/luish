@@ -92,14 +92,14 @@ gs = "git status"
 Ctrl-Right = "forward-word"
 Ctrl-Left = "backward-word"
 
-# Tab completion for about 70 common commands and for git.
+# Tab completion for about 230 common commands, including git.
 [plugins.enabled]
 std.completion = "*"
 ```
 
 ## The standard plugins
 
-`std.completion` is the standard plugin for completion. It completes about 70 common commands (including `ls`, `grep`, `tar`, `ssh`, `scp`, `make` and `git`).
+`std.completion` is the standard plugin for completion. It completes about 230 common commands (including `ls`, `grep`, `tar`, `ssh`, `make`, `git`, `systemctl`, `cargo` and `docker`).
 
 You need to fetch the plugins once:
 

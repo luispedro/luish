@@ -50,8 +50,9 @@ Unreleased
       openssl, cargo, rustup, go, gcc, cmake, gdb, python, vim, nano, pip,
       uv, conda, pixi, npm, yarn, pnpm, apt, dpkg, dnf, rpm, pacman,
       zypper, apk, brew, snap, flatpak ...
-    * std.completion asks Cobra programs (gh, docker, kubectl ...) and nix
-      for their completions; `complete-cobra PROG...` adds more programs
+    * std.completion asks Cobra programs (gh, docker, kubectl ...), Click
+      programs (black, flask ...) and nix for their completions;
+      `complete-cobra PROG...` and `complete-click PROG...` add more
     * std.git-completion is now part of std.completion
     * `import` in an extension's module is relative to that module's file
     * `import "@SOURCE/PLUGIN/MODULE"` imports a module of another plugin,
