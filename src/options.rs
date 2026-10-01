@@ -26,6 +26,7 @@ pub enum Opt {
     TransientRprompt,
     Globstar,
     Bareglobqual,
+    BraceExpand,
     Autocd,
     HistIgnoreSpace,
     HistReduceBlanks,
@@ -74,6 +75,7 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::TransientRprompt, "prompt.transient_rprompt"),
     (Opt::Globstar, "glob.star"),
     (Opt::Bareglobqual, "glob.bare_qualifiers"),
+    (Opt::BraceExpand, "expand.braces"),
     (Opt::Autocd, "cd.auto"),
     (Opt::HistIgnoreSpace, "history.ignore_space"),
     (Opt::HistReduceBlanks, "history.reduce_blanks"),
@@ -95,6 +97,7 @@ const ALIASES: &[(Opt, &str)] = &[
     (Opt::TransientRprompt, "transientrprompt"),
     (Opt::Globstar, "globstar"),
     (Opt::Bareglobqual, "bareglobqual"),
+    (Opt::BraceExpand, "braceexpand"),
     (Opt::Autocd, "autocd"),
     (Opt::HistIgnoreSpace, "histignorespace"),
     (Opt::HistReduceBlanks, "histreduceblanks"),
@@ -320,7 +323,10 @@ mod tests {
 
     #[test]
     fn setting_groups() {
-        assert_eq!(groups(), ["cd", "editor", "glob", "history", "prompt", "pushd"]);
+        assert_eq!(
+            groups(),
+            ["cd", "editor", "expand", "glob", "history", "prompt", "pushd"]
+        );
         assert_eq!(find_group(b"History"), Some("history"));
         assert_eq!(find_group(b"hist_ory"), Some("history"));
         assert_eq!(find_group(b"errexit"), None);

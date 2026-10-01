@@ -101,6 +101,22 @@ impl Shell {
         }
     }
 
+    /// The file of a redirection. With `setopt expand.braces`, its braces
+    /// are expanded, and more than one word is an error, as in bash.
+    fn redirect_target(&mut self, w: &Word) -> Result<Vec<u8>, RedirError> {
+        if self.opt(Opt::BraceExpand)
+            && crate::expand::brace::has_brace(w)
+            && let Some(words) = crate::expand::brace::expand(w, &mut |w| self.expand_word_str(w))?
+        {
+            if let [w] = words.as_slice() {
+                return Ok(self.expand_word_str(w)?);
+            }
+            self.error(format!("{}: ambiguous redirect", crate::cmdtext::word(w)));
+            return Err(RedirError::Open(1));
+        }
+        Ok(self.expand_word_str(w)?)
+    }
+
     fn apply_redirect(&mut self, r: &Redirect, save: bool, saved: &mut SavedFds) -> Result<(), RedirError> {
         let fd = r.fd.unwrap_or(r.kind.default_fd()) as i32;
         let action = match &r.target {
@@ -114,7 +130,7 @@ impl Shell {
                 Action::Owned(self.heredoc_fd(&text)?)
             }
             RedirTarget::Word(w) => {
-                let target = self.expand_word_str(w)?;
+                let target = self.redirect_target(w)?;
                 self.redirect_action(r.kind, &target, fd)?
             }
         };

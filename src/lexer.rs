@@ -1529,7 +1529,7 @@ fn flush(parts: &mut Vec<WordPart>, lit: &mut Vec<u8>) {
 }
 
 /// Converts a leading unquoted `~prefix` into a [`WordPart::Tilde`].
-fn mark_leading_tilde(parts: &mut Vec<WordPart>) {
+pub(crate) fn mark_leading_tilde(parts: &mut Vec<WordPart>) {
     let Some(WordPart::Literal(s)) = parts.first() else {
         return;
     };

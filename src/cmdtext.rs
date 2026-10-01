@@ -25,6 +25,12 @@ pub fn compound(cc: &CompoundCommand) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+pub fn word(w: &Word) -> String {
+    let mut out = Vec::new();
+    push_word(&mut out, w);
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 pub fn and_or(ao: &AndOrList) -> String {
     let mut out = Vec::new();
     push_and_or(&mut out, ao);

@@ -36,8 +36,8 @@ the options that are off, in alphabetical order.
   (`setopt history.share`, `unsetopt history.ignore_space`,
   `setopt history.file='...'`); a setting with a value is left out if its
   variable isn't set. If `-p` is given more than once, the last one
-  counts. The groups are `cd`, `editor`, `glob`, `history`, `prompt` and
-  `pushd`.
+  counts. The groups are `cd`, `editor`, `expand`, `glob`, `history`,
+  `prompt` and `pushd`.
 
 luish's own options, all off by default:
 
@@ -57,6 +57,14 @@ luish's own options, all off by default:
 : Parentheses at the end of a pattern hold zsh's glob qualifiers, as in
   `*(/)` (directories) or `*(.om[0])` (the newest file). See the
   documentation on extended globbing.
+
+`expand.braces` (`braceexpand`)
+: Brace expansion, as in bash and zsh: `f/{a,b}` is `f/a f/b`, and
+  `{1..3}` is `1 2 3` (also `{01..10}`, `{10..1..3}`, `{a..e}` and
+  `{1..$n}`). It applies to the words of commands and `for` and the
+  elements of arrays, before their other expansions, not to
+  assignments. See the documentation on compatibility for where bash and
+  zsh differ.
 
 `cd.auto` (`autocd`)
 : A command that is only a directory's name, with no arguments or

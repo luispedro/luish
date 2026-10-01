@@ -7,6 +7,7 @@ cd.auto
 editor.autosuggest
 emacs
 errexit
+expand.braces
 glob.bare_qualifiers
 glob.star
 hashall

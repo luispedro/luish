@@ -207,6 +207,18 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   `echo $(exit 3)$?` prints 0). Test: `expand/nul_bytes.sh`.
 - Globbing: byte order, `.*` matches `.` and `..` (as in dash), `^` is not negation. A lone `[` without a matching
   `]` is not a pattern: treating it as one made every `[ ... ]` call `readdir` and loops 7× slower.
+- `expand.braces` (`brace.rs`): done in `expand_word_into` on the parsed word, not in the lexer, so that the option
+  takes effect in functions already defined (as bash's `set -B` does), and with it off the only cost is a test of the
+  option per word. Unquoted literal bytes are atoms that can be `{`, `,`, `}` or `.`; every other part is one atom,
+  kept whole, so quotes, `\{` and `${x}` don't count. A leading `Tilde` is turned back into text (the lexer took
+  `~{,/tmp}`'s `{,` for the user name) and each word gets its tilde prefix again (`mark_leading_tilde`). As in bash,
+  the first `{` whose match has a comma (or is a sequence) is expanded, with the items and the rest expanded
+  recursively; a `{` that isn't one is skipped, and the search goes on after it (`{x{a,b}}` is `{xa} {xb}`). The ends
+  of a sequence that have expansions are expanded once with `expand_word_str` (zsh's `{1..$n}`); if they don't give a
+  sequence, their text, quoted, replaces them, so that they aren't expanded twice. The words of a sequence are
+  `SingleQuoted` (`{Z..a}` has `[` and `\`). A redirection's target is expanded too, and more than one word is
+  bash's `ambiguous redirect` (status 1). Tests: `expand/braces.sh` (zsh `-o noignorebraces`),
+  `expand/braces_luish.sh`, `expand/braces_off.sh` (dash), unit tests in `expand/brace.rs`.
 - `glob.star` (`glob.rs`): no hidden directories and no links (`***/` follows them, stopping at a link to a directory
   it is already in; zsh loops). Types come from `d_type` where available. Tests: `expand/globstar.sh` (zsh),
   `expand/globstar_off.sh`, `expand/globstar_loop.sh`.
@@ -918,6 +930,7 @@ truncates when it relocates the package.
 | `%` sequences in prompts | `misc/prompt_percent.sh`, `misc/prompt_percent_long.sh` |
 | The right prompt | `right_prompt` in `tests/interactive.rs` |
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
+| Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |
 | `**/` | `expand/globstar.sh` (zsh), `expand/globstar_off.sh` (dash), `expand/globstar_loop.sh` |
 | Glob qualifiers | `expand/glob_qualifiers.sh`, `expand/glob_qualifier_errors.sh` (zsh `+o shglob -o bareglobqual +o ksharrays`), `builtins/internal_savestate_globqual.sh` |
 | A directory as a command | `builtins/autocd.sh` (zsh) |

@@ -101,8 +101,12 @@ All four have `$((...))` with C's integer operators, assignments (`x+=2`), `?:`,
 
 | Feature | dash | bash | zsh | luish | Notes |
 |---|:-:|:-:|:-:|:-:|---|
-| `a{b,c}` | – | ✓ | ✓ | – | Not in zsh's `sh` emulation |
-| `{1..10}`, `{a..z}`, `{01..10..2}` | – | ✓ | ✓ | – | |
+| `a{b,c}` | – | ✓ | ✓ | *opt* | luish: `setopt expand.braces`; not in zsh's `sh` emulation |
+| `{1..10}`, `{a..z}`, `{01..10..2}` | – | ✓ | ✓ | *opt* | |
+| `{1..$n}` | – | – | ✓ | *opt* | bash expands braces before variables |
+
+Where bash and zsh differ (the sign of a step, `{a..e..2}`, `{1..a}`, empty words such as `{a,}`, `> f{1,2}`), luish
+follows bash (see [](../compatibility.md)).
 
 ## Globbing
 

@@ -222,10 +222,10 @@ shell tracks the current file as well as the line, for provenance and for error 
 
 ### Stage 2: beyond POSIX
 
-- **Extensions** (brace expansion; process substitution is done, always on) behind options, as `glob.star` and
-  `glob.bare_qualifiers` are, unless their syntax is an error in POSIX sh. With them off, POSIX scripts must parse and
-  behave exactly as before and run as fast. The lexer checks such options in one place (as it does
-  `Parser::bareglobqual`). Indexed and associative arrays are done, always on (see `DEVELOPING.md`), with bash's
+- **Extensions** behind options, as `glob.star`, `glob.bare_qualifiers` and `expand.braces` (brace expansion, done)
+  are, unless their syntax is an error in POSIX sh (process substitution is done, always on). With them off, POSIX
+  scripts must parse and behave exactly as before and run as fast. The lexer checks the options that change parsing
+  in one place (as it does `Parser::bareglobqual`); brace expansion is done when words are expanded. Indexed and associative arrays are done, always on (see `DEVELOPING.md`), with bash's
   `${!a[@]}` for the keys (and its indirection, `${!x}` and `${!prefix@}`), zsh's parameter flags (`${(k)h[@]}`,
   `${(j:,:)a[@]}`, `${(o)a[@]}` and others), and the special arrays (`pipestatus`, `path` and `dirstack`, and `match`
   and `BASH_REMATCH` for `=~`). `typeset` and `declare` are done (with `-f`, `-i`, `-l`, `-u` and zsh's `-U`), and

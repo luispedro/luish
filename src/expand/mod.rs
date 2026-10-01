@@ -1,7 +1,9 @@
 //! Word expansion (XCU §2.6): tilde, parameter, command substitution,
-//! arithmetic, field splitting, pathname expansion, and quote removal.
+//! arithmetic, field splitting, pathname expansion, and quote removal,
+//! after brace expansion (`brace.rs`) when it is on.
 
 pub mod arith;
+pub mod brace;
 pub mod glob;
 pub mod pattern;
 pub mod qual;
@@ -168,6 +170,20 @@ impl Shell {
     }
 
     fn expand_word_into(&mut self, w: &Word, out: &mut Vec<Vec<u8>>) -> EResult<()> {
+        if self.opt(Opt::BraceExpand)
+            && brace::has_brace(w)
+            && let Some(words) = brace::expand(w, &mut |w| self.expand_word_str(w))?
+        {
+            for w in &words {
+                self.expand_braceless(w, out)?;
+            }
+            return Ok(());
+        }
+        self.expand_braceless(w, out)
+    }
+
+    /// A word's fields, after brace expansion.
+    fn expand_braceless(&mut self, w: &Word, out: &mut Vec<Vec<u8>>) -> EResult<()> {
         if let Some(lit) = w.as_literal()
             && (self.opt(Opt::Noglob) || !lit.iter().any(|c| matches!(c, b'*' | b'?' | b'[')) || lit == b"[")
         {

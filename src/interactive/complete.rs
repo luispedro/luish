@@ -1882,7 +1882,7 @@ mod tests {
         assert_eq!(complete(&h, "setopt -p hi"), ["history "]);
         assert_eq!(
             complete(&h, "setopt -p "),
-            ["cd ", "editor ", "glob ", "history ", "prompt ", "pushd "]
+            ["cd ", "editor ", "expand ", "glob ", "history ", "prompt ", "pushd "]
         );
         assert_eq!(
             complete(&h, "setopt -p history s"),
