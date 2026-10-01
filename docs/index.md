@@ -44,6 +44,9 @@ ll = "ls -l"
 std.completion = "*"         # completion for common commands, and git
 ```
 
+[luish-extra](plugins.md#more-completion-luish-extra) adds completion for about 270 more commands, from
+bioinformatics, science, desktop and Python tools.
+
 Plugins can also set options. You can have a personal plugin on github that
 sets your favorite options, aliases, plugins, and functions. Then just enable it
 for every machine you use and keep your configuration in sync (see [](personal-plugin.md)).

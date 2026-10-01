@@ -13,7 +13,8 @@ fast as [dash](http://gondor.apana.org.au/~herbert/dash/).
 - **As fast as dash, with zsh's features.** Scripts run as fast as under dash (faster on arithmetic and function
   calls), and up to five times faster than under bash or zsh. Interactively: zsh's keys, syntax highlighting,
   autosuggestions, shared history in zsh's format with history expansion (`!!`, `!$`), completion with a menu (for
-  about 230 commands with the standard plugins), zsh's prompts and glob qualifiers.
+  about 230 commands with the standard plugins, and about 270 more, from bioinformatics, science, desktop and Python
+  tools, with [luish-extra](https://github.com/luispedro/luish-extra)), zsh's prompts and glob qualifiers.
 - **A modern plugin architecture**: plugins in shell and [Rhai](https://rhai.rs), listed in `config.toml` (or added
   with `plugin add`), fetched from git and pinned in a lock file. Plugins can add hooks, prompt variables, completion
   and commands. Anything beyond POSIX that changes behaviour is opt-in, and none of it costs anything when it is not

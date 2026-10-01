@@ -173,6 +173,52 @@ The `std` library is tied to the version of luish, so it is not affected by
   install completion files. This requires bash-completion to be installed and
   runs bash to ask for the completions, and it does not provide descriptions.
 
+## More completion: luish-extra
+
+[luish-extra](https://github.com/luispedro/luish-extra) is a separate collection of completion plugins, called
+`extra-complete`, for the programs that `std.completion` leaves out. It completes about 270 more commands, in five
+plugins that can each be enabled on its own:
+
+- **`bio`**: bioinformatics tools, such as samtools, bcftools, bedtools, bwa, bowtie2, minimap2, STAR, BLAST+, diamond,
+  fastp, cutadapt, assemblers (spades, megahit, flye), and the tools of metagenomics (kraken2, metaphlan, checkm,
+  gtdbtk, ...);
+- **`science`**: workflows (snakemake, nextflow, nf-core), writing (pandoc, quarto, latexmk), jupyter, R, mlr,
+  duckdb, parallel, ...;
+- **`gui`**: desktop programs (firefox, libreoffice, code, mpv, inkscape, gimp, ...) and desktop tools (xrandr,
+  gsettings, xdotool, ...);
+- **`dev`**: Python tooling (pytest, ruff, poetry, twine, ...) and command-line utilities;
+- **`system`**: borg (its repositories and archives) and fusermount.
+
+As with `std.completion`, completion knows each program's options and the kind of value each one takes, and often
+reads the files you are working on: `samtools sort -O` offers `BAM`, `CRAM` and `SAM`, `samtools view in.bam` the
+reference names in its header, `snakemake` the rules of the `Snakefile`, `pytest tests/test_x.py::` the tests in that
+file, `ruff check --select F4` the rule codes `F401`, `F403`, ..., and `libreoffice --convert-to` the formats the
+installed LibreOffice writes. Each module is compiled the first time Tab is pressed for one of its commands, so
+enabling all of them costs little.
+
+To install it, add the collection under the name `extra-complete` (its plugins refer to each other by that name, so
+they don't load under another), then enable `all`, which loads the five plugins:
+
+```console
+$ plugin add https://github.com/luispedro/luish-extra/tree/main/complete extra-complete
+$ plugin add extra-complete/all
+```
+
+Or, by hand, in `config.toml` (then run `plugin sync`):
+
+```toml
+[plugins.available]
+extra-complete = { gh = "luispedro/luish-extra", subdir = "complete" }
+
+[plugins.enabled]
+extra-complete.all = "*"        # or only some: extra-complete.bio = "*", ...
+```
+
+The plugins depend on `std.completion`, whose engine they use, so luish loads it too.
+
+luish-extra requires luish 0.3.0 or later. Unlike `std`, it is not tied to the version of luish, so `plugin update`
+updates it. Its [README](https://github.com/luispedro/luish-extra#readme) lists every command it completes.
+
 ## Plugin formats
 
 A plugin is one of:

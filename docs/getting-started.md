@@ -195,6 +195,15 @@ std.bash-completion = "*"
 Compared to luish-native completion, this is slower (each completion takes
 about 50 ms, as it runs bash), and gives no descriptions.
 
+For about 270 more commands with luish-native completion, in bioinformatics (samtools, bwa, kraken2, ...), science
+(snakemake, nextflow, pandoc, jupyter, ...), desktop programs and Python tooling (pytest, ruff, ...), add
+[luish-extra](plugins.md#more-completion-luish-extra):
+
+```console
+$ plugin add https://github.com/luispedro/luish-extra/tree/main/complete extra-complete
+$ plugin add extra-complete/all
+```
+
 
 ## Next steps
 
