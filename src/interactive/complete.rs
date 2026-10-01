@@ -1967,6 +1967,9 @@ mod tests {
             std::fs::write(dir.join("plugins").join(f), "").unwrap();
         }
         std::fs::create_dir(dir.join("plugins/work")).unwrap();
+        std::fs::write(dir.join("plugins/work/init.lsh"), "").unwrap();
+        // A directory without an entry point is not a plugin.
+        std::fs::create_dir(dir.join("plugins/notes")).unwrap();
         std::fs::create_dir(dir.join("plugins/lib")).unwrap();
         std::fs::write(dir.join("plugins/lib/plugin.toml"), "library = true\n").unwrap();
         assert_eq!(complete(&h, "plugin l"), ["list-available ", "list-loaded ", "load "]);

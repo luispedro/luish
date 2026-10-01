@@ -247,16 +247,18 @@ pub fn plugin_dir(sh: &Shell) -> Option<Vec<u8>> {
 }
 
 /// The names of the plugins in `dir` (the plugin directory), sorted: its
-/// `.rhai` and `.lsh` files without the suffix, and its directories.
+/// `.rhai` and `.lsh` files without the suffix, and its directories that
+/// are plugins (that have an entry point).
 pub fn available_names(dir: &[u8]) -> Vec<Vec<u8>> {
     let mut names: Vec<_> = crate::sys::read_dir(dir)
         .unwrap_or_default()
         .into_iter()
         .filter_map(|n| match n.strip_suffix(b".rhai").or_else(|| n.strip_suffix(b".lsh")) {
             Some(base) => Some(base.to_vec()),
-            None => crate::sys::stat(&[dir, b"/", &n].concat())
-                .is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR)
-                .then_some(n),
+            None => {
+                let p = [dir, b"/", &n].concat();
+                (is_dir(&p) && is_plugin_dir(&p)).then_some(n)
+            }
         })
         .filter(|n| !n.is_empty() && !n.starts_with(b"."))
         .collect();
@@ -337,12 +339,10 @@ struct Found {
     kind: Kind,
 }
 
-#[cfg(feature = "plugins")]
 fn is_dir(path: &[u8]) -> bool {
     crate::sys::stat(path).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR)
 }
 
-#[cfg(feature = "plugins")]
 /// The files that make a directory a plugin.
 const ENTRY_POINTS: [&[u8]; 7] = [
     b"plugin.toml",
@@ -354,7 +354,6 @@ const ENTRY_POINTS: [&[u8]; 7] = [
     b"login.lsh",
 ];
 
-#[cfg(feature = "plugins")]
 /// Whether the directory `dir` is a plugin (has one of the entry points),
 /// rather than a collection of plugins.
 fn is_plugin_dir(dir: &[u8]) -> bool {

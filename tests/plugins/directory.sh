@@ -4,7 +4,7 @@
 # LUISH_PLUGIN_DIR and LUISH_PLUGIN_NAME are set while they run; `import` and
 # sh::plugin_dir() use the plugin's directory.
 P=$HOME/.config/luish/plugins
-mkdir -p "$P/greet" "$P/shonly" "$P/both" "$P/lshdir" d empty
+mkdir -p "$P/greet" "$P/shonly" "$P/both" "$P/lshdir" "$P/notes" d empty
 cd "$P/greet"
 cat > init.lsh <<'X'
 echo "init: name $LUISH_PLUGIN_NAME"
@@ -32,7 +32,7 @@ single() { echo "single from single.lsh"; }
 X
 echo 'echo "lshdir: the .lsh file wins"' > "$P/lshdir.lsh"
 echo 'echo "lshdir: the directory"' > "$P/lshdir/init.lsh"
-touch "$P/.hidden.rhai" "$P/.hidden.lsh" "$P/README"
+touch "$P/.hidden.rhai" "$P/.hidden.lsh" "$P/README" "$P/notes/todo.txt"
 cd
 main() {
 echo "--- the plugins in the plugin directory"

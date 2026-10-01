@@ -261,7 +261,13 @@ enum Holds {
 
 /// What the files `root` of the source `label` hold.
 fn holds(root: &[u8], label: &str) -> Result<Holds, String> {
-    if !super::is_dir(root) || super::is_plugin_dir(root) {
+    if !super::is_dir(root) {
+        return match root.ends_with(b".rhai") || root.ends_with(b".lsh") {
+            true => Ok(Holds::Plugin),
+            false => Err(format!("{label}: not a plugin (not a .rhai or .lsh file)")),
+        };
+    }
+    if super::is_plugin_dir(root) {
         return Ok(Holds::Plugin);
     }
     let names: Vec<String> = (super::main_names(root).iter())

@@ -41,7 +41,9 @@ local path (one that exists, or starts with `/`, `./`, `../` or `~`, or a
 `file:///path` URL, which is a git source if `path` is a git repository),
 or a plugin of a source that `config.toml` names (`source/name`, such as
 `std/name`) or of the plugin directory (`name`). A git source is fetched
-first, into a temporary directory, to see what it holds. It is added to
+first, into a temporary directory, to see what it holds: a source that is
+neither a plugin nor has any (a `.rhai` or `.lsh` file, or a directory with
+one of a plugin's files) is not added. It is added to
 `plugins.enabled`, as `name = { gh = "owner/repo" }` for a source (a
 collection of more than one plugin goes to `plugins.available`, to load
 its plugins with `plugin load source/name`), keeping the file's comments.

@@ -9,7 +9,7 @@
 export GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=a GIT_AUTHOR_EMAIL=a@b GIT_COMMITTER_NAME=a GIT_COMMITTER_EMAIL=a@b
 export GIT_AUTHOR_DATE='2026-01-01T00:00:00Z' GIT_COMMITTER_DATE='2026-01-01T00:00:00Z'
 C=$HOME/.config/luish
-mkdir -p "$C/plugins" luish/std/hello coll/a coll/b single gcoll/p gcoll/q
+mkdir -p "$C/plugins" luish/std/hello coll/a coll/b single gcoll/p gcoll/q notplug/src notplug/docs mixed/one mixed/docs
 cmd() { $SH -c "$1" 2>&1 | sed "s|$SH|luish|; s|$HOME|~|g"; }
 echo 'echo "hello from std"' > luish/std/hello/init.lsh
 (cd luish && git init -q -b main && git add -A && git commit -qm one)
@@ -18,6 +18,14 @@ echo 'echo "single loaded"' > single/init.lsh
 echo 'echo p' > gcoll/p/init.lsh
 echo 'echo q' > gcoll/q/init.lsh
 (cd gcoll && git init -q -b main && git add -A && git commit -qm one)
+# Directories without an entry point are not plugins.
+echo 'fn main() {}' > notplug/src/main.rs
+echo docs > notplug/docs/index.md
+echo readme > notplug/README.md
+(cd notplug && git init -q -b main && git add -A && git commit -qm one)
+echo 'echo "mixed one loaded"' > mixed/one/init.lsh
+echo docs > mixed/docs/index.md
+(cd mixed && git init -q -b main && git add -A && git commit -qm one)
 echo 'echo a' > coll/a/init.lsh
 echo 'echo b' > coll/b/init.lsh
 echo 'echo "mine loaded"' > "$C/plugins/mine.lsh"
@@ -48,6 +56,13 @@ cmd '__luish_internal plugin add -y file://$HOME/nothing.git/; echo "status $?"'
 mkdir -p nothing.git/objects && touch nothing.git/HEAD
 $SH -c '__luish_internal plugin add -y file://$HOME/nothing.git/' >/dev/null 2>&1; echo "status $?"
 grep -c nothing "$C/config.toml"
+echo '--- a git repository or a path without plugins is not added'
+cmd '__luish_internal plugin add -y file://$HOME/notplug; echo "status $?"'
+cmd '__luish_internal plugin add -y ./notplug/docs; echo "status $?"'
+cmd '__luish_internal plugin add -y ./notplug/README.md; echo "status $?"'
+grep -c notplug "$C/config.toml"
+echo '--- one plugin and other directories: the plugin'
+cmd '__luish_internal plugin add -y file://$HOME/mixed; echo "status $?"'
 echo '--- a plugin of a named source, and one of the plugin directory'
 cmd '__luish_internal plugin add -y std/hello; echo "status $?"'
 cmd '__luish_internal plugin add -y mine; echo "status $?"'

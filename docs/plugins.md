@@ -198,7 +198,8 @@ A plugin directory can have multiple files which luish uses the following ways:
 | `post-rc.lsh` | Last, as `rc.lsh`, but after the startup files in `rc.d` (see [below](#after-the-startup-files-post-rc)) |
 | `prompt-vars.lsh` | Before each prompt, to set variables for `PS1` (see [below](#variables-for-the-prompt-prompt-varslsh)) |
 
-A directory needs at least one of them.
+A directory needs at least one of them. Other directories (such as a repository's `docs` or `src`) are not plugins,
+and a collection's plugins are only its `.rhai` and `.lsh` files and its plugin directories.
 
 While `init.lsh`, `extension.rhai`, `rc.lsh` and `prompt-vars.lsh` run,
 `LUISH_PLUGIN_DIR` is the plugin's directory (an absolute path) and

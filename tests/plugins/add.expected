@@ -42,21 +42,37 @@ luish: 1: __luish_internal plugin: ~/nothing.git/: no such file or directory
 status 1
 status 1
 0
+--- a git repository or a path without plugins is not added
+Fetching file://~/notplug
+luish: 1: __luish_internal plugin: file://~/notplug: no plugins in it
+status 1
+luish: 1: __luish_internal plugin: ./notplug/docs: no plugins in it
+status 1
+luish: 1: __luish_internal plugin: ./notplug/README.md: not a plugin (not a .rhai or .lsh file)
+status 1
+0
+--- one plugin and other directories: the plugin
+Fetching file://~/mixed
+Fetching file://~/mixed
+Locking file://~/mixed at 4b05bff
+4 git sources locked, 2 plugins enabled: single, mixed
+mixed one loaded
+status 0
 --- a plugin of a named source, and one of the plugin directory
-3 git sources locked, 2 plugins enabled: single, hello
+4 git sources locked, 3 plugins enabled: single, mixed, hello
 hello from std
 status 0
-3 git sources locked, 3 plugins enabled: single, hello, mine
+4 git sources locked, 4 plugins enabled: single, mixed, hello, mine
 mine loaded
 status 0
 --- a local path, with a name; a local collection
-3 git sources locked, 4 plugins enabled: single, hello, mine, first
+4 git sources locked, 5 plugins enabled: single, mixed, hello, mine, first
 a
 status 0
-3 git sources locked, 4 plugins enabled: single, hello, mine, first
+4 git sources locked, 5 plugins enabled: single, mixed, hello, mine, first
 coll has 2 plugins: a, b. Load one with plugin load coll/a, or enable it with plugin add coll/a
 status 0
-3 git sources locked, 5 plugins enabled: single, hello, mine, first, b
+4 git sources locked, 6 plugins enabled: single, mixed, hello, mine, first, b
 b
 status 0
 # My configuration.
@@ -68,6 +84,7 @@ coll = { path = "~/coll" }
 [plugins.enabled]
 # Nothing yet.
 single = { git = "file://~/single" }
+mixed = { git = "file://~/mixed" }
 "std/hello" = "*"
 mine = "*"
 first = { path = "~/coll/a" }
@@ -76,6 +93,7 @@ b = { path = "~/coll/b" }
 [options]
 --- startup loads them
 single loaded
+mixed one loaded
 hello from std
 mine loaded
 a

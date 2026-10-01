@@ -862,7 +862,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   byte at a time from fd 0 (`interactive::read_answer`; no answer is no), writes through the symbolic link if `config.toml` is one, then runs
   `sync` and `package::load_added`. Before asking, a git source is fetched (`fetch::resolve`, into the cache's bare
   repository) and extracted into a temporary data directory (`DATA/.add.PID`, removed after), to see whether it is
-  a collection of more than one plugin (`holds`), which goes to `plugins.available`; so `sync` fetches it a second
+  a collection of more than one plugin (`holds`), which goes to `plugins.available`, or has no plugin at all (a file
+  that isn't `.rhai` or `.lsh`, or a directory none of whose entries is a plugin, as `available_names` counts only
+  directories with an entry point, so a repository's `docs/` and `src/` aren't plugins), which is an error; so `sync` fetches it a second
   time, which the bare repository makes cheap. A source that can't be fetched leaves `config.toml` alone. Test:
   `tests/plugins/add.sh`.
 - Not yet done (see `PLAN.md`): `plugin remove`/`gc`, version requirements other than `"*"`, `flock` for
