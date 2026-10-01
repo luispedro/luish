@@ -77,6 +77,27 @@ status 1
 uncached 20-tools
 block status 1
 PATH=~/bin:/usr/bin:/bin TOOLS=a conf3 AFTER=after a conf3 U=a
---- outside the startup files, a block just runs
-luishrc block
-luishrc block
+--- $ENV and luishrc have a cache of their own, for their blocks
+running ENV
+ENV block for a
+running luishrc
+luishrc block for a
+E=a L=a
+running ENV
+running luishrc
+E=a L=a
+--- a different TOOL: the blocks run again
+running ENV
+ENV block for b
+running luishrc
+luishrc block for b
+E=b L=b
+--- both are kept
+running ENV
+running luishrc
+E=a L=a
+running ENV
+running luishrc
+E=b L=b
+--- check-cache finds nothing to redo
+status 0

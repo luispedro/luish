@@ -538,7 +538,8 @@ commands. The files go in two directories, each used only if it exists
 In each directory, the files whose names end in `.lsh` run in byte order. luish
 remembers what they did: the variables they set, exported or unset, and their
 functions, aliases, options, traps and `umask`. An interactive shell then reads
-`$ENV` and `luishrc`, uncached, as usual.
+`$ENV` and `luishrc`, which always run (they aren't in a directory), though
+their `__luish_cache` blocks are cached, as below.
 
 ```sh
 mkdir -p ~/.config/luish/login.d ~/.config/luish/rc.d
@@ -598,8 +599,10 @@ Both lists are optional: `__luish_cache { ... }` is cached until its text or
 the files it reads change. Unlike a file's entry, a block's doesn't depend on
 `PATH`, nor on what ran before it: only on what it lists. Its exit status is
 saved too, but what it prints is shown only when it runs. Blocks are cached in
-the files of `rc.d` and `login.d`; elsewhere (in `luishrc` or a script), and
-inside another block, the body just runs.
+the files of `rc.d` and `login.d`, and in `$ENV` and `luishrc` (and the
+plugins they load with `plugin load`), each in a cache of its own since
+neither file is cached as a whole; elsewhere (in a script), and inside
+another block, the body just runs.
 
 For code that should never be cached, use `_uncached.lsh`, which runs every
 time, after the other files of its directory:
@@ -619,7 +622,7 @@ finds what they miss.
 `__luish_internal check-cache` finds the changes that luish can't see: it
 runs the startup files again, as a new shell would without the cache, and
 compares the result with what the cache restores. It checks the caches of
-this host that exist, or those named (`rc`, `login`):
+this host that exist, or those named (`rc`, `login`, `startup`):
 
 ```text
 $ __luish_internal check-cache

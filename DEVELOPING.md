@@ -134,9 +134,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   word, so only unquoted at the start of a command (`__luish_cache {` on a line of its own runs a command in dash,
   but the `__luish_` prefix is luish's). The options are arrays as in `local a=(x y)` (`array_follows`), each at
   most once; `env=` takes names, and `files=` words without command or process substitution (`forks`), since they
-  are expanded at every start. The body must be `{ ... }`. Outside the startup files of `rc.d` and `login.d` (see
-  Startup files), the body runs as a brace group and the options are ignored; the highlighter paints the options
-  as arrays (`After::Cache`). Tests: `parse/cache_block.sh`, unit tests in `parser.rs`, `unparse.rs` and
+  are expanded at every start. The body must be `{ ... }`. Outside the startup files of `rc.d`, `login.d`, `$ENV` and
+  `luishrc` (see Startup files), the body runs as a brace group and the options are ignored; the highlighter paints
+  the options as arrays (`After::Cache`). Tests: `parse/cache_block.sh`, unit tests in `parser.rs`, `unparse.rs` and
   `highlight.rs`.
 - `Parser::started` tells a buffer of blank lines apart from a real incomplete command. The lexer reads a trailing
   `(...)` as `WordPart::GlobQual` only under `glob.bare_qualifiers`: the only place it depends on an option.
@@ -624,8 +624,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   nothing differs it touches the cache (`sys::touch`), otherwise it writes the old entries with the new ones stored
   over them. Recording the environment is what keeps `PATH=$HOME/bin:$PATH` from differing when the check runs in a
   shell whose `PATH` has it already. `+m` keeps the shell off the terminal. `_uncached.lsh` doesn't run in it (the
-  `post-rc` hooks do), and a shell that doesn't reach the cache (its directory is gone) reports so from `main`
-  (`check_not_reached`) before `$ENV` and `luishrc`. Times are shown with `strftime("%c")` in local time, in the
+  `post-rc` hooks do), and a shell that doesn't reach the cache it is told to check (`rc.d` or `login.d` is gone, or
+  the shell isn't interactive) reports so from `main` (`check_not_reached`), after `$ENV` and `luishrc` (so a
+  `startup` check gets a chance to run first). Times are shown with `strftime("%c")` in local time, in the
   `LC_TIME` locale of the shell's variables (`sys::format_time`, which sets and restores the C library's locale
   around the call). Tests: `misc/startup_cache_check.sh`, `misc/startup_cache_blocks.sh`,
   `tests/plugins/startup_cache_check.sh`.
@@ -634,9 +635,17 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   makes `state::changes` include the variable (`Entry::assigned`; not `PWD`, which is the directory's). Otherwise
   `export CONDA_EXE=...` in a shell that inherited it isn't saved, and the variable is unset in a shell started
   elsewhere. Test: `misc/startup_cache_assigned.sh`.
-- Not yet done (see `PLAN.md`, Stage 3): blocks in `luishrc`, `$ENV` and plugins loaded there (they just run),
-  `commands=(...)`, warning about variables a block reads but doesn't list, background revalidation, `flock` for
-  many shells at once, and merging into running shells.
+- `$ENV` and `luishrc` (`interactive::startup`) aren't a directory and always run as `_uncached.lsh` does, but their
+  `__luish_cache` blocks, and those of plugins loaded with `plugin load` while they run, are cached, in a cache of
+  their own, `startup-HOST` (`startcache::begin_startup`, `finish_startup`): no file-level entries or chain, since
+  neither file is cached as a whole, and no `_uncached.lsh`. `interactive::startup` wraps each file with
+  `startcache::run_mixed` (shared with the "mixed" files of `rc.d` and `login.d`), so a plugin's `rc.lsh` dot-sourced
+  while one runs sees `Shell::startcache` too, and its blocks are cached under the enclosing file's id. `check-cache`
+  takes `startup` as a third name, built the same way as `rc` and `login` (`Cache::built_by`'s `-i` branch, since
+  neither file runs outside an interactive shell). Tests: `misc/startup_cache_blocks.sh`,
+  `tests/plugins/startup_cache_blocks.sh`.
+- Not yet done (see `PLAN.md`, Stage 3): `commands=(...)`, warning about variables a block reads but doesn't list,
+  background revalidation, `flock` for many shells at once, and merging into running shells.
 - `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. A key directly
   under `[options]` is a setting by its `setopt` name. The `alias` table defines regular aliases, and its `global` and
   `suffix` tables the other kinds (so a string named `global` or `suffix` is a regular alias, and TOML won't have both
@@ -918,7 +927,7 @@ truncates when it relocates the package.
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |
 | `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `builtins/internal_complete_expand.sh`, `builtins/internal_complete_subscript.sh`, `tests/plugins/complete.sh` |
-| Startup files | `misc/startup_cache.sh`, `misc/startup_cache_assigned.sh`, `misc/startup_cache_blocks.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `tests/plugins/startup_cache_check.sh` |
+| Startup files | `misc/startup_cache.sh`, `misc/startup_cache_assigned.sh`, `misc/startup_cache_blocks.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `tests/plugins/startup_cache_check.sh`, `tests/plugins/startup_cache_blocks.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
 | `print` | `builtins/print.sh` (zsh), `builtins/print_luish.sh`, `print_builtin` in `tests/interactive.rs` |

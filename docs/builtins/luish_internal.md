@@ -2,7 +2,7 @@
 
 ```text
 __luish_internal bindkey [arg...]
-__luish_internal check-cache [-q] [rc|login]...
+__luish_internal check-cache [-q] [rc|login|startup]...
 __luish_internal complete line
 __luish_internal help [name...]
 __luish_internal plugin subcommand [arg...]

@@ -564,19 +564,22 @@ fn parent_dir(path: &[u8]) -> &[u8] {
 }
 
 /// Reads the startup files of an interactive shell: `$ENV`, then luish's
-/// own `luishrc`.
+/// own `luishrc`. Both always run, but their `__luish_cache` blocks, and
+/// those of the plugins they load, are cached (`startcache::begin_startup`).
 pub fn startup(sh: &mut Shell) {
+    let mut run = crate::startcache::begin_startup(sh);
     if let Some(env) = sh.get_var(b"ENV")
         && let Ok(w) = crate::lexer::parse_string_word(&env)
         && let Ok(path) = sh.expand_word_str(&w)
     {
-        source_file(sh, &path);
+        crate::startcache::run_mixed(sh, &mut run, &path, None);
     }
     let config = crate::startcache::xdg_dir(sh, b"XDG_CONFIG_HOME", b"/.config");
     if let Some(mut c) = config {
         c.extend_from_slice(b"/luish/luishrc");
         if sys::stat(&c).is_some() {
-            source_file(sh, &c);
+            crate::startcache::run_mixed(sh, &mut run, &c, None);
         }
     }
+    crate::startcache::finish_startup(sh, run);
 }

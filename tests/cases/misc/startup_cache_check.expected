@@ -62,7 +62,7 @@ status 0
 --- errors
 luish: 1: __luish_internal check-cache: illegal option -x
 status 2
-luish: 1: __luish_internal check-cache: other: no such cache (rc or login)
+luish: 1: __luish_internal check-cache: other: no such cache (rc, login or startup)
 status 2
 luish: 1: __luish_internal check-cache: startup caches are disabled (--no-plugins)
 status 2

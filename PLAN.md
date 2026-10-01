@@ -299,9 +299,10 @@ __luish_cache env=(NVM_DIR) files=(~/.nvmrc) {
 - **What is cached** is the block's effect on the state (as `state.rs` computes it now), which replaces running the
   body when the key matches. Output and other side effects happen only when the body runs. Still to do: a
   background run or `check-cache` warns about a cached block that prints.
-- **Where**: built for the files of `rc.d` and `login.d` (with `_uncached.lsh`); an entry is identified by the hash
-  of the block's unparsed text and its file. Still to do: `$ENV`, `luishrc` and the `rc.lsh` of plugins loaded
-  there, in a cache of their own. Elsewhere (scripts, `-c`) the body runs as if there were no block. A block inside
+- **Where**: built for the files of `rc.d` and `login.d` (with `_uncached.lsh`), and for `$ENV`, `luishrc` and the
+  `rc.lsh` of plugins loaded there (`plugin load`, not `config.toml`'s), in a cache of their own (`startup-HOST`,
+  built 2026-10-01), since neither file is cached as a whole. An entry is identified by the hash of the block's
+  unparsed text and its file. Elsewhere (scripts, `-c`) the body runs as if there were no block. A block inside
   another runs as part of the outer one.
 - **Later, if asked for**: `commands=(...)`, the resolved path of each command and its fingerprint, for
   `eval "$(starship init sh)"` and the like without spelling out the path; and a time to live.
@@ -324,16 +325,16 @@ __luish_cache env=(NVM_DIR) files=(~/.nvmrc) {
 
 #### Storage and checking
 
-- One cache file per directory (built), and one for blocks in other files (to do). Each holds the entries of its
-  files and blocks, with the 4 most recent keys of each, so that login and other shells, or shells started with and
-  without `conda activate`, don't evict each other's entries. Warm path: one read per cache file, and a stat per
-  startup file and per `files=` path.
+- One cache file per directory, and one (`startup-HOST`) for the blocks of `$ENV`, `luishrc` and the plugins they
+  load (built). Each holds the entries of its files and blocks, with the 4 most recent keys of each, so that login
+  and other shells, or shells started with and without `conda activate`, don't evict each other's entries. Warm
+  path: one read per cache file, and a stat per startup file and per `files=` path.
 - The cache records the environment of the last shell that built an entry, and `check-cache` reruns the startup as
-  that shell would, rebuilding every entry it reaches, and reports which differ (built). Entries built in other
-  environments are kept, but not checked: recording each build's environment (stored once per build, not per entry)
-  would check them too. Still to do: while checking (so at no cost otherwise), record the inherited variables a block
-  expands without listing them, and warn: `rc.d/20-nvm.lsh:2: the block reads SSH_CONNECTION, which is not in its
-  key`.
+  that shell would, rebuilding every entry it reaches, and reports which differ (built, including `startup`).
+  Entries built in other environments are kept, but not checked: recording each build's environment (stored once
+  per build, not per entry) would check them too. Still to do: while checking (so at no cost otherwise), record the
+  inherited variables a block expands without listing them, and warn: `rc.d/20-nvm.lsh:2: the block reads
+  SSH_CONNECTION, which is not in its key`.
 
 #### Later
 

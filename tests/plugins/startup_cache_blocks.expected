@@ -1,0 +1,9 @@
+running p/rc.lsh
+p block for a
+P_VAR=a
+running p/rc.lsh
+P_VAR=a
+--- a different TOOL rebuilds the block
+running p/rc.lsh
+p block for b
+P_VAR=b

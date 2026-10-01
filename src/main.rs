@@ -276,11 +276,11 @@ fn run(args: Vec<Vec<u8>>) -> ! {
         if login {
             interactive::login_profiles(&mut sh);
         }
-        if sh.check_cache.is_some() {
-            startcache::check_not_reached(&mut sh);
-        }
         if interactive {
             interactive::startup(&mut sh);
+        }
+        if sh.check_cache.is_some() {
+            startcache::check_not_reached(&mut sh);
         }
     }
     if interactive {

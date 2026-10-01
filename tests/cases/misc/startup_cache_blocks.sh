@@ -68,8 +68,26 @@ TOOL=a show
 TOOL=a $SH -c '__luish_internal check-cache -q login; echo "status $?"' |
     sed -e "s|$HOME|~|" -e 's|\(cache/luish/[a-z]*\)-.*|\1-HOST|' -e 's/generated .*/generated/'
 TOOL=a show
-echo '--- outside the startup files, a block just runs'
+echo '--- $ENV and luishrc have a cache of their own, for their blocks'
 mkdir -p .config/luish
-echo '__luish_cache env=(TOOL) { echo luishrc block; }' > .config/luish/luishrc
-$SH -i -c : 2>/dev/null
-$SH -i -c : 2>/dev/null
+cat > .config/luish/luishrc <<'X'
+echo running luishrc
+__luish_cache env=(TOOL) { echo "luishrc block for $TOOL"; L=$TOOL; }
+X
+cat > env.lsh <<'X'
+echo running ENV
+__luish_cache env=(TOOL) { echo "ENV block for $TOOL"; E=$TOOL; }
+X
+show2() {
+    TOOL=$1 ENV="$HOME/env.lsh" $SH -i -c 'echo "E=$E L=$L"' 2>/dev/null
+}
+show2 a
+show2 a
+echo '--- a different TOOL: the blocks run again'
+show2 b
+echo '--- both are kept'
+show2 a
+show2 b
+echo '--- check-cache finds nothing to redo'
+TOOL=a ENV="$HOME/env.lsh" $SH -c '__luish_internal check-cache -q startup; echo "status $?"' |
+    sed -e "s|$HOME|~|" -e 's|\(cache/luish/[a-z]*\)-.*|\1-HOST|' -e 's/generated .*/generated/'

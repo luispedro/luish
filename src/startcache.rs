@@ -34,6 +34,12 @@
 //! - A directory's `_uncached.lsh` runs every time, after the rest; blocks
 //!   in it are cached.
 //!
+//! `$ENV` and `luishrc` (`interactive::startup`) aren't in a directory and
+//! always run (as `_uncached.lsh` does), but their blocks, and those of the
+//! plugins they load with `plugin load`, are cached, in a cache of their
+//! own, `startup-HOST` ([`begin_startup`], [`finish_startup`]): they have no
+//! file-level entries, chain or `_uncached.lsh`.
+//!
 //! The cache also records the build of luish that wrote it (another build
 //! discards it), the directory, and, for `__luish_internal check-cache`, when
 //! it was last built and the environment and options of the shell that
@@ -693,7 +699,9 @@ pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8], config: Option<&[u8]>) {
 }
 
 /// Runs a file with blocks, which use the cache, or its `text` if read.
-fn run_mixed(sh: &mut Shell, run: &mut Run, path: &[u8], text: Option<Vec<u8>>) {
+/// Also used for `$ENV` and `luishrc` ([`begin_startup`]), whose own text
+/// always runs, like a mixed file's, with only their blocks cached.
+pub(crate) fn run_mixed(sh: &mut Shell, run: &mut Run, path: &[u8], text: Option<Vec<u8>>) {
     let placeholder = Run::new(Cache::new(b""), None, false);
     sh.startcache = Some(Box::new(std::mem::replace(run, placeholder)));
     match text {
@@ -703,6 +711,35 @@ fn run_mixed(sh: &mut Shell, run: &mut Run, path: &[u8], text: Option<Vec<u8>>) 
     if let Some(r) = sh.startcache.take() {
         *run = *r;
     }
+}
+
+/// Starts the cache for the blocks of `$ENV`, `luishrc` and the plugins
+/// loaded while they run (`interactive::startup`, with [`run_mixed`] for
+/// each file and [`finish_startup`] at the end): `luish/startup-HOST`, of
+/// its own since neither file is cached as a whole.
+pub fn begin_startup(sh: &Shell) -> Run {
+    let path = cache_file(sh, b"startup").filter(|_| !sh.no_plugins);
+    let check = sh.check_cache.as_ref().is_some_and(|c| c.0 == b"startup");
+    let old = (path.as_ref())
+        .and_then(|p| std::fs::read(to_path(p)).ok())
+        .and_then(|t| Cache::parse(&t))
+        .filter(|c| c.build == BUILD_ID.as_bytes());
+    Run::new(old.unwrap_or_else(|| Cache::new(b"")), path, check)
+}
+
+/// Ends the cache that [`begin_startup`] started: in the shell that
+/// `__luish_internal check-cache startup` starts, reports it (and exits);
+/// otherwise drops the block entries no shell has used in a while, and
+/// saves the cache if it changed.
+pub fn finish_startup(sh: &mut Shell, mut run: Run) {
+    if run.check {
+        check_child(sh, run); // exits
+    }
+    let now = sys::now();
+    let before = run.cache.entries.len();
+    run.cache.entries.retain(|e| e.seen || now - e.time < MAX_AGE);
+    run.changed |= run.cache.entries.len() != before;
+    save(sh, &mut run, b"startup");
 }
 
 /// Writes the cache if it changed, with the environment and options of
@@ -891,11 +928,11 @@ pub fn check_not_reached(sh: &mut Shell) -> ! {
 
 const CHECK: &[u8] = b"__luish_internal check-cache";
 
-/// `__luish_internal check-cache [-q] [rc|login]...`: checks the startup
-/// caches (those of this host that exist, by default) by running their
-/// files again. Status 0 if they were current (they are then touched),
-/// 1 if any was replaced, 2 on errors. The report is printed only for the
-/// caches that were replaced, with `-q`.
+/// `__luish_internal check-cache [-q] [rc|login|startup]...`: checks the
+/// startup caches (those of this host that exist, by default) by running
+/// their files again. Status 0 if they were current (they are then
+/// touched), 1 if any was replaced, 2 on errors. The report is printed only
+/// for the caches that were replaced, with `-q`.
 pub fn check(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let mut quiet = false;
     let mut names: Vec<&[u8]> = Vec::new();
@@ -904,7 +941,7 @@ pub fn check(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         match a.as_slice() {
             b"-q" | b"--quiet" if options => quiet = true,
             b"--" if options => options = false,
-            b"rc" | b"login" => {
+            b"rc" | b"login" | b"startup" => {
                 options = false;
                 names.push(a);
             }
@@ -913,7 +950,7 @@ pub fn check(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
                 return Ok(2);
             }
             _ => {
-                let msg = format!("{}: no such cache (rc or login)", String::from_utf8_lossy(a));
+                let msg = format!("{}: no such cache (rc, login or startup)", String::from_utf8_lossy(a));
                 sh.berr(CHECK, msg);
                 return Ok(2);
             }
@@ -925,7 +962,7 @@ pub fn check(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     }
     let named = !names.is_empty();
     if !named {
-        names = vec![b"rc", b"login"];
+        names = vec![b"rc", b"login", b"startup"];
     }
     let mut status = 0;
     let mut found = false;

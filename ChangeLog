@@ -1,4 +1,7 @@
 Unreleased
+    * `__luish_cache` blocks in $ENV, luishrc and the rc.lsh of plugins
+      they load are cached too, in a cache of their own; check-cache
+      takes `startup` as well as `rc` and `login`
     * The startup cache has an entry per file of rc.d and login.d, keyed
       on PATH and HOME: a changed file reruns only it and the files
       after it, and PATH=$HOME/bin:$PATH adds to the PATH of each shell
