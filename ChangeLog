@@ -1,4 +1,6 @@
 Unreleased
+    * The startup cache saves variables that the files set to the value
+      they already had
     * Library plugins (`library = true` in plugin.toml), which
       `plugin list-available` hides unless given `-a`; a directory
       with only plugin.toml is a plugin

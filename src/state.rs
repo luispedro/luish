@@ -77,6 +77,10 @@ pub struct Entry {
     pub kind: Kind,
     pub name: Vec<u8>,
     pub text: Vec<u8>,
+    /// A variable assigned since [`crate::vars::Vars::clear_assigned`]:
+    /// part of a [`difference`] even if its value is the same, so that a
+    /// cache replayed where it was different (or unset) sets it.
+    pub assigned: bool,
 }
 
 impl Shell {
@@ -96,6 +100,7 @@ impl Shell {
                 kind,
                 name: name.to_vec(),
                 text,
+                assigned: false,
             })
         };
         // `command`, in case a function of the same name is defined.
@@ -236,13 +241,17 @@ impl Shell {
                 add(Kind::Option, name.as_bytes(), extended(o, name));
             }
         }
+        // `PWD` is the directory's (`cd` there and back is no change).
+        for e in out.iter_mut().filter(|e| e.kind == Kind::Var && e.name != b"PWD") {
+            e.assigned = self.vars.var(&e.name).is_some_and(|v| v.assigned);
+        }
         out
     }
 }
 
 /// Commands that turn state `before` into state `after`: removals first,
-/// then everything new or changed, in order. A read-only variable can't be
-/// removed, so it is left alone.
+/// then everything new or changed (or assigned), in order. A read-only
+/// variable can't be removed, so it is left alone.
 pub fn difference(before: &[Entry], after: &[Entry]) -> Vec<u8> {
     use std::collections::HashMap;
     let index = |entries: &[Entry]| -> HashMap<(Kind, Vec<u8>), usize> {
@@ -277,8 +286,10 @@ pub fn difference(before: &[Entry], after: &[Entry]) -> Vec<u8> {
     }
     let changed: Vec<_> = (after.iter())
         .filter(|e| {
-            !old.get(&(e.kind, e.name.clone()))
-                .is_some_and(|&i| before[i].text == e.text)
+            e.assigned
+                || !old
+                    .get(&(e.kind, e.name.clone()))
+                    .is_some_and(|&i| before[i].text == e.text)
         })
         .collect();
     join(&mut out, &changed);

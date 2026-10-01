@@ -262,6 +262,7 @@ impl Shell {
             exported: attrs.is_some_and(|v| v.exported),
             readonly: attrs.is_some_and(|v| v.readonly),
             transform: attrs.map(|v| v.transform).unwrap_or_default(),
+            assigned: false,
         })
     }
 

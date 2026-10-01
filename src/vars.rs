@@ -3,7 +3,7 @@
 use crate::hash::HashMap;
 use std::ffi::CString;
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct Var {
     /// `None` for a variable that has attributes (export, readonly) but no
     /// value.
@@ -12,6 +12,19 @@ pub struct Var {
     pub readonly: bool,
     /// How the values assigned are changed (`typeset -i`, `-l`, `-u`, `-U`).
     pub transform: Transform,
+    /// Whether it was assigned (or given an attribute) since
+    /// [`Vars::clear_assigned`], even to the value it had, so that the
+    /// startup cache saves it (`state.rs`). Not compared.
+    pub assigned: bool,
+}
+
+impl PartialEq for Var {
+    fn eq(&self, other: &Var) -> bool {
+        self.value == other.value
+            && self.exported == other.exported
+            && self.readonly == other.readonly
+            && self.transform == other.transform
+    }
 }
 
 /// The attributes that change the values assigned to a variable (to each
@@ -607,6 +620,7 @@ impl Vars {
         match self.map.get_mut(name) {
             Some(v) if v.readonly => Err(ReadonlyError),
             Some(v) => {
+                v.assigned = true;
                 // As in ksh and bash, `a=x` sets the first element of an array.
                 match &mut v.value {
                     Some(Value::Str(s)) => *s = value,
@@ -622,6 +636,7 @@ impl Vars {
                     name.to_vec(),
                     Var {
                         value: Some(Value::Str(value)),
+                        assigned: true,
                         ..Var::default()
                     },
                 );
@@ -643,12 +658,24 @@ impl Vars {
         }
     }
 
+    /// The variable, created if needed, to be changed (so marked
+    /// [`Var::assigned`]).
     pub fn entry(&mut self, name: &[u8]) -> &mut Var {
         // Not `map.entry`, which would copy the name even if it is there.
-        if !self.map.contains_key(name) {
-            return self.map.entry(name.to_vec()).or_default();
+        let var = match self.map.contains_key(name) {
+            true => self.map.get_mut(name).unwrap(),
+            false => self.map.entry(name.to_vec()).or_default(),
+        };
+        var.assigned = true;
+        var
+    }
+
+    /// Clears [`Var::assigned`] on every variable (when a startup cache
+    /// starts being built).
+    pub fn clear_assigned(&mut self) {
+        for v in self.map.values_mut() {
+            v.assigned = false;
         }
-        self.map.get_mut(name).unwrap()
     }
 
     /// Replaces a variable wholesale (used to restore saved variables).

@@ -304,6 +304,7 @@ fn build(
     config: Option<&[u8]>,
     save: bool,
 ) -> Result<Cache, &'static str> {
+    sh.vars.clear_assigned();
     let before = sh.state_entries();
     if let Some(c) = config {
         crate::config::load(sh, c);

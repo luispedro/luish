@@ -265,12 +265,10 @@ shell tracks the current file as well as the line, for provenance and for error 
 The goal is to cache the *effects* of login scripts. With a warm cache, a new shell should start almost instantly,
 and many shells started at once (a desktop login can start 40) should not each run the scripts. The first version is
 built (`rc.d`, `login.d` and `_uncached.lsh`, one cache per directory keyed on fingerprints; see `DEVELOPING.md`),
-with two known faults to fix first, both because the cache replays a difference onto an environment other than the one
-it was built in: a variable the files set to the value the build shell already had isn't saved (so `CONDA_EXE` and
-`NVM_DIR` are unset in a shell started outside the one that built the cache), and one they changed is saved with its
-inherited parts (`PATH`). `check-cache` can't see them. The fixes are to save every variable the files assign
-(tracked while a cache is built), and explicit cache keys: `__luish_cache` blocks and per-file entries (below,
-designed 2026-10-01). These replace the earlier plan of keying automatically on the inherited values the files read,
+with a known fault to fix first, because the cache replays a difference onto an environment other than the one it
+was built in: a variable the files changed is saved with its inherited parts (`PATH`). `check-cache` can't see it.
+(A second fault, that a variable set to the value it had wasn't saved, is fixed: every variable the files assign is
+saved.) The fix is explicit cache keys: `__luish_cache` blocks and per-file entries (below, designed 2026-10-01). These replace the earlier plan of keying automatically on the inherited values the files read,
 since the shell can't see what the commands they run read (`brew shellenv`, `starship init`).
 The rest of the design is stale-while-revalidate: a shell starts from the cached state at once, reruns the scripts in
 the background, and applies any difference at a later prompt, so invalidation doesn't have to be perfect.

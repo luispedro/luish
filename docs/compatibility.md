@@ -130,9 +130,9 @@ Interactive use:
 - Glob qualifiers lack zsh's `e`, `+`, `f`, `F`, `Y` and `P`, `(#q...)`, most modifiers, and `EXTENDED_GLOB`
   patterns.
 - The startup cache doesn't see changes that don't show in a file's fingerprint. It also saves what the files
-  changed in the environment of the shell that built it: a variable set to the value that environment already had
-  isn't saved, and one that changed is saved with its inherited parts (`PATH`). Neither is detected by
-  `check-cache`; see [Cached startup files](usage.md#cached-startup-files) for how to avoid them.
+  changed in the environment of the shell that built it: a variable is saved with its inherited parts (`PATH`).
+  This isn't detected by `check-cache`; see [Cached startup files](usage.md#cached-startup-files) for how to
+  avoid it.
 - Extensions have only the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks, completers and commands:
   no `precmd`, `preexec` or `exit` hooks, and no time limit except for completers, so a slow prompt
   hook or `prompt-vars.lsh` delays the prompt. Completers can't be interrupted with Ctrl-C, only by their time limit.

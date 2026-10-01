@@ -593,14 +593,15 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   (`check_not_reached`) before `$ENV` and `luishrc`. Times are shown with `strftime("%c")` in local time, in the
   `LC_TIME` locale of the shell's variables (`sys::format_time`, which sets and restores the C library's locale
   around the call). Tests: `misc/startup_cache_check.sh`, `tests/plugins/startup_cache_check.sh`.
-- **Known faults** (see `PLAN.md`, Stage 3), both from replaying a difference onto an environment other than the
-  one the cache was built in, and neither seen by `check-cache`, which reruns the files in the recorded one: an
-  assignment that doesn't change the build shell's value (`export CONDA_EXE=...` in a shell that inherited it) is
-  never saved, so the variable is unset in a shell started elsewhere; and one that does change it is saved with its
-  whole final value, inherited parts included (`PATH`). Reproduce with `FOO=bar luish -i -c :` building a cache whose
-  file has `export FOO=bar`, then `env -i luish -i -c 'echo ${FOO-unset}'`. The fixes: save every variable the files
-  assign (tracked while the cache is built), and explicit keys (`__luish_cache` blocks and per-file entries keyed on
-  `PATH` and `HOME`; see `PLAN.md`, Stage 3).
+- Every variable the files assign is saved, even with the value it had: `Var::assigned` is set by `Vars::set` and
+  `Vars::entry` (one store, no branch), cleared by `Vars::clear_assigned` when a build starts, and makes
+  `state::difference` include the variable (`Entry::assigned`; not `PWD`, which is the directory's). Otherwise
+  `export CONDA_EXE=...` in a shell that inherited it isn't saved, and the variable is unset in a shell started
+  elsewhere. Test: `misc/startup_cache_assigned.sh`.
+- **Known fault** (see `PLAN.md`, Stage 3), from replaying a difference onto an environment other than the one the
+  cache was built in, and not seen by `check-cache`, which reruns the files in the recorded one: a variable the files
+  change is saved with its whole final value, inherited parts included (`PATH`). The fix is explicit keys
+  (`__luish_cache` blocks and per-file entries keyed on `PATH` and `HOME`; see `PLAN.md`, Stage 3).
 - Not yet done (see `PLAN.md`, Stage 3): explicit keys (so `PATH=$HOME/bin:$PATH` keeps the rest of `PATH` from
   when the cache was built, and an `rc.d` cache built in a login shell, before `login.d` ran, is used in shells
   started from it), per-file entries, changes a fingerprint can't show (other than by `check-cache`), background
@@ -886,7 +887,7 @@ truncates when it relocates the package.
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |
 | `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `builtins/internal_complete_expand.sh`, `builtins/internal_complete_subscript.sh`, `tests/plugins/complete.sh` |
-| Startup files | `misc/startup_cache.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `tests/plugins/startup_cache_check.sh` |
+| Startup files | `misc/startup_cache.sh`, `misc/startup_cache_assigned.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `tests/plugins/startup_cache_check.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
 | `print` | `builtins/print.sh` (zsh), `builtins/print_luish.sh`, `print_builtin` in `tests/interactive.rs` |
