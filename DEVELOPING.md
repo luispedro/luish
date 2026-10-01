@@ -1023,10 +1023,13 @@ follows is what they came from and what is left.
 Per external command, luish makes the same syscalls as dash (before `posix_spawn`, a loop running `/bin/true` 3000
 times took 2.42 s, then 1.80 s as in dash). Startup makes 66 syscalls to dash's 49 (56 without the `plugins`
 feature; it made 140 before `#![no_main]`, lazy signal-disposition lookup, and looking up the executable's path only
-when a script without `#!` needs it). The remaining startup gap (2.1 ms to dash's 1.7 ms per `-c true` in
-`docs/performance.md`) is the dynamic loader: relocating a 4.5 MB binary and loading `libm` (for Rhai's floats),
-`libpthread` and `libgcc_s`. The `plugins` feature accounted for about 250 µs on 2026-09-26, accepted while it stays
-under 1 ms; on the machine of the current tables a build without it starts in the same time, within the noise. A
+when a script without `#!` needs it). The remaining startup gap (0.56 ms to dash's 0.36 ms per `-c true` in
+`docs/performance.md`) comes from the larger binary (4.8 MB) and its libraries, `libm` (for Rhai's floats),
+`libpthread` and `libgcc_s`: on 2026-10-01 `LD_DEBUG=statistics` put about 100k cycles in the dynamic loader to dash's
+50k (so only some 15 µs of the gap), and luish took 252 page faults to dash's 189. A command substitution takes 1.2
+times as long as in dash with the same system calls; `clone` itself costs more for the larger process. The `plugins`
+feature accounted for about 250 µs on 2026-09-26, accepted while it stays under 1 ms; on the virtual machine of the
+2026-09-29 tables a build without it started in the same time, within the noise. A
 static build (`-C target-feature=+crt-static`) started in 1.09 ms to the dynamic build's 1.5 ms, but static glibc
 looks users up (`~user`) through NSS modules loaded at run time.
 
@@ -1037,8 +1040,8 @@ release packages have it removed (`scripts/dist.sh`, below).
 Profiled with callgrind, the in-shell gap in the script benchmarks came from `$((...))` comparing the text with each
 of 35 operator strings, SipHash on every variable lookup, `${x#pat}` trying every prefix or suffix (and copying),
 `case` compiling literal patterns, and needless copies. Work inside the shell is now as fast as dash or faster; the
-fork-heavy scripts are within 10%, mostly startup. Most of the remaining in-shell time is `malloc` and `free`, since
-expansion builds `Vec`s where dash uses its stack allocator.
+fork-heavy scripts are within 15%, mostly startup and forks. Most of the remaining in-shell time is `malloc` and
+`free`, since expansion builds `Vec`s where dash uses its stack allocator.
 
 For small changes, instruction counts are steadier than timings: run a benchmark script under
 `valgrind --tool=callgrind` with a release build before and after, and compare "Collected" for the main process. To

@@ -22,7 +22,7 @@ behind each claim here. Two further pages go into detail:
 | | dash | bash | zsh | luish |
 |---|---|---|---|---|
 | POSIX `sh` | Yes | With `--posix` | With `--emulate sh` | Yes, matching dash where POSIX is ambiguous |
-| Speed of scripts (relative to dash) | 1× | 1.2 to 5.5× slower | 1.2 to 6.3× slower | 0.7 to 1.1× |
+| Speed of scripts (relative to dash) | 1× | 1.3 to 4.8× slower | 1.3 to 4.4× slower | 0.7 to 1.1× |
 | Arrays and associative arrays | No | Yes | Yes | Yes (indices from 0, as bash and zsh's `sh` mode) |
 | `[[ ... ]]`, `${x/a/b}`, `${x:1:2}`, `typeset` | No | Yes | Yes | Yes |
 | Process substitution `<(...)` | No | Yes | Yes | Yes |
@@ -57,22 +57,23 @@ descriptors can have more than one digit (`exec 20>file`). See [](../compatibili
 ### Speed
 
 On script benchmarks of a few hundred lines each (see [](../performance.md)), luish is as fast as dash, and faster on
-arithmetic and function calls. bash and zsh take between 1.2 times as long (scripts that mostly start other programs,
-such as `configure`) and 6 times as long (scripts that mostly run inside the shell):
+arithmetic and function calls. bash and zsh take between 1.3 times as long (scripts that mostly start other programs,
+such as `configure`) and 5 times as long (scripts that mostly run inside the shell):
 
 | Benchmark | dash | luish | bash | zsh |
 |---|---|---|---|---|
-| arith | 1.00 | 0.73 | 2.85 | 1.91 |
-| functions | 1.00 | 0.94 | 5.53 | 6.27 |
-| strings | 1.00 | 1.13 | 3.37 | 2.94 |
-| textproc | 1.00 | 1.04 | 2.74 | 4.09 |
-| configure | 1.00 | 1.11 | 1.31 | 1.24 |
-| build | 1.00 | 1.11 | 1.18 | 1.29 |
-| arrays (not POSIX, so relative to luish) | | 1.00 | 5.24 | 6.05 |
+| arith | 1.00 | 0.65 | 2.99 | 1.65 |
+| functions | 1.00 | 0.88 | 4.80 | 4.37 |
+| strings | 1.00 | 0.97 | 3.54 | 2.78 |
+| textproc | 1.00 | 1.03 | 2.49 | 3.30 |
+| configure | 1.00 | 1.09 | 1.45 | 1.37 |
+| build | 1.00 | 1.13 | 1.27 | 1.29 |
+| arrays (not POSIX, so relative to luish) | | 1.00 | 4.95 | 5.08 |
 
-Starting luish takes about 0.5 ms longer than dash (2.1 ms against 1.7 ms for `sh -c true`), as it is a larger
-program; that is most of the 10% on the benchmarks that start many programs. Everything luish adds beyond POSIX is
-opt-in or gives a meaning to what is a syntax error in dash, so POSIX scripts don't pay for it.
+Starting luish takes about 0.2 ms longer than dash (0.56 ms against 0.36 ms for `sh -c true`), and a command
+substitution about 1.2 times as long, as it is a larger program; that is most of the 10% on the benchmarks that start
+many programs. Everything luish adds beyond POSIX is opt-in or gives a meaning to what is a syntax error in dash, so
+POSIX scripts don't pay for it.
 
 ### bash and zsh scripts
 

@@ -3,7 +3,7 @@
 luish is meant to be as fast as dash, the fastest of the common POSIX shells,
 for scripts and `sh -c`.
 
-bash and zsh are up to six times slower on the same scripts. What luish adds
+bash and zsh are up to five times slower on the same scripts. What luish adds
 to dash (plugins, the interactive features, luish's own options) is opt-in, and
 costs scripts nothing.
 
@@ -24,48 +24,59 @@ benchmark print the same output for it.
 | build | A make-like build that runs `$SH -c` for each object: fork, exec and shell startup |
 | arrays | Not POSIX: sorting, a sieve, word counts, grouping, matrices, a search and slices, in indexed and associative arrays |
 
-The script and startup measurements on this page were made on 2026-09-29, with the release build of luish at git
-revision `3463933` (`pixi run release`), on a virtual machine with 4 cores running Ubuntu 24.04. The other shells are
-Ubuntu's dash 0.5.12, bash 5.2 (`--posix`), zsh 5.9 (`--emulate sh`) and BusyBox 1.36. The machine is noisy:
-differences under about 10% between two shells are within what separates two runs of the same one.
+The script and startup measurements on this page were made on 2026-10-01, with the release build of luish at git
+revision `1c6c1e3` (`pixi run release`), on a laptop with an Intel Core i7-1260P (4 performance cores of 2 threads
+each, and 8 slower efficiency cores) running Ubuntu 24.04. Every measurement ran pinned to the same performance core
+(`taskset -c 3`), one at a time, with the desktop running. The other shells are Ubuntu's dash 0.5.12, bash 5.2.21
+(`--posix`) and BusyBox 1.36.1 (`busybox sh`, from the `busybox-static` package), and zsh 5.9 (`--emulate sh`) from
+conda-forge, as pinned in luish's `pixi.toml`. Two complete runs of the script benchmarks gave times within 6% of each
+other, and ratios within 0.05.
 
-Seconds (and the ratio to dash; lower is faster), mean of 10 runs:
+Seconds (and the ratio to dash; lower is faster), mean of 40 runs (two runs of `bench/run.sh -r 20`):
 
 | Benchmark | dash | luish | bash | zsh | busybox |
 |---|---|---|---|---|---|
-| arith | 0.425 (1.00) | 0.308 (0.73) | 1.209 (2.85) | 0.810 (1.91) | 0.712 (1.68) |
-| functions | 0.240 (1.00) | 0.226 (0.94) | 1.325 (5.53) | 1.502 (6.27) | 0.369 (1.54) |
-| strings | 0.369 (1.00) | 0.415 (1.13) | 1.241 (3.37) | 1.083 (2.94) | 0.570 (1.55) |
-| textproc | 0.280 (1.00) | 0.289 (1.04) | 0.766 (2.74) | 1.144 (4.09) | 0.487 (1.74) |
-| configure | 1.651 (1.00) | 1.825 (1.11) | 2.160 (1.31) | 2.050 (1.24) | 1.819 (1.10) |
-| build | 1.474 (1.00) | 1.632 (1.11) | 1.741 (1.18) | 1.894 (1.29) | 1.622 (1.10) |
+| arith | 0.264 (1.00) | 0.171 (0.65) | 0.790 (2.99) | 0.436 (1.65) | 0.432 (1.64) |
+| functions | 0.153 (1.00) | 0.135 (0.88) | 0.738 (4.80) | 0.671 (4.37) | 0.207 (1.35) |
+| strings | 0.191 (1.00) | 0.185 (0.97) | 0.676 (3.54) | 0.531 (2.78) | 0.280 (1.47) |
+| textproc | 0.157 (1.00) | 0.161 (1.03) | 0.392 (2.49) | 0.518 (3.30) | 0.259 (1.65) |
+| configure | 0.538 (1.00) | 0.587 (1.09) | 0.782 (1.45) | 0.737 (1.37) | 0.348 (0.65)\* |
+| build | 0.459 (1.00) | 0.518 (1.13) | 0.581 (1.27) | 0.591 (1.29) | 0.154 (0.34)\* |
 
 The first four run mostly inside the shell, where luish is as fast as dash, or faster. The next two spend most of
 their time starting programs, which luish does with the same system calls as dash; they take about 10% longer, mostly
-because luish itself starts more slowly (below), and `build` starts a new shell for each file it compiles.
+because luish itself starts more slowly and a command substitution costs more (below), and `build` starts a new shell
+for each file it compiles.
+
+\* BusyBox's times for `configure` and `build` don't measure the same work: the static BusyBox runs its own versions
+of `sed`, `cat`, `basename`, `dirname`, `rm` and other utilities in the shell's process instead of running the
+system's programs (`build` runs 204 programs under it, to 834 under dash), and as a static program it starts faster.
 
 `arrays` uses what zsh and bash scripts use beyond POSIX (arrays, associative arrays, `[[ ... ]]`,
 `${x//pattern/replacement}`, `${x:offset:length}`), so dash and BusyBox can't run it. Its ratios are to luish:
 
 | Benchmark | luish | bash | zsh |
 |---|---|---|---|
-| arrays | 0.216 (1.00) | 1.134 (5.24) | 1.308 (6.05) |
+| arrays | 0.133 (1.00) | 0.655 (4.95) | 0.673 (5.08) |
 
 ## Startup and single commands
 
-luish against dash, mean of 1000 runs for the first two rows and of 10 for the others:
+Mean of 1000 runs for the first two rows and of 20 for the others, each shell run with a cleared environment
+(only `PATH`, `HOME` and `LC_ALL=C`):
 
-| Benchmark | luish | dash |
-|---|---|---|
-| `sh -c true` | 2.1 ms | 1.7 ms |
-| `sh -c /bin/true` | 3.5 ms | 3.2 ms |
-| `while` loop, 100,000 iterations of `$((i+1))` | 0.10 s | 0.17 s |
-| Loop running `/bin/true` 3000 times | 4.52 s | 4.24 s |
-| Loop running `x=$(echo hi)` 3000 times | 1.19 s | 1.21 s |
+| Benchmark | dash | luish | bash | zsh |
+|---|--:|--:|--:|--:|
+| `sh -c true` | 0.36 ms | 0.56 ms | 0.58 ms | 0.69 ms |
+| `sh -c /bin/true` | 0.68 ms | 0.84 ms | 0.88 ms | 0.98 ms |
+| `while` loop, 100,000 iterations of `$((i+1))` | 90 ms | 48 ms | 230 ms | 209 ms |
+| Loop running `/bin/true` 3000 times | 1.12 s | 1.14 s | 1.53 s | 1.68 s |
+| Loop running `x=$(echo hi)` 3000 times | 0.29 s | 0.34 s | 0.61 s | 0.48 s |
 
-Starting luish takes about 0.5 ms longer than dash, almost all of it in the dynamic loader, since luish is a larger
-program (4.5 MB, with the plugin support built in). Starting a program, a pipeline or a command substitution costs
-about the same.
+Starting luish takes about 0.2 ms longer than dash, as luish is a larger program (4.8 MB, with the plugin support
+built in): it loads more libraries and touches more memory (252 page faults to dash's 189). Starting a program costs
+about the same as in dash. A command substitution takes about 1.2 times as long as in dash (in 30 alternating runs of
+each, the median was 313 ms to dash's 258 ms): it makes the same system calls, but forking a larger process costs
+more.
 
 ## Interactive startup
 
@@ -103,8 +114,7 @@ arrays and associative arrays) and as an extension's built-ins (`ext.rhai`), whi
 | urlencode | 8,000 calls from a shell loop, each percent-encoding a 60-character string into `REPLY` (the shell function with a `case` table, not a `$(printf)` per character) |
 | calls | 300,000 calls from a shell loop of a command that adds two numbers into `REPLY`: the cost of a call |
 
-The fastest of 10 runs of `bench/extensions/run.sh -r 10`, on 2026-09-29, on a machine with 16 cores (another than
-the one for the tables above, and just as noisy):
+The fastest of 10 runs of `bench/extensions/run.sh -r 10`, on 2026-09-29, on a machine with 16 cores:
 
 | Task | Shell functions (ms) | Rhai built-ins (ms) | Shell / Rhai |
 |---|--:|--:|--:|
@@ -133,6 +143,8 @@ bench/run.sh -n 4 -r 10 arith      # one benchmark, 4 times the work, 10 runs pe
 ```
 
 `bench/README.md` describes the options and the scripts. Absolute times depend
-on the machine and its load, so compare shells within one run. `bench/extensions/run.sh` runs the comparison of
+on the machine and its load, so compare shells within one run. On a machine whose cores differ in speed (such as
+Intel's performance and efficiency cores), pin the run to one core, such as `taskset -c 3 bench/run.sh`, so that
+every shell runs on the same one; and run one benchmark at a time. `bench/extensions/run.sh` runs the comparison of
 commands in Rhai with shell functions.
 

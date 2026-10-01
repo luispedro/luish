@@ -11,7 +11,7 @@ fast as [dash](http://gondor.apana.org.au/~herbert/dash/).
 - **POSIX first.** luish implements the POSIX Shell Command Language and its required built-ins, plus `local`.
   Where POSIX is ambiguous, luish matches dash.
 - **As fast as dash, with zsh's features.** Scripts run as fast as under dash (faster on arithmetic and function
-  calls), and up to six times faster than under bash or zsh. Interactively: zsh's keys, syntax highlighting,
+  calls), and up to five times faster than under bash or zsh. Interactively: zsh's keys, syntax highlighting,
   autosuggestions, shared history in zsh's format with history expansion (`!!`, `!$`), completion with a menu (for
   about 230 commands with the standard plugins), zsh's prompts and glob qualifiers.
 - **A modern plugin architecture**: plugins in shell and [Rhai](https://rhai.rs), listed in `config.toml` (or added

@@ -21,7 +21,7 @@ of each plugin.
 
 ## As fast as dash, with zsh's features
 
-bash and zsh are up to six times slower than dash on scripts that run mostly
+bash and zsh are up to five times slower than dash on scripts that run mostly
 inside the shell, which is why many systems use dash as `/bin/sh`. luish runs
 scripts as fast as dash.
 
@@ -32,7 +32,7 @@ interactively and can replace it for interactive use.
 
 POSIX `sh` has no arrays, `[[ ... ]]` or `${x/pattern/replacement}`, so scripts that need them are written for bash or
 zsh, which are slow. luish runs them, with the same syntax and mostly the
-same behaviour, up to six times faster than bash or zsh (see [](performance.md)). Indexed and associative arrays,
+same behaviour, about five times faster than bash or zsh (see [](performance.md)). Indexed and associative arrays,
 `typeset`, `[[ ... ]]`, zsh's parameter flags and bash's `${!name}` are always available, since they give a meaning to
 what is a syntax error in dash, so POSIX scripts keep working. See [](usage.md#shell-language-extensions).
 

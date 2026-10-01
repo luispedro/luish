@@ -21,10 +21,13 @@ Markdown table of mean times and ratios to the first shell (`-o FILE` saves it).
 
 The default shells are dash, luish, `bash --posix`, `zsh --emulate sh` and `busybox sh`, whichever are installed.
 mksh also runs every script with the same output, but isn't a default because it is very slow on `textproc` (about
-40 times dash); add it with `-s mksh=mksh`.
+40 times dash); add it with `-s mksh=mksh`. A static BusyBox (Debian's and Ubuntu's `busybox-static`) runs its own
+`sed`, `cat`, `basename` and so on in the shell's process instead of the system's programs, so its times for
+`configure` and `build` don't measure the same work.
 Scripts run with a cleared environment (`PATH`, `HOME`, `LC_ALL=C`) and `$SH` set to the shell's command, and each
 works in its own `mktemp -d` directory. Absolute times vary with the machine and its load, so compare shells within
-one run.
+one run, and run one benchmark at a time. On a machine whose cores differ in speed (Intel's performance and efficiency
+cores), pin the whole run to one core so that every shell gets the same one: `taskset -c 3 bench/run.sh`.
 
 ## The scripts
 
