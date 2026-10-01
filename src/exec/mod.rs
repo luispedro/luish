@@ -255,6 +255,7 @@ impl Shell {
                 }
                 Ok(0)
             }
+            Command::Cache(block) => self.run_list_exit(&block.body, no_fork),
         }
     }
 

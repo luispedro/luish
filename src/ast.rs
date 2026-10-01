@@ -40,6 +40,19 @@ pub enum Command {
         names: Vec<Vec<u8>>,
         body: Rc<FunctionBody>,
     },
+    /// `__luish_cache env=(...) files=(...) { ... }`, whose effects the
+    /// startup cache saves (`startcache.rs`).
+    Cache(Rc<CacheBlock>),
+}
+
+/// A `__luish_cache` block: what its key depends on, and its body.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CacheBlock {
+    /// The variables of `env=(...)`.
+    pub env: Vec<Vec<u8>>,
+    /// The words of `files=(...)`, expanded when the block runs.
+    pub files: Vec<Word>,
+    pub body: List,
 }
 
 #[derive(Debug, Clone, PartialEq)]

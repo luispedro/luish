@@ -11,6 +11,7 @@ const RESERVED: &[&[u8]] = &[
     b"}",
     b"[[",
     b"]]",
+    b"__luish_cache",
     b"case",
     b"do",
     b"done",
@@ -250,6 +251,7 @@ impl Parser {
                     return Ok(Command::Compound(cmd, redirs));
                 }
                 b"function" => return self.parse_function_keyword(),
+                b"__luish_cache" => return self.parse_cache_block(),
                 w if is_reserved(w) => {
                     let t = self.next()?;
                     return self.unexpected(&t, None);
@@ -766,6 +768,103 @@ impl Parser {
     }
 }
 
+const CACHE_SYNTAX: &str = "Syntax error: __luish_cache takes env=(...) and files=(...), then { ... }";
+
+impl Parser {
+    /// `__luish_cache [env=(NAME...)] [files=(WORD...)] { list; }`: a block
+    /// whose effects the startup cache saves (`startcache.rs`). The word is
+    /// a keyword only unquoted at the start of a command; the options, each
+    /// at most once, are arrays as in `local a=(x y)`. Their words are
+    /// expanded at every start, so command substitution is an error there.
+    fn parse_cache_block(&mut self) -> PResult<Command> {
+        self.next()?;
+        let mut env = None;
+        let mut files = None;
+        loop {
+            self.skip_newlines()?;
+            if self.peek_is_kw(b"{")? {
+                break;
+            }
+            let t = self.next()?;
+            let Tok::Word(w) = &t.tok else {
+                return self.unexpected(&t, Some("{"));
+            };
+            let option = match w.as_literal() {
+                Some(b"env=") => &mut env,
+                Some(b"files=") => &mut files,
+                _ => return self.err(CACHE_SYNTAX),
+            };
+            if option.is_some() || !self.array_follows(t.end)? {
+                return self.err(CACHE_SYNTAX);
+            }
+            self.next()?;
+            let mut words = Vec::new();
+            loop {
+                let t = self.next()?;
+                match t.tok {
+                    Tok::Newline => {}
+                    Tok::Word(w) => words.push(w),
+                    Tok::Op(Op::RParen) => break,
+                    _ => return self.unexpected(&t, Some(")")),
+                }
+            }
+            *option = Some(words);
+        }
+        let env = (env.unwrap_or_default().into_iter())
+            .map(|w| match w.as_literal() {
+                Some(name) if is_valid_name(name) => Ok(name.to_vec()),
+                _ => self.err("Syntax error: __luish_cache: env=(...) takes variable names"),
+            })
+            .collect::<PResult<Vec<_>>>()?;
+        let files = files.unwrap_or_default();
+        if files.iter().any(forks) {
+            return self.err("Syntax error: __luish_cache: command substitution in files=(...)");
+        }
+        let CompoundCommand::BraceGroup(body) = self.parse_compound()? else {
+            unreachable!()
+        };
+        Ok(Command::Cache(Rc::new(CacheBlock { env, files, body })))
+    }
+}
+
+/// Whether expanding the word can run a command (`$(...)`, `<(...)`).
+fn forks(w: &Word) -> bool {
+    parts_fork(&w.0)
+}
+
+fn parts_fork(parts: &[WordPart]) -> bool {
+    parts.iter().any(|p| match p {
+        WordPart::CmdSubst(_) | WordPart::ProcSubst { .. } => true,
+        WordPart::DoubleQuoted(parts) => parts_fork(parts),
+        WordPart::Arith(w) => forks(w),
+        WordPart::Array(items) => items
+            .iter()
+            .any(|i| i.key.as_ref().is_some_and(forks) || forks(&i.value)),
+        WordPart::Param(p) => {
+            let index = match &p.index {
+                Some(Index::Expr(w)) => forks(w),
+                _ => false,
+            };
+            index
+                || match &p.op {
+                    ParamOp::Default(w)
+                    | ParamOp::Assign(w)
+                    | ParamOp::Error(w)
+                    | ParamOp::Alternative(w)
+                    | ParamOp::RemoveSmallestSuffix(w)
+                    | ParamOp::RemoveLargestSuffix(w)
+                    | ParamOp::RemoveSmallestPrefix(w)
+                    | ParamOp::RemoveLargestPrefix(w)
+                    | ParamOp::Bad(w) => forks(w),
+                    ParamOp::Substring(a, b) => forks(a) || b.as_ref().is_some_and(forks),
+                    ParamOp::Replace(_, a, b) => forks(a) || forks(b),
+                    ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names => false,
+                }
+        }
+        _ => false,
+    })
+}
+
 /// Whether the command whose words have been parsed so far is `local`,
 /// `export`, `readonly`, `typeset` or `declare` (also after `command` or
 /// `builtin`), whose arguments can be arrays, `a=(x y)`.
@@ -911,6 +1010,35 @@ mod tests {
         let s = simple(&l);
         assert_eq!(s.words.len(), 4);
         assert_eq!(s.words[2], Word(vec![WordPart::SingleQuoted(b"b c".to_vec())]));
+    }
+
+    #[test]
+    fn cache_blocks() {
+        let l = parse("__luish_cache files=(~/a \"$b\") env=(PATH\n HOME)\n{ x; }\n");
+        let Command::Cache(b) = &l[0].list.first.cmds[0] else {
+            panic!("not a block");
+        };
+        assert_eq!(b.env, [b"PATH".to_vec(), b"HOME".to_vec()]);
+        assert_eq!(b.files.len(), 2);
+        assert_eq!(b.body.len(), 1);
+        for bad in [
+            "__luish_cache env=(A) env=(B) { x; }\n",
+            "__luish_cache env=(a-b) { x; }\n",
+            "__luish_cache env=($a) { x; }\n",
+            "__luish_cache files=(\"${a:-$(b)}\") { x; }\n",
+            "__luish_cache files=(<(b)) { x; }\n",
+            "__luish_cache other=(a) { x; }\n",
+            "__luish_cache env= (a) { x; }\n",
+            "__luish_cache ( x )\n",
+        ] {
+            assert!(
+                Parser::new(bad.as_bytes().to_vec(), 1, true).parse_all().is_err(),
+                "{bad}"
+            );
+        }
+        // Not at the start of a command, or quoted, it is a word.
+        assert!(matches!(&simple(&parse("echo __luish_cache\n")).words[..], [_, _]));
+        assert!(matches!(&simple(&parse("\\__luish_cache x\n")).words[..], [_, _]));
     }
 
     #[test]

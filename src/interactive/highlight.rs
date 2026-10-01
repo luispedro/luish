@@ -128,6 +128,8 @@ enum After {
     /// Inside `[[ ... ]]`, where `<`, `>`, `(`, `)`, `&&` and `||` are
     /// operators of the expression.
     Cond,
+    /// The options after `__luish_cache`, up to its `{`.
+    Cache,
 }
 
 struct Scan<'a> {
@@ -350,6 +352,19 @@ impl Scan<'_> {
                 }
                 return e;
             }
+            After::Cache if plain && text == b"{" => {
+                self.paint(start, e, Class::Keyword);
+                *after = After::None;
+                *cmd = true;
+                return e;
+            }
+            After::Cache => {
+                if array {
+                    self.paint(start, e, Class::Assign);
+                    return self.array(e);
+                }
+                return e;
+            }
             After::ForName if plain && text == b"do" => {
                 self.paint(start, e, Class::Keyword);
                 *after = After::None;
@@ -361,7 +376,12 @@ impl Scan<'_> {
         if !*cmd || (*precommand && text.starts_with(b"-")) {
             return if array { self.array(e) } else { e };
         }
-        if plain && (RESERVED.contains(&text) || text == b"{" || text == b"}" || text == b"!") {
+        if plain && text == b"__luish_cache" {
+            self.paint(start, e, Class::Keyword);
+            *after = After::Cache;
+            *cmd = false;
+            *precommand = false;
+        } else if plain && (RESERVED.contains(&text) || text == b"{" || text == b"}" || text == b"!") {
             self.paint(start, e, Class::Keyword);
             match text {
                 b"for" => *after = After::For,
@@ -855,6 +875,14 @@ mod tests {
         assert_eq!(classes("! ls"), "k.cc");
         assert_eq!(classes("(ls)"), "occo");
         assert_eq!(classes("e\"ch\"o"), "cssssc");
+        assert_eq!(
+            classes("__luish_cache env=(A) { ls; }"),
+            "kkkkkkkkkkkkk.aaaao.o.k.cco.k"
+        );
+        assert_eq!(
+            classes("__luish_cache files=($x)\n{ nope; }"),
+            "kkkkkkkkkkkkk.aaaaaaovvo.k.uuuuo.k"
+        );
     }
 
     #[test]

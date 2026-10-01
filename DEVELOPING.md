@@ -130,6 +130,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   that starts with unquoted `[` and has `]=` (`split_subscript`, shared with `NAME[index]=`) has a key, which stays a
   word until the assignment decides whether it is an index or a key. Tests: unit tests in `parser.rs` and
   `unparse.rs`.
+- `__luish_cache [env=(NAME...)] [files=(WORD...)] { list; }` (`parse_cache_block`, `ast::CacheBlock`): a reserved
+  word, so only unquoted at the start of a command (`__luish_cache {` on a line of its own runs a command in dash,
+  but the `__luish_` prefix is luish's). The options are arrays as in `local a=(x y)` (`array_follows`), each at
+  most once; `env=` takes names, and `files=` words without command or process substitution (`forks`), since they
+  are expanded at every start. The body must be `{ ... }`. Without a startup cache being run, the body runs as a
+  brace group and the options are ignored; the highlighter paints the options as arrays (`After::Cache`). Tests:
+  `parse/cache_block.sh`, unit tests in `parser.rs`, `unparse.rs` and `highlight.rs`.
 - `Parser::started` tells a buffer of blank lines apart from a real incomplete command. The lexer reads a trailing
   `(...)` as `WordPart::GlobQual` only under `glob.bare_qualifiers`: the only place it depends on an option.
 - Unit tests in `parser.rs`. No `insta` snapshots or fuzz target yet.

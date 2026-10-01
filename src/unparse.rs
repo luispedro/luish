@@ -169,7 +169,31 @@ impl<'a> Printer<'a> {
                 self.redirs(redirs);
             }
             Command::FunctionDef { names, body } => self.function(names, body),
+            Command::Cache(block) => self.cache_block(block),
         }
+    }
+
+    fn cache_block(&mut self, block: &CacheBlock) {
+        self.w(b"__luish_cache");
+        if !block.env.is_empty() {
+            self.w(b" env=(");
+            self.w(&block.env.join(&b' '));
+            self.w(b")");
+        }
+        if !block.files.is_empty() {
+            self.w(b" files=(");
+            for (i, f) in block.files.iter().enumerate() {
+                if i > 0 {
+                    self.w(b" ");
+                }
+                self.word(f);
+            }
+            self.w(b")");
+        }
+        self.w(b" {");
+        self.block(&block.body);
+        self.nl();
+        self.w(b"}");
     }
 
     fn simple(&mut self, sc: &SimpleCommand) {
@@ -708,6 +732,11 @@ mod tests {
                             compound(&mut b.cmd);
                             redirs(&mut b.redirs);
                         }
+                        Command::Cache(block) => {
+                            let b = std::rc::Rc::make_mut(block);
+                            words(&mut b.files);
+                            strip_lines(&mut b.body);
+                        }
                     }
                 }
             }
@@ -723,6 +752,14 @@ mod tests {
         strip_lines(&mut b);
         assert_eq!(a, b, "\nsource:\n{src}\nprinted:\n{printed}");
         printed
+    }
+
+    #[test]
+    fn cache_block() {
+        assert_eq!(
+            round_trip("f() { __luish_cache env=(A B) files=(\"$H\"/a ~/b\\ c) { x=1; }; __luish_cache { :; }; }"),
+            "f() {\n    __luish_cache env=(A B) files=(\"$H\"/a ~/b\\ c) {\n        x=1\n    }\n    __luish_cache {\n        :\n    }\n}\n"
+        );
     }
 
     #[test]

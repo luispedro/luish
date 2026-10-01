@@ -1,0 +1,12 @@
+body
+x=1
+status 1
+newline before the brace
+in f: a
+__luish_cache is a shell keyword
+__luish_cache is a word here
+status 2: Syntax error: __luish_cache: env=(...) takes variable names
+status 2: Syntax error: __luish_cache: command substitution in files=(...)
+status 2: Syntax error: __luish_cache takes env=(...) and files=(...), then { ... }
+status 2: Syntax error: __luish_cache takes env=(...) and files=(...), then { ... }
+status 2: Syntax error: "(" unexpected (expecting "{")

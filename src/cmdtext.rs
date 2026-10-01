@@ -81,6 +81,7 @@ fn push_command(out: &mut Vec<u8>, cmd: &Command) {
                 out.extend_from_slice(b" { ... }");
             }
         }
+        Command::Cache(_) => out.extend_from_slice(b"__luish_cache { ... }"),
     }
 }
 
