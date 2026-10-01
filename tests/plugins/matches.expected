@@ -1,0 +1,27 @@
+*.conf one.conf: true
+*.conf one.other: false
+*.conf .conf: true
+* a/b: true
+a?c abc: true
+a?c ac: false
+a?c abbc: false
+ : true
+ x: false
+[ab]* beta: true
+[!ab]* beta: false
+[[:digit:]]* 1x: true
+[a-c] d: false
+*[!A-Za-z0-9._-]* my-prog_1.0: false
+*[!A-Za-z0-9._-]* a b: true
+*[!A-Za-z0-9._-]* é: true
+\* *: true
+\* x: false
+[ [: true
+a[ a[: true
+? é: false
+?? é: true
+load: 0
+case *.conf one.conf: true
+case [!ab]* beta: false
+case \* *: true
+case ?? é: true

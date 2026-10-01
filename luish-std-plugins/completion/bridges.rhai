@@ -64,15 +64,7 @@ fn cobra(words, i) {
 
 // Whether `s` can be part of the name of an environment variable.
 fn is_var_name(s) {
-    if s == "" {
-        return false;
-    }
-    for c in s.chars() {
-        if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
-            return false;
-        }
-    }
-    true
+    s != "" && !sh::matches("*[!A-Za-z0-9_-]*", s)
 }
 
 // Programs built with Click (Python) complete themselves: with

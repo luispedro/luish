@@ -140,14 +140,8 @@ fn note(desc, key) {
 fn help_of(path) {
     let words = path.split(" ");
     for w in words {
-        if w == "" || w.starts_with("-") {
+        if w == "" || w.starts_with("-") || sh::matches("*[!A-Za-z0-9._-]*", w) {
             return "";
-        }
-        for c in w.chars() {
-            if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_'
-                || c == '.') {
-                return "";
-            }
         }
     }
     sh::capture(["env", "COLUMNS=400"] + words + ["-h"]).out

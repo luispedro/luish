@@ -174,37 +174,21 @@ fn mount_table() {
     mount_table(fs::read_file("/proc/mounts") ?? "")
 }
 
-// Whether `name` matches a pattern with `*` in it (as in ssh's `Include`).
-fn glob_match(pat, name) {
-    let parts = pat.split("*");
-    if !name.starts_with(parts[0]) || !name.ends_with(parts[-1]) {
-        return false;
-    }
-    let at = parts[0].len();
-    for p in parts.extract(1, parts.len() - 2) {
-        let k = name.index_of(p, at);
-        if k < 0 {
-            return false;
-        }
-        at = k + p.len();
-    }
-    at <= name.len() - parts[-1].len()
-}
-
-// The files an ssh `Include` names: relative to `~/.ssh`, with `*` in its
-// last component.
+// The files an ssh `Include` names: relative to `~/.ssh`, with a shell
+// pattern in its last component, matched as the shell globs (a leading `.`
+// only explicitly).
 fn include(arg) {
     let p = tilde(arg);
     if !p.starts_with("/") {
         p = home() + "/.ssh/" + p;
     }
-    if !p.contains("*") {
+    let parts = split_dir(p);
+    if !sh::matches("*[*?[]*", parts[1]) {
         return [p];
     }
-    let parts = split_dir(p);
     let out = [];
     for n in fs::list_dir(parts[0]) ?? [] {
-        if glob_match(parts[1], n) {
+        if sh::matches(parts[1], n) && (!n.starts_with(".") || parts[1].starts_with(".")) {
             out.push(parts[0] + n);
         }
     }

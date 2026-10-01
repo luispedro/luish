@@ -18,6 +18,7 @@ use rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, P
 
 use super::bytes::{to_bytes, to_str};
 use super::{HookKind, Loading};
+use crate::expand::{pattern::Pattern, split::XChar};
 use crate::interactive::{Candidate, Completion, DEFAULT_COMPLETER, Suffix};
 use crate::prompt::Prompt;
 use crate::shell::{ExecResult, Flow, Shell};
@@ -533,6 +534,14 @@ fn sh_module() -> Module {
     m.set_native_fn("expand_prompt", |text: &str| {
         let text = to_shell(text)?;
         with_shell(|sh| Ok(to_str(&crate::prompt::expand(sh, &text).text)))
+    });
+    m.set_native_fn("matches", |pattern: &str, s: &str| {
+        // As `case $s in $pattern)`: unquoted, so a backslash escapes.
+        let p: Vec<XChar> = to_bytes(pattern)
+            .into_iter()
+            .map(|b| XChar { b, quoted: false })
+            .collect();
+        Ok(Pattern::new(&p).matches(&to_bytes(s)))
     });
     m.set_native_fn("getvar", |name: &str| {
         with_shell(|sh| Ok(sh.get_var(&to_bytes(name)).map_or(Dynamic::UNIT, |v| to_str(&v).into())))

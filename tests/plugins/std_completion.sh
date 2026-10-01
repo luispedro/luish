@@ -75,14 +75,20 @@ cat > .ssh/config <<'E'
 Host alpha beta
     User me
 Host *.corp !gamma
-Include conf.d/*.conf
+Include conf.d/*.conf conf.d/x[0-9]?.cf
 E
 echo 'host delta' > .ssh/conf.d/one.conf
 echo 'Host nope' > .ssh/conf.d/one.other
+echo 'Host nohidden' > .ssh/conf.d/.hidden.conf
+echo 'Host epsilon' > .ssh/conf.d/x1a.cf
+echo 'Host noletter' > .ssh/conf.d/xaa.cf
 c 'ssh al'
 c 'ssh me@be'
 c 'ssh -J del'
 c 'ssh nop'
+c 'ssh eps'
+c 'ssh noh'
+c 'ssh nol'
 c 'ssh !'
 c 'ssh -o Strict'
 c 'ssh -l roo'

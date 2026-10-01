@@ -2,6 +2,9 @@ Unreleased
     * `print`, as in zsh, in interactive shells (`__luish_internal
       print` anywhere), with `-P` for prompt expansion
     * `sh::expand_prompt(text)` expands `%` sequences for extensions
+    * `sh::matches(pattern, text)` matches shell patterns for extensions
+    * ssh completion: `Include` takes `?` and `[...]` in patterns, and
+      `*` no longer matches files that start with `.`
     * git completion: ranges (`HEAD^..`) no longer fail, and `git diff
       REV ` offers the tracked files
     * `sh::capture` takes the program and its arguments as an array,

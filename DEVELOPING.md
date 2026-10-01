@@ -678,6 +678,10 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   with a `/` is taken as it is. **`sh::commands`** lists `path::executables`, which also fills the editor's
   `PathCache`, and the highlighter uses `path::search`, so extensions, completion and highlighting agree on what
   a command is (a regular file with execute permission). Test: `tests/plugins/which.sh`.
+- **`sh::matches`** is `expand::pattern::Pattern`, `case`'s matcher, with every byte of the pattern unquoted (so a
+  backslash escapes, as in `case $s in $p)`). std uses it instead of matching patterns itself (ssh's `Include`, which
+  also skips files that start with `.` unless the pattern does, as globbing does). Tests: `tests/plugins/matches.sh`,
+  the ssh cases of `tests/plugins/std_completion.sh`.
 - **`sh::expand_prompt`** is `prompt::expand`, as `print -P` uses it: `%` sequences only, whatever
   `prompt.percent` is (parameters are the extension's to expand). Test: `tests/plugins/expand_prompt.sh`.
 - **`fs::realpath`** is `realpath(3)` (Rust's `canonicalize`): physical, so `..` after a symbolic link is the target's

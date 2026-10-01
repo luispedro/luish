@@ -193,6 +193,13 @@ delta
 status 0
 --- ssh nop
 status 1
+--- ssh eps
+epsilon 
+status 0
+--- ssh noh
+status 1
+--- ssh nol
+status 1
 --- ssh !
 status 1
 --- ssh -o Strict
