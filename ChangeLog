@@ -1,4 +1,4 @@
-Unreleased
+Version 0.3.0 2026-10-01 by luispedro
     * LUISH_VERSION and LUISH_PATCHLEVEL (as zsh's ZSH_VERSION and
       ZSH_PATCHLEVEL), MACHTYPE, HOSTTYPE and OSTYPE
     * install.sh no longer reads LUISH_VERSION (use --version)
