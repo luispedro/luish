@@ -621,6 +621,146 @@ fn heredoc_delim(body: &[u8]) -> Vec<u8> {
     }
 }
 
+/// Clears line numbers, which differ between the original and the
+/// printed text (for the round-trip tests, and the fuzzer's).
+#[cfg(any(test, fuzzing))]
+pub fn strip_lines(list: &mut List) {
+    fn words(ws: &mut [Word]) {
+        ws.iter_mut().for_each(word);
+    }
+    fn word(w: &mut Word) {
+        w.0.iter_mut().for_each(part);
+    }
+    fn part(p: &mut WordPart) {
+        match p {
+            WordPart::DoubleQuoted(ps) => ps.iter_mut().for_each(part),
+            WordPart::CmdSubst(l) | WordPart::ProcSubst { list: l, .. } => strip_lines(std::rc::Rc::make_mut(l)),
+            WordPart::Arith(w) => word(w),
+            WordPart::Array(items) => items.iter_mut().for_each(|item| {
+                item.key.iter_mut().for_each(word);
+                word(&mut item.value);
+            }),
+            WordPart::Param(pe) => {
+                match &mut pe.index {
+                    Some(Index::Expr(w)) => word(w),
+                    Some(Index::Slice(ends)) => {
+                        ends.0.iter_mut().for_each(word);
+                        ends.1.iter_mut().for_each(word);
+                    }
+                    _ => {}
+                }
+                param_op(&mut pe.op);
+            }
+            _ => {}
+        }
+    }
+    fn param_op(op: &mut ParamOp) {
+        match op {
+            ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names => {}
+            ParamOp::Default(w)
+            | ParamOp::Assign(w)
+            | ParamOp::Error(w)
+            | ParamOp::Alternative(w)
+            | ParamOp::RemoveSmallestSuffix(w)
+            | ParamOp::RemoveLargestSuffix(w)
+            | ParamOp::RemoveSmallestPrefix(w)
+            | ParamOp::RemoveLargestPrefix(w)
+            | ParamOp::Bad(w) => word(w),
+            ParamOp::Substring(offset, len) => {
+                word(offset);
+                len.iter_mut().for_each(word);
+            }
+            ParamOp::Replace(_, pat, rep) => {
+                word(pat);
+                word(rep);
+            }
+        }
+    }
+    fn redirs(rs: &mut [Redirect]) {
+        for r in rs {
+            match &mut r.target {
+                RedirTarget::Word(w) => word(w),
+                RedirTarget::HereDoc(hd) => word(&mut hd.borrow_mut().body),
+            }
+        }
+    }
+    fn compound(cc: &mut CompoundCommand) {
+        match cc {
+            CompoundCommand::BraceGroup(l) | CompoundCommand::Subshell(l) => strip_lines(l),
+            CompoundCommand::If { conds, else_ } => {
+                for (c, b) in conds {
+                    strip_lines(c);
+                    strip_lines(b);
+                }
+                if let Some(e) = else_ {
+                    strip_lines(e);
+                }
+            }
+            CompoundCommand::While { cond, body, .. } => {
+                strip_lines(cond);
+                strip_lines(body);
+            }
+            CompoundCommand::For {
+                words: ws,
+                body,
+                lineno,
+                ..
+            } => {
+                *lineno = 0;
+                if let Some(ws) = ws {
+                    words(ws);
+                }
+                strip_lines(body);
+            }
+            CompoundCommand::Case { word: w, arms, lineno } => {
+                *lineno = 0;
+                word(w);
+                for a in arms {
+                    words(&mut a.patterns);
+                    strip_lines(&mut a.body);
+                }
+            }
+            CompoundCommand::Cond { expr, lineno } => {
+                *lineno = 0;
+                expr.words_mut(&mut |w| word(w));
+            }
+        }
+    }
+    for cc in list {
+        let ao = &mut cc.list;
+        for p in std::iter::once(&mut ao.first).chain(ao.rest.iter_mut().map(|(_, p)| p)) {
+            for c in &mut p.cmds {
+                match c {
+                    Command::Simple(sc) => {
+                        sc.lineno = 0;
+                        sc.assigns.iter_mut().for_each(|a| {
+                            a.index.iter_mut().for_each(word);
+                            word(&mut a.value);
+                        });
+                        words(&mut sc.words);
+                        redirs(&mut sc.redirs);
+                    }
+                    Command::Compound(cc, rs) => {
+                        compound(cc);
+                        redirs(rs);
+                    }
+                    Command::FunctionDef { body, .. } => {
+                        let b = std::rc::Rc::make_mut(body);
+                        compound(&mut b.cmd);
+                        redirs(&mut b.redirs);
+                    }
+                    Command::Cache(block) => {
+                        let b = std::rc::Rc::make_mut(block);
+                        b.lineno = 0;
+                        words(&mut b.files);
+                        strip_lines(&mut b.body);
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -640,129 +780,6 @@ mod tests {
         let mut p = Printer::new(0, aliases, &globqual);
         p.function(names, body);
         String::from_utf8(p.finish()).unwrap()
-    }
-
-    /// Clears line numbers, which differ between the original and the
-    /// printed text.
-    fn strip_lines(list: &mut List) {
-        fn words(ws: &mut [Word]) {
-            ws.iter_mut().for_each(word);
-        }
-        fn word(w: &mut Word) {
-            w.0.iter_mut().for_each(part);
-        }
-        fn part(p: &mut WordPart) {
-            match p {
-                WordPart::DoubleQuoted(ps) => ps.iter_mut().for_each(part),
-                WordPart::CmdSubst(l) | WordPart::ProcSubst { list: l, .. } => strip_lines(std::rc::Rc::make_mut(l)),
-                WordPart::Arith(w) => word(w),
-                WordPart::Array(items) => items.iter_mut().for_each(|item| {
-                    item.key.iter_mut().for_each(word);
-                    word(&mut item.value);
-                }),
-                WordPart::Param(pe) => match &mut pe.op {
-                    ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names => {}
-                    ParamOp::Default(w)
-                    | ParamOp::Assign(w)
-                    | ParamOp::Error(w)
-                    | ParamOp::Alternative(w)
-                    | ParamOp::RemoveSmallestSuffix(w)
-                    | ParamOp::RemoveLargestSuffix(w)
-                    | ParamOp::RemoveSmallestPrefix(w)
-                    | ParamOp::RemoveLargestPrefix(w)
-                    | ParamOp::Bad(w) => word(w),
-                    ParamOp::Substring(offset, len) => {
-                        word(offset);
-                        len.iter_mut().for_each(word);
-                    }
-                    ParamOp::Replace(_, pat, rep) => {
-                        word(pat);
-                        word(rep);
-                    }
-                },
-                _ => {}
-            }
-        }
-        fn redirs(rs: &mut [Redirect]) {
-            for r in rs {
-                match &mut r.target {
-                    RedirTarget::Word(w) => word(w),
-                    RedirTarget::HereDoc(hd) => word(&mut hd.borrow_mut().body),
-                }
-            }
-        }
-        fn compound(cc: &mut CompoundCommand) {
-            match cc {
-                CompoundCommand::BraceGroup(l) | CompoundCommand::Subshell(l) => strip_lines(l),
-                CompoundCommand::If { conds, else_ } => {
-                    for (c, b) in conds {
-                        strip_lines(c);
-                        strip_lines(b);
-                    }
-                    if let Some(e) = else_ {
-                        strip_lines(e);
-                    }
-                }
-                CompoundCommand::While { cond, body, .. } => {
-                    strip_lines(cond);
-                    strip_lines(body);
-                }
-                CompoundCommand::For {
-                    words: ws,
-                    body,
-                    lineno,
-                    ..
-                } => {
-                    *lineno = 0;
-                    if let Some(ws) = ws {
-                        words(ws);
-                    }
-                    strip_lines(body);
-                }
-                CompoundCommand::Case { word: w, arms, lineno } => {
-                    *lineno = 0;
-                    word(w);
-                    for a in arms {
-                        words(&mut a.patterns);
-                        strip_lines(&mut a.body);
-                    }
-                }
-                CompoundCommand::Cond { expr, lineno } => {
-                    *lineno = 0;
-                    expr.words_mut(&mut |w| word(w));
-                }
-            }
-        }
-        for cc in list {
-            let ao = &mut cc.list;
-            for p in std::iter::once(&mut ao.first).chain(ao.rest.iter_mut().map(|(_, p)| p)) {
-                for c in &mut p.cmds {
-                    match c {
-                        Command::Simple(sc) => {
-                            sc.lineno = 0;
-                            sc.assigns.iter_mut().for_each(|a| word(&mut a.value));
-                            words(&mut sc.words);
-                            redirs(&mut sc.redirs);
-                        }
-                        Command::Compound(cc, rs) => {
-                            compound(cc);
-                            redirs(rs);
-                        }
-                        Command::FunctionDef { body, .. } => {
-                            let b = std::rc::Rc::make_mut(body);
-                            compound(&mut b.cmd);
-                            redirs(&mut b.redirs);
-                        }
-                        Command::Cache(block) => {
-                            let b = std::rc::Rc::make_mut(block);
-                            b.lineno = 0;
-                            words(&mut b.files);
-                            strip_lines(&mut b.body);
-                        }
-                    }
-                }
-            }
-        }
     }
 
     /// Printing `src` gives text that parses to the same tree.

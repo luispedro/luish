@@ -26,3 +26,7 @@ panic = "abort"
 default = ["plugins"]
 # Plugins and their Rhai extensions (DEVELOPING.md). Without it, `plugin load` reports an error.
 plugins = ["dep:rhai"]
+
+[lints.rust]
+# Set by cargo-fuzz, for code that only the fuzz targets use (fuzz/).
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(fuzzing)"] }

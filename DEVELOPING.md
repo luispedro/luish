@@ -82,6 +82,7 @@ tests/
 ├── plugins/            # plugin cases (*.sh with .expected, .stderr)
 ├── compare.rs          # the differential harness
 └── interactive.rs      # pty tests
+fuzz/                   # cargo-fuzz targets (see Fuzzing)
 bench/                  # script benchmarks, and extensions/ for Rhai commands (see bench/README.md)
 scripts/                # dist.sh (release packages), test-install.sh (tests install.sh with them)
 install.sh              # the `curl | sh` installer, which downloads a release
@@ -1061,6 +1062,36 @@ truncates when it relocates the package.
   t() { printf '== %s\n' "$1"; z=$($Z --emulate sh -c "$1" 2>&1 | tr '\n' '|'); b=$(bash --posix -c "$1" 2>&1 | tr '\n' '|'); l=$(./target/debug/luish -c "$1" 2>&1 | tr '\n' '|'); printf ' zsh-sh: %s\n bash:   %s\n luish:  %s\n' "$z" "$b" "$l"; }
   T() { printf '== %s\n' "$1"; z=$(printf "$2" | $Z --emulate sh -c "$1" 2>&1 | tr '\n' '|'); b=$(printf "$2" | bash --posix -c "${1//-A/-a}" 2>&1 | tr '\n' '|'); l=$(printf "$2" | ./target/debug/luish -c "$1" 2>&1 | tr '\n' '|'); printf ' zsh-sh: %s\n bash:   %s\n luish:  %s\n' "$z" "$b" "$l"; }
   ```
+
+## Fuzzing
+
+`fuzz/` has [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) targets for the code that takes arbitrary text
+without running anything. Each target is a function in `fuzz/src/targets.rs` that, besides not panicking (debug
+assertions, so overflow too, and AddressSanitizer), checks what it can of the result:
+
+- `parse`: the lexer and parser, and `cmdtext.rs`, on the whole input (as for scripts), incrementally (as the
+  interactive loop parses, where the input may be incomplete), and with aliases and `glob.bare_qualifiers`.
+  `consumed()` must stay within the input.
+- `unparse`: `unparse.rs`, on the input made a function's body. The printed text must parse back to the same tree,
+  apart from line numbers (`strip_lines`).
+- `arith`: `$((...))` (`expand/arith.rs`).
+- `pattern`: `trim` and `replace` (`expand/pattern.rs`), which only try the prefixes, suffixes and positions the
+  pattern could match, must give what trying them all gives.
+- `highlight`: the syntax highlighter, which sees every prefix of a line as it is typed: one class per byte, and
+  rendering only adds SGR sequences.
+- `bang`: history expansion (`interactive/bang.rs`).
+- `prompt`: `%` sequences (`prompt.rs`).
+
+cargo-fuzz needs a nightly Rust (`rustup toolchain install nightly`, `cargo install cargo-fuzz`), which pixi
+doesn't have, so run it outside pixi: `fuzz/run.sh TARGET [SECONDS]` runs a target (until stopped, without
+`SECONDS`), seeded with `tests/cases` for the targets that read scripts and with `fuzz/seeds/TARGET` for the others.
+It keeps what it finds in `fuzz/corpus/TARGET` and crashes in `fuzz/artifacts/TARGET` (both untracked);
+`cargo +nightly fuzz tmin TARGET FILE` minimises a crash. Add each bug found as a test case (a differential case,
+or a unit test) when fixing it.
+
+luish is a binary crate, so the fuzz crate compiles its modules itself: `fuzz/build.rs` writes a `#[path]` module for
+each `mod NAME;` of `src/main.rs`, so the list needs no upkeep. The fuzz targets can use crate-private items, and
+code only they need is under `#[cfg(any(test, fuzzing))]` (`fuzzing` is set by cargo-fuzz, and by `fuzz/build.rs`).
 
 ## Conformance
 

@@ -48,6 +48,7 @@ pixi run release                  # release build (LTO, panic=abort), used for b
 pixi run bench                    # release build, then the script benchmarks in bench/ (see bench/README.md)
 pixi run dist                     # release packages in target/dist/ (DEVELOPING.md, Releases); needs rustup for musl
 pixi run docs                     # build the user docs into docs/_build/html (warnings are errors)
+fuzz/run.sh parse 60              # a cargo-fuzz target for 60 s (outside pixi: needs nightly; DEVELOPING.md, Fuzzing)
 ```
 
 `rustfmt.toml` sets `max_width = 120`. Plugins (Phase 11, `src/plugins/`) use Rhai behind the default `plugins` cargo

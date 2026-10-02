@@ -1,9 +1,9 @@
 //! Interactive mode: prompts, the line editor, history, and startup files.
 
-mod bang;
+pub(crate) mod bang;
 mod complete;
 pub mod firstrun;
-mod highlight;
+pub(crate) mod highlight;
 mod histfile;
 pub mod history;
 pub mod keys;

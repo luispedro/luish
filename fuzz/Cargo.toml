@@ -1,0 +1,77 @@
+[package]
+name = "luish-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+# The same as luish's (../Cargo.toml), without Rhai: the plugins are not
+# fuzzed.
+[dependencies]
+libfuzzer-sys = "0.4"
+libc = "0.2.189"
+nix = { version = "0.31.3", features = ["process", "signal", "fs", "term", "resource", "user", "dir", "poll"] }
+rustyline = "18.0.1"
+toml-span = { version = "0.7.1", default-features = false }
+unicode-width = "0.2"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("plugins"))'] }
+
+# Not part of luish's package.
+[workspace]
+members = ["."]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "parse"
+path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "unparse"
+path = "fuzz_targets/unparse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "arith"
+path = "fuzz_targets/arith.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pattern"
+path = "fuzz_targets/pattern.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "highlight"
+path = "fuzz_targets/highlight.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bang"
+path = "fuzz_targets/bang.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prompt"
+path = "fuzz_targets/prompt.rs"
+test = false
+doc = false
+bench = false

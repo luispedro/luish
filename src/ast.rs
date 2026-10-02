@@ -187,7 +187,7 @@ impl CondExpr {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, fuzzing))]
     pub fn words_mut(&mut self, f: &mut dyn FnMut(&mut Word)) {
         match self {
             CondExpr::Not(a) => a.words_mut(f),
