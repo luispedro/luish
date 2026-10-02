@@ -64,6 +64,8 @@ pub struct Names {
     pub braces: bool,
     /// Not `set -f`, for the highlighter.
     pub glob: bool,
+    /// `setopt glob.bare_qualifiers`, for the highlighter's parse.
+    pub bareglobqual: bool,
     /// `history.expand`: the highlighter takes a command name with a `!`,
     /// or one starting with `^`, for a history reference.
     pub history_expand: bool,
@@ -1851,6 +1853,7 @@ mod tests {
                 autocd: false,
                 braces: false,
                 glob: true,
+                bareglobqual: false,
                 history_expand: false,
                 options: vec![
                     ("errexit", false),

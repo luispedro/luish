@@ -11,6 +11,11 @@
 //! and `${NAME}` are marked when `NAME` is not set, unless an earlier part
 //! of the text assigns it (`NAME=`, also as an argument, or `for NAME`).
 //!
+//! Syntax errors come from a dry parse of the text with the real parser
+//! (which runs nothing): the `error` modifier goes from the first error to
+//! the end, except while the word with the error is the one being typed.
+//! Incomplete text, which would get a `PS2` prompt, has no error.
+//!
 //! The colours are the styles of the roles, with those of the modifiers
 //! (such as `error`) added. Highlighting is off with `setopt
 //! editor.no_highlight`, or if `$NO_COLOR` is set and not empty.
@@ -18,10 +23,13 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ops::Range;
+use std::rc::Rc;
 
 use rustyline::highlight::{CmdKind, Highlighter};
 
 use super::complete::{PRECOMMANDS, RESERVED, ShellHelper, is_executable};
+use crate::lexer::{AliasMap, Parser};
 use crate::style::{ROLES, Role, Style};
 use crate::sys;
 
@@ -76,6 +84,9 @@ pub const MODIFIERS: [Role; 4] = [
     Role::of("path.prefix"),
     Role::of("match"),
 ];
+
+/// The bit of the `error` modifier.
+pub const ERROR: u8 = 1;
 
 /// What a byte of the line is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
@@ -232,7 +243,12 @@ pub struct State {
     pub context: Vec<u8>,
     /// What each command name looked up since the prompt is.
     pub known: RefCell<HashMap<Vec<u8>, CommandKind>>,
+    /// The last text parsed for errors, and its error.
+    pub parsed: RefCell<(Vec<u8>, Option<Range<usize>>)>,
 }
+
+/// Texts longer than this are not parsed for errors.
+const MAX_PARSE: usize = 64 * 1024;
 
 /// What `classify` needs to know about the shell.
 pub struct Facts<'a> {
@@ -1104,6 +1120,53 @@ pub fn classify(text: &[u8], cursor: Option<usize>, facts: &Facts) -> Vec<Cell> 
     sc.cls
 }
 
+/// Where the first syntax error in `text` is, if it has one, from a dry
+/// parse of `text` and the newline that entering it adds. Nothing runs,
+/// so aliases defined in `text` are not used (the shell doesn't use them
+/// before the next line either). Incomplete text has no error.
+pub fn syntax_error(text: &[u8], aliases: &Rc<AliasMap>, bareglobqual: bool) -> Option<Range<usize>> {
+    let mut src = Vec::with_capacity(text.len() + 1);
+    src.extend_from_slice(text);
+    src.push(b'\n');
+    let mut p = Parser::new(src, 1, false);
+    p.bareglobqual = bareglobqual;
+    loop {
+        match p.parse_next(aliases) {
+            Ok(Some(_)) => {}
+            Ok(None) => return None,
+            Err(e) if e.incomplete => return None,
+            Err(_) => return Some(p.error_span()),
+        }
+    }
+}
+
+/// Where the `error` modifier starts in `text` for the syntax error at
+/// `span`, if the error is marked with the cursor at `cursor`. An error in
+/// a word that ends at the cursor is not marked, since the word may still
+/// be being typed (`do` in `docker`), nor is one at the end of the text
+/// while the cursor is there (`ls >` before the file name is typed): for
+/// an error at the end, the operators before it are marked.
+pub fn error_start(text: &[u8], span: Range<usize>, cursor: Option<usize>) -> Option<usize> {
+    let end = text.len()
+        - text
+            .iter()
+            .rev()
+            .take_while(|&&c| matches!(c, b' ' | b'\t' | b'\n'))
+            .count();
+    if span.start >= end {
+        if cursor.is_some_and(|c| c >= end) || end == 0 {
+            return None;
+        }
+        let ops = text[..end].iter().rev().take_while(|c| b"<>&|;!()".contains(c)).count();
+        let mut start = end - ops.max(1);
+        while start > 0 && text[start] & 0xc0 == 0x80 {
+            start -= 1;
+        }
+        return Some(start);
+    }
+    (cursor != Some(span.end)).then_some(span.start)
+}
+
 /// Adds SGR sequences to `line` for the cells `cls`, changing colour only
 /// at character boundaries.
 pub fn render(line: &[u8], cls: &[Cell], colors: &Colors) -> Vec<u8> {
@@ -1188,6 +1251,24 @@ impl ShellHelper {
     }
 }
 
+impl ShellHelper {
+    /// The syntax error in `text`, if any, remembered for the last text
+    /// (moving the cursor redraws the same text).
+    fn error(&self, text: &[u8]) -> Option<Range<usize>> {
+        if text.len() > MAX_PARSE {
+            return None;
+        }
+        let mut parsed = self.highlight.parsed.borrow_mut();
+        if parsed.0 != text {
+            *parsed = (
+                text.to_vec(),
+                syntax_error(text, &self.names.aliases, self.names.bareglobqual),
+            );
+        }
+        parsed.1.clone()
+    }
+}
+
 impl Highlighter for ShellHelper {
     /// The line in colour, followed by the right prompt if it fits.
     fn highlight<'l>(&self, line: &'l str, pos: usize) -> Cow<'l, str> {
@@ -1226,7 +1307,16 @@ impl ShellHelper {
             braces: self.names.braces,
             glob: self.names.glob,
         };
-        let cls = classify(&text, Some(context.len() + pos), &facts);
+        let cursor = context.len() + pos;
+        let mut cls = classify(&text, Some(cursor), &facts);
+        if let Some(start) = self
+            .error(&text)
+            .and_then(|span| error_start(&text, span, Some(cursor)))
+        {
+            for c in &mut cls[start.max(context.len())..] {
+                c.mods |= ERROR;
+            }
+        }
         String::from_utf8(render(line.as_bytes(), &cls[context.len()..], colors))
             .map_or(Cow::Borrowed(line), Cow::Owned)
     }
@@ -1550,6 +1640,65 @@ mod tests {
         let cls = classify(b"ls {a,b}* ~", None, &facts);
         assert!(cls[3..9].iter().all(|c| c.role == role::ARG));
         assert_eq!(cls[10].role, role::TILDE);
+    }
+
+    /// Where the `error` modifier starts in `text`, with no aliases and
+    /// the cursor at `cursor`.
+    fn error_at(text: &str, cursor: Option<usize>) -> Option<usize> {
+        let span = syntax_error(text.as_bytes(), &crate::lexer::no_aliases(), false)?;
+        error_start(text.as_bytes(), span, cursor)
+    }
+
+    #[test]
+    fn syntax_errors() {
+        for (text, at) in [
+            ("echo a; then", Some(8)),
+            ("echo )", Some(5)),
+            ("echo a\nfi\n", Some(7)),
+            ("if true; then fi", Some(14)),
+            ("for 1 in a; do :; done", Some(4)),
+            ("case x in a) esac; esac", Some(19)),
+            ("echo `)` ok", Some(5)),
+            ("echo $(fi) ok", Some(7)),
+            ("echo > ; ls", Some(7)),
+            ("echo >", Some(5)),
+            ("echo 2>&  ", Some(6)),
+            ("é )", Some(3)),
+            // Incomplete
+            ("", None),
+            ("if true; then", None),
+            ("echo \"a", None),
+            ("echo $(ls", None),
+            ("cat <<E\nbody", None),
+            ("echo a |", None),
+            ("echo a \\", None),
+            ("f()", None),
+            // Valid
+            ("echo a; echo b\necho c", None),
+            ("case x in a) echo;; esac", None),
+        ] {
+            assert_eq!(error_at(text, None), at, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn syntax_errors_at_the_cursor() {
+        // The word being typed.
+        assert_eq!(error_at("do", Some(2)), None);
+        assert_eq!(error_at("do ", Some(3)), Some(0));
+        assert_eq!(error_at("do ", Some(1)), Some(0));
+        assert_eq!(error_at("echo; then", Some(10)), None);
+        // An error at the end while the cursor is there.
+        assert_eq!(error_at("echo >", Some(6)), None);
+        assert_eq!(error_at("echo >  ", Some(8)), None);
+        assert_eq!(error_at("echo >", Some(2)), Some(5));
+        assert_eq!(error_at("echo >>", Some(0)), Some(5));
+        // Aliases are expanded.
+        let mut aliases = AliasMap::default();
+        aliases.insert(b"ifx".to_vec(), b"if true".to_vec(), false);
+        let aliases = Rc::new(aliases);
+        assert_eq!(syntax_error(b"ifx; then :; fi", &aliases, false), None);
+        assert_eq!(syntax_error(b"ifx; then :; fi; fi", &aliases, false), Some(17..19));
     }
 
     #[test]

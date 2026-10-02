@@ -78,6 +78,7 @@ impl Parser {
         if let Some(e) = expecting {
             msg.push_str(&format!(" (expecting \"{e}\")"));
         }
+        self.note_error(t.start, t.end);
         Err(ParseError {
             msg,
             lineno: t.lineno,
@@ -456,7 +457,10 @@ impl Parser {
         let t = self.next()?;
         let var = match &t.tok {
             Tok::Word(w) if w.as_literal().is_some_and(is_valid_name) => w.as_literal().unwrap().to_vec(),
-            Tok::Word(_) => return self.err("Syntax error: Bad for loop variable"),
+            Tok::Word(_) => {
+                self.note_error(t.start, t.end);
+                return self.err_at("Syntax error: Bad for loop variable");
+            }
             _ => return self.unexpected(&t, None),
         };
         let mut words = None;
@@ -576,7 +580,8 @@ impl Parser {
                 .iter()
                 .any(|p| matches!(p, WordPart::CmdSubst(_) | WordPart::Arith(_)))
             {
-                return self.err("Syntax error: \"(\" unexpected");
+                self.note_error(t.start, t.end);
+                return self.err_at("Syntax error: \"(\" unexpected");
             }
             let raw = self.src[t.start..t.end].to_vec();
             RedirTarget::HereDoc(self.push_heredoc(&raw, op == Op::DLessDash))

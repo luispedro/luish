@@ -244,12 +244,28 @@ pub fn pattern(data: &[u8]) {
 /// the colours are taken out.
 pub fn highlight(data: &[u8]) {
     stack::init();
-    let known = |w: &[u8]| w.len() % 2 == 0;
-    let is_set = |w: &[u8]| w.first() == Some(&b'H');
-    let colors = highlight::Colors::parse(b"").unwrap();
+    let command = |w: &[u8]| match w.len() % 3 {
+        0 => highlight::CommandKind::Builtin,
+        1 => highlight::CommandKind::Function,
+        _ => highlight::CommandKind::Unknown,
+    };
+    let var = |w: &[u8]| (w.first() == Some(&b'H')).then_some(highlight::VarKind::Plain);
+    let facts = highlight::Facts {
+        command: &command,
+        var: &var,
+        braces: true,
+        glob: true,
+    };
+    let colors = highlight::Colors::default();
+    let error = highlight::syntax_error(data, &aliases(), false);
     for cursor in [None, Some(data.len()), Some(data.len() / 2)] {
-        let cls = highlight::classify(data, cursor, &known, &is_set);
+        let mut cls = highlight::classify(data, cursor, &facts);
         assert_eq!(cls.len(), data.len());
+        if let Some(start) = error.clone().and_then(|e| highlight::error_start(data, e, cursor)) {
+            for c in &mut cls[start..] {
+                c.mods |= highlight::ERROR;
+            }
+        }
         let out = highlight::render(data, &cls, &colors);
         // (A line with an escape of its own could be taken for one.)
         if !data.contains(&0x1b) {

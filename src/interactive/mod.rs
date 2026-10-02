@@ -289,6 +289,7 @@ fn names(sh: &Shell) -> Names {
         autocd: sh.opt(crate::options::Opt::Autocd),
         braces: sh.opt(Opt::BraceExpand),
         glob: !sh.opt(Opt::Noglob),
+        bareglobqual: sh.opt(Opt::Bareglobqual),
         history_expand: sh.opt(Opt::HistExpand),
         options: crate::options::Options::all_names()
             .filter(|o| !matches!(o.0, crate::options::Opt::Interactive | crate::options::Opt::Stdin))
@@ -497,6 +498,7 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
             h.highlight.context.clear();
             h.highlight.context.extend_from_slice(pending);
             h.highlight.known.get_mut().clear();
+            *h.highlight.parsed.get_mut() = Default::default();
         }
         ed.set_edit_mode(if vi {
             rustyline::EditMode::Vi

@@ -371,6 +371,13 @@ and bindings can also go in `config.toml` (see below).
 The line editor colours the command line as it is typed. `setopt editor.no_highlight`, or a non-empty `$NO_COLOR`,
 turns it off.
 
+A syntax error is marked from where it is to the end of the line, in the style `error` (added to the colours the
+text has anyway; red and underlined by default), as the shell would report it if the line were entered then: a
+line that is only incomplete, which would get the `PS2` prompt, has no error. A word with an error isn't marked while
+the cursor is at its end, as it may still be being typed (`do` on the way to `docker`), nor is an operator missing
+what follows it while the cursor is after it (`ls >` before the file name). Lines over 64 KiB (such as a long
+paste) aren't checked.
+
 ### Styles
 
 Each part of the line has a style, by name. The names are dotted, and a style that isn't set takes what it doesn't
@@ -417,8 +424,9 @@ far:
 | `menu.description` | descriptions in the completion menu |
 | `suggestion` | autosuggestions |
 
-So `command` sets all the kinds of command at once, `string` all the strings, and so on. More names exist already,
-for distinctions the highlighter doesn't make yet (`error`, `path` and others; `style` lists them). Other names, such as `git.branch`, are free for plugins to use, but not those that start like a name of
+So `command` sets all the kinds of command at once, `string` all the strings, and so on. `error` is added to the
+style of the text with a syntax error. More names exist already, for distinctions the highlighter doesn't make yet
+(`path` and others; `style` lists them). Other names, such as `git.branch`, are free for plugins to use, but not those that start like a name of
 luish's (`command.nosuch` is an error).
 
 A style's value is words separated by spaces:

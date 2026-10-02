@@ -635,7 +635,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   emacs mode (zsh's `KEYTIMEOUT`) and 100 ms in vi mode.
 - **Highlighting** (`highlight.rs`): `classify` gives each byte a `Cell`, a role (`style::Role`, the position of a
   name in `style::ROLES`, made by the const fn `Role::of`, so a misspelt role doesn't compile) and a bitset of
-  `MODIFIERS` (nothing sets them yet). It needs no `Shell`: what it knows comes in `Facts` (the kind of a command
+  `MODIFIERS` (only `error` is set so far). It needs no `Shell`: what it knows comes in `Facts` (the kind of a command
   name, whether a variable is set, `expand.braces`, `set -f`). `ShellHelper::command_kind` finds a command's
   `CommandKind` in the order the shell would (alias, special built-in, function, built-in or extension's built-in,
   then `PATH`; autocd directories last), cached until the next prompt; a known name in `PRECOMMANDS` gets
@@ -655,10 +655,21 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   defined earlier in the text (outside subshells and substitutions) count as known, in place of an external or
   unknown command but not of a built-in, which might be special. Aliases defined earlier count only from the next
   complete command (a newline outside any compound command, `Scan::depth`), since that is when the shell takes them
-  up; arguments of `alias` after an option (`-g`, `-s`) define nothing here. Unit tests compare one letter
+  up; arguments of `alias` after an option (`-g`, `-s`) define nothing here. Syntax errors come from a dry parse
+  (`syntax_error`): the real parser over the text (the `PS2` context and the line) and the newline that entering it
+  adds, with `source_eof` false so that incomplete input isn't an error, and with the shell's aliases (the parser has
+  no side effects: it only builds the tree). `Parser::error_span` gives where the last error was, in bytes of the
+  original input: `unexpected` notes the token's span, `err` the peeked token's or the position, errors in
+  backquotes and here-document bodies (parsed by a parser of their own) the whole of them; `splice_delta` maps back,
+  roughly inside alias text. `error_start` decides where `error` starts: not at all while the cursor is at the end of
+  the token with the error (a word being typed), nor for an error at the newline (`ls >`) while the cursor is after
+  the last non-blank, otherwise marking the operators before the newline. The result is kept for the last text
+  (`State::parsed`, reset before each prompt), as moving the cursor redraws the same text; texts over `MAX_PARSE`
+  (64 KiB, about 3 ms to parse in release) aren't parsed. Nesting deep enough to need it stops at `stack::ok`, as the
+  editor runs on the main thread. Unit tests compare one letter
   per byte for the top-level role (`classes`), or the runs with their full role (`roles`). Tests: `highlight.rs`
   (`command_roles`, `string_and_var_roles`, `var_roles`, `defined_on_the_line`, `expansion_roles`,
-  `unset_variables` and others), the kinds in `candidates` in `complete.rs`, `syntax_highlighting` in
+  `unset_variables`, `syntax_errors`, `syntax_errors_at_the_cursor` and others), the kinds in `candidates` in `complete.rs`, `syntax_highlighting` in
   `tests/interactive.rs`.
 - **Styles** (`style.rs`, `builtins/style.rs`): a `Style` has optional colours, attributes on and off (bits by
   `ATTRS`), `plain` and raw SGR; `inherit` fills what one leaves out from its parent. `Styles` (on `Shell`, empty
@@ -1185,8 +1196,8 @@ assertions, so overflow too, and AddressSanitizer), checks what it can of the re
 - `arith`: `$((...))` (`expand/arith.rs`).
 - `pattern`: `trim` and `replace` (`expand/pattern.rs`), which only try the prefixes, suffixes and positions the
   pattern could match, must give what trying them all gives.
-- `highlight`: the syntax highlighter, which sees every prefix of a line as it is typed: one class per byte, and
-  rendering only adds SGR sequences.
+- `highlight`: the syntax highlighter, which sees every prefix of a line as it is typed: one cell per byte, the
+  `error` modifier from where `error_start` puts it, and rendering only adds SGR sequences.
 - `bang`: history expansion (`interactive/bang.rs`).
 - `prompt`: `%` sequences (`prompt.rs`).
 

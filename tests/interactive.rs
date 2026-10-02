@@ -418,6 +418,21 @@ fn syntax_highlighting() {
     sh.expect("\x1b[1;36m$PWD\x1b[0m \x1b[36m$x\x1b[0m \x1b[2;36m$NOSUCH\x1b[0m ");
     sh.send("\x03");
     sh.expect("$ ");
+    // A syntax error, marked from there on, but not while it is the word
+    // being typed; incomplete input is not an error.
+    sh.send("if true; then echo; fi; fi");
+    sh.expect("\x1b[1m;\x1b[0m \x1b[1;34mfi\x1b[0m\x1b[28C");
+    sh.send(" x");
+    sh.expect("\x1b[1m;\x1b[0m \x1b[1;4;31mfi\x1b[0m\x1b[4;31m x\x1b[0m");
+    sh.send("\x03");
+    sh.expect("$ ");
+    // On a continuation line, the error is found with the lines before.
+    sh.send("if true\n");
+    sh.expect("> ");
+    sh.send("fi x");
+    sh.expect("> \x1b[1;4;31mfi\x1b[0m\x1b[4;31m x\x1b[0m");
+    sh.send("\x03");
+    sh.expect("$ ");
     // `style` changes a role; the second line continues a quote.
     sh.send("style string underline\n");
     sh.expect("$ ");

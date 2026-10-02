@@ -3,7 +3,7 @@
 //! lexing a word.
 
 use crate::hash::HashMap;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::ast::*;
@@ -263,6 +263,9 @@ pub struct Parser {
     /// `setopt glob.bare_qualifiers`: a trailing `(...)` in a word is a glob
     /// qualifier. This is the only place the lexer depends on an option.
     pub bareglobqual: bool,
+    /// Where the last error was found, in bytes of the original input (see
+    /// [`Parser::error_span`]).
+    error_at: Cell<(usize, usize)>,
 }
 
 /// Whether the word after an alias with this value is checked for aliases.
@@ -323,6 +326,7 @@ impl Parser {
             splice_delta: 0,
             started: false,
             bareglobqual: false,
+            error_at: Cell::new((0, 0)),
         }
     }
 
@@ -340,7 +344,33 @@ impl Parser {
             .all(|c| matches!(c, b' ' | b'\t' | b'\n'))
     }
 
+    /// The bytes of the original input where the last syntax error was
+    /// found: its token, or an empty range where the input stopped making
+    /// sense. Inside alias text, or after a line continuation in `$...`,
+    /// it is only roughly right.
+    pub fn error_span(&self) -> std::ops::Range<usize> {
+        let (a, b) = self.error_at.get();
+        a..b
+    }
+
+    /// Records `start..end` (in `src`) as where an error is.
+    pub(crate) fn note_error(&self, start: usize, end: usize) {
+        let orig = |i: usize| (i as isize - self.splice_delta).max(0) as usize;
+        self.error_at.set((orig(start), orig(end)));
+    }
+
+    /// An error at the token that has been peeked at, or else at the
+    /// current position.
     pub(crate) fn err<T>(&self, msg: impl Into<String>) -> PResult<T> {
+        match &self.peeked {
+            Some(t) => self.note_error(t.start, t.end),
+            None => self.note_error(self.pos, self.pos),
+        }
+        self.err_at(msg)
+    }
+
+    /// An error whose position has been noted.
+    pub(crate) fn err_at<T>(&self, msg: impl Into<String>) -> PResult<T> {
         Err(ParseError {
             msg: msg.into(),
             lineno: self.lineno,
@@ -1280,6 +1310,7 @@ impl Parser {
     /// At a backquote: collect the text up to the closing backquote,
     /// unescape it, and parse it separately.
     fn read_backquote(&mut self, in_dquote: bool) -> PResult<WordPart> {
+        let start = self.pos;
         self.pos += 1;
         let lineno = self.lineno;
         let mut text = Vec::new();
@@ -1312,7 +1343,7 @@ impl Parser {
         let mut sub = Parser::new(text, lineno, true);
         sub.aliases = self.aliases.clone();
         sub.bareglobqual = self.bareglobqual;
-        let list = sub.parse_all()?;
+        let list = sub.parse_all().inspect_err(|_| self.note_error(start, self.pos))?;
         Ok(WordPart::CmdSubst(Rc::new(list)))
     }
 
@@ -1334,6 +1365,7 @@ impl Parser {
     fn read_heredoc_bodies(&mut self) -> PResult<()> {
         for hd in std::mem::take(&mut self.pending_heredocs) {
             let lineno = self.lineno;
+            let start = self.pos;
             let mut body = Vec::new();
             loop {
                 if self.pos >= self.src.len() {
@@ -1371,7 +1403,8 @@ impl Parser {
                 let mut sub = Parser::new(body, lineno, true);
                 sub.aliases = self.aliases.clone();
                 sub.bareglobqual = self.bareglobqual;
-                sub.read_heredoc_word()?
+                sub.read_heredoc_word()
+                    .inspect_err(|_| self.note_error(start, self.pos))?
             };
             *hd.body.borrow_mut() = HereDocBody {
                 body: word,

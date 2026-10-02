@@ -1,4 +1,6 @@
 Unreleased
+    * Highlighting marks syntax errors, from the error to the end of the
+      line (style `error`)
     * plugin load -c CODE NAME: a plugin from Rhai code, without a file
     * Styles and colour schemes for the line editor: the `style`
       built-in, and [style] and [colorscheme.NAME] tables in config.toml
