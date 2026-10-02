@@ -85,9 +85,9 @@ fn run_file(sh: &mut Shell, argv: &[Vec<u8>], cwd_first: bool) -> ExecResult {
     sh.lineno = 1;
     sh.dot_depth += 1;
     let file = SourceFile::new(path.as_deref().unwrap_or_default(), sh.curdir.as_deref());
-    let in_string = sh.push_frame(Frame::file(FrameKind::Source, file, saved_lineno));
+    sh.push_frame(Frame::file(FrameKind::Source, file, saved_lineno));
     let r = sh.run_text(&text, true);
-    sh.pop_frame(in_string);
+    sh.pop_frame();
     sh.dot_depth -= 1;
     sh.lineno = saved_lineno;
     match r {

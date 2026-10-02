@@ -438,12 +438,12 @@ impl Shell {
         let saved_loop = std::mem::replace(&mut self.loop_depth, 0);
         self.func_depth += 1;
         let call_line = self.lineno;
-        let in_string = self.push_frame(Frame {
-            kind: FrameKind::Function(func.name.clone()),
-            file: func.file.clone(),
-            lines_in_file: func.lines_in_file,
+        self.push_frame(Frame::new(
+            FrameKind::Function(func.name.clone()),
+            func.file.clone(),
+            func.lines_in_file,
             call_line,
-        });
+        ));
         self.locals.push(Vec::new());
         let r = match self.redirect(&body.redirs, true) {
             Ok(saved) => {
@@ -457,7 +457,7 @@ impl Shell {
         for (name, saved) in self.locals.pop().unwrap().into_iter().rev() {
             self.restore_saved(name, saved);
         }
-        self.pop_frame(in_string);
+        self.pop_frame();
         self.lineno = call_line;
         self.func_depth -= 1;
         self.loop_depth = saved_loop;

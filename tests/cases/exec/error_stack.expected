@@ -2,15 +2,21 @@
 ./lib.sh: 2: nosuchcmd: not found
     nosuchcmd
   in function load_config, called at main.sh:3
+      load_config
   in function setup, called at main.sh:5
+      setup
 ./lib.sh: 3: cd: can't cd to /nonexistent
     cd /nonexistent
   in function load_config, called at main.sh:3
+      load_config
   in function setup, called at main.sh:5
+      setup
 ./lib.sh: 4: unsetvar: is required
     echo "${unsetvar?is required}"
   in function load_config, called at main.sh:3
+      load_config
   in function setup, called at main.sh:5
+      setup
 status 2
 --- at the top level of a script, as in dash
 top.sh: 1: nosuchcmd: not found
@@ -18,20 +24,28 @@ top.sh: 1: nosuchcmd: not found
 --- a file read with . (a syntax error)
 ./syntax.sh: 2: Syntax error: Unterminated quoted string
   in ./syntax.sh, sourced at line 1
+      g() { . ./syntax.sh; }
   in function g, called at line 2
+      g
 --- in -c, the calls are at lines of the command
 ./lib.sh: 2: nosuchcmd: not found
     nosuchcmd
   in function load_config, called at line 2
+      f() { load_config; }
   in function f, called at line 3
+      f
 ./lib.sh: 3: cd: can't cd to /nonexistent
     cd /nonexistent
   in function load_config, called at line 2
+      f() { load_config; }
   in function f, called at line 3
+      f
 ./lib.sh: 4: unsetvar: is required
     echo "${unsetvar?is required}"
   in function load_config, called at line 2
+      f() { load_config; }
   in function f, called at line 3
+      f
 --- a function from a saved state has no line in its file
 ./lib.sh: nosuchcmd: not found
   in function load_config, called at line 1
@@ -39,29 +53,50 @@ top.sh: 1: nosuchcmd: not found
 1: Maximum function recursion depth (1000) reached
     r() { r; }; r
   in function r, called at line 1 (1000 times)
+      r() { r; }; r
 2: Maximum function recursion depth (1000) reached
     g() { f; }
   in function g, called at line 1
+      f() { g; }
   in function f, called at line 2
+      g() { f; }
   in function g, called at line 1
+      f() { g; }
   in function f, called at line 2
+      g() { f; }
   in function g, called at line 1
+      f() { g; }
   in function f, called at line 2
+      g() { f; }
   in function g, called at line 1
+      f() { g; }
   in function f, called at line 2
+      g() { f; }
   in function g, called at line 1
+      f() { g; }
   in function f, called at line 2
+      g() { f; }
   ... (980 more)
   in function g, called at line 1
+      f() { g; }
   in function f, called at line 2
+      g() { f; }
   in function g, called at line 1
+      f() { g; }
   in function f, called at line 2
+      g() { f; }
   in function g, called at line 1
+      f() { g; }
   in function f, called at line 2
+      g() { f; }
   in function g, called at line 1
+      f() { g; }
   in function f, called at line 2
+      g() { f; }
   in function g, called at line 1
+      f() { g; }
   in function f, called at line 3
+      f
 --- an interactive shell names no lines at the prompt
 1: nosuchcmd: not found
     g() { nosuchcmd; }; g
@@ -73,7 +108,19 @@ top.sh: 1: nosuchcmd: not found
 2: nosuchcmd: not found
 nosuchcmd: not found
   in function f, called at line 2
+      nosuchcmd"; eval "f() { nosuchcmd; }"; f
 --- a long line is cut, and control characters are shown as ?
 long.sh: 1: nosuchcmd: not found
     nosuchcmd 000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000 ...
     nosuchcmd ?x
+--- no text for a call made in eval
+1: nosuchcmd: not found
+    f() { nosuchcmd; }
+  in function f, called at line 3
+--- the call sites are read again from their files, also after cd
+./lib.sh: 2: nosuchcmd: not found
+    nosuchcmd
+  in function load_config, called at ./calls.sh:3
+      load_config
+  in function run, called at line 2
+      run

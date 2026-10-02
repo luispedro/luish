@@ -3,7 +3,8 @@
 # its line, then show the text of that line (read again from the file, or
 # from the -c command) and the call stack: a line for each function call and
 # file read with `.` that led there, innermost first, with where it was
-# called. Repeated lines are counted, and a long stack loses its middle.
+# called and that line's text. Repeated lines are counted, and a long stack
+# loses its middle.
 cat > lib.sh <<'X'
 load_config() {
   nosuchcmd
@@ -53,3 +54,16 @@ printf 'nosuchcmd %0200d\n' 0 > long.sh
 printf 'nosuchcmd \001x\n' > ctl.sh
 $SH long.sh 2>&1
 $SH ctl.sh 2>&1 | tail -1
+echo '--- no text for a call made in eval'
+$SH -c 'f() { nosuchcmd; }
+eval "
+f"' 2>&1 | sed 's/^[^:]*: //'
+echo '--- the call sites are read again from their files, also after cd'
+cat > calls.sh <<'X'
+run() {
+  cd sub
+  load_config
+}
+X
+$SH -c '. ./lib.sh; . ./calls.sh
+run' 2>&1 | head -6

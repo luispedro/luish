@@ -15,4 +15,5 @@ status 1
 __luish_internal print: bad option: -q
     p() { __luish_internal print "$@"; }
   in function p, called at print_luish.sh:26
+      p -q 2>&1 | sed '1s/.*: __luish/__luish/'
 print [-abcDilmnNoOPrsz] [-C cols] [-f format] [-u fd] [-v name]

@@ -1,12 +1,16 @@
 directory.sh: 56: __luish_internal plugin: cannot open ./missing.lsh: No such file
     __luish_internal plugin load ./missing.lsh
   in function main, called at directory.sh:82
+      main | sed "s|$HOME|HOME|g"
 directory.sh: 59: __luish_internal plugin: ./empty: not a plugin (no plugin.toml, init.lsh, extension.rhai, rc.lsh, post-rc.lsh, prompt-vars.lsh or login.lsh)
     __luish_internal plugin load ./empty
   in function main, called at directory.sh:82
+      main | sed "s|$HOME|HOME|g"
 directory.sh: 66: ./bad/extension.rhai: Runtime error: no (line 1, position 1)
     __luish_internal plugin load ./bad
   in function main, called at directory.sh:82
+      main | sed "s|$HOME|HOME|g"
 directory.sh: 71: ./nomod/extension.rhai: Module not found: nosuch (line 1, position 8)
     __luish_internal plugin load ./nomod
   in function main, called at directory.sh:82
+      main | sed "s|$HOME|HOME|g"

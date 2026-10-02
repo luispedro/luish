@@ -528,9 +528,9 @@ pub fn source_file(sh: &mut Shell, path: &[u8]) {
 pub fn run_file(sh: &mut Shell, path: &[u8], text: &[u8]) {
     use crate::frames::{Frame, FrameKind, SourceFile};
     let file = SourceFile::new(path, sh.curdir.as_deref());
-    let in_string = sh.push_frame(Frame::file(FrameKind::Source, file, 0));
+    sh.push_frame(Frame::file(FrameKind::Source, file, 0));
     run_text(sh, text, true);
-    sh.pop_frame(in_string);
+    sh.pop_frame();
 }
 
 /// [`run_file`], without expanding aliases if not `aliases`.

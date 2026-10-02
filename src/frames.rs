@@ -59,17 +59,26 @@ pub struct Frame {
     /// The line it was called from, in the frame below (0 for the script
     /// and the startup files).
     pub call_line: u32,
+    /// The strings (`eval`, traps) running in the frame below when it was
+    /// called, which [`Shell::pop_frame`] restores. Its call isn't at a
+    /// line of the file if there were any.
+    saved_in_string: u32,
 }
 
 impl Frame {
-    /// A frame for a file: the script, or one read with `.`.
-    pub fn file(kind: FrameKind, file: Rc<SourceFile>, call_line: u32) -> Frame {
+    pub fn new(kind: FrameKind, file: Option<Rc<SourceFile>>, lines_in_file: bool, call_line: u32) -> Frame {
         Frame {
             kind,
-            file: Some(file),
-            lines_in_file: true,
+            file,
+            lines_in_file,
             call_line,
+            saved_in_string: 0,
         }
+    }
+
+    /// A frame for a file: the script, or one read with `.`.
+    pub fn file(kind: FrameKind, file: Rc<SourceFile>, call_line: u32) -> Frame {
+        Frame::new(kind, Some(file), true, call_line)
     }
 
     fn file_name(&self) -> &[u8] {
@@ -93,17 +102,21 @@ const MAX_STACK_LINES: usize = 20;
 /// The text of the failing line is cut after this many bytes.
 const MAX_LINE_TEXT: usize = 160;
 
+/// The text of the files that an error message shows lines of, by path
+/// (`None` for the `-c` command), read once per message.
+type TextCache = Vec<(Option<Vec<u8>>, Option<Vec<u8>>)>;
+
 impl Shell {
-    /// Pushes a frame. Returns what [`Shell::pop_frame`] restores: the
-    /// strings (`eval`, traps) running in the frame below.
-    pub fn push_frame(&mut self, frame: Frame) -> u32 {
+    /// Pushes a frame, in which no string (`eval`, trap) runs yet.
+    pub fn push_frame(&mut self, mut frame: Frame) {
+        frame.saved_in_string = std::mem::take(&mut self.in_string);
         self.frames.push(frame);
-        std::mem::take(&mut self.in_string)
     }
 
-    pub fn pop_frame(&mut self, in_string: u32) {
-        self.frames.pop();
-        self.in_string = in_string;
+    pub fn pop_frame(&mut self) {
+        if let Some(f) = self.frames.pop() {
+            self.in_string = f.saved_in_string;
+        }
     }
 
     /// The file of the code running, and whether its line numbers are the
@@ -158,18 +171,36 @@ impl Shell {
     /// restored from the startup cache, or code typed at the prompt), or if
     /// the file can't be read.
     pub fn error_line_text(&self) -> Option<Vec<u8>> {
-        if self.in_string > 0 || self.lineno == 0 {
+        if self.in_string > 0 {
             return None;
         }
-        let text = match self.frames.last() {
-            Some(f) if !f.lines_in_file => return None,
-            Some(Frame { file: Some(file), .. }) => std::fs::read(crate::interactive::to_path(&file.path())).ok()?,
-            _ => {
-                let cmdline = std::fs::read("/proc/self/cmdline").ok()?;
-                cmdline.split(|&c| c == 0).nth(self.command_arg?)?.to_vec()
+        self.line_text(self.frames.last(), self.lineno, &mut Vec::new())
+    }
+
+    /// The text of line `lineno` of the code of `frame` (`None` for `-c`
+    /// without a frame), for an error message. Files read are kept in
+    /// `cache`, keyed by path (`None` for the `-c` command).
+    fn line_text(&self, frame: Option<&Frame>, lineno: u32, cache: &mut TextCache) -> Option<Vec<u8>> {
+        if lineno == 0 || frame.is_some_and(|f| !f.lines_in_file) {
+            return None;
+        }
+        let key = frame.and_then(|f| f.file.as_ref()).map(|f| f.path());
+        let i = match cache.iter().position(|(k, _)| *k == key) {
+            Some(i) => i,
+            None => {
+                let text = match &key {
+                    Some(path) => std::fs::read(crate::interactive::to_path(path)).ok(),
+                    None => self.command_arg.and_then(|i| {
+                        let cmdline = std::fs::read("/proc/self/cmdline").ok()?;
+                        Some(cmdline.split(|&c| c == 0).nth(i)?.to_vec())
+                    }),
+                };
+                cache.push((key, text));
+                cache.len() - 1
             }
         };
-        let line = text.split(|&c| c == b'\n').nth(self.lineno as usize - 1)?;
+        let text = cache[i].1.as_deref()?;
+        let line = text.split(|&c| c == b'\n').nth(lineno as usize - 1)?;
         let line = line.trim_ascii();
         if line.is_empty() {
             return None;
@@ -195,9 +226,11 @@ impl Shell {
 
     /// The call stack for an error message: a line for each function call
     /// and each file read with `.` that led to the code running, innermost
-    /// first, with where it was called. Empty at the top level of a script.
+    /// first, with where it was called and the text of that line. Empty at
+    /// the top level of a script.
     pub fn stack_trace(&self) -> Vec<u8> {
-        let mut lines: Vec<(Vec<u8>, usize)> = Vec::new();
+        let mut lines: Vec<(Vec<u8>, Option<Vec<u8>>, usize)> = Vec::new();
+        let mut cache = TextCache::new();
         for (i, f) in self.frames.iter().enumerate().rev() {
             let below = i.checked_sub(1).map(|j| &self.frames[j]);
             let (mut line, verb) = match &f.kind {
@@ -222,19 +255,23 @@ impl Shell {
                 _ if self.interactive || f.call_line == 0 => None,
                 _ => Some(format!("line {}", f.call_line).into_bytes()),
             };
+            let mut text = None;
             if let Some(at) = at {
                 line.extend_from_slice(format!(", {verb} at ").as_bytes());
                 line.extend(at);
+                if f.saved_in_string == 0 {
+                    text = self.line_text(below, f.call_line, &mut cache);
+                }
             }
             // Recursion repeats the same line.
             match lines.last_mut() {
-                Some((last, n)) if *last == line => *n += 1,
-                _ => lines.push((line, 1)),
+                Some((last, last_text, n)) if *last == line && *last_text == text => *n += 1,
+                _ => lines.push((line, text, 1)),
             }
         }
         let mut out = Vec::new();
         let n = lines.len();
-        for (i, (line, times)) in lines.into_iter().enumerate() {
+        for (i, (line, text, times)) in lines.into_iter().enumerate() {
             if n > MAX_STACK_LINES && (MAX_STACK_LINES / 2..n - MAX_STACK_LINES / 2).contains(&i) {
                 if i == MAX_STACK_LINES / 2 {
                     out.extend_from_slice(format!("  ... ({} more)\n", n - MAX_STACK_LINES).as_bytes());
@@ -246,6 +283,11 @@ impl Shell {
                 out.extend_from_slice(format!(" ({times} times)").as_bytes());
             }
             out.push(b'\n');
+            if let Some(text) = text {
+                out.extend_from_slice(b"      ");
+                out.extend(text);
+                out.push(b'\n');
+            }
         }
         out
     }

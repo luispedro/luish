@@ -265,13 +265,15 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
 - Error messages (`Shell::error`, which `berr` and syntax errors go through) start with `error_location`: the file
   of the innermost frame and `LINENO` (no line if `lines_in_file` is false), else `$0` as in dash. `stack_trace` then
   adds a line for each frame but the script and startup files, innermost first, with where it was called (`file:line`
-  from the frame below, `line N` in `-c` and on standard input, nothing at an interactive prompt); consecutive equal
-  lines are counted, and more than `MAX_STACK_LINES` lose their middle. Between the two, `error_line_text` shows the
-  failing line: read again from the frame's file (`SourceFile` keeps the directory of a relative path, so this works
+  from the frame below, `line N` in `-c` and on standard input, nothing at an interactive prompt) and, below it, that
+  line's text; consecutive equal lines are counted, and more than `MAX_STACK_LINES` lose their middle. Between the
+  two, `error_line_text` shows the failing line. Both use `line_text`, which reads the frame's file again (once per
+  message, `TextCache`) (`SourceFile` keeps the directory of a relative path, so this works
   after `cd`) or, for `-c`, from `/proc/self/cmdline` (`Shell::command_arg` is the argument's index), so nothing is
   kept for it. `run_string` (`eval`, traps, `fc`, plugins' shell code) counts `Shell::in_string`, which a new frame
-  saves and clears (`push_frame`, `pop_frame`): its lines go on from the current line, so no text is shown there,
-  and a function defined there has `lines_in_file` false. All of this is only computed for an error. The lines that
+  saves (`Frame::saved_in_string`) and clears (`push_frame`, `pop_frame`): its lines go on from the current line,
+  so no text is shown for a line there, nor for a call made there, and a function defined there has `lines_in_file`
+  false. All of this is only computed for an error. The lines that
   luish adds start with two spaces, so cases compared with dash that capture stderr drop them (`sed '/^  /d'`, as in
   `builtins/test_parse.sh`, `expand/arith_quotes.sh` and `exec/recursion_limit.sh`). Tests: `exec/error_stack.sh`,
   `exec/stack_guard.sh`.

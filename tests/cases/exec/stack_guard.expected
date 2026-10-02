@@ -5,7 +5,9 @@ status 2
 1: nested too deeply
     . ./self.sh
   in ./self.sh, sourced at ./self.sh:1 (N times)
+      . ./self.sh
   in ./self.sh, sourced at line 1
+      . ./self.sh; echo not reached
 status 2
 --- a trap
 1: nested too deeply

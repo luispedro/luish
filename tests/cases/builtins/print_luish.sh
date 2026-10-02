@@ -23,5 +23,5 @@ p '\UD800\U110000|'
 p -u 3 fd3 3>f; cat f
 p -f '%d\n' x 2>/dev/null; echo "status $?"
 # The errors are reported with the command's name.
-p -q 2>&1 | sed 's/.*: __luish/__luish/'
+p -q 2>&1 | sed '1s/.*: __luish/__luish/'
 __luish_internal help print | head -n 1
