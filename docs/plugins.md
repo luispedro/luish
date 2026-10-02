@@ -348,6 +348,8 @@ The user then chooses the pair:
 colorscheme = { dark = "solarized-dark", light = "solarized-light" }
 ```
 
+See [](colour-schemes.md) for how to make the schemes.
+
 ### Libraries
 
 A plugin can be meant for other plugins to use rather than for users to load: a set of Rhai modules that their

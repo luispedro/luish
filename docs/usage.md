@@ -519,6 +519,8 @@ that answers wrongly. Keys typed while the shell waits for the answer start the 
 again, after the terminal's colours have changed. `style -c` lists the schemes and shows which is in use, and why;
 `style -c NAME` (or `style -c DARK LIGHT [DEFAULT]`) chooses.
 
+[](colour-schemes.md) shows how to make a scheme, step by step.
+
 ## History
 
 An interactive shell keeps the last `HISTSIZE` commands (1000 by default) in

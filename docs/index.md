@@ -71,6 +71,7 @@ installation
 getting-started
 personal-plugin
 usage
+colour-schemes
 globbing
 builtins
 plugins
