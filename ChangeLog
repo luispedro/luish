@@ -6,6 +6,8 @@ Unreleased
     * A colour scheme can be a dark/light pair, chosen by
       $LUISH_BACKGROUND or $COLORFGBG
     * setopt editor.no_highlight turns off highlighting
+    * Highlighting shows exported, array and read-only variables, and
+      functions and aliases defined earlier on the line
     * Highlighting tells kinds of command apart (built-in, function,
       alias, external, precommand), and marks options, escapes, special
       parameters, process substitution, tildes, brace expansion and globs

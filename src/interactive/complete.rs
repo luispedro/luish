@@ -30,8 +30,10 @@ use rustyline::line_buffer::LineBuffer;
 use rustyline::validate::Validator;
 use rustyline::{Context, Helper};
 
+use super::highlight::VarKind;
 use super::keys::Pending;
 use super::menu::{self, Item, Menu};
+use crate::hash::HashMap;
 use crate::lexer::{AliasMap, ends_in_blank};
 use crate::path::{DirStamp, dir_stamps};
 use crate::sys;
@@ -41,7 +43,8 @@ use crate::sys;
 pub struct Names {
     pub functions: Vec<Vec<u8>>,
     pub aliases: Rc<AliasMap>,
-    pub vars: Vec<Vec<u8>>,
+    /// The variables that are set, and what each is (for the highlighter).
+    pub vars: HashMap<Vec<u8>, VarKind>,
     pub path: Vec<u8>,
     pub home: Option<Vec<u8>>,
     /// The commands with an extension's completer.
@@ -1166,7 +1169,7 @@ impl ShellHelper {
                 } else {
                     Suffix::None
                 };
-                for v in &self.names.vars {
+                for v in self.names.vars.keys() {
                     out.push(Candidate {
                         suffix: suffix.clone(),
                         ..Candidate::word(v)
@@ -1206,10 +1209,14 @@ impl ShellHelper {
                     out.extend(names.iter().map(|v| Candidate::word(v)));
                     0
                 };
+                let vars = |out: &mut Vec<Candidate>| {
+                    out.extend(self.names.vars.keys().map(|v| Candidate::word(v)));
+                    0
+                };
                 match ARGS.iter().find(|a| a.0 == cmd).map(|a| a.1) {
-                    Some(Args::Vars) if !w.text.contains(&b'=') => words(&self.names.vars, &mut out),
+                    Some(Args::Vars) if !w.text.contains(&b'=') => vars(&mut out),
                     Some(Args::Unset) if unset_functions(args) => words(&self.names.functions, &mut out),
-                    Some(Args::Unset) => words(&self.names.vars, &mut out),
+                    Some(Args::Unset) => vars(&mut out),
                     Some(Args::Aliases) => {
                         out.extend(self.names.aliases.sorted().into_iter().map(|a| Candidate::word(a.0)));
                         0
@@ -1242,14 +1249,14 @@ impl ShellHelper {
                         0
                     }
                     Some(Args::Read) if args.last().is_some_and(|a| a == b"-p") || w.text.starts_with(b"-") => 0,
-                    Some(Args::Read) => words(&self.names.vars, &mut out),
+                    Some(Args::Read) => vars(&mut out),
                     Some(Args::Getopts) => match operands(args) {
                         0 => 0,
-                        1 => words(&self.names.vars, &mut out),
+                        1 => vars(&mut out),
                         _ => files(Files::All, &mut out),
                     },
                     Some(Args::For) => match args.len() {
-                        0 => words(&self.names.vars, &mut out),
+                        0 => vars(&mut out),
                         1 => words(&[b"in".to_vec()], &mut out),
                         _ => files(Files::All, &mut out),
                     },
@@ -1626,6 +1633,11 @@ impl Helper for ShellHelper {}
 mod tests {
     use super::*;
 
+    /// Plain variables named `names`.
+    fn vars(names: &[&[u8]]) -> HashMap<Vec<u8>, VarKind> {
+        names.iter().map(|n| (n.to_vec(), VarKind::Plain)).collect()
+    }
+
     fn kind(line: &str) -> (Kind, String) {
         let w = analyze(line.as_bytes(), &AliasMap::default());
         (w.kind, String::from_utf8(w.text[w.split..].to_vec()).unwrap())
@@ -1828,7 +1840,7 @@ mod tests {
                     a.insert(b"ll".to_vec(), b"ls -l".to_vec(), false);
                     Rc::new(a)
                 },
-                vars: vec![b"HOME".to_vec(), b"HOSTNAME".to_vec()],
+                vars: vars(&[b"HOME", b"HOSTNAME"]),
                 path: format!("{d}/sub dir").into_bytes(),
                 home: Some(dir.as_os_str().as_bytes().to_vec()),
                 completers: vec![b"git".to_vec()],
@@ -2175,7 +2187,7 @@ mod tests {
         let h = ShellHelper {
             expand: Some(fake_expand),
             names: Names {
-                vars: vec![b"HOME".to_vec(), b"UNSET_TOO".to_vec()],
+                vars: vars(&[b"HOME", b"UNSET_TOO"]),
                 ..Names::default()
             },
             ..ShellHelper::default()
@@ -2262,7 +2274,7 @@ mod tests {
         let h = ShellHelper {
             names: Names {
                 functions: vec![b"myfunc".to_vec()],
-                vars: vec![b"HOME".to_vec()],
+                vars: vars(&[b"HOME"]),
                 completers: vec![b"git".to_vec()],
                 options: vec![("errexit", false)],
                 ..Default::default()

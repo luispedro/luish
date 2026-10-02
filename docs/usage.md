@@ -381,8 +381,8 @@ far:
 |---|---|
 | `keyword` | reserved words (`if`, `for`, `{`, `[[`) |
 | `command.builtin` | built-ins, also those of plugins |
-| `command.function` | functions, and the name in a function definition |
-| `command.alias` | aliases, also suffix aliases |
+| `command.function` | functions (also those defined earlier on the line), and the name in a function definition |
+| `command.alias` | aliases, also suffix aliases (and those defined earlier in the text, from the next complete command on) |
 | `command.external` | commands found in `PATH`, or by a path with a `/` |
 | `command.precommand` | commands that run the next word as a command (`sudo`, `env`, `exec`, `command`, `nohup`) |
 | `command.directory` | directories, with `setopt cd.auto` |
@@ -396,6 +396,9 @@ far:
 | `string.heredoc` | the text of here-documents |
 | `var` | `$NAME` and `${...}` |
 | `var.special` | special and positional parameters (`$?`, `$1`, `${10}`) |
+| `var.exported` | exported variables |
+| `var.array` | arrays, also associative ones (`${a[1]}`) |
+| `var.readonly` | read-only variables (an exported or array one too) |
 | `var.unset` | `$NAME` or `${NAME}` when `NAME` is not set (and not assigned earlier on the line, or in a `for` loop there) |
 | `subst.command` | the delimiters of `$(...)` and backquotes |
 | `subst.process` | the delimiters of `<(...)` and `>(...)` |
@@ -415,8 +418,7 @@ far:
 | `suggestion` | autosuggestions |
 
 So `command` sets all the kinds of command at once, `string` all the strings, and so on. More names exist already,
-for distinctions the highlighter doesn't make yet (`var.exported`, `var.array`, `error`, `path` and others; `style`
-lists them). Other names, such as `git.branch`, are free for plugins to use, but not those that start like a name of
+for distinctions the highlighter doesn't make yet (`error`, `path` and others; `style` lists them). Other names, such as `git.branch`, are free for plugins to use, but not those that start like a name of
 luish's (`command.nosuch` is an error).
 
 A style's value is words separated by spaces:

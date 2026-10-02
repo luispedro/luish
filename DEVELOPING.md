@@ -649,10 +649,17 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   to its role's (`Style::add`), cached per cell. `$NO_COLOR` and `editor.no_highlight` turn the line's colours off
   (the menu and suggestion keep theirs, or the old fixed ones with `$NO_COLOR`). `$NAME` and `${NAME}` get
   `var.unset` when `NAME` is not in `Names::vars`, unless an earlier word in the text is `NAME=...` (as an
-  assignment or an argument, as for `export`) or a `for` name, or the cursor is on it. Unit tests compare one letter
+  assignment or an argument, as for `export`) or a `for` name, or the cursor is on it. A variable that is set gets
+  the role of its `VarKind` (`Names::vars` maps each name to one: read-only, else array, else exported, else
+  plain, as in ble.sh), also in `${NAME[i]}`, `${#NAME}` and `${NAME:-x}` (which are never marked unset). Functions
+  defined earlier in the text (outside subshells and substitutions) count as known, in place of an external or
+  unknown command but not of a built-in, which might be special. Aliases defined earlier count only from the next
+  complete command (a newline outside any compound command, `Scan::depth`), since that is when the shell takes them
+  up; arguments of `alias` after an option (`-g`, `-s`) define nothing here. Unit tests compare one letter
   per byte for the top-level role (`classes`), or the runs with their full role (`roles`). Tests: `highlight.rs`
-  (`command_roles`, `string_and_var_roles`, `expansion_roles`, `unset_variables` and others), the kinds in
-  `candidates` in `complete.rs`.
+  (`command_roles`, `string_and_var_roles`, `var_roles`, `defined_on_the_line`, `expansion_roles`,
+  `unset_variables` and others), the kinds in `candidates` in `complete.rs`, `syntax_highlighting` in
+  `tests/interactive.rs`.
 - **Styles** (`style.rs`, `builtins/style.rs`): a `Style` has optional colours, attributes on and off (bits by
   `ATTRS`), `plain` and raw SGR; `inherit` fills what one leaves out from its parent. `Styles` (on `Shell`, empty
   maps until used) holds the user's layer, plugins' defaults, the schemes defined, and the `Choice` (None for the

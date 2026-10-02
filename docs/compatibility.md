@@ -119,8 +119,7 @@ Interactive use:
 - `set -b` (immediate job notification) is accepted but does nothing: jobs are reported only before a prompt. Job
   notifications are given only for input read a line at a time (interactive or stdin), not in scripts run with
   `set -m`.
-- Syntax highlighting doesn't expand aliases, and a function or alias defined earlier on the same line is shown as
-  unknown until the next prompt.
+- Syntax highlighting doesn't expand aliases.
 - The state that `__luish_internal savestate` prints can be changed by aliases the shell reading it has already: a
   global alias there may be any word of it (the startup cache reads its own without aliases). Function bodies are
   safe, since their words that are aliases are quoted, apart from a `for` variable named like a global alias.

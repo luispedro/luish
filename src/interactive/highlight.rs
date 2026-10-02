@@ -46,6 +46,9 @@ pub mod role {
     pub const ESCAPE: Role = Role::of("string.escape");
     pub const VAR: Role = Role::of("var");
     pub const SPECIAL: Role = Role::of("var.special");
+    pub const ARRAY: Role = Role::of("var.array");
+    pub const EXPORTED: Role = Role::of("var.exported");
+    pub const READONLY: Role = Role::of("var.readonly");
     pub const UNSET: Role = Role::of("var.unset");
     pub const SUBST: Role = Role::of("subst.command");
     pub const PROCESS: Role = Role::of("subst.process");
@@ -108,6 +111,44 @@ impl CommandKind {
             CommandKind::Directory => role::DIRECTORY,
             CommandKind::History => role::HISTORY,
             CommandKind::Unknown => role::UNKNOWN,
+        }
+    }
+}
+
+/// What a variable that is set is, for its role. A variable with more than
+/// one of these attributes takes the first (as ble.sh does): read-only,
+/// then array (also associative), then exported.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum VarKind {
+    Plain,
+    Readonly,
+    Array,
+    Exported,
+}
+
+impl VarKind {
+    pub fn new(readonly: bool, array: bool, exported: bool) -> VarKind {
+        match (readonly, array, exported) {
+            (true, _, _) => VarKind::Readonly,
+            (_, true, _) => VarKind::Array,
+            (_, _, true) => VarKind::Exported,
+            _ => VarKind::Plain,
+        }
+    }
+
+    /// The kind of `var`.
+    pub fn of(var: &crate::vars::Var) -> VarKind {
+        use crate::vars::Value;
+        let array = matches!(var.value, Some(Value::Array(_) | Value::Assoc(_)));
+        VarKind::new(var.readonly, array, var.exported)
+    }
+
+    fn role(self) -> Role {
+        match self {
+            VarKind::Plain => role::VAR,
+            VarKind::Readonly => role::READONLY,
+            VarKind::Array => role::ARRAY,
+            VarKind::Exported => role::EXPORTED,
         }
     }
 }
@@ -196,8 +237,8 @@ pub struct State {
 /// What `classify` needs to know about the shell.
 pub struct Facts<'a> {
     pub command: &'a dyn Fn(&[u8]) -> CommandKind,
-    /// Whether a variable is set.
-    pub is_set: &'a dyn Fn(&[u8]) -> bool,
+    /// What a variable is, or None if it is not set.
+    pub var: &'a dyn Fn(&[u8]) -> Option<VarKind>,
     /// `setopt expand.braces`.
     pub braces: bool,
     /// Not `set -f`.
@@ -227,6 +268,20 @@ struct Scan<'a> {
     facts: &'a Facts<'a>,
     /// The names assigned so far in the text.
     assigned: Vec<Vec<u8>>,
+    /// The functions defined so far in the text, outside subshells.
+    functions: Vec<Vec<u8>>,
+    /// The aliases defined so far in the text, outside subshells, that are
+    /// in effect: from the first complete command after the definition.
+    aliases: Vec<Vec<u8>>,
+    /// The aliases defined in the current complete command.
+    new_aliases: Vec<Vec<u8>>,
+    /// Whether the arguments of the current command define aliases (it is
+    /// `alias`, with no options so far).
+    alias_args: bool,
+    /// How many compound commands (`if`, `while`, `{` ...) are open.
+    depth: usize,
+    /// How many nested lists (subshells, substitutions) are open.
+    nested: usize,
     /// The cursor's position in the text.
     cursor: Option<usize>,
     /// Pending here-documents: the delimiter, and whether tabs are stripped.
@@ -307,7 +362,15 @@ impl Scan<'_> {
 
     /// Scans commands from `i` up to `end` (a `)` or backquote closing a
     /// nested list) or the end of the text. Returns where it stopped.
-    fn list(&mut self, mut i: usize, end: Option<u8>) -> usize {
+    fn list(&mut self, i: usize, end: Option<u8>) -> usize {
+        let nest = end.is_some() as usize;
+        self.nested += nest;
+        let e = self.commands(i, end);
+        self.nested -= nest;
+        e
+    }
+
+    fn commands(&mut self, mut i: usize, end: Option<u8>) -> usize {
         let s = self.s;
         let mut cmd = true;
         let mut precommand = false;
@@ -338,6 +401,10 @@ impl Scan<'_> {
                     i = self.heredoc_bodies(i + 1);
                     if !pattern && after == After::None {
                         cmd = true;
+                    }
+                    if self.nested == 0 && self.depth == 0 {
+                        let new = std::mem::take(&mut self.new_aliases);
+                        self.aliases.extend(new);
                     }
                     precommand = false;
                 }
@@ -460,6 +527,7 @@ impl Scan<'_> {
             }
             After::Function if !(plain && text == b"{") => {
                 self.paint_plain(start, e, role::FUNCTION);
+                self.define_function(w.text);
                 return e;
             }
             After::Function => *after = After::None,
@@ -492,12 +560,22 @@ impl Scan<'_> {
             _ => {}
         }
         if !*cmd || (*precommand && raw.starts_with(b"-")) {
+            if self.alias_args {
+                if raw.starts_with(b"-") || raw.starts_with(b"+") {
+                    self.alias_args = false;
+                } else if let Some(eq) = w.text.iter().position(|&c| c == b'=')
+                    && self.nested == 0
+                {
+                    self.new_aliases.push(w.text[..eq].to_vec());
+                }
+            }
             if array {
                 return self.array(e);
             }
             self.arg(start, e, true);
             return e;
         }
+        self.alias_args = false;
         if plain && text == b"__luish_cache" {
             self.paint(start, e, role::KEYWORD);
             *after = After::Cache;
@@ -505,6 +583,11 @@ impl Scan<'_> {
             *precommand = false;
         } else if plain && (RESERVED.contains(&text) || text == b"{" || text == b"}" || text == b"!") {
             self.paint(start, e, role::KEYWORD);
+            match text {
+                b"if" | b"while" | b"until" | b"for" | b"case" | b"select" | b"{" => self.depth += 1,
+                b"fi" | b"done" | b"esac" | b"}" => self.depth = self.depth.saturating_sub(1),
+                _ => {}
+            }
             match text {
                 b"for" => *after = After::For,
                 b"case" => *after = After::Case,
@@ -527,9 +610,10 @@ impl Scan<'_> {
             let rest = &self.s[e..];
             let definition = rest.iter().find(|&&c| !is_blank(c)) == Some(&b'(');
             let kind = if definition {
+                self.define_function(text.to_vec());
                 CommandKind::Function
             } else {
-                (self.facts.command)(text)
+                self.command_kind(text)
             };
             let known = kind != CommandKind::Unknown;
             *precommand = known && !definition && PRECOMMANDS.contains(&text);
@@ -538,8 +622,32 @@ impl Scan<'_> {
                 self.paint_plain(start, e, r);
             }
             *cmd = *precommand;
+            self.alias_args = text == b"alias";
         }
         e
+    }
+
+    fn define_function(&mut self, name: Vec<u8>) {
+        if self.nested == 0 {
+            self.functions.push(name);
+        }
+    }
+
+    /// What the command `name` is, counting the functions and aliases
+    /// defined earlier in the text. A function defined there takes the
+    /// place of an external command, but not of a built-in, which may be
+    /// special.
+    fn command_kind(&self, name: &[u8]) -> CommandKind {
+        let k = (self.facts.command)(name);
+        if k != CommandKind::History && self.aliases.iter().any(|a| a == name) {
+            CommandKind::Alias
+        } else if matches!(k, CommandKind::External | CommandKind::Directory | CommandKind::Unknown)
+            && self.functions.iter().any(|f| f == name)
+        {
+            CommandKind::Function
+        } else {
+            k
+        }
     }
 
     /// Paints the argument `start..end`: its expansions (tilde, braces
@@ -830,8 +938,21 @@ impl Scan<'_> {
                 if depth == 0 && crate::lexer::is_valid_name(&s[i + 2..k - 1]) {
                     return self.name(i, i + 2..k - 1, k);
                 }
-                let special = depth == 0 && is_special(&s[i + 2..k - 1]);
-                (k, if special { role::SPECIAL } else { role::VAR })
+                let inner = if depth == 0 { &s[i + 2..k - 1] } else { &s[i + 2..k] };
+                if depth == 0 && is_special(inner) {
+                    (k, role::SPECIAL)
+                } else {
+                    // `${#NAME}`, `${NAME[1]}`, `${NAME:-x}`...: the
+                    // variable's kind, but not marked if unset.
+                    let inner = match inner {
+                        [b'#' | b'!', rest @ ..] => rest,
+                        _ => inner,
+                    };
+                    let n = inner.iter().take_while(|&&c| crate::lexer::is_name_char(c)).count();
+                    let name = &inner[..n];
+                    let kind = crate::lexer::is_valid_name(name).then(|| (self.facts.var)(name));
+                    (k, kind.flatten().map_or(role::VAR, VarKind::role))
+                }
             }
             (Some(&c), _) if c.is_ascii_alphabetic() || c == b'_' => {
                 let e = i
@@ -849,14 +970,19 @@ impl Scan<'_> {
         e
     }
 
-    /// Paints the expansion `i..e` of the variable named by `name`, marking
-    /// it if the variable is unset (but not while the cursor is on it).
+    /// Paints the expansion `i..e` of the variable named by `name` by what
+    /// the variable is, marking it if it is unset (but not if assigned
+    /// earlier in the text, or while the cursor is on it).
     fn name(&mut self, i: usize, name: std::ops::Range<usize>, e: usize) -> usize {
         let name = &self.s[name];
-        let set = (self.facts.is_set)(name)
-            || self.assigned.iter().any(|a| a == name)
-            || self.cursor.is_some_and(|c| (i..=e).contains(&c));
-        self.paint(i, e, if set { role::VAR } else { role::UNSET });
+        let r = match (self.facts.var)(name) {
+            Some(k) => k.role(),
+            None if self.assigned.iter().any(|a| a == name) || self.cursor.is_some_and(|c| (i..=e).contains(&c)) => {
+                role::VAR
+            }
+            None => role::UNSET,
+        };
+        self.paint(i, e, r);
         e
     }
 
@@ -956,6 +1082,12 @@ pub fn classify(text: &[u8], cursor: Option<usize>, facts: &Facts) -> Vec<Cell> 
         cls: vec![Cell::default(); text.len()],
         facts,
         assigned: Vec::new(),
+        functions: Vec::new(),
+        aliases: Vec::new(),
+        new_aliases: Vec::new(),
+        alias_args: false,
+        depth: 0,
+        nested: 0,
         cursor,
         heredocs: Vec::new(),
         in_backquote: false,
@@ -1090,7 +1222,7 @@ impl ShellHelper {
         let text = [&context[..], line.as_bytes()].concat();
         let facts = Facts {
             command: &|name| self.command_kind(name),
-            is_set: &|name| self.names.vars.iter().any(|v| v == name),
+            var: &|name| self.names.vars.get(name).copied(),
             braces: self.names.braces,
             glob: self.names.glob,
         };
@@ -1106,7 +1238,7 @@ mod tests {
 
     fn known(n: &[u8]) -> CommandKind {
         match n {
-            b"echo" | b"cd" => CommandKind::Builtin,
+            b"echo" | b"cd" | b":" => CommandKind::Builtin,
             b"cat" | b"ls" | b"sudo" => CommandKind::External,
             b"f" => CommandKind::Function,
             b"ll" => CommandKind::Alias,
@@ -1114,10 +1246,22 @@ mod tests {
         }
     }
 
+    /// Variables starting with `UN` are unset, `RO` read-only, `ARR` arrays
+    /// and `EX` exported.
+    fn fake_var(n: &[u8]) -> Option<VarKind> {
+        match n {
+            [b'U', b'N', ..] => None,
+            [b'R', b'O', ..] => Some(VarKind::Readonly),
+            [b'A', b'R', b'R', ..] => Some(VarKind::Array),
+            [b'E', b'X', ..] => Some(VarKind::Exported),
+            _ => Some(VarKind::Plain),
+        }
+    }
+
     fn cells(text: &str, cursor: Option<usize>) -> Vec<Cell> {
         let facts = Facts {
             command: &known,
-            is_set: &|n| !n.starts_with(b"UN"),
+            var: &fake_var,
             braces: true,
             glob: true,
         };
@@ -1226,6 +1370,9 @@ mod tests {
             "cccc.xxxx.xxxxxx.vv.vvvvvvvvv.vv"
         );
         assert_eq!(classes("echo \"$UNX\" ${#UNX}"), "cccc.sxxxxs.vvvvvvv");
+        // An unfinished `${` goes to the end.
+        assert_eq!(roles("echo ${ARR[1 x"), "echo:command.builtin ${ARR[1 x:var.array");
+        assert_eq!(roles("echo ${"), "echo:command.builtin ${:var");
         // Unless assigned earlier in the text.
         assert_eq!(classes("echo $UNX; UNX=1"), "cccc.xxxxo.aaaa.");
         assert_eq!(classes("UNX=1; echo $UNX"), "aaaa.o.cccc.vvvv");
@@ -1335,6 +1482,46 @@ mod tests {
     }
 
     #[test]
+    fn var_roles() {
+        assert_eq!(
+            roles("echo $EXA ${RO} \"$ARR\" ${ARR[1]} ${#ARR[@]} ${EXA:-x} ${UNX:-x} $x"),
+            "echo:command.builtin $EXA:var.exported ${RO}:var.readonly \":string.double $ARR:var.array \":string.double \
+             ${ARR[1]}:var.array ${#ARR[@]}:var.array ${EXA:-x}:var.exported ${UNX:-x}:var $x:var"
+        );
+        // Assigned earlier: set, but its kind isn't known.
+        assert_eq!(
+            roles("UNX=1; echo $UNX"),
+            "UNX=:assign ;:op.control echo:command.builtin $UNX:var"
+        );
+    }
+
+    #[test]
+    fn defined_on_the_line() {
+        // Functions defined earlier in the text are known.
+        assert_eq!(
+            roles("nf; nf() { ls; }; nf; function g2 { :; }\ng2"),
+            "nf:command.unknown ;:op.control nf:command.function ():op {:keyword ls:command.external ;:op.control \
+             }:keyword ;:op.control nf:command.function ;:op.control function:keyword g2:command.function \
+             {:keyword ::command.builtin ;:op.control }:keyword g2:command.function"
+        );
+        // Also in place of an external command, but not of a built-in.
+        assert!(roles("ls() { :; }; ls").ends_with("ls:command.function"));
+        assert!(roles("echo() { :; }; echo").ends_with("echo:command.builtin"));
+        // Not those defined in a subshell.
+        assert!(roles("(nf() { :; }); nf").ends_with("nf:command.unknown"));
+        assert!(roles("echo $(nf() { :; }); nf").ends_with("nf:command.unknown"));
+        // An alias takes effect from the next complete command, as in the
+        // shell: not on the line that defines it, nor inside a compound
+        // command.
+        assert!(roles("alias na='ls -l' nb=x; na").ends_with("na:command.unknown"));
+        assert!(roles("alias na='ls -l' nb=x\nna; nb").ends_with("na:command.alias ;:op.control nb:command.alias"));
+        assert!(roles("{ alias na=ls\nna\n}\nna").ends_with("na:command.unknown }:keyword na:command.alias"));
+        assert!(roles("alias -g na=ls\nna").ends_with("na:command.unknown"));
+        assert!(roles("(alias na=ls)\nna").ends_with("na:command.unknown"));
+        assert!(roles("echo alias na=ls\nna").ends_with("na:command.unknown"));
+    }
+
+    #[test]
     fn expansion_roles() {
         assert_eq!(
             roles("ls ~ ~u/x a~ '~' x=~/a:~/b; y=~/a:~/b"),
@@ -1356,7 +1543,7 @@ mod tests {
         // Without `expand.braces`, and with `set -f`.
         let facts = Facts {
             command: &known,
-            is_set: &|_| true,
+            var: &|_| Some(VarKind::Plain),
             braces: false,
             glob: false,
         };

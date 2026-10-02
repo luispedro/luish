@@ -411,9 +411,11 @@ fn syntax_highlighting() {
     sh.expect("\x1b[1;34mif\x1b[0m \x1b[1;31mnosuchcommand\x1b[0m \x1b[33m'x'\x1b[0m");
     sh.send("\x03");
     sh.expect("$ ");
-    // A set and an unset variable.
-    sh.send("echo $PWD $NOSUCH ");
-    sh.expect("\x1b[36m$PWD\x1b[0m \x1b[2;36m$NOSUCH\x1b[0m ");
+    // An exported, a plain and an unset variable.
+    sh.send("x=1\n");
+    sh.expect("$ ");
+    sh.send("echo $PWD $x $NOSUCH ");
+    sh.expect("\x1b[1;36m$PWD\x1b[0m \x1b[36m$x\x1b[0m \x1b[2;36m$NOSUCH\x1b[0m ");
     sh.send("\x03");
     sh.expect("$ ");
     // `style` changes a role; the second line continues a quote.

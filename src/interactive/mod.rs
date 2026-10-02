@@ -22,6 +22,7 @@ pub use complete::Completion;
 #[cfg(feature = "plugins")]
 pub use complete::{Candidate, DEFAULT_COMPLETER, Suffix};
 use complete::{Names, ShellHelper};
+use highlight::VarKind;
 use history::{Save, ShellHistory};
 
 use crate::input::Line;
@@ -264,8 +265,16 @@ fn names(sh: &Shell) -> Names {
     Names {
         functions: sh.functions.keys().cloned().collect(),
         aliases: sh.aliases.clone(),
-        vars: (sh.vars.names().cloned())
-            .chain(sh.vars.special_names().map(<[u8]>::to_vec))
+        vars: (sh.vars.set_vars())
+            .map(|(n, v)| (n.clone(), VarKind::of(v)))
+            .chain(sh.vars.special_names().map(|n| {
+                // Without reading the value, which for `RANDOM` would
+                // start its sequence.
+                let array = sh.vars.special(n).is_some_and(crate::vars::Special::is_array);
+                let v = sh.vars.var(n);
+                let kind = VarKind::new(v.is_some_and(|v| v.readonly), array, v.is_some_and(|v| v.exported));
+                (n.to_vec(), kind)
+            }))
             .collect(),
         path: sh.get_var(b"PATH").unwrap_or_default(),
         home: sh.get_var(b"HOME"),

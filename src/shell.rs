@@ -290,15 +290,9 @@ impl Shell {
     /// `typeset -p`: its value (an array for `pipestatus`, `path` and
     /// `dirstack`), with the attributes that `export` or `readonly` gave it.
     pub fn special_var(&self, name: &[u8]) -> Option<Var> {
-        let value = match self.vars.special(name)? {
-            Special::Pipestatus
-            | Special::PipestatusBash
-            | Special::Path
-            | Special::Dirstack
-            | Special::BashSource
-            | Special::Funcname
-            | Special::BashLineno => Value::Array(Box::new(self.special_elements(name)?)),
-            _ => Value::Str(self.special_value(name)?),
+        let value = match self.vars.special(name)?.is_array() {
+            true => Value::Array(Box::new(self.special_elements(name)?)),
+            false => Value::Str(self.special_value(name)?),
         };
         let attrs = self.vars.var(name);
         Some(Var {

@@ -140,6 +140,7 @@ const BUILTIN: &[Builtin] = &[
             ("command.unknown", "bold red"),
             ("string", "yellow"),
             ("var", "cyan"),
+            ("var.exported", "bold cyan"),
             ("var.unset", "dim cyan"),
             ("subst", "magenta"),
             ("expand", "blue"),

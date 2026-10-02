@@ -299,6 +299,20 @@ impl Special {
         SPECIALS.iter().find(|&&(_, s)| s == self).unwrap().0
     }
 
+    /// Whether its value is an array.
+    pub fn is_array(self) -> bool {
+        matches!(
+            self,
+            Special::Pipestatus
+                | Special::PipestatusBash
+                | Special::Path
+                | Special::Dirstack
+                | Special::BashSource
+                | Special::Funcname
+                | Special::BashLineno
+        )
+    }
+
     /// Whether it is an array tied to something else (`path`, `dirstack`):
     /// array assignments change that, other assignments make it ordinary.
     pub fn is_tied(self) -> bool {
@@ -788,9 +802,9 @@ impl Vars {
         changed
     }
 
-    /// The names of the variables that are set.
-    pub fn names(&self) -> impl Iterator<Item = &Vec<u8>> {
-        self.map.iter().filter(|(_, v)| v.value.is_some()).map(|(k, _)| k)
+    /// The variables that are set.
+    pub fn set_vars(&self) -> impl Iterator<Item = (&Vec<u8>, &Var)> {
+        self.map.iter().filter(|(_, v)| v.value.is_some())
     }
 
     /// All variables, sorted by name.
