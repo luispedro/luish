@@ -1257,6 +1257,7 @@ impl ShellHelper {
                                 b"list-available".to_vec(),
                                 b"list-loaded".to_vec(),
                                 b"load".to_vec(),
+                                b"run".to_vec(),
                                 b"sync".to_vec(),
                                 b"unload".to_vec(),
                                 b"update".to_vec(),
@@ -1267,6 +1268,7 @@ impl ShellHelper {
                         Some(b"load") => words(&self.plugin_files(), &mut out),
                         Some(b"list-available") if args.len() == 1 => words(&[b"--all".to_vec()], &mut out),
                         Some(b"unload") => words(&self.names.plugins, &mut out),
+                        Some(b"run") if !(args.len() == 2 && args[1] == b"-c") => files(Files::All, &mut out),
                         Some(b"add") if w.text.contains(&b'/') => files(Files::All, &mut out),
                         Some(_) => 0,
                     },
@@ -1976,6 +1978,13 @@ mod tests {
         assert_eq!(complete(&h, "plugin u"), ["unload ", "update "]);
         assert_eq!(complete(&h, "plugin c"), ["check "]);
         assert_eq!(complete(&h, "plugin a"), ["add "]);
+        assert_eq!(complete(&h, "plugin r"), ["run "]);
+        assert_eq!(complete(&h, "plugin run ~/plugins/p"), ["~/plugins/prompt.rhai "]);
+        assert_eq!(
+            complete(&h, "plugin run ~/plugins/prompt.rhai ~/plugins/g"),
+            ["~/plugins/git.rhai "]
+        );
+        assert_eq!(complete(&h, "plugin run -c ~/plugins/g"), Vec::<String>::new());
         assert_eq!(complete(&h, "plugin load "), ["git ", "prompt ", "work ", "zsh-like "]);
         assert_eq!(complete(&h, "plugin load ~/plugins/p"), ["~/plugins/prompt.rhai "]);
         assert_eq!(complete(&h, "plugin unload "), ["greet "]);

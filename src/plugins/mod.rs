@@ -210,7 +210,7 @@ pub fn complete(sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Compl
 }
 
 const USAGE: &str = "usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., \
-                     plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check";
+                     plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check";
 
 /// The `plugin` built-in (interactive shells only, like `help`).
 pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
@@ -218,7 +218,8 @@ pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 }
 
 /// `plugin load NAME|PATH...`, `plugin list-loaded`, `plugin list-available
-/// [-a]`, `plugin unload NAME...`, `plugin add [-y] PLUGIN [NAME]`, `plugin
+/// [-a]`, `plugin unload NAME...`, `plugin run FILE|-c CODE [ARG...]`,
+/// `plugin add [-y] PLUGIN [NAME]`, `plugin
 /// sync [-q]`, `plugin update [-q] [SOURCE...]` and `plugin check`, also available as `__luish_internal
 /// plugin`. `name` is the command, for error messages.
 ///
@@ -274,6 +275,7 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
                 }
             }
         }
+        Some(b"run") if !args.is_empty() => run_rhai(sh, name, args),
         Some(b"check") if args.is_empty() => check(sh, name),
         Some(b"add") => add(sh, name, args),
         Some(b"unload") if !args.is_empty() => {
@@ -939,6 +941,45 @@ fn not_loaded(sh: &mut Shell, all: bool) -> Vec<Vec<u8>> {
 fn not_loaded(sh: &mut Shell, all: bool) -> Vec<Vec<u8>> {
     let names = if all { available_names } else { visible_names };
     plugin_dir(sh).map_or_else(Vec::new, |dir| names(&dir))
+}
+
+/// `plugin run FILE [ARG...]` and `plugin run -c CODE [ARG...]`.
+#[cfg(feature = "plugins")]
+fn run_rhai(sh: &mut Shell, cmd: &[u8], args: &[Vec<u8>]) -> ExecResult {
+    if args == [b"-c"] {
+        sh.berr(cmd, USAGE);
+        return Ok(2);
+    }
+    let host = sh.plugins.get_or_insert_with(|| std::rc::Rc::new(Host::new())).clone();
+    match args {
+        [c, code, rest @ ..] if c == b"-c" => {
+            let argv = [std::slice::from_ref(c), rest].concat();
+            host.run(sh, cmd, rhai::Script::Code(code), &argv)
+        }
+        _ => {
+            let abs = absolute(sh, &args[0]);
+            // A changed file must invalidate the startup cache, as for
+            // `plugin load`.
+            if let Some(rec) = &mut sh.sourced_files {
+                rec.push(abs.clone());
+            }
+            host.run(
+                sh,
+                cmd,
+                rhai::Script::File {
+                    path: &args[0],
+                    abs: &abs,
+                },
+                args,
+            )
+        }
+    }
+}
+
+#[cfg(not(feature = "plugins"))]
+fn run_rhai(sh: &mut Shell, cmd: &[u8], _: &[Vec<u8>]) -> ExecResult {
+    sh.berr(cmd, "luish was built without plugin support");
+    Ok(1)
 }
 
 /// `plugin sync` and `plugin update`.

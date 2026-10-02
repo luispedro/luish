@@ -38,6 +38,29 @@ once (see [](performance.md#commands-in-rhai)).
 `sh::plugin_dir()` gives the plugin's directory at any time, also in hooks. For a single-file plugin it is the
 directory of the file.
 
+## Running Rhai code once: `plugin run`
+
+To run Rhai code without loading a plugin, as a script or to try something out, use `plugin run` with a file or
+with `-c` and the code:
+
+```console
+$ plugin run -c 'print(sh::which("git"))'
+/usr/bin/git
+$ cat count.rhai
+print(`${argv.len() - 1} arguments`);
+argv.len() > 1
+$ plugin run ./count.rhai a b; echo $?
+2 arguments
+0
+```
+
+The code has the [`sh`](#the-sh-module), [`fs`](#the-fs-module) and [`vcs`](#the-vcs-module) modules, as an
+extension does, and `argv`: the file (or `-c`) and the arguments. Its last value (or `return`'s) is the exit status
+if it is an integer or a boolean, as for [a command](#commands-written-in-rhai-shbuiltin). As it isn't part of a
+plugin, it can't register hooks, completers or commands, and `sh::plugin_dir()` is an error; it leaves the loaded
+plugins alone, even one with the same name as the file. `import` is relative to the file, or with `-c`, to the
+current directory, and its modules are read again on each run.
+
 Rhai's `eval`, which compiles and runs a string as code, is disabled in
 extensions. If you need very flexible code, use a shell file instead.
 

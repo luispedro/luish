@@ -1,0 +1,15 @@
+["sub/s.rhai", "a b", "c"]: 42
+file: 2
+s
+still loaded
+["-c", "yes"]
+-c: 0
+false: 1
+300: 44
+return: 4
+string: 0
+unit: 0
+import: 6
+["sub/s.rhai"]: 210
+again: 0
+V=value!

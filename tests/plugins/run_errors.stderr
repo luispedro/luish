@@ -1,0 +1,8 @@
+run_errors.sh: 4: __luish_internal plugin: cannot open missing.rhai: No such file
+run_errors.sh: 5: -c: Script is incomplete (line 1, position 9)
+run_errors.sh: 7: ./t.rhai: bad input
+run_errors.sh: 8: -c: Function not found: no_such_function () (line 1, position 1)
+run_errors.sh: 9: -c: plugin run can't register functions (use plugin load)
+run_errors.sh: 10: -c: plugin run can't register functions (use plugin load)
+run_errors.sh: 12: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+run_errors.sh: 13: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check

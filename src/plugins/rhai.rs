@@ -56,6 +56,14 @@ struct Callback {
     takes_arg: bool,
 }
 
+/// What `plugin run` runs.
+pub enum Script<'a> {
+    /// A Rhai file, as given (for messages) and absolute.
+    File { path: &'a [u8], abs: &'a [u8] },
+    /// The code of `-c`.
+    Code(&'a [u8]),
+}
+
 /// How long a completer may run.
 const COMPLETE_BUDGET: Duration = Duration::from_secs(2);
 
@@ -156,6 +164,18 @@ fn current_dir() -> RhaiResult<Vec<u8>> {
     })
 }
 
+/// The directory that `import` resolves relative to in code without a
+/// file: the plugin's, or for `plugin run -c`, the current directory.
+fn import_dir() -> RhaiResult<Vec<u8>> {
+    if CURRENT.get() != 0 {
+        return current_dir();
+    }
+    with_shell(|sh| match &sh.curdir {
+        Some(d) => Ok(d.clone()),
+        None => error("no current directory"),
+    })
+}
+
 /// The file of `import "@SOURCE/PATH/MODULE"` (`name`), without `.rhai`:
 /// MODULE in the directory of the loaded plugin `SOURCE/PATH`, the one
 /// with the longest name that fits (MODULE can be in a subdirectory). A
@@ -199,7 +219,7 @@ fn other_plugin(name: &str, pos: Position) -> RhaiResult<Vec<u8>> {
 /// in another plugin). That file is the source of the code running
 /// (`AST::set_source`, which Rhai also gives the functions and closures
 /// defined in it, and `Module::set_id`), an absolute path; for code without
-/// one, it is the plugin's directory.
+/// one, it is the plugin's directory ([`import_dir`]).
 struct Resolver;
 
 impl ModuleResolver for Resolver {
@@ -212,7 +232,7 @@ impl ModuleResolver for Resolver {
                 let dir = &file[..file.iter().rposition(|&c| c == b'/').unwrap_or(0) + 1];
                 [dir, &to_bytes(name)].concat()
             }
-            (_, None) => [current_dir()?, b"/".to_vec(), to_bytes(name)].concat(),
+            (_, None) => [import_dir()?, b"/".to_vec(), to_bytes(name)].concat(),
         };
         path.extend_from_slice(b".rhai");
         // (`import "../x"`: the same file is the same module.)
@@ -288,6 +308,9 @@ fn register(f: FnPtr, add: impl FnOnce(&Host, Callback)) -> RhaiResult<()> {
         let (ast, path) = {
             let plugins = host.plugins.borrow();
             let Some((p, Some(ast))) = plugins.iter().find(|p| p.id == plugin).map(|p| (p, &p.ast)) else {
+                if plugin == 0 {
+                    return error("plugin run can't register functions (use plugin load)");
+                }
                 return error("no plugin is running");
             };
             (ast.clone(), Rc::from(p.path.as_slice()))
@@ -827,29 +850,8 @@ impl Host {
             });
             return Ok(0);
         };
-        let shown = String::from_utf8_lossy(&path).into_owned();
-        let text = match std::fs::read(std::ffi::OsStr::from_bytes(&rhai_abs)) {
-            Ok(t) => t,
-            Err(e) => {
-                let msg = match e.raw_os_error() {
-                    Some(libc::ENOENT) => "No such file".to_string(),
-                    Some(n) => sys::strerror(n),
-                    None => e.to_string(),
-                };
-                sh.berr(cmd, format!("cannot open {shown}: {msg}"));
-                return Ok(1);
-            }
-        };
-        let Ok(text) = String::from_utf8(text) else {
-            sh.berr(cmd, format!("{shown}: not valid UTF-8"));
+        let Some(mut ast) = self.compile_file(sh, cmd, &path, &rhai_abs) else {
             return Ok(1);
-        };
-        let mut ast = match self.engine().compile(&text) {
-            Ok(a) => a,
-            Err(e) => {
-                sh.error(format!("{shown}: {e}"));
-                return Ok(1);
-            }
         };
         // For `import` (`Resolver`).
         ast.set_source(to_str(&rhai_abs));
@@ -878,6 +880,95 @@ impl Host {
                 self.remove(id);
                 Err(flow)
             }
+        }
+    }
+
+    /// Reads and compiles the Rhai file `abs` (`path` as given, for
+    /// messages), reporting why it can't.
+    fn compile_file(&self, sh: &Shell, cmd: &[u8], path: &[u8], abs: &[u8]) -> Option<AST> {
+        let shown = String::from_utf8_lossy(path);
+        let text = match std::fs::read(std::ffi::OsStr::from_bytes(abs)) {
+            Ok(t) => t,
+            Err(e) => {
+                let msg = match e.raw_os_error() {
+                    Some(libc::ENOENT) => "No such file".to_string(),
+                    Some(n) => sys::strerror(n),
+                    None => e.to_string(),
+                };
+                sh.berr(cmd, format!("cannot open {shown}: {msg}"));
+                return None;
+            }
+        };
+        let Ok(text) = String::from_utf8(text) else {
+            sh.berr(cmd, format!("{shown}: not valid UTF-8"));
+            return None;
+        };
+        self.compile(sh, path, &text)
+    }
+
+    /// Compiles `text`, reporting a syntax error with `path`.
+    fn compile(&self, sh: &Shell, path: &[u8], text: &str) -> Option<AST> {
+        match self.engine().compile(text) {
+            Ok(a) => Some(a),
+            Err(e) => {
+                sh.error(format!("{}: {e}", String::from_utf8_lossy(path)));
+                None
+            }
+        }
+    }
+
+    /// `plugin run`: runs `script` once, outside any plugin: nothing it
+    /// registers would outlive it, so registering is an error (`register`).
+    /// `argv` is in its scope, and the value of its last statement, if an
+    /// integer or a boolean, is the status, as for a built-in. Its imports
+    /// are read again for each run, without disturbing the plugins' modules.
+    pub fn run(&self, sh: &mut Shell, cmd: &[u8], script: Script, argv: &[Vec<u8>]) -> ExecResult {
+        let (shown, abs, ast) = match script {
+            Script::File { path, abs } => (path, Some(abs), self.compile_file(sh, cmd, path, abs)),
+            Script::Code(code) => match std::str::from_utf8(code) {
+                Ok(code) => (&b"-c"[..], None, self.compile(sh, b"-c", code)),
+                Err(_) => {
+                    sh.berr(cmd, "-c: not valid UTF-8");
+                    return Ok(1);
+                }
+            },
+        };
+        let Some(mut ast) = ast else {
+            return Ok(1);
+        };
+        if let Some(abs) = abs {
+            // For `import` (`Resolver`).
+            ast.set_source(to_str(abs));
+        }
+        let mut scope = Scope::new();
+        scope.push(
+            "argv",
+            argv.iter().map(|a| Dynamic::from(to_str(a))).collect::<rhai::Array>(),
+        );
+        let modules = self.modules.take();
+        let loads = self.next_id.get();
+        let r = enter(sh, 0, || self.engine().eval_ast_with_scope::<Dynamic>(&mut scope, &ast));
+        // (A plugin loaded meanwhile emptied the modules, which must stay
+        // so.)
+        if self.next_id.get() == loads {
+            self.modules.replace(modules);
+        }
+        match r? {
+            Ok(v) => Ok(match v.as_bool() {
+                Ok(b) => !b as i32,
+                Err(_) => v.as_int().map_or(0, |n| (n & 0xff) as i32),
+            }),
+            Err(e) => match thrown(&e) {
+                Some(msg) => {
+                    sh.error(format!(
+                        "{}: {}",
+                        String::from_utf8_lossy(shown),
+                        String::from_utf8_lossy(&msg)
+                    ));
+                    Ok(1)
+                }
+                None => Ok(Self::report(sh, shown, &e)),
+            },
         }
     }
 

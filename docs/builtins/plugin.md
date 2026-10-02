@@ -5,6 +5,7 @@ plugin load name|source/path|path...
 plugin list-loaded
 plugin list-available [-a]
 plugin unload name...
+plugin run file|-c code [arg...]
 plugin add [-y] plugin [name]
 plugin sync [-q]
 plugin update [-q] [source...]
@@ -35,6 +36,16 @@ libraries (plugins for other plugins to use, whose `plugin.toml` says
 `library = true`), which `-a` (or `--all`) adds. `plugin unload`
 removes plugins and their hooks; each is named as `plugin list-loaded`
 shows it, or as `plugin load` was given it (such as `std/NAME`).
+
+`plugin run` runs the Rhai file `file`, or the Rhai code `code`, once,
+without loading a plugin: it can't register hooks, completers or commands
+(that is an error), and it doesn't unload or reload any plugin. The Rhai
+variable `argv` is an array of `file` (or `-c`) and the `arg`s. The exit
+status is the value of the last statement (or of `return`), if it is an
+integer (modulo 256) or a boolean (true is 0, false 1), and otherwise 0; it
+is 1 if the code can't be read or fails. `import` is relative to `file`,
+or with `-c`, to the current directory, and the modules are read again for
+each run. `--no-plugins` doesn't stop it.
 
 `plugin add` adds a plugin to `config.toml` and installs it. `plugin` is a
 GitHub repository (`owner/repo`, `gh:owner/repo`, or a URL such as

@@ -710,7 +710,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   imports (`Resolver`): each extension's AST and each module's AST and `Module` get the file's absolute path as
   their source and id, which Rhai passes to the resolver and gives the functions and closures defined there, so a
   module in a subdirectory imports its neighbours wherever its code is called from; code without a source falls back
-  to the running plugin's directory. `import "@SOURCE/PATH/MODULE"` is `MODULE.rhai` in the directory of the loaded
+  to the running plugin's directory (or the current directory, for `plugin run -c`). `import "@SOURCE/PATH/MODULE"` is `MODULE.rhai` in the directory of the loaded
   plugin called `SOURCE/PATH` (`other_plugin`), the longest name that fits, as MODULE can have a `/`; a plugin's path
   can't be the start of another's, as a directory is a plugin or a sub-collection, not both. Failing that, the
   plugin is `PATH` without the source, for plugins loaded under a name of their own (from the plugin directory, by
@@ -742,6 +742,16 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   shell from exec'ing its last command (`plugins::exit_hooks`, next to `has_traps`). `exit` in a hook exits the shell
   (from `exit`, with its status). Without a host, each costs one `Option` check. luish doesn't call shell functions
   with zsh's hook names, by design (PLAN, Phase 13). Tests: `tests/plugins/hooks.sh`.
+- **`plugin run`** (`Host::run`) runs a file or `-c` code once, as id 0 (`CURRENT`), which no plugin has: nothing is
+  added to `Host::plugins`, so no plugin is unloaded by name, and `register` refuses hooks, completers and built-ins
+  (they would outlive their AST's owner). `argv` is pushed into the scope and the value comes from
+  `eval_ast_with_scope`; an integer or boolean is the status (`return` and Rhai's `exit(n)` give a value too), any
+  other value is 0, unlike a built-in, as a script's last statement often has a value by accident. Its imports go
+  to an empty module cache that is dropped afterwards, so they are read again for each run and loaded plugins keep
+  theirs, unless a plugin was loaded meanwhile (`next_id` changed), which emptied the cache for good. `-c` code has
+  no source, so its imports resolve relative to the current directory (`import_dir`). The file is recorded in
+  `sourced_files`, as `plugin load`'s. `--no-plugins` doesn't stop it. Tests: `tests/plugins/run.sh`,
+  `run_errors.sh`.
 - **Extension built-ins** (`sh::builtin`): `Host::builtins`, by name, looked up in `Shell::lookup_command` after
   functions and before `PATH` (`CommandKind::Extension`), so the only cost without them is the `Shell::plugins`
   check for external commands. `builtin`, `command`, `type` (`is a shell builtin from plugin NAME`, `Host::builtin_plugin`) and `hash` (skips them) know them;

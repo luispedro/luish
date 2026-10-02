@@ -42,8 +42,8 @@ second (nvm) are otherwise a daily cost.
 
 ## Phase 11 — Plugin system (Stage 2)
 
-Done: the `plugin` built-in (`load`, `list-loaded`, `list-available`, `unload`, `add`, `sync`, `update`, `check`, and
-`restore` for the startup cache), directory plugins, plugin packages (below), the byte conversion, the Rhai engine
+Done: the `plugin` built-in (`load`, `list-loaded`, `list-available`, `unload`, `run`, `add`, `sync`, `update`, `check`,
+and `restore` for the startup cache), directory plugins, plugin packages (below), the byte conversion, the Rhai engine
 with its limits and interrupts (and without `eval`), `import` relative to the importing file and of another plugin's
 modules (`@SOURCE/PLUGIN/MODULE`), the `chpwd`, `precmd`, `preexec`, `exit`, `post-rc`, `prompt-vars` and
 `prompt-rewrite` hooks, completers, extension built-ins (`sh::builtin`, with `sh::read_line`), most of the `sh` module
