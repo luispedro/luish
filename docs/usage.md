@@ -129,7 +129,8 @@ read -A words                        # read the fields of a line (bash: read -a 
 | `${!x}` | Indirection, as in bash: the parameter named by the value of `x`, which may be `name[index]` or a positional or special parameter. Operators apply to that parameter (`${!x:-default}`), and `${!a[i]}` goes through an element |
 | `"${!prefix@}"`, `"${!prefix*}"` | The names of the set variables that start with `prefix`, sorted, as in bash |
 | `${a[@]:offset:length}` | The elements from `offset` on (at most `length` of them) |
-| `${a[@]#pattern}`, `${a[@]/pattern/rep}`, ... | The operator applied to each element |
+| `"${a[i..j]}"` | A slice, as in Python: the elements from `i` up to (not including) `j`, as separate words, as `"${a[@]}"`. Either end can be left out (`${a[2..]}`, `${a[..-1]}`), a negative one counts from the end, and they are clamped to the array, so `${a[-2..]}` is the last two elements (or fewer). The ends are arithmetic expressions, and an unquoted `..` separates them |
+| `${a[@]#pattern}`, `${a[@]/pattern/rep}`, ... | The operator applied to each element (also to a slice, `${a[1..3]#pattern}`) |
 
 Arrays have no holes: assigning past the end fills the gap with empty elements, and `unset 'a[i]'` makes an element
 empty, as in zsh. A string is an array of one element, so `${s[0]}` is `$s`. Arrays aren't exported to commands.

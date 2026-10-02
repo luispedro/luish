@@ -1,0 +1,28 @@
+<q><r>
+<q><r>
+<xq><ry>
+<p><q><s><t>
+<p><q><r><s><t>
+<s><t><p><q><r><s>
+<p><q><r><s><t>
+<>
+<q><r><s><q><r><s><r><s><t>
+<r><2>
+status 2
+status 2
+<y z><>
+<y><z>
+<2><>< z><q><R><s><r><s>
+<empty><set><>
+<q,r,s><s><r><q>
+<hello><hello>
+<x>
+status 2
+<AB><dots><AB><><2>
+<1><0>
+status 2
+status 2
+p[1..2]
+f() {
+    echo "${a[1..2]}" ${a[..-1]} "${#a[i..]}"
+}

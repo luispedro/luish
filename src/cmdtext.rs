@@ -303,6 +303,17 @@ fn push_param(out: &mut Vec<u8>, pe: &ParamExp) {
             push_word(out, w);
             out.push(b']');
         }
+        Some(Index::Slice(s)) => {
+            out.push(b'[');
+            if let Some(w) = &s.0 {
+                push_word(out, w);
+            }
+            out.extend_from_slice(b"..");
+            if let Some(w) = &s.1 {
+                push_word(out, w);
+            }
+            out.push(b']');
+        }
     }
     let (op, w): (&[u8], _) = match &pe.op {
         ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names => (b"", None),
@@ -387,5 +398,13 @@ mod tests {
         assert_eq!(text("! true && false || true"), "!true && false || true");
         assert_eq!(text("sleep 20 <<X\nbody\nX\n"), "sleep 20 <<...");
         assert_eq!(text("g() { sleep 1; }"), "g() { ... }");
+    }
+
+    #[test]
+    fn subscripts() {
+        assert_eq!(
+            text("echo ${a[1]} \"${a[@]}\" ${a[i..j]} ${a[..-1]} ${#a[1..]}"),
+            "echo ${a[1]} \"${a[@]}\" ${a[i..j]} ${a[..-1]} ${#a[1..]}"
+        );
     }
 }

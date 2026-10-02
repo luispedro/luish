@@ -7,6 +7,7 @@ Unreleased
       SOURCE.SUB.NAME in TOML
     * "/PATH" = "*" in plugin.toml: a plugin of the same source
     * Brace expansion, `a{b,c}` and `{1..10}`, with `setopt expand.braces`
+    * Array slices, `${a[i..j]}`, as in Python
     * `plugin add` refuses a source without plugins, and directories
       without a plugin's files are no longer taken for plugins
 

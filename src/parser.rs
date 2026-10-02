@@ -848,6 +848,7 @@ fn parts_fork(parts: &[WordPart]) -> bool {
         WordPart::Param(p) => {
             let index = match &p.index {
                 Some(Index::Expr(w)) => forks(w),
+                Some(Index::Slice(s)) => s.0.as_ref().is_some_and(forks) || s.1.as_ref().is_some_and(forks),
                 _ => false,
             };
             index

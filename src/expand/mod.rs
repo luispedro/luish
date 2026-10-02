@@ -458,6 +458,17 @@ impl Shell {
                 let sub = self.subscript(name, w)?;
                 (self.element(name, &sub), Some(sub))
             }
+            (Some(Index::Slice(s)), ParamName::Var(name)) if self.vars.is_assoc(name) => {
+                // The key `i..j`, which gives a word in double quotes even
+                // if it isn't set (`is_list` can't tell).
+                f.cur_exists |= quoted;
+                let sub = Subscript::Key(self.slice_key(s)?);
+                (self.element(name, &sub), Some(sub))
+            }
+            (Some(Index::Slice(s)), ParamName::Var(name)) => {
+                let items = self.slice(name, s)?;
+                return self.array_op(pe, name, items, true, quoted, f);
+            }
             (Some(index), ParamName::Var(name)) => {
                 return self.expand_array(pe, name, *index == Index::At, quoted, f);
             }
@@ -656,6 +667,10 @@ impl Shell {
                 };
                 self.array_op(pe, name, items, separate(*index == Index::At), true, &mut inner)?;
             }
+            (ParamName::Var(name), Some(Index::Slice(s))) if !self.vars.is_assoc(name) => {
+                let items = self.slice(name, s)?;
+                self.array_op(pe, name, items, separate(true), true, &mut inner)?;
+            }
             (ParamName::Special(c @ (b'@' | b'*')), None) if separate(*c == b'@') != (*c == b'@') => {
                 let other = ParamExp {
                     name: ParamName::Special(if *c == b'@' { b'*' } else { b'@' }),
@@ -747,6 +762,45 @@ impl Shell {
         };
         let i = if i < 0 { i + items.len() as i64 } else { i };
         usize::try_from(i).ok().and_then(|i| items.get(i)).cloned()
+    }
+
+    /// The elements of `${a[i..j]}` (`None` if `a` is unset), as Python
+    /// slices them: from `i` (or the start) up to `j` (or the end), where
+    /// an end counts from the end of the array if it is negative, and is
+    /// clamped to the array.
+    fn slice(&mut self, name: &[u8], s: &(Option<Word>, Option<Word>)) -> EResult<Option<Vec<Vec<u8>>>> {
+        // The ends first, which may change the array.
+        let start = s.0.as_ref().map(|w| self.arith_word(w)).transpose()?;
+        let end = s.1.as_ref().map(|w| self.arith_word(w)).transpose()?;
+        let computed;
+        let items = match self.vars.get_value(name) {
+            Some(v) => v.elements(),
+            None => match self.special_elements(name) {
+                Some(v) => {
+                    computed = v;
+                    &computed[..]
+                }
+                None => return Ok(None),
+            },
+        };
+        let n = items.len() as i64;
+        let clamp = |i: i64| (if i < 0 { i.saturating_add(n) } else { i }).clamp(0, n) as usize;
+        let start = start.map_or(0, clamp);
+        let end = end.map_or(items.len(), clamp).max(start);
+        Ok(Some(items[start..end].to_vec()))
+    }
+
+    /// The key `i..j` of `${h[i..j]}`, for an associative array.
+    fn slice_key(&mut self, s: &(Option<Word>, Option<Word>)) -> EResult<Vec<u8>> {
+        let mut key = match &s.0 {
+            Some(w) => self.expand_word_str(w)?,
+            None => Vec::new(),
+        };
+        key.extend_from_slice(b"..");
+        if let Some(w) = &s.1 {
+            key.extend(self.expand_word_str(w)?);
+        }
+        Ok(key)
     }
 
     /// `${a[@]}` and `${a[*]}` (`at` tells which), with their operators,
@@ -1231,7 +1285,7 @@ fn is_list(pe: &ParamExp) -> bool {
         }
         // Resolved in `expand_indirect`.
         (ParamName::Indirect(_), _) => true,
-        (_, Some(Index::At)) => matches!(
+        (_, Some(Index::At | Index::Slice(_))) => matches!(
             pe.op,
             ParamOp::Plain
                 | ParamOp::Keys

@@ -1057,7 +1057,7 @@ impl Parser {
             _ => {}
         }
         let (w, closed) = self.read_param_word_to(Ctx::DQuote, Some(b']'))?;
-        Ok(closed.then_some(Index::Expr(w)))
+        Ok(closed.then(|| slice_index(w)))
     }
 
     /// The rest of `${name...}`, after the name (and the index).
@@ -1520,6 +1520,32 @@ impl Parser {
             ),
         }
     }
+}
+
+/// The subscript `w` of `${name[w]}`: a slice `[i..j]` if it has an
+/// unquoted `..` (the first one), otherwise an element.
+fn slice_index(w: Word) -> Index {
+    let at = w.0.iter().enumerate().find_map(|(k, part)| match part {
+        WordPart::Literal(s) => s.windows(2).position(|p| p == b"..").map(|i| (k, i)),
+        _ => None,
+    });
+    let Some((k, i)) = at else {
+        return Index::Expr(w);
+    };
+    let mut start = w.0;
+    let mut end = start.split_off(k + 1);
+    let Some(WordPart::Literal(s)) = start.pop() else {
+        unreachable!()
+    };
+    let (before, after) = (&s[..i], &s[i + 2..]);
+    if !before.is_empty() {
+        start.push(WordPart::Literal(before.to_vec()));
+    }
+    if !after.is_empty() {
+        end.insert(0, WordPart::Literal(after.to_vec()));
+    }
+    let side = |parts: Vec<WordPart>| (!parts.is_empty()).then_some(Word(parts));
+    Index::Slice(Box::new((side(start), side(end))))
 }
 
 fn flush(parts: &mut Vec<WordPart>, lit: &mut Vec<u8>) {

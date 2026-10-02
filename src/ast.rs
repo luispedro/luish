@@ -379,6 +379,10 @@ pub enum Index {
     Star,
     /// An element: an arithmetic expression, expanded first as in `$((...))`.
     Expr(Word),
+    /// `[i..j]`: the elements from `i` up to (not including) `j`, as a
+    /// list like `[@]`. Either end may be missing. For an associative
+    /// array, the subscript is the key `i..j`.
+    Slice(Box<(Option<Word>, Option<Word>)>),
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -171,6 +171,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   empties the element (`unset_element`). `quote_value` writes arrays for `set`, `-p` listings and `savestate`.
   Elements `[i]=v` of a list (`Shell::assign_items`) are evaluated as arithmetic when the list is assigned.
   Tests: `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh`.
+- Slices, `${a[i..j]}` (`Index::Slice`): `lexer::slice_index` splits a subscript at its first `..` in an unquoted
+  literal part, so the ends are words of their own. `Shell::slice` evaluates them, then copies only the slice, which
+  `array_op` expands as `${a[@]}` (`is_list` counts slices as lists, so `"${a[1..1]}"` gives no word). For an
+  associative array, `slice_key` puts the key back together. Tests: `expand/array_slices.sh`, `subscripts` in
+  `cmdtext.rs`.
 - Associative arrays (`vars::Value::Assoc`, boxed): `vars::Assoc` keeps the keys in insertion order, with a hash map
   from key to position (removal is `swap_remove`). Whether a subscript is a key or an index is decided when it is
   expanded, from the variable's type (`Shell::subscript`, giving a `vars::Subscript`): a key is expanded as a string,
@@ -955,6 +960,7 @@ truncates when it relocates the package.
 | `dirstack` tied to the directory stack by array assignments | `expand/dirstack_tied.sh`, `expand/dirstack_ordinary.sh` (dash) |
 | Arrays | `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh` |
 | Associative arrays | `builtins/assoc.sh` (zsh), `builtins/assoc_luish.sh` |
+| `${a[i..j]}` | `expand/array_slices.sh` |
 | `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |
 | `${!x}`, `${!prefix@}` | `expand/indirect.sh` |
 | Parameter flags, `${(o)a[@]}` | `expand/param_flags.sh` (zsh), `expand/param_flags_luish.sh` |

@@ -551,6 +551,17 @@ impl<'a> Printer<'a> {
                 self.word(w);
                 self.w(b"]");
             }
+            Some(Index::Slice(s)) => {
+                self.w(b"[");
+                if let Some(w) = &s.0 {
+                    self.word(w);
+                }
+                self.w(b"..");
+                if let Some(w) = &s.1 {
+                    self.word(w);
+                }
+                self.w(b"]");
+            }
         }
     }
 
