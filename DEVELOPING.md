@@ -248,14 +248,28 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   and history expansion (`a` and `A` only; its other modifiers are bash's) use the same functions. Tests:
   `expand/modifiers.sh` (zsh), `expand/modifiers_luish.sh`, `expand/glob_qualifiers.sh`, unit tests in `modify.rs`
   and `bang.rs`.
-- bash's `BASH_SOURCE` is a special (`Special::BashSource`), read from `Shell::sources`, a stack of the files being
-  run (`Option<Rc<[u8]>>`, `None` outside a file): `main` pushes the script before `run_input`, `misc::run_file` (`.`,
-  `source` and plugins' `.lsh` files) the path as found, `interactive::run_file` a startup file, and
-  `call_function` the file of the function (`Function::file`, the innermost entry when it was defined), so a call
-  costs a reference count and a push. Elements are innermost first; `None` is an empty string, and with no entries
-  it is unset. As restoring a saved state defines the functions again, `state.rs` writes `__luish_internal
-  function-file NAME FILE` after a function with a file, so that the startup cache and `savestate` keep it. Tests:
-  `misc/bash_source.sh`, `misc/bash_source_startup.sh`, `builtins/internal_savestate_aliases.sh`.
+- The call stack (`frames.rs`) is `Shell::frames`, innermost last: `main` pushes a `FrameKind::Script` frame for
+  the script before `run_input`, `misc::run_file` a `Source` frame for `.`, `source` and plugins' `.lsh` files (the
+  path as found), `interactive::run_file` one for a startup file, and `call_function` a `Function` frame with the
+  function's name and file (`Function::file`, the innermost frame's when it was defined), so a call costs two
+  reference counts and a push; it also restores `LINENO` on return. Each frame has the line it was called from
+  (`call_line`: `LINENO` then, 0 for the script and startup files) and whether its lines are its file's
+  (`lines_in_file`). bash's `BASH_SOURCE`, `FUNCNAME` and `BASH_LINENO` are specials computed from it
+  (`stack_elements`): innermost first, unset without frames, and `FUNCNAME` only while a function runs, with
+  `main` and `source` for the other frames; a frame outside a file has an empty file (bash's `main` or
+  `environment`). `caller` (`misc::caller`, `Shell::caller`) is bash's, `NULL` included. As restoring a saved state
+  defines the functions again, `state.rs` writes `__luish_internal function-file NAME FILE` after a function with a
+  file, so that the startup cache and `savestate` keep it; such a function's `lines_in_file` is false, as its text
+  was written anew. Tests: `misc/bash_source.sh`, `misc/bash_source_startup.sh`, `misc/call_stack.sh`,
+  `builtins/internal_savestate_aliases.sh`.
+- Error messages (`Shell::error`, which `berr` and syntax errors go through) start with `error_location`: the file
+  of the innermost frame and `LINENO` (no line if `lines_in_file` is false), else `$0` as in dash. `stack_trace` then
+  adds a line for each frame but the script and startup files, innermost first, with where it was called (`file:line`
+  from the frame below, `line N` in `-c` and on standard input, nothing at an interactive prompt); consecutive equal
+  lines are counted, and more than `MAX_STACK_LINES` lose their middle. It is only computed for an error. At the top
+  level of a script the message is dash's, so cases compared with dash that capture stderr see the same text, but
+  inside a function they don't: `builtins/test_parse.sh` and `exec/recursion_limit.sh` leave the stack out. Tests:
+  `exec/error_stack.sh`, `exec/stack_guard.sh`.
 - zsh's special parameters (`RANDOM`, `SECONDS`, `EPOCH*`, `UID`/`EUID`/`GID`/`EGID`, `HISTCMD`, `pipestatus`
   and bash's `PIPESTATUS`, and the constants `LUISH_VERSION`, `LUISH_PATCHLEVEL` (`GIT_REV` from `build.rs`),
   `MACHTYPE`, `HOSTTYPE` and `OSTYPE`, in `vars.rs`) are not in the variable map, so plain lookups and assignments of other names cost only a check of the
@@ -1025,6 +1039,8 @@ truncates when it relocates the package.
 | `$((` fallback | `parse/arith_fallback.sh` |
 | `emacs` option | `options/interactive_c.sh` |
 | `BASH_SOURCE` | `misc/bash_source.sh`, `misc/bash_source_startup.sh` |
+| `FUNCNAME`, `BASH_LINENO`, `caller` | `misc/call_stack.sh` |
+| Error messages | `exec/error_stack.sh`, `exec/stack_guard.sh` |
 | Command cache | `path_cache` in `tests/interactive.rs` |
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |

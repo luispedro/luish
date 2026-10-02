@@ -160,8 +160,8 @@ All four have POSIX's `*`, `?` and `[...]`. luish sorts matches by bytes, where 
 | `$LINENO` | – | ✓ | ✓ | ✓ | |
 | `ERR` trap (zsh also `ZERR`) | – | ✓ | ✓ | – | |
 | `DEBUG` trap | – | ✓ | ✓ | – | |
-| `BASH_SOURCE`, the files being run | – | ✓ | – | ✓ | zsh has `funcfiletrace` and `%x` |
-| Call stack: `FUNCNAME`, `caller` (bash); `funcstack`, `funcfiletrace` (zsh) | – | ✓ | ✓ | – | |
+| Call stack: `BASH_SOURCE`, `FUNCNAME`, `BASH_LINENO`, `caller` (bash) | – | ✓ | – | ✓ | zsh has `funcstack`, `funcfiletrace` and `%x` instead, outside its sh emulation |
+| The call stack in error messages | – | – | – | ✓ | bash and zsh name the file (bash) or the function (zsh) of the error, without the calls that led there |
 | Deep recursion | Limit for functions (Debian's), crashes otherwise | Crashes, unless `FUNCNEST` is set | Limit (`FUNCNEST`) | Error | luish stops at 1000 levels of function calls, and makes other nesting that would run out of stack an error |
 
 ## Variables the shell sets

@@ -1,0 +1,23 @@
+top: FUNCNAME=[show main] BASH_LINENO=[10 0] BASH_SOURCE=[call_stack.sh call_stack.sh]
+  caller=[10 call_stack.sh] 0=[10 main call_stack.sh] 1=[] 9=[]
+lib: FUNCNAME=[show source main] BASH_LINENO=[1 17 0] BASH_SOURCE=[call_stack.sh ./lib.sh call_stack.sh]
+  caller=[1 ./lib.sh] 0=[1 source ./lib.sh] 1=[17 main call_stack.sh] 9=[]
+libf: FUNCNAME=[show libf f main] BASH_LINENO=[3 19 21 0] BASH_SOURCE=[call_stack.sh ./lib.sh call_stack.sh call_stack.sh]
+  caller=[3 ./lib.sh] 0=[3 libf ./lib.sh] 1=[19 f call_stack.sh] 9=[]
+f: [] [unset]
+g: g 2 25
+src: [source g main] [23 25 0]
+23 call_stack.sh
+src: [] [26 0]
+26 call_stack.sh
+top: [unset] [0] 0 NULL 0
+status 1
+[unset] [unset]
+h: [h] [3] []
+3 NULL
+status 1
+status 2
+status 2
+status 2
+mine
+typeset -a BASH_LINENO=('0')

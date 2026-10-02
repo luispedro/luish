@@ -71,6 +71,7 @@ instead.
 | `$((` that is not arithmetic | Syntax error (dash always reads `$((` as arithmetic) | Read as `$( (...) )`, a command substitution of a subshell, as bash does (POSIX leaves it unspecified) |
 | `${!a[@]}`, `${!a[*]}` | Bad substitution when expanded | The indices of an array, or the keys of an associative one (in the order they were added), as bash's, which zsh's sh emulation doesn't have (native zsh has `${(k)a}`). As in bash, an unset array has none, even with `set -u` |
 | `${!x}`, `${!x[i]}`, `${!prefix@}`, `${!prefix*}` | Bad substitution when expanded | bash's indirection, which zsh's sh emulation doesn't have (native zsh has `${(P)x}`): the parameter named by the value of `x` (or of the element), a variable, `name[index]`, a positional or a special parameter, with any operator applied to it (`${!x:-d}`, `${!x#p}`). As in bash, an unset or invalid name is an error, even without `set -u`. Unlike bash, the index in the value is only evaluated, not expanded, as in `unset 'a[i]'` (so `$(...)` in it is an error), and `${!x:=v}` can assign an element. `${!prefix@}` lists the set variables whose names start with the prefix, sorted; unlike bash, specials such as `RANDOM` are listed only once assigned, as in `set` |
+| `FUNCNAME`, `BASH_LINENO`, `caller` | Ordinary variables; `caller` is looked for as a command | The call stack, as in bash (see [Special variables](usage.md#special-variables) and `help caller`), with the frames of `BASH_SOURCE`. As there, assigning makes them ordinary variables (bash ignores the assignment). zsh's sh emulation has none of them (native zsh has `funcstack` and `funcfiletrace`) |
 | `BASH_SOURCE` | An ordinary variable | The files being run, innermost first: the script, the files read with `.` and the startup files, and in a function the file it was defined in (see [Special variables](usage.md#special-variables)). It is unset in `-c` and on standard input, as in bash, but a function defined there has an empty file (bash: `main` or `environment`). Assigning to it makes it an ordinary variable, as for luish's other special variables (bash ignores the assignment). zsh has no `BASH_SOURCE` (its `funcfiletrace` and `%x` have the same information) |
 | `emacs` option in interactive shells | Off (Debian's dash has no line editor) | On unless `vi` is set, since it is the line editor's mode, so `$-` has `E` (as in bash) |
 
@@ -87,6 +88,7 @@ instead.
 | Grouped option names, `setopt NAME=VALUE`, `setopt -p GROUP` | No `setopt` | luish's own options are named in groups (`history.share`, `glob.star`), with zsh's names as aliases, and a `no` prefix goes on the last part (`history.no_share`). `setopt NAME=VALUE` sets an option or a setting with a value, and such arguments are expanded as assignments, as for `export`. `setopt -p GROUP` puts the names that follow in `GROUP`. zsh has none of these (`setopt a=b` is an error there, and `setopt -p` sets `privileged`) |
 | `help` | Not a built-in (`not found`, status 127) | In interactive shells (and their subshells), a built-in that shows help for the built-ins. Not a built-in in scripts or `-c`, as in dash; there, `__luish_internal help` does the same |
 | `plugin` | Not a built-in (`not found`, status 127) | In interactive shells (and their subshells), a built-in that loads [plugins](plugins.md). Not a built-in in scripts or `-c`, as in dash; there, `__luish_internal plugin` does the same |
+| Error messages | `$0: LINE: message` | `FILE: LINE: message`, where `FILE` is the file of the code that failed (a file read with `.`, or the file a function was defined in), followed by the call stack: a line for each function call and file read with `.` that led there (see [Error messages](usage.md#error-messages)). At the top level of a script, the same as dash |
 | A command that isn't found | `NAME: not found` (status 127) | The same, followed by a hint for some commands of other shells: bash's `shopt` suggests `setopt` or `unsetopt` (as `in luish, use: setopt globstar` for `shopt -s globstar`) |
 
 ## Known limitations
@@ -134,8 +136,10 @@ Interactive use:
   widths relative to the terminal's (negative truncation lengths).
 - Glob qualifiers lack zsh's `e`, `+`, `f`, `F`, `Y` and `P`, `(#q...)`, the modifiers other than `h`, `t`, `r`,
   `e`, `a`, `A`, `u` and `l`, and `EXTENDED_GLOB` patterns.
-- There is no `FUNCNAME`, `BASH_LINENO` or `caller` (bash), nor `funcstack` or `funcfiletrace` (zsh): of the call
-  stack, only `BASH_SOURCE`.
+- There is no `funcstack`, `funcfiletrace`, `functrace` or `funcsourcetrace` (zsh's, which its sh emulation lacks
+  too); bash's `FUNCNAME`, `BASH_LINENO` and `BASH_SOURCE` have the same information.
+- In a function restored from the startup cache or a saved state, `LINENO` (and so `BASH_LINENO` and `caller` for
+  calls from it) counts lines of the restored text, not of the file the function was defined in.
 - The startup cache trusts its keys: a file's entry depends on `PATH`, `HOME`, the files before it and the files it
   reads with `.`, and a `__luish_cache` block's only on what it lists. What else they read (other variables, files
   that commands read) isn't seen, other than by `check-cache`; see

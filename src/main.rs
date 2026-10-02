@@ -15,6 +15,7 @@ mod cmdtext;
 mod config;
 mod exec;
 mod expand;
+mod frames;
 mod hash;
 mod input;
 mod interactive;
@@ -294,7 +295,12 @@ fn run(args: Vec<Vec<u8>>) -> ! {
     sh.set_jobctl(sh.opt(Opt::Monitor));
 
     if !command_mode && !stdin_mode {
-        sh.sources.push(Some(operands[0].as_slice().into()));
+        sh.frames.push(frames::Frame {
+            kind: frames::FrameKind::Script,
+            file: Some(operands[0].as_slice().into()),
+            lines_in_file: true,
+            call_line: 0,
+        });
     }
     sh.run_input(&mut input);
     let status = sh.last_status;

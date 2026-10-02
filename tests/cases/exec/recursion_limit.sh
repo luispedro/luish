@@ -3,9 +3,10 @@
 # A debug build of luish needs more than the usual 8 MB of stack for 1000
 # calls, so the shells under test get more.
 ulimit -s 65536 2>/dev/null
-# The shell's name starts its messages; dash also names eval there, luish doesn't.
+# The shell's name starts its messages; dash also names eval there, luish doesn't
+# (and adds the call stack, left out here).
 t() {
-    { $SH -c "$1" 2>&1; echo "status $?"; } | sed 's/^[^:]*: //; s/eval: //'
+    { $SH -c "$1" 2>&1; echo "status $?"; } | sed '/^  in /d; s/^[^:]*: //; s/eval: //'
 }
 echo '--- endless recursion'
 t 'n=0; trap "echo depth \$n" EXIT; f() { n=$((n + 1)); f; }; f; echo not reached'

@@ -1,5 +1,6 @@
 //! Interpreter state and the top-level read-parse-execute loop.
 
+use crate::frames::Frame;
 use crate::hash::HashMap;
 use std::rc::Rc;
 
@@ -31,9 +32,13 @@ pub type ExecResult = Result<i32, Flow>;
 /// A shell function.
 #[derive(Clone)]
 pub struct Function {
+    pub name: Rc<[u8]>,
     pub body: Rc<FunctionBody>,
     /// The file it was defined in (`BASH_SOURCE` while it runs).
     pub file: Option<Rc<[u8]>>,
+    /// Whether the line numbers of its body are lines of `file` (see
+    /// [`Frame::lines_in_file`]).
+    pub lines_in_file: bool,
 }
 
 pub struct Shell {
@@ -46,11 +51,8 @@ pub struct Shell {
     pub last_bg_pid: Option<i32>,
     pub options: Options,
     pub functions: HashMap<Vec<u8>, Function>,
-    /// The files being run, innermost last, for `BASH_SOURCE`: the script,
-    /// each file of `.` and each function called (the file it was defined
-    /// in). `None` is code that isn't in a file (`-c`, standard input, the
-    /// command line).
-    pub sources: Vec<Option<Rc<[u8]>>>,
+    /// The call stack, innermost last (`frames.rs`).
+    pub frames: Vec<Frame>,
     pub aliases: Rc<AliasMap>,
     /// Trap actions by signal number (0 is EXIT). An empty action ignores
     /// the signal.
@@ -160,7 +162,7 @@ impl Shell {
             last_bg_pid: None,
             options: Options::default(),
             functions: HashMap::default(),
-            sources: Vec::new(),
+            frames: Vec::new(),
             aliases: Rc::new(AliasMap::default()),
             traps: vec![None; NSIG],
             jobs: JobTable::default(),
@@ -247,27 +249,23 @@ impl Shell {
             Special::Pipestatus | Special::PipestatusBash => Some(self.pipestatus.first()?.to_string().into_bytes()),
             Special::Path => Some(self.vars.get(b"PATH")?.split(|&c| c == b':').next()?.to_vec()),
             Special::Dirstack => self.dirstack.first().cloned(),
-            Special::BashSource => Some(self.sources.last()?.as_deref().unwrap_or_default().to_vec()),
+            s @ (Special::BashSource | Special::Funcname | Special::BashLineno) => {
+                self.stack_elements(s)?.into_iter().next()
+            }
             s => Some(self.vars.special_value(s)),
         }
     }
 
     /// The elements of a variable that isn't stored, for `${a[@]}` and
-    /// `${a[i]}`: `pipestatus`, `path`, `dirstack`, `BASH_SOURCE`, or one element for
-    /// `LINENO` or another special.
+    /// `${a[i]}`: `pipestatus`, `path`, `dirstack`, the call stack's arrays,
+    /// or one element for `LINENO` or another special.
     pub fn special_elements(&self, name: &[u8]) -> Option<Vec<Vec<u8>>> {
         match self.vars.special(name) {
             Some(Special::Pipestatus | Special::PipestatusBash) => {
                 Some(self.pipestatus.iter().map(|s| s.to_string().into_bytes()).collect())
             }
             Some(s @ (Special::Path | Special::Dirstack)) => Some(self.tied_elements(s)),
-            // Unset while no file runs, as in bash.
-            Some(Special::BashSource) if self.sources.is_empty() => None,
-            Some(Special::BashSource) => Some(
-                (self.sources.iter().rev())
-                    .map(|f| f.as_deref().unwrap_or_default().to_vec())
-                    .collect(),
-            ),
+            Some(s @ (Special::BashSource | Special::Funcname | Special::BashLineno)) => self.stack_elements(s),
             _ => self.get_var(name).map(|v| vec![v]),
         }
     }
@@ -277,9 +275,13 @@ impl Shell {
     /// `dirstack`), with the attributes that `export` or `readonly` gave it.
     pub fn special_var(&self, name: &[u8]) -> Option<Var> {
         let value = match self.vars.special(name)? {
-            Special::Pipestatus | Special::PipestatusBash | Special::Path | Special::Dirstack | Special::BashSource => {
-                Value::Array(Box::new(self.special_elements(name)?))
-            }
+            Special::Pipestatus
+            | Special::PipestatusBash
+            | Special::Path
+            | Special::Dirstack
+            | Special::BashSource
+            | Special::Funcname
+            | Special::BashLineno => Value::Array(Box::new(self.special_elements(name)?)),
             _ => Value::Str(self.special_value(name)?),
         };
         let attrs = self.vars.var(name);
@@ -639,16 +641,19 @@ impl Shell {
     // ------------------------------------------------------------------
     // Errors
 
-    /// Prints `$0: LINENO: msg` to stderr.
+    /// Prints `FILE: LINENO: msg` to stderr, where `FILE` is the file of
+    /// the code running (or `$0`), then the call stack (`frames.rs`).
     pub fn error(&self, msg: impl AsRef<[u8]>) {
-        let mut s = self.arg0.clone();
+        let (file, line) = self.error_location();
+        let mut s = file.to_vec();
         s.extend_from_slice(b": ");
-        if !self.interactive || self.lineno > 0 {
-            s.extend_from_slice(self.lineno.to_string().as_bytes());
+        if let Some(line) = line {
+            s.extend_from_slice(line.to_string().as_bytes());
             s.extend_from_slice(b": ");
         }
         s.extend_from_slice(msg.as_ref());
         s.push(b'\n');
+        s.extend(self.stack_trace());
         sys::write_all(2, &s);
     }
 

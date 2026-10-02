@@ -1,8 +1,9 @@
 # Recursion that doesn't go through functions, and deeply nested commands,
 # are errors when the stack runs short, rather than crashing the shell as they
-# crash dash. How deep they get depends on the build, so the tests don't show it.
+# crash dash. How deep they get depends on the build, so the tests don't show it
+# (nor how often the call stack of the error repeats a line).
 t() {
-    { $SH "$@" 2>&1; echo "status $?"; } | sed 's/^[^:]*: //'
+    { $SH "$@" 2>&1; echo "status $?"; } | sed 's/^[^:]*: //; s/ ([0-9]* times)$/ (N times)/'
 }
 nest() { # open middle close: 100000 levels of nesting
     awk -v o="$1" -v m="$2" -v c="$3" 'BEGIN {

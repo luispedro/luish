@@ -17,6 +17,7 @@ use std::rc::Rc;
 
 use crate::ast::*;
 use crate::cmdtext;
+use crate::frames::{Frame, FrameKind};
 use crate::jobs::Job;
 use crate::options::Opt;
 use crate::shell::{ExecResult, Flow, Shell};
@@ -250,11 +251,13 @@ impl Shell {
                 r
             }
             Command::FunctionDef { names, body } => {
-                let file = self.sources.last().cloned().flatten();
+                let (file, lines_in_file) = self.current_file();
                 for name in names {
                     let f = crate::shell::Function {
+                        name: name.as_slice().into(),
                         body: Rc::clone(body),
                         file: file.clone(),
+                        lines_in_file,
                     };
                     self.functions.insert(name.clone(), f);
                 }
@@ -434,7 +437,13 @@ impl Shell {
         self.reset_getopts();
         let saved_loop = std::mem::replace(&mut self.loop_depth, 0);
         self.func_depth += 1;
-        self.sources.push(func.file.clone());
+        let call_line = self.lineno;
+        self.frames.push(Frame {
+            kind: FrameKind::Function(func.name.clone()),
+            file: func.file.clone(),
+            lines_in_file: func.lines_in_file,
+            call_line,
+        });
         self.locals.push(Vec::new());
         let r = match self.redirect(&body.redirs, true) {
             Ok(saved) => {
@@ -448,7 +457,8 @@ impl Shell {
         for (name, saved) in self.locals.pop().unwrap().into_iter().rev() {
             self.restore_saved(name, saved);
         }
-        self.sources.pop();
+        self.frames.pop();
+        self.lineno = call_line;
         self.func_depth -= 1;
         self.loop_depth = saved_loop;
         self.positional = saved_pos;

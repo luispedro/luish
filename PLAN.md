@@ -227,11 +227,9 @@ shell tracks the current file as well as the line, for provenance and for error 
   keys that contain `'`, and `0` rather than `''` for the holes filled in integer arrays.
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL
   around the prompt and command output. Unicode width handling and bracketed paste belong to the line editor.
-- **Scripting**: error messages with file, line and function stack (from call frames), a predictable strict mode,
-  and a debugger or step-trace mode. The frames exist (`Shell::sources`, for `BASH_SOURCE`, with the file of each
-  script, `.` and function call); they need the function's name and the line of the call. With those, bash's
-  `FUNCNAME`, `BASH_LINENO` and `caller` and zsh's `funcstack` and `funcfiletrace` are cheap, and an option (as
-  error messages are dash's by default) can print the stack with an error in a script.
+- **Scripting**: a predictable strict mode, and a debugger or step-trace mode (error messages with the call stack
+  are done, `frames.rs`). Possible follow-ups for errors: show the text of the failing line, and keep the original
+  lines of functions restored from the startup cache (the cache would record them), so their errors name a line.
 - **The directory of the current file**, `~.` (decided 2026-10-02 to wait; `${BASH_SOURCE:A:h}` is done): a tilde
   prefix for `${BASH_SOURCE:A:h}`, so `. ~./lib.sh` and `cfg=~./defaults.conf` need no quoting (tilde expansion isn't
   split), in the spirit of `~+` and `~-`. dash leaves `~.` as it is (no user `.`), so this changes behaviour, though

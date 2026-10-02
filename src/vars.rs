@@ -215,8 +215,8 @@ pub struct Vars {
 /// `dirstack` (zsh's directory stack, without the current directory) is
 /// tied to `Shell::dirstack` in the same way.
 ///
-/// `BASH_SOURCE` (bash's) is the array of the files being run, innermost
-/// first (`Shell::sources`).
+/// bash's `BASH_SOURCE`, `FUNCNAME` and `BASH_LINENO` are arrays of the
+/// call stack, innermost first (`frames.rs`).
 ///
 /// `LUISH_VERSION` and `LUISH_PATCHLEVEL` (zsh's `ZSH_VERSION` and
 /// `ZSH_PATCHLEVEL`), `MACHTYPE`, `OSTYPE` and bash's `HOSTTYPE` are
@@ -239,6 +239,8 @@ pub enum Special {
     Path,
     Dirstack,
     BashSource,
+    Funcname,
+    BashLineno,
     LuishVersion,
     LuishPatchlevel,
     Machtype,
@@ -261,6 +263,8 @@ pub const SPECIALS: &[(&[u8], Special)] = &[
     (b"path", Special::Path),
     (b"dirstack", Special::Dirstack),
     (b"BASH_SOURCE", Special::BashSource),
+    (b"FUNCNAME", Special::Funcname),
+    (b"BASH_LINENO", Special::BashLineno),
     (b"LUISH_VERSION", Special::LuishVersion),
     (b"LUISH_PATCHLEVEL", Special::LuishPatchlevel),
     (b"MACHTYPE", Special::Machtype),
@@ -280,7 +284,7 @@ impl Special {
         // Most names are rejected on their first byte.
         if !matches!(
             name.first(),
-            Some(b'B' | b'E' | b'G' | b'H' | b'L' | b'M' | b'O' | b'P' | b'R' | b'S' | b'U' | b'd' | b'p')
+            Some(b'B' | b'E' | b'F' | b'G' | b'H' | b'L' | b'M' | b'O' | b'P' | b'R' | b'S' | b'U' | b'd' | b'p')
         ) {
             return None;
         }
@@ -456,7 +460,9 @@ impl Vars {
             | Special::PipestatusBash
             | Special::Path
             | Special::Dirstack
-            | Special::BashSource => 0,
+            | Special::BashSource
+            | Special::Funcname
+            | Special::BashLineno => 0,
         };
         n.to_string().into_bytes()
     }

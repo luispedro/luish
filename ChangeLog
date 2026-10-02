@@ -4,6 +4,9 @@ Unreleased
     * :a and :A modifiers (and counts) in glob qualifiers, :a and :A in
       history expansion
     * BASH_SOURCE, so ${BASH_SOURCE:A:h} is the script's directory
+    * FUNCNAME, BASH_LINENO and caller, as in bash
+    * Error messages name the file of the code that failed (not $0), and
+      show the call stack
     * config.toml: [env], [env.interactive] and [vars] set variables, and
       [path] adds directories to PATH (before = [...], after = [...])
     * Plugins of a collection load as SOURCE/NAME (std/completion), so

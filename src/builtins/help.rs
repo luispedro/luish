@@ -25,6 +25,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"bindkey", page!("bindkey")),
     (b"break", page!("break")),
     (b"builtin", page!("builtin")),
+    (b"caller", page!("caller")),
     (b"cd", page!("cd")),
     (b"chdir", page!("cd")),
     (b"command", page!("command")),

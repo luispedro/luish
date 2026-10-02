@@ -13,4 +13,5 @@ fd3
 0
 status 1
 __luish_internal print: bad option: -q
+  in function p, called at print_luish.sh:26
 print [-abcDilmnNoOPrsz] [-C cols] [-f format] [-u fd] [-v name]

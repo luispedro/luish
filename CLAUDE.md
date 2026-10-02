@@ -132,7 +132,9 @@ state on the `Shell` struct in `shell.rs`.
 
 ## Conventions
 
-- Error messages use dash's wording.
+- Error messages use dash's wording for the message itself, but otherwise aim to be as helpful as possible rather
+  than to match dash: they name the file of the code that failed and show the call stack (`frames.rs`). The error
+  path's speed doesn't matter.
 - Performance matters: hot paths (e.g. `[ ... ]` in loops) must avoid needless syscalls. Compare against dash with a
   release build when changing the executor or expansion (`bench/run.sh`).
 - Documentation commits are prefixed `DOC`.

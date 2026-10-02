@@ -9,6 +9,7 @@ use super::vars::single_quote;
 use crate::exec::CommandKind;
 use crate::expand::pattern::Pattern;
 use crate::expand::split::XChar;
+use crate::frames::{Frame, FrameKind};
 use crate::lexer::AliasKind;
 use crate::parser::is_reserved;
 use crate::shell::{ExecResult, Flow, Shell};
@@ -83,15 +84,47 @@ fn run_file(sh: &mut Shell, argv: &[Vec<u8>], cwd_first: bool) -> ExecResult {
     let saved_lineno = sh.lineno;
     sh.lineno = 1;
     sh.dot_depth += 1;
-    sh.sources.push(path.map(Rc::from));
+    sh.frames.push(Frame {
+        kind: FrameKind::Source,
+        file: path.map(Rc::from),
+        lines_in_file: true,
+        call_line: saved_lineno,
+    });
     let r = sh.run_string(&text);
-    sh.sources.pop();
+    sh.frames.pop();
     sh.dot_depth -= 1;
     sh.lineno = saved_lineno;
     match r {
         Err(Flow::Return(n)) => Ok(n),
         r => r,
     }
+}
+
+/// `caller [N]` (bash): where the current function, or file read with `.`,
+/// was called from (`Shell::caller`).
+pub fn caller(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    let args = match super::options(sh, argv, b"") {
+        Ok((_, args)) => args,
+        Err(s) => return Ok(s),
+    };
+    let n = match args {
+        [] => None,
+        [n] => match super::parse_uint(n) {
+            Some(n) if n >= 0 => Some(n as usize),
+            _ => {
+                sh.berr(&argv[0], format!("{}: invalid number", String::from_utf8_lossy(n)));
+                return Ok(2);
+            }
+        },
+        _ => {
+            sh.berr(&argv[0], "too many arguments");
+            return Ok(2);
+        }
+    };
+    Ok(match sh.caller(n) {
+        Some(out) => sh.out_status(&out),
+        None => 1,
+    })
 }
 
 pub fn times(sh: &mut Shell, _argv: &[Vec<u8>]) -> ExecResult {

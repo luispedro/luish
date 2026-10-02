@@ -149,7 +149,7 @@ improvement on it.
 
 The current work is finishing the replacement of zsh: more completion (a generic bridge to programs' own completion
 and to `--help`), typing to narrow the menu, and `precmd`/`preexec` hooks. After that come terminal features (OSC 7
-and OSC 133), error messages with a stack, a history with the directory, exit status and duration of each command,
+and OSC 133), a history with the directory, exit status and duration of each command,
 and a mode for SSH in which the line editor runs on the local machine.
 
 ```{toctree}

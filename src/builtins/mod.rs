@@ -69,6 +69,8 @@ builtins! {
     (b"bg", jobs::fg, false),
     // Not POSIX: as in zsh and bash.
     (b"builtin", misc::builtin, false),
+    // Not POSIX: as in bash.
+    (b"caller", misc::caller, false),
     (b"cd", cd::cd, false),
     (b"chdir", cd::cd, false),
     (b"command", misc::command, false),

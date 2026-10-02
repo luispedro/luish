@@ -3,6 +3,8 @@
 status 2
 --- .
 1: nested too deeply
+  in ./self.sh, sourced at ./self.sh:1 (N times)
+  in ./self.sh, sourced at line 1
 status 2
 --- a trap
 1: nested too deeply
@@ -23,5 +25,6 @@ status 2
 status 2
 --- an interactive shell goes back to the prompt, and can still call functions
 1: Maximum function recursion depth (1000) reached
+  in function f (1000 times)
 3: nested too deeply
 3

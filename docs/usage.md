@@ -80,6 +80,8 @@ Besides POSIX's (`$?`, `$$`, `$!`, `$-`, `$#`, `$0`, `$@`, `$*`, `LINENO`, `PPID
 | `pipestatus`, `PIPESTATUS` (bash's name) | An array of the statuses of the commands of the last pipeline: after `true \| false`, `${pipestatus[@]}` is `0 1`. As in zsh, every pipeline sets it, a single command or an `if` too, but not an assignment (so it survives `s=$?`) or `[[ ... ]]` |
 | `path` | An array of the directories in `PATH`: `path=(~/bin "${path[@]}")` prepends one, and `path+=(/opt/bin)` appends one. An array assignment to it sets `PATH`, but `path=x` (valid in any POSIX shell) makes it an ordinary variable, as does `unset path`, and a `local path` is an ordinary variable of the function |
 | `BASH_SOURCE` | An array of the files being run, innermost first, as in bash: the script, each file read with `.` (the path as given, or as found in `PATH`) and the startup files, and in a function the file the function was defined in. `$BASH_SOURCE` is the current one. It is unset in `-c` and when commands are read from standard input, and a function defined there has an empty file (bash has `main` or `environment`) |
+| `FUNCNAME` | An array of the names of the functions being run, innermost first, as in bash, with `source` for a file read with `.` and `main` for the script. It is set only while a function runs |
+| `BASH_LINENO` | An array of the lines each entry of `FUNCNAME` (and of `BASH_SOURCE`) was called from, as in bash: `${BASH_LINENO[0]}` is the line that called the current function, in the file `${BASH_SOURCE[1]}`. It is 0 for the script |
 | `dirstack` | An array of the directory stack of `pushd` and `popd`, without the current directory (`dirs` shows it first): `${dirstack[0]}` is where `popd` goes. An array assignment (`dirstack=(~/src /tmp)`) replaces the stack; as for `path`, `dirstack=x`, `unset dirstack` and `local dirstack` make it an ordinary variable |
 | `LUISH_VERSION` | luish's version (`0.3.0`), as zsh's `ZSH_VERSION` and bash's `BASH_VERSION` |
 | `LUISH_PATCHLEVEL` | The git commit luish was built from, with `-dirty` if the sources had changes (`unknown` outside a git checkout), as zsh's `ZSH_PATCHLEVEL` |
@@ -207,6 +209,26 @@ the latter case of `${a[@]}`) are joined first, unless `@` or `j` is given, and 
 arithmetic expression (for an array, each element), so `typeset -i n=2*3` sets `n` to `6`, and `n+=1` adds.
 Likewise, `typeset -l` and `typeset -u` convert what is assigned to lower or upper case, and zsh's `typeset -U` keeps
 only the first of equal elements in an array: `typeset -U path` keeps `PATH` free of repeated directories.
+
+## Error messages
+
+An error message names the file of the code that failed and its line, then shows how the shell got there: a line
+for each function call and each file read with `.`, innermost first, with where it was called.
+
+```text
+./lib.sh: 2: nosuchcmd: not found
+  in function load_config, called at main.sh:3
+  in function setup, called at main.sh:5
+```
+
+dash names the script (`$0`) instead, even for an error in a file it read with `.`, and shows no stack. At the top
+level of a script the two are the same. A line that repeats (in recursion) is shown once with a count, and a stack of
+more than 20 lines loses its middle. In `-c`, calls are at lines of the command (`called at line 2`), and at the
+prompt of an interactive shell the stack has no lines. A function that the startup cache or a saved state restored
+was written anew, so its errors name its file without a line.
+
+`caller` prints a frame of the stack from a script, as in bash (see `help caller`), and `BASH_SOURCE`, `FUNCNAME`
+and `BASH_LINENO` hold all of it ([Special variables](#special-variables)).
 
 ## Getting help
 
