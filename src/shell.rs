@@ -530,6 +530,9 @@ impl Shell {
                 }
                 pos = i as usize;
             }
+            if pos > crate::vars::MAX_INDEX as usize {
+                return Err(bad(self, "bad array subscript"));
+            }
             if pos >= a.len() {
                 a.resize(pos + 1, Vec::new());
             }

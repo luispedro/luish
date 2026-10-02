@@ -177,7 +177,8 @@ impl Value {
 #[derive(Debug)]
 pub enum AssignError {
     Readonly,
-    /// A negative index before the start of the array.
+    /// A negative index before the start of the array, or one past
+    /// `MAX_INDEX`.
     BadSubscript,
 }
 
@@ -339,13 +340,17 @@ pub struct Saved {
     special: bool,
 }
 
+/// The largest index an assignment can make (arrays are not sparse, so
+/// it adds the elements before it), rather than fail to allocate them.
+pub const MAX_INDEX: i64 = (64 << 20) - 1;
+
 /// Sets element `i` of an array (counting from the end if it is negative),
 /// adding empty elements up to it; a string becomes an array. With
 /// `append`, the value is appended to the element.
 pub fn set_index(value: &mut Option<Value>, i: i64, v: Vec<u8>, append: bool) -> Result<(), AssignError> {
     let len = value.as_ref().map_or(0, |v| v.elements().len());
     let i = if i < 0 { i + len as i64 } else { i };
-    if i < 0 {
+    if !(0..=MAX_INDEX).contains(&i) {
         return Err(AssignError::BadSubscript);
     }
     let i = i as usize;

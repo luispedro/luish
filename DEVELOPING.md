@@ -171,6 +171,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   reads `a[i]`, and evaluates the index of `a[i] = v` only once it has seen the assignment operator. `unset 'a[i]'`
   empties the element (`unset_element`). `quote_value` writes arrays for `set`, `-p` listings and `savestate`.
   Elements `[i]=v` of a list (`Shell::assign_items`) are evaluated as arithmetic when the list is assigned.
+  Arrays have no holes, so an assignment past the end adds the elements before it; an index past `vars::MAX_INDEX`
+  (64 Mi elements) is a bad subscript rather than an allocation that fails.
   Tests: `expand/arrays.sh` (zsh), `expand/arrays_errors.sh`, `expand/arrays_luish.sh`.
 - Slices, `${a[i..j]}` (`Index::Slice`): `lexer::slice_index` splits a subscript at its first `..` in an unquoted
   literal part, so the ends are words of their own. `Shell::slice` evaluates them, then copies only the slice, which

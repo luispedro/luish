@@ -14,6 +14,8 @@ Unreleased
     * `plugin run FILE|-c CODE [ARG...]` runs Rhai code once
     * `typeset -f` and the saved state no longer turn `$` before
       backquotes into `$$`
+    * An array index of 64 Mi or more is an error instead of aborting
+      the shell
 
 Version 0.3.0 2026-10-01 by luispedro
     * LUISH_VERSION and LUISH_PATCHLEVEL (as zsh's ZSH_VERSION and

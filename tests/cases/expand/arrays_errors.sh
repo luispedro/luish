@@ -16,3 +16,13 @@ echo "status $?"
 (r=(3); echo never)
 echo "status $?"
 echo "${r[@]}"
+# An index past the limit (64 Mi elements) is an error, not an
+# allocation that fails.
+(a[133333333332]=3; echo never)
+echo "status $?"
+(: $((a[67108864]=3)); echo never)
+echo "status $?"
+(a=([133333333332]=3); echo never)
+echo "status $?"
+a[1000]=y
+echo "${#a[@]}"
