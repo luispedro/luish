@@ -2,9 +2,10 @@
 //!
 //! Unlike `cmdtext.rs` (dash's job text, which drops quoting), this keeps
 //! everything that affects the meaning, so that functions can be saved and
-//! read back (`__luish_internal savestate`). Backquotes become `$(...)` and `<<-` becomes
-//! `<<` (its tabs were already stripped); the layout is one command per
-//! line, indented by four spaces.
+//! read back (`__luish_internal savestate`). Backquotes become `$(...)`
+//! (with a `$` before them escaped), and `<<-` becomes `<<` (its tabs were
+//! already stripped); the layout is one command per line, indented by four
+//! spaces.
 
 use std::cell::Cell;
 
@@ -410,6 +411,14 @@ impl<'a> Printer<'a> {
     fn parts(&mut self, parts: &[WordPart]) {
         for (i, part) in parts.iter().enumerate() {
             match part {
+                // A `$` before backquotes, which are written as `$(...)`,
+                // would read as `$$`: it is escaped (which means the same).
+                WordPart::Literal(s)
+                    if s.ends_with(b"$") && matches!(parts.get(i + 1), Some(WordPart::CmdSubst(_))) =>
+                {
+                    self.w(&s[..s.len() - 1]);
+                    self.w(b"\\$");
+                }
                 WordPart::Literal(s) => self.w(s),
                 WordPart::SingleQuoted(s) => {
                     self.w(b"'");
@@ -622,18 +631,36 @@ fn heredoc_delim(body: &[u8]) -> Vec<u8> {
 }
 
 /// Clears line numbers, which differ between the original and the
-/// printed text (for the round-trip tests, and the fuzzer's).
+/// printed text (for the round-trip tests, and the fuzzer's). Also turns
+/// the `\$` written before `$(...)` (`parts`) back into a literal `$`.
 #[cfg(any(test, fuzzing))]
 pub fn strip_lines(list: &mut List) {
     fn words(ws: &mut [Word]) {
         ws.iter_mut().for_each(word);
     }
     fn word(w: &mut Word) {
-        w.0.iter_mut().for_each(part);
+        parts(&mut w.0);
+    }
+    fn parts(ps: &mut Vec<WordPart>) {
+        ps.iter_mut().for_each(part);
+        for i in 0..ps.len() {
+            if matches!(ps[i], WordPart::Escaped(b'$')) && matches!(ps.get(i + 1), Some(WordPart::CmdSubst(_))) {
+                ps[i] = WordPart::Literal(b"$".to_vec());
+            }
+        }
+        // Adjacent literals, as the lexer reads them.
+        let mut merged: Vec<WordPart> = Vec::with_capacity(ps.len());
+        for p in ps.drain(..) {
+            match (merged.last_mut(), p) {
+                (Some(WordPart::Literal(a)), WordPart::Literal(b)) => a.extend(b),
+                (_, p) => merged.push(p),
+            }
+        }
+        *ps = merged;
     }
     fn part(p: &mut WordPart) {
         match p {
-            WordPart::DoubleQuoted(ps) => ps.iter_mut().for_each(part),
+            WordPart::DoubleQuoted(ps) => parts(ps),
             WordPart::CmdSubst(l) | WordPart::ProcSubst { list: l, .. } => strip_lines(std::rc::Rc::make_mut(l)),
             WordPart::Arith(w) => word(w),
             WordPart::Array(items) => items.iter_mut().for_each(|item| {
@@ -798,6 +825,15 @@ mod tests {
         assert_eq!(
             round_trip("f() { __luish_cache env=(A B) files=(\"$H\"/a ~/b\\ c) { x=1; }; __luish_cache { :; }; }"),
             "f() {\n    __luish_cache env=(A B) files=(\"$H\"/a ~/b\\ c) {\n        x=1\n    }\n    __luish_cache {\n        :\n    }\n}\n"
+        );
+    }
+
+    #[test]
+    fn dollar_before_backquotes() {
+        // `$` then `$(...)` would read as `$$`.
+        assert_eq!(
+            round_trip("f() { echo a$`b` \"$`c`\"; }"),
+            "f() {\n    echo a\\$$(b) \"\\$$(c)\"\n}\n"
         );
     }
 

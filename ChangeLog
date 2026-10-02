@@ -12,6 +12,8 @@ Unreleased
       without a plugin's files are no longer taken for plugins
     * Extensions' precmd, preexec and exit hooks
     * `plugin run FILE|-c CODE [ARG...]` runs Rhai code once
+    * `typeset -f` and the saved state no longer turn `$` before
+      backquotes into `$$`
 
 Version 0.3.0 2026-10-01 by luispedro
     * LUISH_VERSION and LUISH_PATCHLEVEL (as zsh's ZSH_VERSION and

@@ -452,7 +452,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   so plugin cases can test completers. Status 1 if there are none or a completer failed. Test:
   `tests/plugins/complete.sh`.
 - `savestate` (`state.rs`): not `PPID`, `LINENO`, `SHLVL`, or the options `-i -s -m -n`. Functions are printed by
-  `unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`); words in function bodies that would be expanded as
+  `unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`), and escapes a `$` before backquotes, which it writes as
+  `$(...)` (`unparse::tests::dollar_before_backquotes`); words in function bodies that would be expanded as
   aliases (command names that are aliases of any kind, other words that are global aliases) are quoted, and a
   function named like an alias is preceded by `unalias`. Loaded plugins are printed as
   `__luish_internal plugin restore NAME PATH`, after aliases and before options. When there are aliases, the commands
