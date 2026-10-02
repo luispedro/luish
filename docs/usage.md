@@ -212,17 +212,21 @@ only the first of equal elements in an array: `typeset -U path` keeps `PATH` fre
 
 ## Error messages
 
-An error message names the file of the code that failed and its line, then shows how the shell got there: a line
-for each function call and each file read with `.`, innermost first, with where it was called.
+An error message names the file of the code that failed and its line, then shows the text of that line and how the
+shell got there: a line for each function call and each file read with `.`, innermost first, with where it was
+called.
 
 ```text
 ./lib.sh: 2: nosuchcmd: not found
+    nosuchcmd
   in function load_config, called at main.sh:3
   in function setup, called at main.sh:5
 ```
 
-dash names the script (`$0`) instead, even for an error in a file it read with `.`, and shows no stack. At the top
-level of a script the two are the same. A line that repeats (in recursion) is shown once with a count, and a stack of
+dash names the script (`$0`) instead, even for an error in a file it read with `.`, and shows neither the line nor
+the stack. The line is read again from the file when the error happens (so a file changed since shows its new
+text), or from the `-c` command; it isn't shown for code typed at the prompt or run by `eval` or a trap, and a long
+line is cut. A line of the stack that repeats (in recursion) is shown once with a count, and a stack of
 more than 20 lines loses its middle. In `-c`, calls are at lines of the command (`called at line 2`), and at the
 prompt of an interactive shell the stack has no lines. A function that the startup cache or a saved state restored
 was written anew, so its errors name its file without a line.

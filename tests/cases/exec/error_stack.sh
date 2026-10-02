@@ -1,8 +1,9 @@
 # Error messages start with the file of the code that failed (a file read
 # with `.`, or the file a function was defined in; dash always names $0) and
-# its line, then show the call stack: a line for each function call and file
-# read with `.` that led there, innermost first, with where it was called.
-# Repeated lines are counted, and a long stack loses its middle.
+# its line, then show the text of that line (read again from the file, or
+# from the -c command) and the call stack: a line for each function call and
+# file read with `.` that led there, innermost first, with where it was
+# called. Repeated lines are counted, and a long stack loses its middle.
 cat > lib.sh <<'X'
 load_config() {
   nosuchcmd
@@ -41,3 +42,14 @@ g() { f; }
 f' 2>&1 | sed 's/^[^:]*: //'
 echo '--- an interactive shell names no lines at the prompt'
 $SH -i -c 'g() { nosuchcmd; }; g' 2>&1 </dev/null | grep -v 'job control' | sed 's/^[^:]*: //'
+echo '--- the failing line is read again from its file, also after cd'
+mkdir sub
+$SH -c '. ./lib.sh; cd sub; load_config' 2>&1 | head -2
+echo '--- no text for eval, nor line for a function that eval defined'
+$SH -c 'eval "a=1
+nosuchcmd"; eval "f() { nosuchcmd; }"; f' 2>&1 | sed 's/^[^:]*: //'
+echo '--- a long line is cut, and control characters are shown as ?'
+printf 'nosuchcmd %0200d\n' 0 > long.sh
+printf 'nosuchcmd \001x\n' > ctl.sh
+$SH long.sh 2>&1
+$SH ctl.sh 2>&1 | tail -1

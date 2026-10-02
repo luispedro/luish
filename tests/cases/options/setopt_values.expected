@@ -17,16 +17,24 @@ through command
 unset unset
 []
 setopt_values.sh: 27: setopt: history.size: bad value: 12x
+    setopt history.size=12x history.share=maybe history.file history.bogus=1 history.nofile glob.star=off 2>&1
 setopt_values.sh: 27: setopt: history.share: bad value: maybe
+    setopt history.size=12x history.share=maybe history.file history.bogus=1 history.nofile glob.star=off 2>&1
 setopt_values.sh: 27: setopt: history.file: needs a value
+    setopt history.size=12x history.share=maybe history.file history.bogus=1 history.nofile glob.star=off 2>&1
 setopt_values.sh: 27: setopt: no such option: history.bogus
+    setopt history.size=12x history.share=maybe history.file history.bogus=1 history.nofile glob.star=off 2>&1
 setopt_values.sh: 27: setopt: no such option: history.nofile
+    setopt history.size=12x history.share=maybe history.file history.bogus=1 history.nofile glob.star=off 2>&1
 status 1
 glob.star off
 setopt_values.sh: 29: unsetopt: history.share=0: can't give a value
+    unsetopt history.share=0 2>&1; echo "status $?"
 status 1
 setopt_values.sh: 31: setopt: SAVEHIST: is read only
+    setopt history.save_size=1 2>&1; echo "status $?"
 status 1
 setopt_values.sh: 32: unsetopt: SAVEHIST: is read only
+    unsetopt history.save_size 2>&1; echo "status $?"; echo "$SAVEHIST"
 status 1
 20

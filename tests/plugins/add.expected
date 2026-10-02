@@ -39,16 +39,20 @@ README
 src
 --- a git repository that is not there is not added
 luish: 1: __luish_internal plugin: ~/nothing.git/: no such file or directory
+    __luish_internal plugin add -y file://$HOME/nothing.git/; echo "status $?"
 status 1
 status 1
 0
 --- a git repository or a path without plugins is not added
 Fetching file://~/notplug
 luish: 1: __luish_internal plugin: file://~/notplug: no plugins in it
+    __luish_internal plugin add -y file://$HOME/notplug; echo "status $?"
 status 1
 luish: 1: __luish_internal plugin: ./notplug/docs: no plugins in it
+    __luish_internal plugin add -y ./notplug/docs; echo "status $?"
 status 1
 luish: 1: __luish_internal plugin: ./notplug/README.md: not a plugin (not a .rhai or .lsh file)
+    __luish_internal plugin add -y ./notplug/README.md; echo "status $?"
 status 1
 0
 --- one plugin and other directories: the plugin
@@ -100,17 +104,23 @@ a
 b
 --- errors
 luish: 1: __luish_internal plugin: first: already in plugins.enabled (give another name as the second argument)
+    __luish_internal plugin add -y ./coll/a first; echo "status $?"
 status 1
 luish: 1: __luish_internal plugin: nothing: no such file or directory, and not a GitHub repository (OWNER/REPO) or URL
+    __luish_internal plugin add -y nothing; echo "status $?"
 status 1
 luish: 1: __luish_internal plugin: o/r/blob/main/x: not a GitHub repository or directory
+    __luish_internal plugin add -y https://github.com/o/r/blob/main/x; echo "status $?"
 status 1
 luish: 1: __luish_internal plugin: ./nothing: no such file or directory
+    __luish_internal plugin add -y ./nothing; echo "status $?"
 status 1
 luish: 1: __luish_internal plugin: usage: plugin add [-y] PLUGIN [NAME]
+    __luish_internal plugin add; echo "status $?"
 status 2
 luish: 1: __luish_internal plugin: cannot add to ~/.config/luish/config.toml: add this to its [plugins.enabled] table yourself:
 a = { path = "~/coll/a" }
+    __luish_internal plugin add -y ./coll/a; echo "status $?"
 status 1
 --- a configuration that is a symbolic link stays one
 status 0

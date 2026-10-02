@@ -39,7 +39,9 @@ xtrace
 noglob
 nounset
 setopt_list.sh: 11: setopt: no such option: bogus
+    setopt promptpercent bogus 2>&1; echo "status $?"
 status 1
 0
 setopt_list.sh: 14: set: Illegal option -o promptpercent
+    (set -o promptpercent) 2>&1; echo "status $?"
 status 2

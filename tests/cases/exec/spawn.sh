@@ -11,7 +11,7 @@ ls /proc/self/fd >fds 2>/dev/null; tr '\n' ' ' <fds; echo
 exec 3>three; sh -c 'echo on-three >&3'; exec 3>&-; cat three
 # Redirection errors and exec errors, reported with the redirections applied.
 /bin/echo x >/nonexistent/dir/f; echo st=$?
-nonexistent_cmd_xyz 2>err; echo st=$?; wc -l <err
+nonexistent_cmd_xyz 2>err; echo st=$?; grep -c ': not found$' err
 mkdir d; ./d 2>/dev/null; echo st=$?
 PATH=/nonexistent ls 2>/dev/null; echo st=$?
 # Assignments go to the command's environment only.

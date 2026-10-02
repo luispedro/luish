@@ -7,6 +7,7 @@ Unreleased
     * FUNCNAME, BASH_LINENO and caller, as in bash
     * Error messages name the file of the code that failed (not $0), and
       show the call stack
+    * Error messages show the text of the failing line
     * config.toml: [env], [env.interactive] and [vars] set variables, and
       [path] adds directories to PATH (before = [...], after = [...])
     * Plugins of a collection load as SOURCE/NAME (std/completion), so

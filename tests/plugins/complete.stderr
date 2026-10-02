@@ -1,4 +1,7 @@
 complete.sh: 29: ./frob.rhai: Runtime error: frob failed (line 4, position 9)
+    __luish_internal complete "$1"
   in function c, called at complete.sh:39
 complete.sh: 44: __luish_internal complete: missing line
+    __luish_internal complete
 complete.sh: 46: __luish_internal complete: too many arguments: b
+    __luish_internal complete a b

@@ -1,24 +1,46 @@
 1: shopt: not found
+    shopt -s globstar autocd; echo "status $?"
 1: shopt is bash's; in luish, use: setopt globstar autocd
+    shopt -s globstar autocd; echo "status $?"
 status 127
 1: shopt: not found
+    shopt -u globstar
 1: shopt is bash's; in luish, use: unsetopt globstar
+    shopt -u globstar
 1: shopt: not found
+    shopt -s extglob
 1: shopt is bash's; luish sets options with setopt and unsetopt
+    shopt -s extglob
 1: shopt: not found
+    shopt
 1: shopt is bash's; luish sets options with setopt and unsetopt
+    shopt
 1: shopt: not found
+    shopt -s globstar; :
 1: shopt is bash's; in luish, use: setopt globstar
+    shopt -s globstar; :
 1: shopt: not found
+    x=1 shopt -s globstar
 1: shopt is bash's; in luish, use: setopt globstar
+    x=1 shopt -s globstar
 1: shopt: not found
+    command shopt -s globstar
 1: shopt is bash's; in luish, use: setopt globstar
+    command shopt -s globstar
 1: shopt: not found
+    shopt -s globstar &
 1: shopt is bash's; in luish, use: setopt globstar
+    shopt -s globstar &
 1: shopt: not found
+    (shopt -s globstar)
 1: shopt is bash's; in luish, use: setopt globstar
+    (shopt -s globstar)
 1: shopt: not found
+    echo x | shopt -s globstar
 1: shopt is bash's; in luish, use: setopt globstar
+    echo x | shopt -s globstar
 1: nosuchcommand_xyz: not found
+    nosuchcommand_xyz -s globstar
 1: ./shopt: not found
+    ./shopt -s globstar
 status 127

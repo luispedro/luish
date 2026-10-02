@@ -63,12 +63,14 @@ Update available: file://~/single b2201bb..d602781
 1 of 3 git sources can be updated (run plugin update)
 status 0
 luish: 1: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+    __luish_internal plugin check extra; echo "status $?"
 status 2
 --- plugin sync does not move a pinned source
 3 git sources locked, 2 plugins enabled: std/rhai-only, single
 status 0
 status 0
 luish: 1: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+    __luish_internal plugin sync -q extra; echo "status $?"
 status 2
 rhai from std
 --- plugin update does
@@ -87,6 +89,7 @@ status 0
 3 git sources up to date
 status 0
 luish: 1: __luish_internal plugin: nosuch: no such git source
+    __luish_internal plugin update nosuch; echo "status $?"
 status 1
 --- a removed data directory: not installed, and synced again at the same commit
 luish: plugin sources not installed: file://~/single, std (run plugin sync)
@@ -144,5 +147,6 @@ No git sources to check
 status 0
 --- a lock from a newer luish is left alone
 luish: 1: __luish_internal plugin: ~/.config/luish/plugins.lock: written by a newer luish (version 2)
+    __luish_internal plugin sync; echo "status $?"
 status 1
 version = 2

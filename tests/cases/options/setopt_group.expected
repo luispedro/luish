@@ -27,16 +27,24 @@ unsetopt history.verify
 unsetopt glob.bare_qualifiers
 unsetopt glob.star
 setopt_group.sh: 23: setopt: no such option: history.bogus
+    setopt -p history bogus errexit share=maybe 2>&1; echo "status $?"
 setopt_group.sh: 23: setopt: no such option: history.errexit
+    setopt -p history bogus errexit share=maybe 2>&1; echo "status $?"
 setopt_group.sh: 23: setopt: history.share: bad value: maybe
+    setopt -p history bogus errexit share=maybe 2>&1; echo "status $?"
 status 1
 setopt_group.sh: 24: setopt: no such group: bogus
+    setopt -p bogus share 2>&1; echo "status $?"
 status 1
 setopt_group.sh: 25: setopt: no such group: history.share
+    setopt -p history.share 2>&1; echo "status $?"
 status 1
 setopt_group.sh: 26: setopt: No arg for -p option
+    setopt -p 2>&1; echo "status $?"
 status 2
 setopt_group.sh: 27: setopt: Illegal option -x
+    setopt -x 2>&1; echo "status $?"
 status 2
 setopt_group.sh: 28: setopt: no such option: -p
+    setopt -- -p 2>&1; echo "status $?"
 status 1

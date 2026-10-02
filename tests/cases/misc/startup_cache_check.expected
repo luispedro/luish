@@ -61,16 +61,22 @@ V=2
 status 0
 --- errors
 luish: 1: __luish_internal check-cache: illegal option -x
+    __luish_internal check-cache -x; echo "status $?"
 status 2
 luish: 1: __luish_internal check-cache: other: no such cache (rc, login or startup)
+    __luish_internal check-cache other; echo "status $?"
 status 2
 luish: 1: __luish_internal check-cache: startup caches are disabled (--no-plugins)
+    __luish_internal check-cache; echo "status $?"
 status 2
 luish: 1: __luish_internal check-cache: ~/.cache/luish/login-HOST: not a cache of this version of luish (the next shell replaces it)
+    __luish_internal check-cache -q login; echo "status $?"
 status 2
 luish: 1: __luish_internal check-cache: cannot read ~/.cache/luish/login-HOST: No such file or directory
+    __luish_internal check-cache login; echo "status $?"
 status 2
 luish: 1: __luish_internal check-cache: ~/.cache/luish/rc-HOST: cannot rebuild it: its startup directory no longer exists
+    __luish_internal check-cache; echo "status $?"
 status 2
 no startup caches
 status 0

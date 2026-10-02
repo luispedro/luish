@@ -5,15 +5,20 @@ alias -- -x='echo dash x'
 alias 'a b'='c'
 alias x='y'
 alias: Illegal option -z
+    alias -z 2>&1 | err; alias -z 2>/dev/null; echo "status $?"
 status 2
 alias: Illegal option +x
+    alias +x=1 2>&1 | err
 alias: illegal combination of options
+    alias -gs q=1 2>&1 | err; alias -gs q=1 2>/dev/null; echo "status $?"
 status 2
 status 2
 alias: x: not found
+    alias -s x 2>&1 | err; alias -s x 2>/dev/null; echo "status $?"
 status 1
 alias -s txt='cat -n'
 unalias: x: not found
+    unalias -s x 2>&1 | err
 status 0
 status 2
 here-document

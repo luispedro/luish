@@ -188,6 +188,10 @@ fn check(luish: &Path, refs: &[Reference], script: &Path, id: &str, plugin_case:
         run(path, &[r.args, &extra].concat(), script, id, false)
     };
     let mut problems = String::new();
+    // A reference that times out too would otherwise match.
+    if want.status == "timeout" {
+        problems += &format!("  {reference} timed out\n");
+    }
     if got.stdout != want.stdout {
         problems += &format!(
             "  stdout differs:\n  luish:\n{}  expected:\n{}",

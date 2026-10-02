@@ -526,14 +526,11 @@ pub fn source_file(sh: &mut Shell, path: &[u8]) {
 
 /// Runs the text of a startup file in the current shell.
 pub fn run_file(sh: &mut Shell, path: &[u8], text: &[u8]) {
-    sh.frames.push(crate::frames::Frame {
-        kind: crate::frames::FrameKind::Source,
-        file: Some(path.into()),
-        lines_in_file: true,
-        call_line: 0,
-    });
+    use crate::frames::{Frame, FrameKind, SourceFile};
+    let file = SourceFile::new(path, sh.curdir.as_deref());
+    let in_string = sh.push_frame(Frame::file(FrameKind::Source, file, 0));
     run_text(sh, text, true);
-    sh.frames.pop();
+    sh.pop_frame(in_string);
 }
 
 /// [`run_file`], without expanding aliases if not `aliases`.

@@ -1,12 +1,24 @@
 errors.sh: 4: __luish_internal plugin: cannot open ./missing.rhai: No such file
+    __luish_internal plugin load ./missing.rhai
 errors.sh: 7: ./syntax.rhai: Unexpected ';' (line 1, position 9)
+    __luish_internal plugin load ./syntax.rhai
 errors.sh: 13: ./top.rhai: Runtime error: top-level error (line 2, position 1)
+    __luish_internal plugin load ./top.rhai
 errors.sh: 16: ./kind.rhai: Runtime error: unknown hook: nosuchhook
+    __luish_internal plugin load ./kind.rhai
 errors.sh: 31: ./hooks.rhai: Runtime error: oops (line 2, position 28)
+    cd d
 errors.sh: 31: ./hooks.rhai: Function not found: nosuchmethod (i64) (line 1, position 33)
+    cd d
 errors.sh: 31: ./hooks.rhai: Runtime error: string contains a NUL byte
+    cd d
 errors.sh: 31: ./hooks.rhai: Runtime error: bad-name: bad variable name
+    cd d
 errors.sh: 31: ./hooks.rhai: Runtime error: RO: is read only
+    cd d
 errors.sh: 33: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+    __luish_internal plugin
 errors.sh: 35: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+    __luish_internal plugin frobnicate
 errors.sh: 37: __luish_internal plugin: nosuch: not loaded
+    __luish_internal plugin unload nosuch

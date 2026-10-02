@@ -1,6 +1,6 @@
 //! Interpreter state and the top-level read-parse-execute loop.
 
-use crate::frames::Frame;
+use crate::frames::{Frame, SourceFile};
 use crate::hash::HashMap;
 use std::rc::Rc;
 
@@ -35,7 +35,7 @@ pub struct Function {
     pub name: Rc<[u8]>,
     pub body: Rc<FunctionBody>,
     /// The file it was defined in (`BASH_SOURCE` while it runs).
-    pub file: Option<Rc<[u8]>>,
+    pub file: Option<Rc<SourceFile>>,
     /// Whether the line numbers of its body are lines of `file` (see
     /// [`Frame::lines_in_file`]).
     pub lines_in_file: bool,
@@ -53,6 +53,12 @@ pub struct Shell {
     pub functions: HashMap<Vec<u8>, Function>,
     /// The call stack, innermost last (`frames.rs`).
     pub frames: Vec<Frame>,
+    /// How many strings (`eval`, traps, ...) run in the innermost frame:
+    /// their line numbers aren't lines of its file.
+    pub in_string: u32,
+    /// The index in the shell's arguments of the `-c` command, whose lines
+    /// error messages show.
+    pub command_arg: Option<usize>,
     pub aliases: Rc<AliasMap>,
     /// Trap actions by signal number (0 is EXIT). An empty action ignores
     /// the signal.
@@ -163,6 +169,8 @@ impl Shell {
             options: Options::default(),
             functions: HashMap::default(),
             frames: Vec::new(),
+            in_string: 0,
+            command_arg: None,
             aliases: Rc::new(AliasMap::default()),
             traps: vec![None; NSIG],
             jobs: JobTable::default(),
@@ -642,7 +650,8 @@ impl Shell {
     // Errors
 
     /// Prints `FILE: LINENO: msg` to stderr, where `FILE` is the file of
-    /// the code running (or `$0`), then the call stack (`frames.rs`).
+    /// the code running (or `$0`), then the text of that line and the call
+    /// stack (`frames.rs`).
     pub fn error(&self, msg: impl AsRef<[u8]>) {
         let (file, line) = self.error_location();
         let mut s = file.to_vec();
@@ -653,6 +662,11 @@ impl Shell {
         }
         s.extend_from_slice(msg.as_ref());
         s.push(b'\n');
+        if let Some(text) = self.error_line_text() {
+            s.extend_from_slice(b"    ");
+            s.extend(text);
+            s.push(b'\n');
+        }
         s.extend(self.stack_trace());
         sys::write_all(2, &s);
     }
@@ -665,9 +679,14 @@ impl Shell {
     // ------------------------------------------------------------------
     // Running code
 
-    /// Parses and runs a string in the current shell (`eval`, `.`, traps).
+    /// Parses and runs a string in the current shell (`eval`, traps). Its
+    /// lines count on from the current line, so they aren't lines of the
+    /// file (`in_string`).
     pub fn run_string(&mut self, text: &[u8]) -> ExecResult {
-        self.run_text(text, true)
+        self.in_string += 1;
+        let r = self.run_text(text, true);
+        self.in_string -= 1;
+        r
     }
 
     /// [`Shell::run_string`], without expanding aliases if not `aliases`

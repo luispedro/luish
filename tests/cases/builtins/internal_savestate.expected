@@ -30,9 +30,12 @@ k() {
     \greet
 }
 internal_savestate.sh: 33: __luish_internal: missing subcommand
+    __luish_internal 2>&1; echo "status $?"
 status 2
 internal_savestate.sh: 34: __luish_internal: nosuch: unknown subcommand
+    __luish_internal nosuch 2>&1; echo "status $?"
 status 2
 internal_savestate.sh: 35: __luish_internal savestate: too many arguments: extra
+    __luish_internal savestate extra 2>&1; echo "status $?"
 status 2
 bye

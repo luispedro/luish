@@ -9,4 +9,4 @@ c.replace("\x1b", "^[");
 print(c);
 print(sh::expand_prompt("%[bogus]x"));
 P
-__luish_internal plugin load ./p.rhai 2>&1 | sed "s/.*: unknown/unknown/; s/;.*//"
+__luish_internal plugin load ./p.rhai 2>&1 | sed "/^  /d; s/.*: unknown/unknown/; s/;.*//"

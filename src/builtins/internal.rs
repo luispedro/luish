@@ -126,7 +126,7 @@ fn function_file(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     };
     match sh.functions.get_mut(name) {
         Some(f) => {
-            f.file = Some(file.as_slice().into());
+            f.file = Some(crate::frames::SourceFile::new(file, None));
             // Its text was written again, so its lines aren't the file's.
             f.lines_in_file = false;
             Ok(0)

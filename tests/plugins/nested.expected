@@ -26,14 +26,19 @@ nest/complete/gui
 0
 --- @SOURCE/PATH/MODULE needs the whole name
 luish: 1: ./wrong.rhai: Runtime error: import @other/lib/util/greet: the plugin other/lib/util is not loaded (add "other/lib/util" to [dependencies] in plugin.toml) (line 1, position 8)
+    __luish_internal plugin load nest/lib/util >/dev/null; __luish_internal plugin load ./wrong.rhai
 --- errors
 luish: 1: __luish_internal plugin: nest/x/y: no such plugin in nest
+    __luish_internal plugin load nest/x/y; echo "status $?"
 status 1
 luish: 1: __luish_internal plugin: nest/nosuch/y: no such plugin in nest
+    __luish_internal plugin load nest/nosuch/y; echo "status $?"
 status 1
 luish: 1: __luish_internal plugin: nest/complete: a collection, not a plugin
+    __luish_internal plugin load nest/complete; echo "status $?"
 status 1
 luish: 1: __luish_internal plugin: cannot open nest/a//b: No such file
+    __luish_internal plugin load nest/a//b; echo "status $?"
 status 1
 --- plugin add SOURCE/PATH
 0 git sources locked, 1 plugin enabled: nest/complete/gui

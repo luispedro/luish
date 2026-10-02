@@ -41,9 +41,12 @@ status 0
 --- not if the extension fails
 p extension
 luish: 1: ~/.config/luish/plugins/bad/extension.rhai: Runtime error: no 
+    __luish_internal plugin load bad; alias bb
 luish: 1: alias: bb: not found
+    __luish_internal plugin load bad; alias bb
 --- not TOML: reported once
 p extension
 luish: ~/.config/luish/plugins/q/plugin.toml: line 1: expected a right bracket, found a newline
 q
 luish: 1: alias: qq: not found
+    alias qq

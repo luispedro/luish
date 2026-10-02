@@ -4,9 +4,9 @@
 # calls, so the shells under test get more.
 ulimit -s 65536 2>/dev/null
 # The shell's name starts its messages; dash also names eval there, luish doesn't
-# (and adds the call stack, left out here).
+# (and adds the failing line and the call stack, left out here).
 t() {
-    { $SH -c "$1" 2>&1; echo "status $?"; } | sed '/^  in /d; s/^[^:]*: //; s/eval: //'
+    { $SH -c "$1" 2>&1; echo "status $?"; } | sed '/^  /d; s/^[^:]*: //; s/eval: //'
 }
 echo '--- endless recursion'
 t 'n=0; trap "echo depth \$n" EXIT; f() { n=$((n + 1)); f; }; f; echo not reached'

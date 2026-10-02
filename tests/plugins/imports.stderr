@@ -1,1 +1,2 @@
 imports.sh: 64: ./r/extension.rhai: Module not found: nosuch (line 1, position 8)
+    __luish_internal plugin load ./r

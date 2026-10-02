@@ -9,7 +9,7 @@ use super::vars::single_quote;
 use crate::exec::CommandKind;
 use crate::expand::pattern::Pattern;
 use crate::expand::split::XChar;
-use crate::frames::{Frame, FrameKind};
+use crate::frames::{Frame, FrameKind, SourceFile};
 use crate::lexer::AliasKind;
 use crate::parser::is_reserved;
 use crate::shell::{ExecResult, Flow, Shell};
@@ -84,14 +84,10 @@ fn run_file(sh: &mut Shell, argv: &[Vec<u8>], cwd_first: bool) -> ExecResult {
     let saved_lineno = sh.lineno;
     sh.lineno = 1;
     sh.dot_depth += 1;
-    sh.frames.push(Frame {
-        kind: FrameKind::Source,
-        file: path.map(Rc::from),
-        lines_in_file: true,
-        call_line: saved_lineno,
-    });
-    let r = sh.run_string(&text);
-    sh.frames.pop();
+    let file = SourceFile::new(path.as_deref().unwrap_or_default(), sh.curdir.as_deref());
+    let in_string = sh.push_frame(Frame::file(FrameKind::Source, file, saved_lineno));
+    let r = sh.run_text(&text, true);
+    sh.pop_frame(in_string);
     sh.dot_depth -= 1;
     sh.lineno = saved_lineno;
     match r {

@@ -228,8 +228,8 @@ shell tracks the current file as well as the line, for provenance and for error 
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL
   around the prompt and command output. Unicode width handling and bracketed paste belong to the line editor.
 - **Scripting**: a predictable strict mode, and a debugger or step-trace mode (error messages with the call stack
-  are done, `frames.rs`). Possible follow-ups for errors: show the text of the failing line, and keep the original
-  lines of functions restored from the startup cache (the cache would record them), so their errors name a line.
+  are done, `frames.rs`, with the text of the failing line). Possible follow-up for errors: keep the original lines
+  of functions restored from the startup cache (the cache would record them), so their errors name and show a line.
 - **The directory of the current file**, `~.` (decided 2026-10-02 to wait; `${BASH_SOURCE:A:h}` is done): a tilde
   prefix for `${BASH_SOURCE:A:h}`, so `. ~./lib.sh` and `cfg=~./defaults.conf` need no quoting (tilde expansion isn't
   split), in the spirit of `~+` and `~-`. dash leaves `~.` as it is (no user `.`), so this changes behaviour, though

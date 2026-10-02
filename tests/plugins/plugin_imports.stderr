@@ -1,3 +1,6 @@
 plugin_imports.sh: 44: ./notloaded.rhai: Runtime error: import @std/nosuch/lib: the plugin std/nosuch is not loaded (add "std/nosuch" to [dependencies] in plugin.toml) (line 1, position 8)
+    __luish_internal plugin load ./notloaded.rhai
 plugin_imports.sh: 47: ./short.rhai: Runtime error: import @std/completion: write @SOURCE/PLUGIN/MODULE (line 1, position 8)
+    __luish_internal plugin load ./short.rhai
 plugin_imports.sh: 50: ./nomodule.rhai: Module not found: @std/completion/nosuch (line 1, position 8)
+    __luish_internal plugin load ./nomodule.rhai

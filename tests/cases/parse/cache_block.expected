@@ -6,7 +6,12 @@ in f: a
 __luish_cache is a shell keyword
 __luish_cache is a word here
 status 2: Syntax error: __luish_cache: env=(...) takes variable names
+    __luish_cache env=(1) { :; }
 status 2: Syntax error: __luish_cache: command substitution in files=(...)
+    __luish_cache files=($(echo x)) { :; }
 status 2: Syntax error: __luish_cache takes env=(...) and files=(...), then { ... }
+    __luish_cache env=(A) env=(B) { :; }
 status 2: Syntax error: __luish_cache takes env=(...) and files=(...), then { ... }
+    __luish_cache x=(A) { :; }
 status 2: Syntax error: "(" unexpected (expecting "{")
+    __luish_cache ( : )

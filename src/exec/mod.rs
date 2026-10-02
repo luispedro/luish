@@ -438,7 +438,7 @@ impl Shell {
         let saved_loop = std::mem::replace(&mut self.loop_depth, 0);
         self.func_depth += 1;
         let call_line = self.lineno;
-        self.frames.push(Frame {
+        let in_string = self.push_frame(Frame {
             kind: FrameKind::Function(func.name.clone()),
             file: func.file.clone(),
             lines_in_file: func.lines_in_file,
@@ -457,7 +457,7 @@ impl Shell {
         for (name, saved) in self.locals.pop().unwrap().into_iter().rev() {
             self.restore_saved(name, saved);
         }
-        self.frames.pop();
+        self.pop_frame(in_string);
         self.lineno = call_line;
         self.func_depth -= 1;
         self.loop_depth = saved_loop;

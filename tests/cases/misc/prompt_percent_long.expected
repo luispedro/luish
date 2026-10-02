@@ -14,13 +14,21 @@
 host and user
 --- errors
 sh: 3: unknown prompt sequence %[hostnam]; did you mean %[hostname]?
+    set -x; : one
 sh: 3: unknown prompt sequence %[Usr]; did you mean %[user]?
+    set -x; : one
 sh: 3: unknown prompt sequence %[branch]; the names are dir, pwd, dir_tail, pwd_tail, user, host, hostname, prompt_char, status, history, jobs, shlvl, lineno, tty, tty_short, date, date_weekday, date_us, time, time_seconds, time_12h, bold, bold_off, underline, underline_off, standout, standout_off, fg, fg_off, bg, bg_off, clear_eol, percent
+    set -x; : one
 sh: 3: Illegal number in prompt sequence %[dir:x]
+    set -x; : one
 sh: 3: unknown prompt condition %([stauts]; did you mean %([status]?
+    set -x; : one
 sh: 3: unknown prompt condition %([bogus]; the names are status, root, uid, gid, jobs, shlvl, pwd, dir, hour, minute, day, month, weekday
+    set -x; : one
 [|||||] : one
 sh: 4: missing ] in prompt sequence %[host
+    PS4="[%[host"
 [PS4='[%[host'
 sh: 5: missing ] in prompt sequence %[host
+    : two
 [: two

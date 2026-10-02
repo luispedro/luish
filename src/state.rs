@@ -234,7 +234,7 @@ impl Shell {
                 t.extend_from_slice(b"command __luish_internal function-file ");
                 t.extend(single_quote(name));
                 t.push(b' ');
-                t.extend(single_quote(file));
+                t.extend(single_quote(&file.name));
                 t.push(b'\n');
             }
             add(Kind::Function, name, t);

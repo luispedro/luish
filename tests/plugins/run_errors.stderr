@@ -1,8 +1,16 @@
 run_errors.sh: 4: __luish_internal plugin: cannot open missing.rhai: No such file
+    __luish_internal plugin run missing.rhai; echo "missing: $?"
 run_errors.sh: 5: -c: Script is incomplete (line 1, position 9)
+    __luish_internal plugin run -c 'let x = '; echo "syntax: $?"
 run_errors.sh: 7: ./t.rhai: bad input
+    __luish_internal plugin run ./t.rhai; echo "throw: $?"
 run_errors.sh: 8: -c: Function not found: no_such_function () (line 1, position 1)
+    __luish_internal plugin run -c 'no_such_function()'; echo "error: $?"
 run_errors.sh: 9: -c: plugin run can't register functions (use plugin load)
+    __luish_internal plugin run -c 'sh::builtin("x", |argv| 0)'; echo "builtin: $?"
 run_errors.sh: 10: -c: plugin run can't register functions (use plugin load)
+    __luish_internal plugin run -c 'sh::hook("precmd", || 0)'; echo "hook: $?"
 run_errors.sh: 12: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+    __luish_internal plugin run -c; echo "usage: $?"
 run_errors.sh: 13: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+    __luish_internal plugin run; echo "usage: $?"

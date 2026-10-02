@@ -266,10 +266,15 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   of the innermost frame and `LINENO` (no line if `lines_in_file` is false), else `$0` as in dash. `stack_trace` then
   adds a line for each frame but the script and startup files, innermost first, with where it was called (`file:line`
   from the frame below, `line N` in `-c` and on standard input, nothing at an interactive prompt); consecutive equal
-  lines are counted, and more than `MAX_STACK_LINES` lose their middle. It is only computed for an error. At the top
-  level of a script the message is dash's, so cases compared with dash that capture stderr see the same text, but
-  inside a function they don't: `builtins/test_parse.sh` and `exec/recursion_limit.sh` leave the stack out. Tests:
-  `exec/error_stack.sh`, `exec/stack_guard.sh`.
+  lines are counted, and more than `MAX_STACK_LINES` lose their middle. Between the two, `error_line_text` shows the
+  failing line: read again from the frame's file (`SourceFile` keeps the directory of a relative path, so this works
+  after `cd`) or, for `-c`, from `/proc/self/cmdline` (`Shell::command_arg` is the argument's index), so nothing is
+  kept for it. `run_string` (`eval`, traps, `fc`, plugins' shell code) counts `Shell::in_string`, which a new frame
+  saves and clears (`push_frame`, `pop_frame`): its lines go on from the current line, so no text is shown there,
+  and a function defined there has `lines_in_file` false. All of this is only computed for an error. The lines that
+  luish adds start with two spaces, so cases compared with dash that capture stderr drop them (`sed '/^  /d'`, as in
+  `builtins/test_parse.sh`, `expand/arith_quotes.sh` and `exec/recursion_limit.sh`). Tests: `exec/error_stack.sh`,
+  `exec/stack_guard.sh`.
 - zsh's special parameters (`RANDOM`, `SECONDS`, `EPOCH*`, `UID`/`EUID`/`GID`/`EGID`, `HISTCMD`, `pipestatus`
   and bash's `PIPESTATUS`, and the constants `LUISH_VERSION`, `LUISH_PATCHLEVEL` (`GIT_REV` from `build.rs`),
   `MACHTYPE`, `HOSTTYPE` and `OSTYPE`, in `vars.rs`) are not in the variable map, so plain lookups and assignments of other names cost only a check of the
@@ -1064,6 +1069,8 @@ truncates when it relocates the package.
 
 ## Testing notes
 
+- A case whose reference shell times out fails (two timeouts would otherwise match, and the case would test
+  nothing).
 - pty tests use `TERM=dumb` (rustyline does no editing), except completion and highlighting, which use `TERM=vt100`.
   After Ctrl-C, wait for `"\x1b[K$ "` (the fresh prompt), not `"$ "`, which also matches the line redrawn under the
   completion menu. Ctrl-C at the prompt sets `$?` to 130.

@@ -48,10 +48,13 @@ coll/cyc2
 helper
 one
 luish: 1: __luish_internal plugin: coll/tool: not loaded
+    u() { __luish_internal plugin unload "$@"; }
   in function u, called at line 3
 luish: 1: __luish_internal plugin: coll/nosuch: not loaded
+    u() { __luish_internal plugin unload "$@"; }
   in function u, called at line 3
 luish: 1: __luish_internal plugin: nosuch/x: not loaded
+    u() { __luish_internal plugin unload "$@"; }
   in function u, called at line 3
 status 1
 --- plugin load: a path, whose plain dependencies are next to it

@@ -216,6 +216,7 @@ fn run(args: Vec<Vec<u8>>) -> ! {
         if let Some(a0) = operands.get(1) {
             sh.arg0 = a0.clone();
         }
+        sh.command_arg = Some(i);
         sh.positional = operands.get(2..).unwrap_or_default().to_vec();
         input = Input::Whole(Some(cmd.clone()), true);
     } else if stdin_mode || operands.is_empty() {
@@ -295,12 +296,8 @@ fn run(args: Vec<Vec<u8>>) -> ! {
     sh.set_jobctl(sh.opt(Opt::Monitor));
 
     if !command_mode && !stdin_mode {
-        sh.frames.push(frames::Frame {
-            kind: frames::FrameKind::Script,
-            file: Some(operands[0].as_slice().into()),
-            lines_in_file: true,
-            call_line: 0,
-        });
+        let file = frames::SourceFile::new(&operands[0], sh.curdir.as_deref());
+        sh.push_frame(frames::Frame::file(frames::FrameKind::Script, file, 0));
     }
     sh.run_input(&mut input);
     let status = sh.last_status;
