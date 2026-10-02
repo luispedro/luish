@@ -715,12 +715,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   resolved key by key through the chain (`Styles::terminal`); `style -s S terminal.KEY ...` sets one, `-r` removes
   it, and they are in the saved state as such commands. `terminal` and `terminal-colors(-colours)` are reserved as
   style names (`check_name`). `termcolors::update`, before each prompt (not continuation lines), after
-  `find_background`, maps them to OSC keys (`(10|11|12, 0)`, `(4, N)`) and sends the sequences (`ESC ]11;rgb:RR/GG/BB
-  ESC \`) for what differs from `SET`, what the shell last set, putting back the keys no longer wanted. It looks again
+  `find_background`, maps them to OSC keys (`(10|11|12, 0)`, `(4, N)`) and sends the sequences (`ESC ]11;#rrggbb
+  ESC \`: `#rrggbb`, not the `rgb:R/G/B` that terminals answer with, which Konsole doesn't take) for what differs from `SET`, what the shell last set, putting back the keys no longer wanted. It looks again
   only when `Styles::generation`, the scheme in use or `wanted` (the `terminal-colors` setting, `$NO_COLOR`,
   `can_ask`) changed (`SEEN`). Before setting a key for the first time it asks the terminal for it (`tty::ask`, the
-  same query as the background's, with one OSC `?` per key before DA1), keeping the answer if it is `rgb:...` (in
-  `FOUND`); restoring sends that back as it was, or resets the key (OSC 110, 111, 112, `104;N`). Answering with the
+  same query as the background's, with one OSC `?` per key before DA1), keeping the answer if it is `rgb:...`, as an RGB (in
+  `FOUND`); restoring sends that back (as `#rrggbb`, so at 8 bits per channel), or resets the key (OSC 110, 111, 112, `104;N`). Answering with the
   original rather than resetting is what makes a nested shell give back its parent's colours. `termcolors::restore`
   puts back everything: from `Shell::exit` (not in subshells), the `exec` built-in (not in subshells, before
   `exec_argv`), and `ask_background` (so `style --detect` and a later pair see the terminal's own background); it

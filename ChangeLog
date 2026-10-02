@@ -2,6 +2,7 @@ Unreleased
     * A colour scheme can set the terminal's own colours (background,
       text, cursor, palette), put back when it no longer applies or the
       shell exits; [style] terminal-colors = false keeps them
+      (written as #rrggbb, which Konsole needs)
     * %[style:NAME] and %[style_off] in prompts: named styles, as the
       line editor's
     * The terminal's background colour is detected, to choose between

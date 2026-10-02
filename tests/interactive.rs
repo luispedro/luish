@@ -533,21 +533,21 @@ fn terminal_colors() {
     sh.expect("\x1b]4;0;?\x1b\\\x1b]4;1;?\x1b\\\x1b]11;?\x1b\\\x1b[c");
     // Colour 1 of the palette isn't told: it is reset rather than put back.
     sh.send("\x1b]11;rgb:ffff/ffff/ffff\x07\x1b]4;0;rgb:0/0/0\x1b\\\x1b[?62c");
-    const SET_PALETTE: &str = "\x1b]4;0;rgb:00/00/00\x1b\\\x1b]4;1;rgb:cc/24/1d\x1b\\";
-    sh.expect(&format!("{SET_PALETTE}\x1b]11;rgb:28/28/28\x1b\\"));
+    const SET_PALETTE: &str = "\x1b]4;0;#000000\x1b\\\x1b]4;1;#cc241d\x1b\\";
+    sh.expect(&format!("{SET_PALETTE}\x1b]11;#282828\x1b\\"));
     sh.expect("$ ");
     // Only what changed is set again.
     sh.send("style -s g terminal.background '#fbf1c7'\n");
-    let got = sh.expect("\x1b]11;rgb:fb/f1/c7\x1b\\");
+    let got = sh.expect("\x1b]11;#fbf1c7\x1b\\");
     assert!(!got.contains("\x1b]4;"), "{got:?}");
     sh.expect("$ ");
-    const RESTORE: &str = "\x1b]4;0;rgb:0/0/0\x1b\\\x1b]104;1\x1b\\\x1b]11;rgb:ffff/ffff/ffff\x1b\\";
+    const RESTORE: &str = "\x1b]4;0;#000000\x1b\\\x1b]104;1\x1b\\\x1b]11;#ffffff\x1b\\";
     sh.send("style --terminal-colors off\n");
     sh.expect(RESTORE);
     sh.expect("$ ");
     // On again: set without asking again.
     sh.send("style --terminal-colors on\n");
-    let got = sh.expect(&format!("{SET_PALETTE}\x1b]11;rgb:fb/f1/c7\x1b\\"));
+    let got = sh.expect(&format!("{SET_PALETTE}\x1b]11;#fbf1c7\x1b\\"));
     assert!(!got.contains(";?"), "{got:?}");
     sh.expect("$ ");
     // A scheme without terminal colours puts them back too.
@@ -555,14 +555,14 @@ fn terminal_colors() {
     sh.expect(RESTORE);
     sh.expect("$ ");
     sh.send("style -c g\n");
-    sh.expect("\x1b]11;rgb:fb/f1/c7\x1b\\");
+    sh.expect("\x1b]11;#fbf1c7\x1b\\");
     sh.expect("$ ");
     // Asking for the background asks for the terminal's own, then the
     // scheme's colours are set again.
     sh.send("style --detect\n");
     sh.expect(&format!("{RESTORE}\x1b]11;?\x1b\\\x1b[c"));
     sh.send("\x1b]11;rgb:ffff/ffff/ffff\x1b\\\x1b[?62c");
-    sh.expect(&format!("{SET_PALETTE}\x1b]11;rgb:fb/f1/c7\x1b\\"));
+    sh.expect(&format!("{SET_PALETTE}\x1b]11;#fbf1c7\x1b\\"));
     sh.expect("$ ");
     sh.send("exit\n");
     sh.expect(RESTORE);
@@ -579,7 +579,7 @@ fn terminal_colors_exec() {
     let mut sh = Pty::spawn_env(dir, "vt100", true, None, &["LUISH_BACKGROUND=dark"]);
     sh.expect("\x1b]10;?\x1b\\\x1b[c");
     sh.send("\x1b[?62c");
-    sh.expect("\x1b]10;rgb:eb/db/b2\x1b\\");
+    sh.expect("\x1b]10;#ebdbb2\x1b\\");
     sh.expect("$ ");
     // Not in a subshell, which doesn't own the terminal's colours.
     sh.send("(exec true); echo sub\n");
