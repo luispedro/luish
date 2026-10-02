@@ -227,7 +227,7 @@ variable is expanded too; write `%%` for a literal `%`. The sequences are those 
 | `%F{colour}` `%f`, `%K{colour}` `%k` | Start and stop a foreground and a background colour: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, a number from 0 to 255, or `#rrggbb`. `%NF` is `%F{N}` | `%[fg:colour]` `%[fg_off]`, `%[bg:colour]` `%[bg_off]` |
 | `%E` | Clear to the end of the line | `%[clear_eol]` |
 | `%{...%}` | Text written as it is, taking no room on the screen: for other escape sequences, such as a terminal title | |
-| `%NG` | Within `%{...%}`: the escape sequence takes `N` columns | |
+| `%NG` | Within `%{...%}`: the escape sequence takes `N` columns (at most 65536) | |
 | `%(x.yes.no)` | `yes` if the condition `x` holds, otherwise `no` (any character can replace the `.`s). The conditions take a number `N`, as in `%(N?.yes.no)` or `%N(?.yes.no)`: `?` the exit status is `N` (0 by default), `#` the user id is `N` (0: root), `!` the shell runs as root, `g` the group id is `N`, `j` there are at least `N` jobs, `L` `$SHLVL` is at least `N`, `/` or `C` the current directory has at least `N` components, `~`, `.` or `c` the same, with `~` for `$HOME` counting as one; `T`, `t`, `d`, `D` and `w`: the hour, minute, day of the month, month (from 0 for January) or day of the week (from 0 for Sunday) is `N` | `%([name].yes.no)` |
 | `%N<text<`, `%N>text>` | Shorten what follows (up to the end of the enclosing `%(...)`, or to the next `%<<`) to `N` characters, replacing what is cut on the left or the right by `text` | |
 

@@ -30,9 +30,13 @@ enum Part {
     Text(Vec<u8>),
     /// An escape sequence, which takes no room on the screen.
     Escape(Vec<u8>),
-    /// `%nG`: the escape sequences around it take `n` columns.
+    /// `%nG`: the escape sequences around it take `n` columns (at most
+    /// `MAX_GLITCH`).
     Glitch(usize),
 }
+
+/// More columns than any terminal has.
+const MAX_GLITCH: usize = 1 << 16;
 
 /// A pending truncation (`%n<str<` or `%n>str>`): it applies to the parts
 /// from `start` to the end of the group or the next truncation.
@@ -383,7 +387,7 @@ impl Expander<'_> {
                 return;
             }
             b'G' => {
-                parts.push(Part::Glitch(arg.unwrap_or(1).max(0) as usize));
+                parts.push(Part::Glitch(arg.unwrap_or(1).clamp(0, MAX_GLITCH as i64) as usize));
                 return;
             }
             // Unknown sequences expand to nothing, as in zsh.
@@ -736,6 +740,13 @@ mod tests {
         assert_eq!(t(3, "", false, vec![text("aé"), text("cd")]), "aéc");
         // A marker longer than the limit replaces the text.
         assert_eq!(t(2, "...", true, vec![text("abcd")]), "...");
+    }
+
+    #[test]
+    fn glitch_limit() {
+        // More columns than a terminal has would only fill memory.
+        let p = expand(&Shell::new(), b"%{x%2222222222G%}%{y%3G%}");
+        assert_eq!(p.plain.map(|p| p.len()), Some(MAX_GLITCH + 3));
     }
 
     #[test]

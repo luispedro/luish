@@ -17,6 +17,8 @@ Unreleased
     * An array index of 64 Mi or more is an error instead of aborting
       the shell
     * `!{}` in history expansion is an error instead of a crash
+    * `%NG` in a prompt counts at most 65536 columns, so a huge N no
+      longer runs out of memory
 
 Version 0.3.0 2026-10-01 by luispedro
     * LUISH_VERSION and LUISH_PATCHLEVEL (as zsh's ZSH_VERSION and

@@ -529,7 +529,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   tests in `bang.rs`, `history_expansion` in `tests/interactive.rs`.
 - **Prompts** (`prompt.rs`): the expansion keeps escape sequences apart from the text, and gives rustyline both (its
   `(raw, styled)` prompt), so the cursor position doesn't count them. Nothing is done unless the option is on and the
-  prompt has a `%`. Tests: `misc/prompt_percent.sh` (checked against zsh while written; zsh can't be the reference
+  prompt has a `%`. `%NG` counts as `N` spaces in the raw prompt, so `N` is limited to 65536 (`MAX_GLITCH`). Tests: `misc/prompt_percent.sh` (checked against zsh while written; zsh can't be the reference
   because its interactive mode writes more than the prompts), `misc/prompt_percent_long.sh`, `prompt_percent` in
   `tests/interactive.rs`, unit tests in `prompt.rs`.
 - **The right prompt** (`rprompt.rs`): rustyline has none, so the highlighter appends it to the line between `ESC 7`
