@@ -226,8 +226,8 @@ shell tracks the current file as well as the line, for provenance and for error 
   (`typeset -i 16 x`), `typeset -F`, highlighting subscripts beyond what the highlighter already does, completing
   keys that contain `'`, and `0` rather than `''` for the holes filled in integer arrays.
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) are done
-  (`interactive/integration.rs`). Still to do, roughly by value: desktop notifications when a long command ends
-  while the window is unfocused (OSC 9/777/99 and focus reporting, `?1004`), the kill ring on the system clipboard
+  (`interactive/integration.rs`), and notifications through them (kitty, Ghostty) or `std/notify` (OSC 777). Still to
+  do, roughly by value: the kill ring on the system clipboard
   (OSC 52, which also works over ssh), the cursor's shape by vi mode (DECSCUSR), curly and coloured underlines in
   styles (`4:3`, `58;2;R;G;B`), hyperlinks for file names in error messages (OSC 8), kitty's `click_events=1` (it
   moves the cursor with arrow keys, so Up and Down must not search the history then), and the kitty keyboard

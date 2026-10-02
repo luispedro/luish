@@ -8,6 +8,7 @@ and will become a repository of its own, as an example of how a plugin collectio
 | Plugin | What it does | Needs |
 |---|---|---|
 | `completion` | Tab completion for about 230 common commands: their options (with descriptions), the values of options, their subcommands, and their other arguments (directories for `mkdir`, users and groups for `chown`, make's targets, ssh's hosts, man pages, the files in an archive for `tar -xf`, systemd's units, installed and available packages, cargo's targets and features, pixi's and npm's tasks ...). Programs built with Cobra (gh, docker, kubectl ..., and more with `complete-cobra PROG...`) or Click (black, flask ..., and more with `complete-click PROG...`) and nix are asked for their own completions. git: its commands (with descriptions) and aliases, the options of each command, and the arguments each command takes (branches, tags, ranges such as `main..`, remotes, stashes, worktrees, and the files it can act on: modified and untracked files for `git add`, staged ones for `git restore --staged`, tracked ones after a revision for `git diff`, ...) | |
+| `notify` | A desktop notification (OSC 777) when a command that took at least `$LUISH_NOTIFY_AFTER` seconds (10 by default) ends, for terminals that don't notify by themselves | foot, WezTerm, Ghostty, VTE with its notification patch, or rxvt-unicode |
 | `bash-completion` | Completion from [bash-completion](https://github.com/scop/bash-completion), for the commands that have no completer of their own | bash, bash-completion |
 
 For git, `completion` runs git with the options of the command line that choose the repository (`-C DIR`,
@@ -68,6 +69,7 @@ README, are ignored.
 ```text
 luish-std-plugins/
 ├── README.md
+├── notify.rhai                # a plugin that is only an extension
 ├── bash-completion/           # a plugin directory
 │   ├── extension.rhai
 │   └── bridge.bash            # run by extension.rhai, through sh::plugin_dir()

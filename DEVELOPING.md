@@ -89,7 +89,7 @@ scripts/                # dist.sh (release packages), test-install.sh (tests ins
 install.sh              # the `curl | sh` installer, which downloads a release
 flake.nix               # the Nix package and dev shell (see Releases)
 docs/                   # user documentation; docs/builtins/ is compiled into `help`; docs/examples/ has example plugins
-luish-std-plugins/      # a collection of plugins (completion, bash-completion), see its README.md
+luish-std-plugins/      # a collection of plugins (completion, bash-completion, notify), see its README.md
 ```
 
 ## Implementation notes by area
@@ -979,6 +979,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   Tab, since bash sources `bash_completion` each time). Outside bash's own completion, compgen doesn't undo
   the quoting bash-completion gives the word (`~` as `\~`), so the bridge replaces the quoting functions; its
   `-o` options are in `copts`, since completion functions have a local `opts`.
+- `luish-std-plugins/notify.rhai`: `preexec` notes the time and the line, and `precmd` sends `ESC ]777;notify;TITLE;BODY
+  BEL` to fd 1 (if it is a terminal: `[ -t 1 ]`) when `.elapsed` reaches `$LUISH_NOTIFY_AFTER` (10 s), with control
+  characters taken out of the line. Rhai's backtick strings don't take `\x` escapes, so the sequence is built from
+  quoted strings. Not in the shell itself, since only the terminal knows whether its window has focus, and focus
+  reports (`?1004`) would reach the commands' input. Test: `notify_plugin` in `tests/interactive.rs`.
 - `luish-std-plugins/completion/` completes about 230 common commands from specs, one module per group (`specs.rhai`
   for coreutils, grep, tar, make, ssh ...; `shells.rhai`, `tools.rhai`, `system.rhai`, `net.rhai`, `dev.rhai`,
   `langs.rhai` for the package managers of languages, `packages.rhai` for those of systems): an option table written as

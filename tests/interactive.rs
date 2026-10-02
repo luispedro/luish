@@ -697,6 +697,40 @@ fn terminal_integration() {
     assert_eq!(sh.exit_status(), 0);
 }
 
+/// std's notify plugin: a notification (OSC 777) when a command that took
+/// at least `$LUISH_NOTIFY_AFTER` seconds ends.
+#[cfg(feature = "plugins")]
+#[test]
+fn notify_plugin() {
+    let mut sh = Pty::spawn_term("notify", "vt100");
+    let plugin = Path::new(env!("CARGO_MANIFEST_DIR")).join("luish-std-plugins/notify.rhai");
+    sh.expect("$ ");
+    sh.send(&format!(
+        "plugin load {}; LUISH_NOTIFY_AFTER=0; echo ready\n",
+        plugin.display()
+    ));
+    sh.expect("\nready\n");
+    sh.expect("$ ");
+    sh.send("echo hi; false\n");
+    sh.expect("\nhi\n\x1b]777;notify;Failed (status 1);echo hi; false (0 s)\x07");
+    sh.expect("$ ");
+    // The command's lines are joined.
+    sh.send("if :\n");
+    sh.expect("> ");
+    sh.send("then :; fi\n");
+    sh.expect("\x1b]777;notify;Done;if : then :; fi (0 s)\x07");
+    sh.expect("$ ");
+    // None for a command quicker than that.
+    sh.send("LUISH_NOTIFY_AFTER=100\n");
+    sh.expect("$ ");
+    sh.send("echo x\n");
+    let got = sh.expect("\nx\n");
+    let got = got + &sh.expect("$ ");
+    assert!(!got.contains("777"), "{got:?}");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
 #[test]
 fn right_prompt() {
     let mut sh = Pty::spawn_term("rprompt", "vt100");

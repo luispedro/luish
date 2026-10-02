@@ -568,6 +568,11 @@ terminal and tmux (3.4 or later) can jump from prompt to prompt, select or copy 
 commands that failed, or open a new window or tab in the same directory (GNOME Terminal and other VTE ones need only
 OSC 7 for that). Other terminals ignore them. `setopt terminal.no_integration` turns them off.
 
+With the marks, kitty and Ghostty can send a desktop notification when a long command ends while their window isn't
+focused: `notify_on_cmd_finish unfocused` in `kitty.conf`, or `notify-on-command-finish = unfocused` (with
+`notify-on-command-finish-action = notify`) in Ghostty's configuration (version 1.3 or later). For other terminals that
+show notifications, the plugin [`std/notify`](plugins.md) asks for one itself.
+
 ## History
 
 An interactive shell keeps the last `HISTSIZE` commands (1000 by default) in

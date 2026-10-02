@@ -57,7 +57,7 @@ extra.complete.all = "*"           # the plugin all of extra's sub-collection co
 ```
 
 `plugin list-loaded` shows `extra/complete/all`, `plugin unload extra/complete/all` unloads it, and other plugins
-import its modules as `@extra/complete/all/MODULE`. std's plugins are `std/completion` and `std/bash-completion`.
+import its modules as `@extra/complete/all/MODULE`. std's plugins are `std/completion`, `std/bash-completion` and `std/notify`.
 Other plugins are named after the entry (a source that is one plugin, or `NAME = { gh = ... }`), or after their file
 or directory (those of the plugin directory, or loaded by path).
 
@@ -193,6 +193,13 @@ The `std` library is tied to the version of luish, so it is not affected by
   the arguments of about a thousand commands, and for which many programs
   install completion files. This requires bash-completion to be installed and
   runs bash to ask for the completions, and it does not provide descriptions.
+- **`notify`** asks the terminal for a desktop notification (OSC 777) when a
+  command that took at least `$LUISH_NOTIFY_AFTER` seconds (10 by default)
+  ends, with the command and whether it failed. foot, WezTerm, Ghostty,
+  rxvt-unicode (with its notify extension) and VTE terminals that carry the
+  patch for it (GNOME Terminal in Fedora, for one) show them; some, such as
+  foot, only while the window isn't focused. kitty and Ghostty can do this
+  by themselves (see [Terminal integration](usage.md#terminal-integration)).
 
 ## More completion: luish-extra
 
