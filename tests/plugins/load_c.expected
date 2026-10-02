@@ -1,0 +1,34 @@
+load: 0
+chpwd false
+module ["greet", "a", "b"]
+greet: 3
+greet is a shell builtin from plugin greeter
+true
+other
+greeter
+other
+reload: 0
+v2
+syntax: 1
+v2
+throw: 1
+other
+greeter
+__luish_internal plugin load -c 'print("other")' 'other'
+__luish_internal plugin load -c 'sh::builtin("greet", |argv| print("v2"))' 'greeter'
+other
+v2
+other
+greeter
+file over -c: 0
+greet: not found
+from file
+load_c.sh: 38: __luish_internal plugin: greeter: already loaded from HOME/greeter.rhai (plugin unload greeter first)
+    { __luish_internal plugin load -c 'print("no")' greeter; echo "-c over file: $?"; } 2>&1 | sed "s|$HOME|HOME|"
+-c over file: 1
+from file
+after unload
+after unload: 0
+slash: 2
+empty: 2
+usage: 2

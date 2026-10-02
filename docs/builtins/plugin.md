@@ -2,6 +2,7 @@
 
 ```text
 plugin load name|source/path|path...
+plugin load -c code name
 plugin list-loaded
 plugin list-available [-a]
 plugin unload name...
@@ -28,7 +29,16 @@ shells) its
 `post-rc.lsh` waits for their end. The dependencies that a plugin's
 `plugin.toml` lists are loaded first, unless they are already loaded.
 Loading a plugin again reloads it. The exit status is 1 if a plugin can't
-be loaded. `plugin list-loaded` prints the names of the loaded plugins, and
+be loaded.
+
+`plugin load -c` loads the Rhai code `code` as the plugin `name` (which
+can't contain a `/`), with the current directory as its directory. It
+replaces a plugin of that name loaded with `-c`, but not one loaded from
+a file or directory, which must be unloaded first (the exit status is
+then 1); loading a plugin of that name from a file replaces it, with a
+warning.
+
+`plugin list-loaded` prints the names of the loaded plugins, and
 `plugin list-available` the names of the plugins that `plugin load` can
 load by name and that aren't loaded: those in the plugin directory, and
 those of the sources in `config.toml` that are installed, except the
@@ -38,14 +48,15 @@ removes plugins and their hooks; each is named as `plugin list-loaded`
 shows it, or as `plugin load` was given it (such as `std/NAME`).
 
 `plugin run` runs the Rhai file `file`, or the Rhai code `code`, once,
-without loading a plugin: it can't register hooks, completers or commands
-(that is an error), and it doesn't unload or reload any plugin. The Rhai
-variable `argv` is an array of `file` (or `-c`) and the `arg`s. The exit
-status is the value of the last statement (or of `return`), if it is an
-integer (modulo 256) or a boolean (true is 0, false 1), and otherwise 0; it
-is 1 if the code can't be read or fails. `import` is relative to `file`,
-or with `-c`, to the current directory, and the modules are read again for
-each run. `--no-plugins` doesn't stop it.
+without loading a plugin: it can't register hooks, completers or
+commands (that is an error: use `plugin load -c`), and it doesn't unload
+or reload any plugin. The Rhai variable `argv` is an array of `file` (or
+`-c`) and the `arg`s. The exit status is the value of the last statement
+(or of `return`), if it is an integer (modulo 256) or a boolean (true is
+0, false 1), and otherwise 0; it is 1 if the code can't be read or
+fails. `import` is relative to `file`, or with `-c`, to the current
+directory, and the modules are read again for each run. `--no-plugins`
+doesn't stop it.
 
 `plugin add` adds a plugin to `config.toml` and installs it. `plugin` is a
 GitHub repository (`owner/repo`, `gh:owner/repo`, or a URL such as

@@ -1264,6 +1264,7 @@ impl ShellHelper {
                             ],
                             &mut out,
                         ),
+                        Some(b"load") if args.get(1).is_some_and(|a| a == b"-c") => 0,
                         Some(b"load") if w.text.contains(&b'/') => files(Files::All, &mut out),
                         Some(b"load") => words(&self.plugin_files(), &mut out),
                         Some(b"list-available") if args.len() == 1 => words(&[b"--all".to_vec()], &mut out),
@@ -1987,6 +1988,7 @@ mod tests {
         assert_eq!(complete(&h, "plugin run -c ~/plugins/g"), Vec::<String>::new());
         assert_eq!(complete(&h, "plugin load "), ["git ", "prompt ", "work ", "zsh-like "]);
         assert_eq!(complete(&h, "plugin load ~/plugins/p"), ["~/plugins/prompt.rhai "]);
+        assert_eq!(complete(&h, "plugin load -c 'x' g"), Vec::<String>::new());
         assert_eq!(complete(&h, "plugin unload "), ["greet "]);
         assert_eq!(complete(&h, "plugin list-loaded "), Vec::<String>::new());
         assert_eq!(complete(&h, "plugin list-available -"), ["--all "]);

@@ -42,6 +42,9 @@ struct Plugin {
     ast: Option<Rc<AST>>,
     /// The plugin's `prompt-vars.lsh` (absolute), run before each prompt.
     prompt_vars: Option<Vec<u8>>,
+    /// The code of a plugin loaded with `plugin load -c`, which has no
+    /// file (its `abs` is empty).
+    code: Option<Rc<str>>,
 }
 
 /// A function registered by an extension.
@@ -197,7 +200,7 @@ fn other_plugin(name: &str, pos: Position) -> RhaiResult<Vec<u8>> {
         let find = |from: usize| {
             (2..parts.len()).rev().find_map(|end| {
                 let want = to_bytes(&parts[from..end].join("/"));
-                let p = plugins.iter().find(|p| p.name == want)?;
+                let p = plugins.iter().find(|p| p.name == want && p.code.is_none())?;
                 Some((p.dir.clone(), end))
             })
         };
@@ -309,7 +312,7 @@ fn register(f: FnPtr, add: impl FnOnce(&Host, Callback)) -> RhaiResult<()> {
             let plugins = host.plugins.borrow();
             let Some((p, Some(ast))) = plugins.iter().find(|p| p.id == plugin).map(|p| (p, &p.ast)) else {
                 if plugin == 0 {
-                    return error("plugin run can't register functions (use plugin load)");
+                    return error("plugin run can't register functions (use plugin load -c)");
                 }
                 return error("no plugin is running");
             };
@@ -796,13 +799,29 @@ impl Host {
     }
 
     /// The loaded plugins' names and absolute paths, in the order they
-    /// were loaded.
+    /// were loaded, but those loaded with `-c` (`inline`).
     pub fn loaded(&self) -> Vec<(Vec<u8>, Vec<u8>)> {
         self.plugins
             .borrow()
             .iter()
+            .filter(|p| p.code.is_none())
             .map(|p| (p.name.clone(), p.abs.clone()))
             .collect()
+    }
+
+    /// The names and code of the plugins loaded with `plugin load -c`.
+    pub fn inline(&self) -> Vec<(Vec<u8>, Rc<str>)> {
+        self.plugins
+            .borrow()
+            .iter()
+            .filter_map(|p| Some((p.name.clone(), p.code.clone()?)))
+            .collect()
+    }
+
+    /// Whether `name` is loaded, and whether with `plugin load -c`.
+    pub fn loaded_inline(&self, name: &[u8]) -> Option<bool> {
+        let plugins = self.plugins.borrow();
+        plugins.iter().find(|p| p.name == name).map(|p| p.code.is_some())
     }
 
     /// Reports an error from extension code, unless luish stopped it, and
@@ -847,6 +866,7 @@ impl Host {
                 dir,
                 ast: None,
                 prompt_vars,
+                code: None,
             });
             return Ok(0);
         };
@@ -855,20 +875,72 @@ impl Host {
         };
         // For `import` (`Resolver`).
         ast.set_source(to_str(&rhai_abs));
-        let ast = Rc::new(ast);
-        self.unload(&name);
+        self.start(
+            sh,
+            Plugin {
+                id: 0,
+                name,
+                path,
+                abs,
+                dir,
+                ast: Some(Rc::new(ast)),
+                prompt_vars,
+                code: None,
+            },
+        )
+    }
+
+    /// `plugin load -c CODE NAME`: loads the Rhai code `code` as the
+    /// plugin `name`, whose directory (for `import` and `plugin_dir`) is
+    /// `dir`. It replaces a plugin loaded so, but not one with a file.
+    pub fn load_code(&self, sh: &mut Shell, cmd: &[u8], name: &[u8], code: &[u8], dir: Vec<u8>) -> ExecResult {
+        let shown = String::from_utf8_lossy(name);
+        let file = (self.plugins.borrow().iter())
+            .find(|p| p.name == name && p.code.is_none())
+            .map(|p| p.abs.clone());
+        if let Some(file) = file {
+            let file = String::from_utf8_lossy(&file);
+            sh.berr(
+                cmd,
+                format!("{shown}: already loaded from {file} (plugin unload {shown} first)"),
+            );
+            return Ok(1);
+        }
+        let path = format!("{shown} (-c)").into_bytes();
+        let Ok(code) = std::str::from_utf8(code) else {
+            sh.berr(cmd, format!("{shown}: -c: not valid UTF-8"));
+            return Ok(1);
+        };
+        let Some(ast) = self.compile(sh, &path, code) else {
+            return Ok(1);
+        };
+        self.start(
+            sh,
+            Plugin {
+                id: 0,
+                name: name.to_vec(),
+                path,
+                abs: Vec::new(),
+                dir,
+                ast: Some(Rc::new(ast)),
+                prompt_vars: None,
+                code: Some(code.into()),
+            },
+        )
+    }
+
+    /// Adds `plugin` (with an extension), replacing the one of the same
+    /// name, and runs its extension's top level, which registers its hooks.
+    fn start(&self, sh: &mut Shell, mut plugin: Plugin) -> ExecResult {
+        let (Some(ast), path) = (plugin.ast.clone(), plugin.path.clone()) else {
+            return Ok(0);
+        };
+        self.unload(&plugin.name);
         self.modules.borrow_mut().clear();
         let id = self.next_id.get();
         self.next_id.set(id + 1);
-        self.plugins.borrow_mut().push(Plugin {
-            id,
-            name,
-            path: path.clone(),
-            abs,
-            dir,
-            ast: Some(ast.clone()),
-            prompt_vars,
-        });
+        plugin.id = id;
+        self.plugins.borrow_mut().push(plugin);
         let r = enter(sh, id, || self.engine().run_ast(&ast));
         match r {
             Ok(Ok(())) => Ok(0),

@@ -306,6 +306,14 @@ impl Shell {
                 t.push(b'\n');
                 add(Kind::Plugin, &name, t);
             }
+            for (name, code) in host.inline() {
+                let mut t = b"__luish_internal plugin load -c ".to_vec();
+                t.extend(single_quote(code.as_bytes()));
+                t.push(b' ');
+                t.extend(single_quote(&name));
+                t.push(b'\n');
+                add(Kind::Plugin, &name, t);
+            }
         }
 
         for (seq, t) in self.keymap.state() {

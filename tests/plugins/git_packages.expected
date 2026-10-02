@@ -62,14 +62,14 @@ status 0
 Update available: file://~/single b2201bb..d602781
 1 of 3 git sources can be updated (run plugin update)
 status 0
-luish: 1: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+luish: 1: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
     __luish_internal plugin check extra; echo "status $?"
 status 2
 --- plugin sync does not move a pinned source
 3 git sources locked, 2 plugins enabled: std/rhai-only, single
 status 0
 status 0
-luish: 1: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+luish: 1: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
     __luish_internal plugin sync -q extra; echo "status $?"
 status 2
 rhai from std

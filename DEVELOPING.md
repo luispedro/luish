@@ -807,6 +807,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   no source, so its imports resolve relative to the current directory (`import_dir`). The file is recorded in
   `sourced_files`, as `plugin load`'s. `--no-plugins` doesn't stop it. Tests: `tests/plugins/run.sh`,
   `run_errors.sh`.
+- **`plugin load -c CODE NAME`** (`Host::load_code`) loads code without a file as a plugin like any other (`start`,
+  shared with `Host::load`), with `Plugin::code` set and an empty `abs`. Its `dir` is the current directory at load
+  time, so `plugin_dir()` and `import` in its hooks don't depend on later `cd`s. It replaces only a `-c` plugin of
+  the same name: one with a file is refused (it could be lost by a typo), while `load_found` warns but goes on when a
+  file replaces a `-c` plugin. `Host::loaded` leaves `-c` plugins out (it is about paths: `post-rc.lsh`,
+  `list-available`, `restore`); `savestate` records them with their code (`Host::inline`). An `@SOURCE/PATH/MODULE`
+  import never resolves to one. `NAME` can't be empty or contain a `/`. Tests: `tests/plugins/load_c.sh`.
 - **Extension built-ins** (`sh::builtin`): `Host::builtins`, by name, looked up in `Shell::lookup_command` after
   functions and before `PATH` (`CommandKind::Extension`), so the only cost without them is the `Shell::plugins`
   check for external commands. `builtin`, `command`, `type` (`is a shell builtin from plugin NAME`, `Host::builtin_plugin`) and `hash` (skips them) know them;

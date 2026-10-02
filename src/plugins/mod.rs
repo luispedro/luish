@@ -42,6 +42,10 @@ impl Host {
         match *self {}
     }
 
+    pub fn inline(&self) -> Vec<(Vec<u8>, std::rc::Rc<str>)> {
+        match *self {}
+    }
+
     fn unload(&self, _: &[u8]) -> bool {
         match *self {}
     }
@@ -209,7 +213,7 @@ pub fn complete(sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Compl
     }
 }
 
-const USAGE: &str = "usage: plugin load NAME|PATH..., plugin list-loaded, plugin list-available [-a], plugin unload NAME..., \
+const USAGE: &str = "usage: plugin load NAME|PATH..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., \
                      plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check";
 
 /// The `plugin` built-in (interactive shells only, like `help`).
@@ -217,7 +221,7 @@ pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     run(sh, &argv[0], &argv[1..])
 }
 
-/// `plugin load NAME|PATH...`, `plugin list-loaded`, `plugin list-available
+/// `plugin load NAME|PATH...`, `plugin load -c CODE NAME`, `plugin list-loaded`, `plugin list-available
 /// [-a]`, `plugin unload NAME...`, `plugin run FILE|-c CODE [ARG...]`,
 /// `plugin add [-y] PLUGIN [NAME]`, `plugin
 /// sync [-q]`, `plugin update [-q] [SOURCE...]` and `plugin check`, also available as `__luish_internal
@@ -229,6 +233,22 @@ pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
     let args = argv.get(1..).unwrap_or_default();
     match argv.first().map(|a| a.as_slice()) {
+        Some(b"load") if args.first().is_some_and(|a| a == b"-c") => match args {
+            [_, code, plugin] if !plugin.is_empty() && !plugin.contains(&b'/') => {
+                if sh.no_plugins {
+                    return Ok(0);
+                }
+                load_code(sh, name, plugin, code)
+            }
+            [_, _, plugin] => {
+                sh.berr(name, format!("{}: bad plugin name", String::from_utf8_lossy(plugin)));
+                Ok(2)
+            }
+            _ => {
+                sh.berr(name, USAGE);
+                Ok(2)
+            }
+        },
         Some(b"load") if !args.is_empty() => {
             let mut status = 0;
             for a in args {
@@ -680,6 +700,10 @@ fn load_found(sh: &mut Shell, cmd: &[u8], found: &Found, name: Option<Vec<u8>>, 
     }
     let host = sh.plugins.get_or_insert_with(|| std::rc::Rc::new(Host::new())).clone();
     let (dir, name) = (loading.dir.clone(), loading.name.clone());
+    if host.loaded_inline(&name) == Some(true) {
+        let name = String::from_utf8_lossy(&name);
+        sh.berr(cmd, format!("warning: {name}: replacing the plugin loaded with -c"));
+    }
     // The shell files' effects are in the saved state when restoring, and
     // `rc.lsh` is only for interactive shells (and their subshells).
     let interactive = fresh && sh.opt(Opt::Interactive);
@@ -721,6 +745,21 @@ fn load_found(sh: &mut Shell, cmd: &[u8], found: &Found, name: Option<Vec<u8>>, 
             r => r,
         }
     })
+}
+
+/// `plugin load -c CODE NAME`, whose directory is the current one.
+#[cfg(feature = "plugins")]
+fn load_code(sh: &mut Shell, cmd: &[u8], name: &[u8], code: &[u8]) -> ExecResult {
+    let host = sh.plugins.get_or_insert_with(|| std::rc::Rc::new(Host::new())).clone();
+    let dir = sh.curdir.clone().or_else(crate::sys::getcwd).unwrap_or_default();
+    let vars_dir = dir.clone();
+    with_plugin_vars(sh, &vars_dir, name, |sh| host.load_code(sh, cmd, name, code, dir))
+}
+
+#[cfg(not(feature = "plugins"))]
+fn load_code(sh: &mut Shell, cmd: &[u8], _: &[u8], _: &[u8]) -> ExecResult {
+    sh.berr(cmd, "luish was built without plugin support");
+    Ok(1)
 }
 
 #[cfg(feature = "plugins")]
