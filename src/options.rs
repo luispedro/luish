@@ -37,6 +37,7 @@ pub enum Opt {
     ShareHistory,
     Autosuggest,
     NoHighlight,
+    HighlightPaths,
     AutoPushd,
     PushdIgnoreDups,
     PushdSilent,
@@ -87,6 +88,7 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::ShareHistory, "history.share"),
     (Opt::Autosuggest, "editor.autosuggest"),
     (Opt::NoHighlight, "editor.no_highlight"),
+    (Opt::HighlightPaths, "highlight.paths"),
     (Opt::AutoPushd, "pushd.auto"),
     (Opt::PushdIgnoreDups, "pushd.ignore_dups"),
     (Opt::PushdSilent, "pushd.silent"),
@@ -327,7 +329,16 @@ mod tests {
     fn setting_groups() {
         assert_eq!(
             groups(),
-            ["cd", "editor", "expand", "glob", "history", "prompt", "pushd"]
+            [
+                "cd",
+                "editor",
+                "expand",
+                "glob",
+                "highlight",
+                "history",
+                "prompt",
+                "pushd"
+            ]
         );
         assert_eq!(find_group(b"History"), Some("history"));
         assert_eq!(find_group(b"hist_ory"), Some("history"));

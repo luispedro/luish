@@ -378,6 +378,13 @@ the cursor is at its end, as it may still be being typed (`do` on the way to `do
 what follows it while the cursor is after it (`ls >` before the file name). Lines over 64 KiB (such as a long
 paste) aren't checked.
 
+With `setopt highlight.paths`, an argument or a redirection's target that names a file that exists is marked, in
+the style `path` (underlined by default), and so is the word under the cursor if it begins the name of one, in the
+style `path.prefix` (by default as `path`). Only words with no expansions count, except a leading `~` for `$HOME`
+(`~user/x` doesn't); quoted words do, but not options (`-x`). This is off by default since it means looking at the
+file system on each key, which can be slow on a network file system: what is looked up is remembered until the next
+prompt, and each redraw looks up at most 16 new names, leaving other words to the next key.
+
 ### Styles
 
 Each part of the line has a style, by name. The names are dotted, and a style that isn't set takes what it doesn't
@@ -425,8 +432,8 @@ far:
 | `suggestion` | autosuggestions |
 
 So `command` sets all the kinds of command at once, `string` all the strings, and so on. `error` is added to the
-style of the text with a syntax error. More names exist already, for distinctions the highlighter doesn't make yet
-(`path` and others; `style` lists them). Other names, such as `git.branch`, are free for plugins to use, but not those that start like a name of
+style of the text with a syntax error, and `path` and `path.prefix` to that of a word that names a file (see
+above). More names exist already, for distinctions the highlighter doesn't make yet (`style` lists them). Other names, such as `git.branch`, are free for plugins to use, but not those that start like a name of
 luish's (`command.nosuch` is an error).
 
 A style's value is words separated by spaces:

@@ -66,6 +66,9 @@ pub struct Names {
     pub glob: bool,
     /// `setopt glob.bare_qualifiers`, for the highlighter's parse.
     pub bareglobqual: bool,
+    /// `setopt highlight.paths`: the highlighter marks words that name
+    /// files.
+    pub paths: bool,
     /// `history.expand`: the highlighter takes a command name with a `!`,
     /// or one starting with `^`, for a history reference.
     pub history_expand: bool,
@@ -1854,6 +1857,7 @@ mod tests {
                 braces: false,
                 glob: true,
                 bareglobqual: false,
+                paths: false,
                 history_expand: false,
                 options: vec![
                     ("errexit", false),
@@ -1910,10 +1914,19 @@ mod tests {
         assert_eq!(complete(&h, "setopt history.no"), ["history.no_share "]);
         assert_eq!(complete(&h, "unsetopt history.no"), ["history.no_save_no_dups "]);
         assert_eq!(complete(&h, "setopt errex"), ["errexit "]);
-        assert_eq!(complete(&h, "setopt -p hi"), ["history "]);
+        assert_eq!(complete(&h, "setopt -p hi"), ["highlight ", "history "]);
         assert_eq!(
             complete(&h, "setopt -p "),
-            ["cd ", "editor ", "expand ", "glob ", "history ", "prompt ", "pushd "]
+            [
+                "cd ",
+                "editor ",
+                "expand ",
+                "glob ",
+                "highlight ",
+                "history ",
+                "prompt ",
+                "pushd "
+            ]
         );
         assert_eq!(
             complete(&h, "setopt -p history s"),

@@ -290,6 +290,7 @@ fn names(sh: &Shell) -> Names {
         braces: sh.opt(Opt::BraceExpand),
         glob: !sh.opt(Opt::Noglob),
         bareglobqual: sh.opt(Opt::Bareglobqual),
+        paths: sh.opt(Opt::HighlightPaths),
         history_expand: sh.opt(Opt::HistExpand),
         options: crate::options::Options::all_names()
             .filter(|o| !matches!(o.0, crate::options::Opt::Interactive | crate::options::Opt::Stdin))
@@ -499,6 +500,8 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
             h.highlight.context.extend_from_slice(pending);
             h.highlight.known.get_mut().clear();
             *h.highlight.parsed.get_mut() = Default::default();
+            h.highlight.paths.get_mut().clear();
+            h.highlight.dirs.get_mut().clear();
         }
         ed.set_edit_mode(if vi {
             rustyline::EditMode::Vi

@@ -12,6 +12,7 @@ expand.braces
 glob.bare_qualifiers
 glob.star
 hashall
+highlight.paths
 history.expand
 history.ignore_space
 history.inc_append

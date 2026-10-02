@@ -1,4 +1,5 @@
 Unreleased
+    * setopt highlight.paths: highlighting marks words that name files
     * Highlighting marks syntax errors, from the error to the end of the
       line (style `error`)
     * plugin load -c CODE NAME: a plugin from Rhai code, without a file

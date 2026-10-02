@@ -433,6 +433,16 @@ fn syntax_highlighting() {
     sh.expect("> \x1b[1;4;31mfi\x1b[0m\x1b[4;31m x\x1b[0m");
     sh.send("\x03");
     sh.expect("$ ");
+    // With `setopt highlight.paths`, a word that names a file is
+    // underlined, and so is the word being typed if it begins a name.
+    sh.send("setopt highlight.paths; : >afile\n");
+    sh.expect("$ ");
+    sh.send("ls afile ~/af");
+    sh.expect("\x1b[32mls\x1b[0m \x1b[4mafile\x1b[0m \x1b[4;34m~\x1b[0m\x1b[4m/af\x1b[0m");
+    sh.send("x");
+    sh.expect("\x1b[4mafile\x1b[0m \x1b[34m~\x1b[0m/afx");
+    sh.send("\x03");
+    sh.expect("$ ");
     // `style` changes a role; the second line continues a quote.
     sh.send("style string underline\n");
     sh.expect("$ ");

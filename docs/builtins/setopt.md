@@ -36,8 +36,8 @@ the options that are off, in alphabetical order.
   (`setopt history.share`, `unsetopt history.ignore_space`,
   `setopt history.file='...'`); a setting with a value is left out if its
   variable isn't set. If `-p` is given more than once, the last one
-  counts. The groups are `cd`, `editor`, `expand`, `glob`, `history`,
-  `prompt` and `pushd`.
+  counts. The groups are `cd`, `editor`, `expand`, `glob`, `highlight`,
+  `history`, `prompt` and `pushd`.
 
 luish's own options, all off by default:
 
@@ -90,6 +90,11 @@ luish's own options, all off by default:
 `editor.no_highlight`
 : Don't colour the command line as it is typed (see `style`). The
   completion menu and autosuggestions keep their styles.
+
+`highlight.paths`
+: Mark the arguments and redirection targets that name files that
+  exist (style `path`), and the word under the cursor if it begins the
+  name of one (`path.prefix`), as the command line is typed.
 
 The history options (see the user documentation on history):
 

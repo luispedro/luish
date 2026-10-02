@@ -250,11 +250,18 @@ pub fn highlight(data: &[u8]) {
         _ => highlight::CommandKind::Unknown,
     };
     let var = |w: &[u8]| (w.first() == Some(&b'H')).then_some(highlight::VarKind::Plain);
+    let path = |p: &[u8], at_cursor: bool| match p.len() % 3 {
+        0 => highlight::PATH,
+        1 if at_cursor => highlight::PATH_PREFIX,
+        _ => 0,
+    };
     let facts = highlight::Facts {
         command: &command,
         var: &var,
         braces: true,
         glob: true,
+        path: Some(&path),
+        home: Some(b"/home"),
     };
     let colors = highlight::Colors::default();
     let error = highlight::syntax_error(data, &aliases(), false);

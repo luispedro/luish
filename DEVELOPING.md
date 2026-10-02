@@ -635,8 +635,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   emacs mode (zsh's `KEYTIMEOUT`) and 100 ms in vi mode.
 - **Highlighting** (`highlight.rs`): `classify` gives each byte a `Cell`, a role (`style::Role`, the position of a
   name in `style::ROLES`, made by the const fn `Role::of`, so a misspelt role doesn't compile) and a bitset of
-  `MODIFIERS` (only `error` is set so far). It needs no `Shell`: what it knows comes in `Facts` (the kind of a command
-  name, whether a variable is set, `expand.braces`, `set -f`). `ShellHelper::command_kind` finds a command's
+  `MODIFIERS` (`error`, `path` and `path.prefix` are set so far). It needs no `Shell`: what it knows comes in `Facts`
+  (the kind of a command name, whether a variable is set, `expand.braces`, `set -f`, and the path check with
+  `highlight.paths`). `ShellHelper::command_kind` finds a command's
   `CommandKind` in the order the shell would (alias, special built-in, function, built-in or extension's built-in,
   then `PATH`; autocd directories last), cached until the next prompt; a known name in `PRECOMMANDS` gets
   `command.precommand` instead. Words in argument position, and array elements, get `arg` (`arg.option` if they start
@@ -666,10 +667,17 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   the last non-blank, otherwise marking the operators before the newline. The result is kept for the last text
   (`State::parsed`, reset before each prompt), as moving the cursor redraws the same text; texts over `MAX_PARSE`
   (64 KiB, about 3 ms to parse in release) aren't parsed. Nesting deep enough to need it stops at `stack::ok`, as the
-  editor runs on the main thread. Unit tests compare one letter
+  editor runs on the main thread. With `highlight.paths`, `Scan::path` asks `Facts::path` about each argument, array
+  element and redirection target (also given `expand.tilde`) that has no expansion, glob or brace characters and isn't
+  an option, with its quotes removed and a lone leading `~` replaced by `$HOME`. `ShellHelper::path_mods` gives
+  `path` if `lstat` finds it (so a dangling symlink counts), else, for the word under the cursor, `path.prefix` if a
+  name in its directory begins with its last component (the listing is sorted and binary-searched). Both are cached
+  until the next prompt (`State::paths`, `State::dirs`), and each redraw may make `PATH_BUDGET` (16) uncached lookups;
+  words past it stay unmarked until a later redraw. There is no thread, since subshells fork without exec. Unit tests
+  compare one letter
   per byte for the top-level role (`classes`), or the runs with their full role (`roles`). Tests: `highlight.rs`
   (`command_roles`, `string_and_var_roles`, `var_roles`, `defined_on_the_line`, `expansion_roles`,
-  `unset_variables`, `syntax_errors`, `syntax_errors_at_the_cursor` and others), the kinds in `candidates` in `complete.rs`, `syntax_highlighting` in
+  `unset_variables`, `syntax_errors`, `syntax_errors_at_the_cursor`, `path_words`, `path_lookups` and others), the kinds in `candidates` in `complete.rs`, `syntax_highlighting` in
   `tests/interactive.rs`.
 - **Styles** (`style.rs`, `builtins/style.rs`): a `Style` has optional colours, attributes on and off (bits by
   `ATTRS`), `plain` and raw SGR; `inherit` fills what one leaves out from its parent. `Styles` (on `Shell`, empty

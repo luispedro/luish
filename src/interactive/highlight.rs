@@ -16,6 +16,12 @@
 //! the end, except while the word with the error is the one being typed.
 //! Incomplete text, which would get a `PS2` prompt, has no error.
 //!
+//! With `setopt highlight.paths`, the `path` modifier marks arguments and
+//! redirection targets that name existing files, and `path.prefix` the
+//! word under the cursor if it begins the name of one. What is looked up
+//! is cached until the next prompt, and each redraw looks up a few names
+//! at most, so that a slow file system doesn't hold up typing.
+//!
 //! The colours are the styles of the roles, with those of the modifiers
 //! (such as `error`) added. Highlighting is off with `setopt
 //! editor.no_highlight`, or if `$NO_COLOR` is set and not empty.
@@ -87,6 +93,10 @@ pub const MODIFIERS: [Role; 4] = [
 
 /// The bit of the `error` modifier.
 pub const ERROR: u8 = 1;
+/// The bit of the `path` modifier.
+pub const PATH: u8 = 2;
+/// The bit of the `path.prefix` modifier.
+pub const PATH_PREFIX: u8 = 4;
 
 /// What a byte of the line is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
@@ -232,6 +242,9 @@ impl Colors {
     }
 }
 
+/// The names in a directory, sorted, or None if it can't be read.
+type Listing = Option<Vec<Vec<u8>>>;
+
 /// What the highlighter needs besides `Names`, refreshed before each prompt.
 #[derive(Default)]
 pub struct State {
@@ -245,10 +258,25 @@ pub struct State {
     pub known: RefCell<HashMap<Vec<u8>, CommandKind>>,
     /// The last text parsed for errors, and its error.
     pub parsed: RefCell<(Vec<u8>, Option<Range<usize>>)>,
+    /// Whether each path looked up since the prompt exists.
+    pub paths: RefCell<HashMap<Vec<u8>, bool>>,
+    /// The names in each directory listed since the prompt.
+    pub dirs: RefCell<HashMap<Vec<u8>, Listing>>,
+    /// How many more paths or directories this redraw may look up.
+    budget: std::cell::Cell<u32>,
 }
+
+/// How many paths or directories that aren't cached yet a redraw may look
+/// up, so that a slow file system doesn't hold up typing. A word past it
+/// is marked at a later redraw.
+const PATH_BUDGET: u32 = 16;
 
 /// Texts longer than this are not parsed for errors.
 const MAX_PARSE: usize = 64 * 1024;
+
+/// The modifiers for a word that names a path, given the path and whether
+/// the cursor is on the word.
+pub type PathCheck<'a> = dyn Fn(&[u8], bool) -> u8 + 'a;
 
 /// What `classify` needs to know about the shell.
 pub struct Facts<'a> {
@@ -259,6 +287,11 @@ pub struct Facts<'a> {
     pub braces: bool,
     /// Not `set -f`.
     pub glob: bool,
+    /// With `setopt highlight.paths`, the modifiers (`PATH` or
+    /// `PATH_PREFIX`) for words that name paths.
+    pub path: Option<&'a PathCheck<'a>>,
+    /// `$HOME`, for a `~` in such a word.
+    pub home: Option<&'a [u8]>,
 }
 
 /// What follows `for` or `case`.
@@ -589,6 +622,7 @@ impl Scan<'_> {
                 return self.array(e);
             }
             self.arg(start, e, true);
+            self.path(start, &w);
             return e;
         }
         self.alias_args = false;
@@ -789,12 +823,13 @@ impl Scan<'_> {
                     return i + 1;
                 }
                 _ => {
-                    let e = self.word(i).end;
-                    if e == i {
+                    let w = self.word(i);
+                    if w.end == i {
                         return i;
                     }
-                    self.arg(i, e, false);
-                    i = e;
+                    self.arg(i, w.end, false);
+                    self.path(i, &w);
+                    i = w.end;
                 }
             }
         }
@@ -832,8 +867,9 @@ impl Scan<'_> {
                 }
                 b'\'' => {
                     w.quoted = true;
-                    let e = self.find(j + 1, b'\'').map_or(s.len(), |e| e + 1);
-                    w.text.extend_from_slice(&s[j + 1..e.max(j + 1)]);
+                    let close = self.find(j + 1, b'\'');
+                    let e = close.map_or(s.len(), |e| e + 1);
+                    w.text.extend_from_slice(&s[j + 1..close.unwrap_or(s.len())]);
                     self.paint(j, e, role::SINGLE);
                     j = e;
                 }
@@ -1061,11 +1097,40 @@ impl Scan<'_> {
         let w = self.word(k);
         if dup {
             self.paint_plain(k, w.end, role::FD);
-        }
-        if let Some(strip) = heredoc {
+        } else if let Some(strip) = heredoc {
             self.heredocs.push((w.text, strip));
+        } else {
+            self.tildes(k, w.end, false);
+            self.path(k, &w);
         }
         w.end
+    }
+
+    /// Adds the path modifiers to the word `w` at `start` (an argument or
+    /// a redirection's target) with `highlight.paths`, if it has no
+    /// expansions other than a leading `~` and isn't an option.
+    fn path(&mut self, start: usize, w: &Word) {
+        let Some(check) = self.facts.path else { return };
+        let cells = &self.cls[start..w.end];
+        if w.expanded
+            || w.text.is_empty()
+            || (cells.iter()).any(|c| matches!(c.role, role::GLOB | role::BRACE | role::OPTION))
+        {
+            return;
+        }
+        let mut path = Cow::Borrowed(&w.text[..]);
+        if cells[0].role == role::TILDE {
+            // `~` alone; `~user` would mean looking the user up.
+            let tilde = cells.iter().take_while(|c| c.role == role::TILDE).count();
+            let Some(home) = self.facts.home.filter(|_| tilde == 1) else {
+                return;
+            };
+            path = Cow::Owned([home, &w.text[1..]].concat());
+        }
+        let mods = check(&path, self.cursor.is_some_and(|c| (start..=w.end).contains(&c)));
+        for c in &mut self.cls[start..w.end] {
+            c.mods |= mods;
+        }
     }
 
     /// Paints the bodies of pending here-documents, starting at `i` (after a
@@ -1269,6 +1334,64 @@ impl ShellHelper {
     }
 }
 
+impl ShellHelper {
+    /// The path modifiers of a word that names `path`: `path` if it
+    /// exists, else `path.prefix` if the cursor is on it and it begins a
+    /// name in its directory. What is looked up is kept until the next
+    /// prompt; past the redraw's budget, nothing is marked.
+    fn path_mods(&self, path: &[u8], at_cursor: bool) -> u8 {
+        let st = &self.highlight;
+        let cached = st.paths.borrow().get(path).copied();
+        let exists = match cached {
+            Some(e) => e,
+            None if self.spend() => {
+                let e = sys::lstat(path).is_some();
+                st.paths.borrow_mut().insert(path.to_vec(), e);
+                e
+            }
+            None => return 0,
+        };
+        if exists {
+            return PATH;
+        }
+        if !at_cursor {
+            return 0;
+        }
+        let (dir, base) = match path.iter().rposition(|&c| c == b'/') {
+            Some(0) => (&b"/"[..], &path[1..]),
+            Some(i) => (&path[..i], &path[i + 1..]),
+            None => (&b"."[..], path),
+        };
+        if base.is_empty() {
+            return 0;
+        }
+        let mut dirs = st.dirs.borrow_mut();
+        if !dirs.contains_key(dir) {
+            if !self.spend() {
+                return 0;
+            }
+            let names = sys::read_dir(dir).map(|mut n| {
+                n.sort_unstable();
+                n
+            });
+            dirs.insert(dir.to_vec(), names);
+        }
+        let Some(Some(names)) = dirs.get(dir) else { return 0 };
+        let i = names.partition_point(|n| &n[..] < base);
+        match names.get(i).is_some_and(|n| n.starts_with(base)) {
+            true => PATH_PREFIX,
+            false => 0,
+        }
+    }
+
+    /// Takes one lookup from the redraw's budget, if any is left.
+    fn spend(&self) -> bool {
+        let left = self.highlight.budget.get();
+        self.highlight.budget.set(left.saturating_sub(1));
+        left > 0
+    }
+}
+
 impl Highlighter for ShellHelper {
     /// The line in colour, followed by the right prompt if it fits.
     fn highlight<'l>(&self, line: &'l str, pos: usize) -> Cow<'l, str> {
@@ -1301,12 +1424,16 @@ impl ShellHelper {
         let colors = &self.highlight.colors;
         let context = &self.highlight.context;
         let text = [&context[..], line.as_bytes()].concat();
+        let path = |p: &[u8], at_cursor| self.path_mods(p, at_cursor);
         let facts = Facts {
             command: &|name| self.command_kind(name),
             var: &|name| self.names.vars.get(name).copied(),
             braces: self.names.braces,
             glob: self.names.glob,
+            path: self.names.paths.then_some(&path as &PathCheck),
+            home: self.names.home.as_deref(),
         };
+        self.highlight.budget.set(PATH_BUDGET);
         let cursor = context.len() + pos;
         let mut cls = classify(&text, Some(cursor), &facts);
         if let Some(start) = self
@@ -1354,6 +1481,8 @@ mod tests {
             var: &fake_var,
             braces: true,
             glob: true,
+            path: None,
+            home: None,
         };
         classify(text.as_bytes(), cursor, &facts)
     }
@@ -1422,6 +1551,7 @@ mod tests {
         assert_eq!(classes("! ls"), "k.cc");
         assert_eq!(classes("(ls)"), "occo");
         assert_eq!(classes("e\"ch\"o"), "cssssc");
+        assert_eq!(classes("'sudo' ls"), "ssssss.cc");
         assert_eq!(
             classes("__luish_cache env=(A) { ls; }"),
             "kkkkkkkkkkkkk.aaaao.o.k.cco.k"
@@ -1636,10 +1766,103 @@ mod tests {
             var: &|_| Some(VarKind::Plain),
             braces: false,
             glob: false,
+            path: None,
+            home: None,
         };
         let cls = classify(b"ls {a,b}* ~", None, &facts);
         assert!(cls[3..9].iter().all(|c| c.role == role::ARG));
         assert_eq!(cls[10].role, role::TILDE);
+    }
+
+    /// One letter per byte for the path modifiers (`p` path, `q` prefix),
+    /// with the files `a.txt`, `my file`, `dir/f` and `/home/u/x`.
+    fn paths_at(text: &str, cursor: Option<usize>) -> String {
+        const FILES: [&[u8]; 4] = [b"a.txt", b"my file", b"dir/f", b"/home/u/x"];
+        let path = |p: &[u8], at_cursor: bool| {
+            if FILES.contains(&p) || p.strip_suffix(b"/").unwrap_or(p) == b"dir" {
+                PATH
+            } else if at_cursor && FILES.iter().any(|f| f.starts_with(p)) {
+                PATH_PREFIX
+            } else {
+                0
+            }
+        };
+        let facts = Facts {
+            command: &known,
+            var: &fake_var,
+            braces: true,
+            glob: true,
+            path: Some(&path),
+            home: Some(b"/home/u"),
+        };
+        (classify(text.as_bytes(), cursor, &facts).iter())
+            .map(|c| match c.mods {
+                0 => '.',
+                PATH => 'p',
+                PATH_PREFIX => 'q',
+                m => unreachable!("{m}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn path_words() {
+        assert_eq!(paths_at("cat a.txt b.txt dir", None), "....ppppp.......ppp");
+        // Quoted, and with a leading `~`.
+        assert_eq!(
+            paths_at("cat 'a.txt' \"my\"\\ file ~/x ~u/x", None),
+            "....ppppppp.pppppppppp.ppp....."
+        );
+        // Not with other expansions, nor options, command names or
+        // assignments.
+        assert_eq!(
+            paths_at("cat $x a*.txt {a,b} -a.txt", None),
+            ".........................."
+        );
+        assert_eq!(
+            paths_at("a.txt x=a.txt; x=a.txt cat", None),
+            ".........................."
+        );
+        // Redirection targets, but not fds or here-document delimiters,
+        // and array elements.
+        assert_eq!(
+            paths_at("cat <a.txt >~/x 2>&1 <<a.txt; y=(a.txt)", None),
+            ".....ppppp..ppp..................ppppp."
+        );
+        // A prefix of a name, only while the cursor is on it.
+        assert_eq!(paths_at("cat a. dir/", Some(6)), "....qq.pppp");
+        assert_eq!(paths_at("cat a. dir/", Some(0)), ".......pppp");
+        assert_eq!(paths_at("cat ~/x di", Some(10)), "....ppp.qq");
+    }
+
+    #[test]
+    fn path_lookups() {
+        let dir = std::env::temp_dir().join(format!("luish-paths-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("sub/file"), "").unwrap();
+        let d = dir.to_str().unwrap();
+        let h = ShellHelper::default();
+        let look = |p: String, at| {
+            h.highlight.budget.set(PATH_BUDGET);
+            h.path_mods(p.as_bytes(), at)
+        };
+        assert_eq!(look(format!("{d}/sub/file"), false), PATH);
+        assert_eq!(look(format!("{d}/sub/"), false), PATH);
+        assert_eq!(look(format!("{d}/sub/fi"), true), PATH_PREFIX);
+        assert_eq!(look(format!("{d}/sub/fi"), false), 0);
+        assert_eq!(look(format!("{d}/sub/x"), true), 0);
+        assert_eq!(look(format!("{d}/nosuch/x"), true), 0);
+        assert_eq!(look(format!("{d}/sub/file/"), true), 0);
+        // Looked up once until the next prompt.
+        std::fs::remove_file(dir.join("sub/file")).unwrap();
+        assert_eq!(look(format!("{d}/sub/file"), false), PATH);
+        assert_eq!(look(format!("{d}/sub/f"), true), PATH_PREFIX);
+        // Past the budget, nothing is marked.
+        h.highlight.budget.set(1);
+        assert_eq!(h.path_mods(format!("{d}/sub").as_bytes(), false), PATH);
+        assert_eq!(h.path_mods(format!("{d}/sub/file").as_bytes(), false), PATH);
+        assert_eq!(h.path_mods(b"/", false), 0);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Where the `error` modifier starts in `text`, with no aliases and
