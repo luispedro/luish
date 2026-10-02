@@ -581,8 +581,14 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   tests in `bang.rs`, `history_expansion` in `tests/interactive.rs`.
 - **Prompts** (`prompt.rs`): the expansion keeps escape sequences apart from the text, and gives rustyline both (its
   `(raw, styled)` prompt), so the cursor position doesn't count them. Nothing is done unless the option is on and the
-  prompt has a `%`. `%NG` counts as `N` spaces in the raw prompt, so `N` is limited to 65536 (`MAX_GLITCH`). Tests: `misc/prompt_percent.sh` (checked against zsh while written; zsh can't be the reference
-  because its interactive mode writes more than the prompts), `misc/prompt_percent_long.sh`, `prompt_percent` in
+  prompt has a `%`. `%NG` counts as `N` spaces in the raw prompt, so `N` is limited to 65536 (`MAX_GLITCH`).
+  `%[style:NAME]` and `%[style_off]` have only long names (internal letters `STYLE` and `STYLE_OFF`, control bytes
+  that the short form ignores). `Expander::sgr` follows the attributes and colours set by the sequences (`%B`, `%F`
+  and the like, not `%{...%}`); a style is added to them (`Style::add`) and pushed, and `%[style_off]` pops; both
+  write the whole state (`ESC[0;...m`), as an SGR can't be undone otherwise. Both branches of `%(...)` are expanded,
+  so each starts from the state before it, and the taken one's state is kept. The scheme in use is resolved once per
+  expansion, when first needed; with `$NO_COLOR` both do nothing. Tests: `misc/prompt_percent.sh` (checked against zsh while written; zsh can't be the reference
+  because its interactive mode writes more than the prompts), `misc/prompt_percent_long.sh`, `misc/prompt_style.sh`, `prompt_percent` in
   `tests/interactive.rs`, unit tests in `prompt.rs`.
 - **The right prompt** (`rprompt.rs`): rustyline has none, so the highlighter appends it to the line between `ESC 7`
   and `ESC 8`, which leave the cursor where rustyline's layout (computed from the plain text) expects it. rustyline
@@ -1090,7 +1096,7 @@ truncates when it relocates the package.
 | `source` | `builtins/source.sh` (zsh), `builtins/source_missing.sh` |
 | `pushd`, `popd`, `dirs` | `builtins/dirstack.sh` (zsh `-o noposixcd`), `builtins/dirstack_interactive.sh` (zsh), `builtins/popd_dir.sh` |
 | `setopt`, `unsetopt` | `options/setopt.sh` (zsh), `options/setopt_list.sh` |
-| `%` sequences in prompts | `misc/prompt_percent.sh`, `misc/prompt_percent_long.sh` |
+| `%` sequences in prompts | `misc/prompt_percent.sh`, `misc/prompt_percent_long.sh`, `misc/prompt_style.sh` |
 | The right prompt | `right_prompt` in `tests/interactive.rs` |
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |

@@ -1,4 +1,6 @@
 Unreleased
+    * %[style:NAME] and %[style_off] in prompts: named styles, as the
+      line editor's
     * The terminal's background colour is detected, to choose between
       dark and light colour schemes (style --detect asks again)
     * setopt highlight.paths: highlighting marks words that name files

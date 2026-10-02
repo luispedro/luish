@@ -18,6 +18,8 @@ words that give a colour, a background colour and attributes. The names
 are dotted, and a style that is not set takes what it doesn't say from
 its parent (`command.alias` from `command`). See the user documentation
 on syntax highlighting for the names and values, and on colour schemes.
+Prompts also use the styles, with `%[style:name]` (when
+`setopt prompt.percent` is on).
 
 With no arguments, `style` lists every name with the style it has in the
 scheme in use. With a name, it shows that style, and where each part of

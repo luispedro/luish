@@ -7,6 +7,7 @@
 //! without them.
 
 use crate::shell::Shell;
+use crate::style::{self, Color, Style};
 use crate::sys;
 
 /// An expanded prompt.
@@ -56,6 +57,8 @@ pub fn expand(sh: &Shell, s: &[u8]) -> Prompt {
         pos: 0,
         in_escape: false,
         tm: None,
+        sgr: Sgr::default(),
+        styles: None,
     };
     let parts = e.group(None);
     let mut text = Vec::new();
@@ -91,9 +94,27 @@ struct Expander<'a> {
     in_escape: bool,
     /// The time, found when first needed.
     tm: Option<libc::tm>,
+    /// The attributes and colours in effect, for `%[style_off]`.
+    sgr: Sgr,
+    /// The styles, resolved when first needed; None inside with
+    /// `$NO_COLOR`.
+    styles: Option<Option<crate::style::Resolver<'a>>>,
 }
 
-impl Expander<'_> {
+/// The attributes and colours that the sequences so far have set (but not
+/// those of `%{...%}`), and those to go back to at each `%[style_off]`.
+#[derive(Clone, Default)]
+struct Sgr {
+    cur: Style,
+    stack: Vec<Style>,
+}
+
+/// Internal letters of `%[style:NAME]` and `%[style_off]`, which have no
+/// short form.
+const STYLE: u8 = 1;
+const STYLE_OFF: u8 = 2;
+
+impl<'a> Expander<'a> {
     fn peek(&self) -> Option<u8> {
         self.s.get(self.pos).copied()
     }
@@ -165,11 +186,20 @@ impl Expander<'_> {
                         }
                     }
                     let sep = self.next();
+                    // Both branches are expanded, each from the attributes
+                    // in effect before them; the one taken sets them.
+                    let before = self.sgr.clone();
                     let yes = self.group(sep);
+                    let after_yes = std::mem::replace(&mut self.sgr, before);
                     let no = self.group(Some(b')'));
                     // An unknown condition expands to nothing.
                     if cond != 0 {
-                        parts.extend(if self.test(cond, arg.unwrap_or(0)) { yes } else { no });
+                        if self.test(cond, arg.unwrap_or(0)) {
+                            self.sgr = after_yes;
+                            parts.extend(yes);
+                        } else {
+                            parts.extend(no);
+                        }
                     }
                 }
                 b'[' => {
@@ -177,6 +207,8 @@ impl Expander<'_> {
                         self.escape(c, n.or(arg), brace, &mut parts);
                     }
                 }
+                // The letters of sequences with only a long name.
+                c if c.is_ascii_control() => {}
                 _ => {
                     let brace = if takes_brace(c) { self.braced() } else { None };
                     self.escape(c, arg, brace, &mut parts);
@@ -360,22 +392,87 @@ impl Expander<'_> {
             b'w' => self.strftime(b"%a %f"),
             b'W' => self.strftime(b"%m/%d/%y"),
             b'B' | b'b' | b'U' | b'u' | b'S' | b's' | b'E' | b'F' | b'f' | b'K' | b'k' => {
+                let cur = &mut self.sgr.cur;
+                let mut attr = |name, on| match on {
+                    true => cur.on |= style::attr_bit(name),
+                    false => cur.on &= !style::attr_bit(name),
+                };
                 let seq: Vec<u8> = match c {
-                    b'B' => b"\x1b[1m".to_vec(),
-                    b'b' => b"\x1b[22m".to_vec(),
-                    b'U' => b"\x1b[4m".to_vec(),
-                    b'u' => b"\x1b[24m".to_vec(),
-                    b'S' => b"\x1b[7m".to_vec(),
-                    b's' => b"\x1b[27m".to_vec(),
+                    b'B' => {
+                        attr("bold", true);
+                        b"\x1b[1m".to_vec()
+                    }
+                    b'b' => {
+                        // SGR 22 ends dim too.
+                        attr("bold", false);
+                        attr("dim", false);
+                        b"\x1b[22m".to_vec()
+                    }
+                    b'U' => {
+                        attr("underline", true);
+                        b"\x1b[4m".to_vec()
+                    }
+                    b'u' => {
+                        attr("underline", false);
+                        b"\x1b[24m".to_vec()
+                    }
+                    b'S' => {
+                        attr("reverse", true);
+                        b"\x1b[7m".to_vec()
+                    }
+                    b's' => {
+                        attr("reverse", false);
+                        b"\x1b[27m".to_vec()
+                    }
                     b'E' => b"\x1b[K".to_vec(),
-                    b'f' => b"\x1b[39m".to_vec(),
-                    b'k' => b"\x1b[49m".to_vec(),
+                    b'f' => {
+                        cur.fg = None;
+                        b"\x1b[39m".to_vec()
+                    }
+                    b'k' => {
+                        cur.bg = None;
+                        b"\x1b[49m".to_vec()
+                    }
                     _ => {
                         let spec = brace.unwrap_or_else(|| arg.unwrap_or(0).to_string().into_bytes());
+                        let col = Color::parse(&spec).unwrap_or(Color::Default);
+                        let col = (col != Color::Default).then_some(col);
+                        match c {
+                            b'K' => cur.bg = col,
+                            _ => cur.fg = col,
+                        }
                         color(&spec, c == b'K')
                     }
                 };
                 parts.push(Part::Escape(seq));
+                return;
+            }
+            STYLE => {
+                let Some(name) = brace else {
+                    self.sh.error("missing style name in prompt sequence %[style]");
+                    return;
+                };
+                let name = String::from_utf8_lossy(&name).into_owned();
+                if let Err(e) = style::check_name(&name) {
+                    self.sh.error(format!("prompt sequence %[style:{name}]: {e}"));
+                    return;
+                }
+                let Some(named) = self.resolver().map(|r| r.get(&name)) else {
+                    return;
+                };
+                let mut new = self.sgr.cur.add(&named);
+                new.plain = false;
+                let old = std::mem::replace(&mut self.sgr.cur, new);
+                self.sgr.stack.push(old);
+                parts.push(Part::Escape(sgr(&self.sgr.cur)));
+                return;
+            }
+            STYLE_OFF => {
+                if self.resolver().is_none() {
+                    return;
+                }
+                self.sgr.cur = self.sgr.stack.pop().unwrap_or_default();
+                parts.push(Part::Escape(sgr(&self.sgr.cur)));
                 return;
             }
             b'{' => {
@@ -394,6 +491,19 @@ impl Expander<'_> {
             _ => return,
         };
         self.push(parts, text);
+    }
+
+    /// The styles of the scheme in use, or None with `$NO_COLOR`, when
+    /// named styles do nothing.
+    fn resolver(&mut self) -> Option<&style::Resolver<'a>> {
+        let sh = self.sh;
+        self.styles
+            .get_or_insert_with(|| {
+                let no_color = sh.get_var(b"NO_COLOR").is_some_and(|v| !v.is_empty());
+                let scheme = crate::builtins::style::scheme_in_use(sh);
+                (!no_color).then(|| sh.styles.resolver(scheme.as_deref()))
+            })
+            .as_ref()
     }
 
     /// The condition `c` of `%(c.yes.no)`, with its number `n`.
@@ -452,6 +562,8 @@ const SEQUENCES: &[(&str, u8)] = &[
     ("bg", b'K'),
     ("bg_off", b'k'),
     ("clear_eol", b'E'),
+    ("style", STYLE),
+    ("style_off", STYLE_OFF),
     ("percent", b'%'),
 ];
 
@@ -474,7 +586,7 @@ const CONDITIONS: &[(&str, u8)] = &[
 
 /// Whether `%c` takes a `{...}` argument.
 fn takes_brace(c: u8) -> bool {
-    matches!(c, b'D' | b'F' | b'K')
+    matches!(c, b'D' | b'F' | b'K' | STYLE)
 }
 
 /// A long name as it is compared: case, `_` and `-` don't matter.
@@ -659,14 +771,20 @@ fn history_number() -> usize {
     crate::interactive::with_history(|h| h.next_event()).unwrap_or(0)
 }
 
+/// The SGR sequence that sets the attributes and colours of `s`, from the
+/// terminal's defaults.
+fn sgr(s: &Style) -> Vec<u8> {
+    let params = s.sgr();
+    let sep = if params.is_empty() { "" } else { ";" };
+    format!("\x1b[0{sep}{params}m").into_bytes()
+}
+
 /// The SGR sequence for `%F{spec}` (or `%K{spec}` for the background): a
 /// colour as styles take it (`crate::style::Color`). Anything else is the
 /// default colour.
 fn color(spec: &[u8], bg: bool) -> Vec<u8> {
     let mut code = String::from("\x1b[");
-    crate::style::Color::parse(spec)
-        .unwrap_or(crate::style::Color::Default)
-        .sgr(bg, &mut code);
+    Color::parse(spec).unwrap_or(Color::Default).sgr(bg, &mut code);
     code.push('m');
     code.into_bytes()
 }

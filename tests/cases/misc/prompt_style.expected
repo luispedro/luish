@@ -1,0 +1,23 @@
+[^[[0;1;34md^[[0;1;31me^[[0;1;34md^[[0m] : nested
+[^[[1m^[[32m^[[0;1;31me^[[0;1;32mg^[[22m^[[39m^[[0m] PS4='[%B%F{green}%[style:prompt.err]e%[style_off]g%b%f%[style_off]] '
+[^[[1m^[[32m^[[0;1;31me^[[0;1;32mg^[[22m^[[39m^[[0m] : around attributes
+[^[[7m^[[0;4mp^[[0;7m^[[27m|^[[0mn^[[0m|^[[0;1;31mu^[[0m] PS4='[%S%[style:prompt.plain]p%[style_off]%s|%[style:nothing]n%[style_off]|%[style:command.unknown]u%[style_off]] '
+[^[[7m^[[0;4mp^[[0;7m^[[27m|^[[0mn^[[0m|^[[0;1;31mu^[[0m] : plain, unset, a role
+[^[[1mx^[[0;1;34my^[[0;1m^[[22m] PS4='[%(?.%B.%[style:prompt.err])x%[style:prompt.dir]y%[style_off]%b%(?..%[style_off])] '
+[^[[1mx^[[0;1;34my^[[0;1m^[[22m] : conditions
+[^[[1mx^[[0;1;34my^[[0;1m^[[22m] exit 1
+[^[[0;31mx^[[0;1;34my^[[0;31m^[[22m^[[0m] : after
+[^[[1mx^[[0;1;34my^[[0;1m^[[22m] set +x
+[d] : no colour
+--- errors
+sh: 3: missing style name in prompt sequence %[style]
+    set -x; : one
+sh: 3: prompt sequence %[style:comand]: unknown style: comand; did you mean command?
+    set -x; : one
+sh: 3: prompt sequence %[style:command.nope]: unknown style: command.nope
+    set -x; : one
+sh: 3: prompt sequence %[style:a..b]: bad style name: a..b
+    set -x; : one
+sh: 3: unknown prompt sequence %[stlye]; did you mean %[style]?
+    set -x; : one
+[||||] : one

@@ -275,6 +275,7 @@ variable is expanded too; write `%%` for a literal `%`. The sequences are those 
 | `%B` `%b`, `%U` `%u`, `%S` `%s` | Start and stop bold, underline and standout (reverse video) | `%[bold]` `%[bold_off]`, `%[underline]` `%[underline_off]`, `%[standout]` `%[standout_off]` |
 | `%F{colour}` `%f`, `%K{colour}` `%k` | Start and stop a foreground and a background colour: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, the same with `bright-`, `default`, a number from 0 to 255, or `#rrggbb`. `%NF` is `%F{N}` | `%[fg:colour]` `%[fg_off]`, `%[bg:colour]` `%[bg_off]` |
 | `%E` | Clear to the end of the line | `%[clear_eol]` |
+| | Start the style `name` (see [Styles](#styles)), and go back to the attributes and colours before it | `%[style:name]` `%[style_off]` |
 | `%{...%}` | Text written as it is, taking no room on the screen: for other escape sequences, such as a terminal title | |
 | `%NG` | Within `%{...%}`: the escape sequence takes `N` columns (at most 65536) | |
 | `%(x.yes.no)` | `yes` if the condition `x` holds, otherwise `no` (any character can replace the `.`s). The conditions take a number `N`, as in `%(N?.yes.no)` or `%N(?.yes.no)`: `?` the exit status is `N` (0 by default), `#` the user id is `N` (0: root), `!` the shell runs as root, `g` the group id is `N`, `j` there are at least `N` jobs, `L` `$SHLVL` is at least `N`, `/` or `C` the current directory has at least `N` components, `~`, `.` or `c` the same, with `~` for `$HOME` counting as one; `T`, `t`, `d`, `D` and `w`: the hour, minute, day of the month, month (from 0 for January) or day of the week (from 0 for Sunday) is `N` | `%([name].yes.no)` |
@@ -287,6 +288,22 @@ The long names are luish's own (zsh has none): `%[name]` is the same as the shor
 prompt. The argument of a sequence goes after a `:`, as a number or as the text in braces: `%[dir:2]` is `%2~`,
 `%[fg:red]` is `%F{red}` and `%[date:%H:%M]` is `%D{%H:%M}` (a `\` quotes a `]`). The number can also come first, as
 in `%2[dir]`. Case, `_` and `-` don't matter, so `%[HostName]` is `%[hostname]`.
+
+Named styles are the same as the line editor's, so a colour scheme can colour the prompt as well as the command
+line, and a prompt can use the colours of the line (`%[style:command]`). Names of your own, such as `prompt.dir`,
+are free:
+
+```sh
+style prompt.dir bold blue
+style prompt.error red
+PS1='%[style:prompt.dir]%[dir]%[style_off] %([status]..%[style:prompt.error][%[status]]%[style_off] )%[prompt_char] '
+```
+
+A style is added to the attributes and colours already in effect, as a style is to its parent (so `%[bold]` then a
+style that only sets a colour gives bold text in that colour, unless the style is `plain`), and `%[style_off]` goes
+back to what was in effect before the matching `%[style:...]`, or to the terminal's defaults; escape sequences in
+`%{...%}` aren't followed. With a non-empty `$NO_COLOR`, named styles do nothing (but `%[fg:...]` and the like
+still work, as you asked for them by colour).
 
 The conditions of `%(...)` have long names too, in brackets, with their number after a `:`: `%([status:1].yes.no)`
 is `%(1?.yes.no)`. They are `status` (`?`), `root` (`!`), `uid` (`#`), `gid` (`g`), `jobs` (`j`), `shlvl` (`L`),
@@ -433,8 +450,8 @@ far:
 
 So `command` sets all the kinds of command at once, `string` all the strings, and so on. `error` is added to the
 style of the text with a syntax error, and `path` and `path.prefix` to that of a word that names a file (see
-above). More names exist already, for distinctions the highlighter doesn't make yet (`style` lists them). Other names, such as `git.branch`, are free for plugins to use, but not those that start like a name of
-luish's (`command.nosuch` is an error).
+above). More names exist already, for distinctions the highlighter doesn't make yet (`style` lists them). Other names, such as `git.branch` or `prompt.dir`, are free for plugins and prompts (`%[style:prompt.dir]`, see
+[Prompts](#prompts)) to use, but not those that start like a name of luish's (`command.nosuch` is an error).
 
 A style's value is words separated by spaces:
 

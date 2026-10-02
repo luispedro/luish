@@ -180,6 +180,12 @@ const ATTRS: [(&str, u8); 7] = [
     ("strike", 9),
 ];
 
+/// The bit of an attribute (by name, as in [`ATTRS`]) in [`Style::on`] and
+/// [`Style::off`].
+pub fn attr_bit(name: &str) -> u8 {
+    ATTRS.iter().position(|a| a.0 == name).map_or(0, |i| 1 << i)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Color {
     /// The terminal's own colour.
