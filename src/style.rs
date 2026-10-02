@@ -22,6 +22,11 @@
 //! chosen by name, or as a pair chosen by whether the terminal's background
 //! is dark or light ([`background`]); the built-in schemes are
 //! `default-dark` and `default-light`, chosen as a pair by default.
+//!
+//! A scheme can also give the terminal's own colours (its background, text
+//! and cursor colours and the 16 of its palette), as `terminal.KEY`
+//! ([`TERMINAL_KEYS`]), which the shell sets while the scheme is in use
+//! (`interactive/termcolors.rs`), unless `--terminal-colors off`.
 
 use std::collections::BTreeMap;
 
@@ -257,6 +262,62 @@ pub fn rgb(spec: &[u8]) -> Option<(u8, u8, u8)> {
     }
 }
 
+/// A colour as red, green and blue.
+pub type Rgb = (u8, u8, u8);
+
+/// The terminal's colours that a scheme can set, as `terminal.KEY`: its
+/// text colour, background and cursor (OSC 10, 11 and 12), and its palette
+/// (OSC 4), from colour 0.
+pub const TERMINAL_KEYS: [&str; 4] = ["foreground", "background", "cursor", "palette"];
+
+/// The most colours of the palette that a scheme sets: the 16 of ANSI.
+pub const PALETTE_MAX: usize = 16;
+
+/// The prefix of the names of the terminal's colours in a scheme.
+pub const TERMINAL_PREFIX: &str = "terminal.";
+
+/// The key of a name of the terminal's colours (`background` for
+/// `terminal.background`), if it is one.
+pub fn terminal_key(name: &str) -> Option<&str> {
+    name.strip_prefix(TERMINAL_PREFIX)
+}
+
+/// Checks the key of a terminal colour.
+pub fn check_terminal_key(key: &str) -> Result<(), String> {
+    match TERMINAL_KEYS.contains(&key) {
+        true => Ok(()),
+        false => Err(format!("not a terminal colour (expected {})", TERMINAL_KEYS.join(", "))),
+    }
+}
+
+/// Parses the value of the terminal's colour `key`: one `#rrggbb` (or
+/// `#rgb`), or for `palette`, up to [`PALETTE_MAX`] of them; the words may
+/// be one argument or several.
+pub fn parse_terminal<S: AsRef<[u8]>>(key: &str, args: &[S]) -> Result<Vec<Rgb>, String> {
+    check_terminal_key(key)?;
+    let words = args.iter().flat_map(|a| a.as_ref().split(u8::is_ascii_whitespace));
+    let mut out = Vec::new();
+    for w in words.filter(|w| !w.is_empty()) {
+        let c = rgb(w).ok_or_else(|| format!("bad colour: {} (expected #rrggbb)", String::from_utf8_lossy(w)))?;
+        out.push(c);
+    }
+    let max = if key == "palette" { PALETTE_MAX } else { 1 };
+    match out.len() {
+        0 => Err("missing colour".to_owned()),
+        n if n > max => Err(format!("{n} colours (at most {max})")),
+        _ => Ok(out),
+    }
+}
+
+/// A terminal colour's value as it would be written.
+pub fn terminal_text(colors: &[Rgb]) -> String {
+    let words: Vec<String> = colors
+        .iter()
+        .map(|&(r, g, b)| format!("#{r:02x}{g:02x}{b:02x}"))
+        .collect();
+    words.join(" ")
+}
+
 /// A style's value. A field left out (`None`, or an attribute in neither
 /// `on` nor `off`) comes from the parent name.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -412,6 +473,19 @@ pub fn check_name(name: &str) -> Result<(), String> {
         return Err(format!("bad style name: {name}"));
     }
     let first = name.split('.').next().unwrap_or(name);
+    match first {
+        "terminal" => {
+            return Err(format!(
+                "{name}: not a style: a colour scheme's (style -s SCHEME {name} ...)"
+            ));
+        }
+        "terminal-colors" | "terminal-colours" => {
+            return Err(format!(
+                "{name}: not a style: a setting (style --terminal-colors on|off)"
+            ));
+        }
+        _ => {}
+    }
     let reserved = ROLES.iter().any(|r| r.split('.').next() == Some(first));
     let max = if name.len() <= 3 { 1 } else { 2 };
     let near = (ROLES.iter())
@@ -512,6 +586,8 @@ impl Choice {
 pub struct Scheme {
     pub inherits: Option<String>,
     pub values: BTreeMap<String, Style>,
+    /// The terminal's colours, by their key in [`TERMINAL_KEYS`].
+    pub terminal: BTreeMap<String, Vec<Rgb>>,
 }
 
 /// Where a name's value comes from.
@@ -544,6 +620,8 @@ pub struct Styles {
     user: BTreeMap<String, Style>,
     /// None for the built-in pair.
     choice: Option<Choice>,
+    /// `terminal-colors = false`: the schemes' terminal colours aren't set.
+    no_terminal_colors: bool,
     /// Changed by every change, so that the line editor knows when to
     /// resolve the styles again.
     pub generation: u64,
@@ -602,6 +680,7 @@ impl Styles {
             values: (values.iter())
                 .map(|(k, v)| ((*k).to_owned(), Style::parse(&[v]).unwrap_or_default()))
                 .collect(),
+            terminal: BTreeMap::new(),
         })
     }
 
@@ -653,10 +732,43 @@ impl Styles {
         self.scheme_mut(scheme).values.insert(name.to_owned(), value);
     }
 
+    /// Removes the style `name` from a scheme, or the terminal colour, for
+    /// a name `terminal.KEY`.
     pub fn remove_from_scheme(&mut self, scheme: &str, name: &str) {
         if self.has_scheme(scheme) {
-            self.scheme_mut(scheme).values.remove(name);
+            let s = self.scheme_mut(scheme);
+            match terminal_key(name) {
+                Some(key) => drop(s.terminal.remove(key)),
+                None => drop(s.values.remove(name)),
+            }
         }
+    }
+
+    /// Sets the terminal colour `key` (in [`TERMINAL_KEYS`]) of a scheme.
+    pub fn set_terminal_in_scheme(&mut self, scheme: &str, key: &str, colors: Vec<Rgb>) {
+        self.scheme_mut(scheme).terminal.insert(key.to_owned(), colors);
+    }
+
+    /// Whether the schemes' terminal colours are set (`terminal-colors`).
+    pub fn terminal_colors(&self) -> bool {
+        !self.no_terminal_colors
+    }
+
+    pub fn set_terminal_colors(&mut self, on: bool) {
+        self.no_terminal_colors = !on;
+        self.changed();
+    }
+
+    /// The terminal colours of the scheme `scheme`: each key from the first
+    /// scheme of the chain that gives it.
+    pub fn terminal(&self, scheme: Option<&str>) -> BTreeMap<String, Vec<Rgb>> {
+        let mut out = BTreeMap::new();
+        for (_, s) in self.chain(scheme) {
+            for (k, v) in s.terminal {
+                out.entry(k).or_insert(v);
+            }
+        }
+        out
     }
 
     pub fn set_user(&mut self, name: &str, value: Style) {
@@ -749,6 +861,10 @@ impl Styles {
                 let t = format!("{cmd} -s {} {} {}\n", q(name), q(role), q(&v.text()));
                 out.push((format!("s:{name}:{role}"), t.into_bytes()));
             }
+            for (key, v) in &s.terminal {
+                let t = format!("{cmd} -s {} {TERMINAL_PREFIX}{key} {}\n", q(name), q(&terminal_text(v)));
+                out.push((format!("s:{name}:{TERMINAL_PREFIX}{key}"), t.into_bytes()));
+            }
         }
         for (role, v) in &self.defaults {
             let t = format!("{cmd} -d {} {}\n", q(role), q(&v.text()));
@@ -767,6 +883,12 @@ impl Styles {
         for (role, v) in &self.user {
             let t = format!("{cmd} {} {}\n", q(role), q(&v.text()));
             out.push((format!("u:{role}"), t.into_bytes()));
+        }
+        if self.no_terminal_colors {
+            out.push((
+                "terminal-colors".to_owned(),
+                format!("{cmd} --terminal-colors off\n").into_bytes(),
+            ));
         }
         out
     }
@@ -793,6 +915,7 @@ pub fn removal(cmd: &str, name: &str) -> String {
         ("s", None) => format!("{cmd} -s {} --delete", q(rest)),
         ("d", _) => format!("{cmd} -d -r {}", q(rest)),
         ("u", _) => format!("{cmd} -r {}", q(rest)),
+        ("terminal-colors", _) => format!("{cmd} --terminal-colors on"),
         _ => format!("{cmd} -c {} {}", DEFAULT_PAIR.0, DEFAULT_PAIR.1),
     }
 }
@@ -997,5 +1120,59 @@ mod tests {
         assert_eq!(removal("style", "u:var"), "style -r var");
         assert_eq!(removal("style", "d:x"), "style -d -r x");
         assert_eq!(removal("style", "choice"), "style -c default-dark default-light");
+    }
+
+    #[test]
+    fn terminal_colors() {
+        assert_eq!(parse_terminal("background", &["#282828"]), Ok(vec![(0x28, 0x28, 0x28)]));
+        assert_eq!(
+            parse_terminal("palette", &["#000 #ff0000", "#00ff00"]),
+            Ok(vec![(0, 0, 0), (255, 0, 0), (0, 255, 0)])
+        );
+        assert!(parse_terminal("palette", &["#000000"; 17]).is_err());
+        assert!(parse_terminal("cursor", &["#000", "#fff"]).is_err());
+        assert!(parse_terminal("cursor", &["red"]).is_err());
+        assert!(parse_terminal("cursor", &[""]).is_err());
+        assert!(parse_terminal("bold", &["#000"]).is_err());
+        assert_eq!(terminal_text(&[(0x28, 0x28, 0x28), (255, 0, 0)]), "#282828 #ff0000");
+        // Each key from the first scheme of the chain that gives it.
+        let mut st = Styles::default();
+        st.set_terminal_in_scheme("dark", "background", vec![(0, 0, 0)]);
+        st.set_terminal_in_scheme("dark", "foreground", vec![(255, 255, 255)]);
+        st.set_inherits("light", Some("dark")).unwrap();
+        st.set_terminal_in_scheme("light", "background", vec![(255, 255, 255)]);
+        let t = st.terminal(Some("light"));
+        assert_eq!(t["background"], [(255, 255, 255)]);
+        assert_eq!(t["foreground"], [(255, 255, 255)]);
+        assert!(st.terminal(Some("default-dark")).is_empty());
+        st.remove_from_scheme("light", "terminal.background");
+        assert_eq!(st.terminal(Some("light"))["background"], [(0, 0, 0)]);
+        // The saved state, and undoing it.
+        st.set_terminal_colors(false);
+        let s: Vec<_> = st
+            .state("style")
+            .into_iter()
+            .map(|(n, t)| format!("{n} {}", String::from_utf8(t).unwrap()))
+            .collect();
+        assert_eq!(
+            s,
+            [
+                "s:dark style -s dark -i ''\n",
+                "s:dark:terminal.background style -s dark terminal.background '#000000'\n",
+                "s:dark:terminal.foreground style -s dark terminal.foreground '#ffffff'\n",
+                "s:light style -s light -i dark\n",
+                "terminal-colors style --terminal-colors off\n",
+            ]
+        );
+        assert_eq!(removal("style", "terminal-colors"), "style --terminal-colors on");
+        assert_eq!(
+            removal("style", "s:dark:terminal.background"),
+            "style -s dark -r terminal.background"
+        );
+        // Not styles.
+        assert!(check_name("terminal.background").is_err());
+        assert!(check_name("terminal").is_err());
+        assert!(check_name("terminal-colours").is_err());
+        assert!(check_name("terminal_x").is_ok());
     }
 }

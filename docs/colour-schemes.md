@@ -176,6 +176,33 @@ LUISH_BACKGROUND=light
 `style -c` shows which is in use, and why. Add `default = "..."` to the pair for when the background isn't known;
 without it, the dark scheme is used.
 
+## The terminal's colours
+
+The styles colour only the command line. A scheme can also set the terminal's own colours, so that its background
+and the colours that other programs use match it:
+
+```toml
+[colorscheme.ocean.terminal]
+background = "#1c2331"
+foreground = "#d8dee9"
+cursor = "#d8dee9"
+palette = ["#1c2331", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#d8dee9"]
+
+[colorscheme.ocean-light.terminal]
+background = "#fafafa"
+foreground = "#383a42"
+```
+
+`palette` lists colours 0 to 15 of the terminal's palette (or the first few), which `ls --color`, `git diff` and
+other programs use; set all 16 for a scheme that should look the same in every terminal. `ocean-light` inherits the
+palette and the cursor from `ocean`, and gives its own background and text colour.
+
+The shell sets them while the scheme is in use and puts back the terminal's own colours when it isn't, or when the
+shell exits (see [The terminal's colours](usage.md#the-terminals-colours)). A scheme that sets the background no
+longer depends on the terminal's being dark or light, but a dark/light pair still follows the terminal's own, so
+each looks right with the others: try them with `style -c ocean` and `style -c ocean-light`. Those who'd rather keep
+their terminal's colours set `terminal-colors = false` in their `[style]` table.
+
 ## Prompts
 
 A scheme can also give styles to names of your own, for prompts: names that don't start like one of luish's, such as

@@ -766,6 +766,7 @@ impl Shell {
         if !self.in_subshell {
             status = crate::plugins::exit(self, status);
             crate::interactive::save_history(self);
+            crate::interactive::restore_terminal_colors();
             // Give the terminal back to whoever had it before us.
             self.set_jobctl(false);
         }

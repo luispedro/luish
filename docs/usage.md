@@ -521,6 +521,44 @@ again, after the terminal's colours have changed. `style -c` lists the schemes a
 
 [](colour-schemes.md) shows how to make a scheme, step by step.
 
+### The terminal's colours
+
+A scheme can also set the terminal's own colours, which the programs you run use too: its background, its text
+colour, its cursor's colour and the colours of its palette (the 16 that `ls --color` and `git diff` use). They go in
+the scheme's `terminal` table:
+
+```toml
+[colorscheme.ocean.terminal]
+background = "#1c2331"
+foreground = "#d8dee9"
+cursor = "#d8dee9"
+palette = ["#1c2331", "#e06c75", "#98c379", "#e5c07b", "#61afef", "#c678dd", "#56b6c2", "#d8dee9"]
+```
+
+Each colour is `#rrggbb` (or `#rgb`). `palette` gives colours 0 to 15 in order, or fewer. A scheme inherits these
+from the one it `inherits` from, each on its own, as it does styles; with `style -s`, they are `terminal.background`
+and so on (`style -s ocean terminal.cursor '#ffcc00'`).
+
+While a scheme that gives them is in use, the shell sets them before the prompt, with the escape sequences that
+most terminals take (OSC 10, 11, 12 and 4: xterm, GNOME Terminal and other VTE ones, kitty, foot, Alacritty,
+WezTerm, iTerm2), if its standard input and error are a terminal. Before it first sets one, it asks the terminal
+what it was, and it puts that back when the scheme in use no longer sets it, when the shell exits, and before `exec`
+runs another program; a colour the terminal didn't tell is reset to the terminal's default instead. So a shell
+started from another one puts back that one's colours. When the shell finds out the background (for a dark/light
+pair, or with `style --detect`), it asks for the terminal's own, so it puts back its colours first.
+
+The colours stay if the shell doesn't exit cleanly, as when it is killed or an ssh connection drops; `printf
+'\e]104\a\e]110\a\e]111\a\e]112\a'` resets them. tmux and screen may not pass the sequences on to the terminal.
+
+To keep the terminal's own colours with any scheme:
+
+```toml
+[style]
+terminal-colors = false     # or terminal-colours
+```
+
+or `style --terminal-colors off` in a running shell. A non-empty `$NO_COLOR` turns them off too.
+
 ## History
 
 An interactive shell keeps the last `HISTSIZE` commands (1000 by default) in

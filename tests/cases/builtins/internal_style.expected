@@ -94,3 +94,21 @@ command              green
 command.builtin      green
 command.function     bold green
 48
+--- the terminal colours of a scheme
+terminal.background  #282828
+terminal.palette     #000000 #cc241d #98971a
+terminal.background #282828
+terminal.cursor (not set)
+status 1: terminal.bold: not a terminal colour (expected foreground, background, cursor, palette)
+status 1: terminal.cursor: 2 colours (at most 1)
+status 1: terminal.palette: bad colour: red (expected #rrggbb)
+status 1: terminal.background: not a style: a colour scheme's (style -s SCHEME terminal.background ...)
+status 1: terminal-colors: not a style: a setting (style --terminal-colors on|off)
+terminal.background  #282828
+--- whether to set them
+on
+off
+status 1: --terminal-colors: expected on or off
+__luish_internal style -s t terminal.background '#282828'
+__luish_internal style --terminal-colors off
+no terminal-colors in the state

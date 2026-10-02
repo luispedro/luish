@@ -267,6 +267,9 @@ fn exec(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     if args.is_empty() {
         return Ok(0);
     }
+    if !sh.in_subshell {
+        crate::interactive::restore_terminal_colors();
+    }
     sh.exec_argv(args, None)
 }
 

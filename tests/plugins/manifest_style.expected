@@ -1,5 +1,6 @@
 --- builds the cache
-luish: ~/.config/luish/plugins/theme/plugin.toml: line 9: style.colorscheme: a plugin can't choose the colour scheme
+luish: ~/.config/luish/plugins/theme/plugin.toml: line 10: style.colorscheme: a plugin can't choose the colour scheme
+luish: ~/.config/luish/plugins/theme/plugin.toml: line 11: style.terminal-colors: a plugin can't choose whether to set the terminal's colours
   default-dark
   default-light
 * solar
@@ -14,6 +15,8 @@ git.branch magenta
   git.branch: magenta (plugin default)
 command italic
   command: italic (set by the user)
+on
+terminal.background #002b36
 --- uses it
   default-dark
   default-light
@@ -29,3 +32,5 @@ git.branch magenta
   git.branch: magenta (plugin default)
 command italic
   command: italic (set by the user)
+on
+terminal.background #002b36

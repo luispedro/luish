@@ -319,11 +319,13 @@ pdf = "evince"
 
 ### Themes
 
-A theme is a plugin whose `plugin.toml` defines colour schemes, in `[colorscheme.NAME]` tables as in `config.toml`
-(see [Colour schemes](usage.md#colour-schemes)). Loading it only makes them available: the user chooses one with
-`colorscheme` in the `[style]` table of `config.toml`, or with `style -c`, which a plugin can't do. A plugin's
-`[style]` table sets defaults for the styles of its own names (such as a prompt's `git.branch`), which any scheme, and
-the user, can override:
+A theme is a plugin whose `plugin.toml` defines colour schemes, in `[colorscheme.NAME]` tables as in `config.toml` (see
+[Colour schemes](usage.md#colour-schemes)). Loading it only makes them available: the user chooses one with
+`colorscheme` in the `[style]` table of `config.toml`, or with `style -c`, which a plugin can't do. A scheme can also
+give the terminal's own colours, in a `[colorscheme.NAME.terminal]` table (see [The terminal's
+colours](usage.md#the-terminals-colours)); whether they are set is the user's choice (`terminal-colors`), not the
+plugin's. A plugin's `[style]` table sets defaults for the styles of its own names (such as a prompt's `git.branch`),
+which any scheme, and the user, can override:
 
 ```toml
 [colorscheme.solarized-dark]

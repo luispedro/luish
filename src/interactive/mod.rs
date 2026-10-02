@@ -9,6 +9,7 @@ pub mod history;
 pub mod keys;
 mod menu;
 mod rprompt;
+mod termcolors;
 mod tty;
 
 use std::cell::{Cell, RefCell};
@@ -92,11 +93,16 @@ fn can_ask(sh: &Shell) -> bool {
 /// `$LUISH_BACKGROUND` (`style --detect`). Keys typed meanwhile start the
 /// next command line. None if the terminal didn't tell.
 pub fn ask_background(sh: &mut Shell) -> Option<Background> {
-    let answer = can_ask(sh).then(tty::ask_background).flatten()?;
+    if !can_ask(sh) {
+        return None;
+    }
+    // The terminal's own background, not the scheme's.
+    termcolors::restore();
+    let answer = tty::ask_background()?;
     if !answer.typed.is_empty() && EDITS.get() {
         push_buffer(String::from_utf8_lossy(&answer.typed).into_owned());
     }
-    let bg = answer.background?;
+    let bg = answer.background()?;
     set_background(sh, bg, "the terminal");
     Some(bg)
 }
@@ -130,6 +136,12 @@ fn find_background(sh: &mut Shell) {
             ask_background(sh);
         }
     }
+}
+
+/// Puts back the terminal colours that the colour scheme set, when the
+/// shell exits or `exec`s.
+pub fn restore_terminal_colors() {
+    termcolors::restore();
 }
 
 /// `$HISTFILE`, or by default `$XDG_STATE_HOME/luish/history` (or
@@ -522,6 +534,7 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
     if !continuation {
         update_history(sh);
         find_background(sh);
+        termcolors::update(sh);
     }
     let (p, right) = prompts(sh, continuation, true);
     let text = String::from_utf8_lossy(&p.text).into_owned();

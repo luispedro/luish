@@ -710,6 +710,24 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   nothing. It is asked once per shell (`BACKGROUND`); `style --detect` asks again. The pty tests set
   `LUISH_BACKGROUND` (`Pty::spawn_at`) except `background_detection`, which answers itself. Tests: unit tests in
   `tty.rs`, `background_detection` in `tests/interactive.rs`.
+- **Terminal colours** (`interactive/termcolors.rs`): a `Scheme`'s `terminal` map (keys `style::TERMINAL_KEYS`:
+  `foreground`, `background`, `cursor`, `palette`, values lists of RGB, one each but up to 16 for the palette) is
+  resolved key by key through the chain (`Styles::terminal`); `style -s S terminal.KEY ...` sets one, `-r` removes
+  it, and they are in the saved state as such commands. `terminal` and `terminal-colors(-colours)` are reserved as
+  style names (`check_name`). `termcolors::update`, before each prompt (not continuation lines), after
+  `find_background`, maps them to OSC keys (`(10|11|12, 0)`, `(4, N)`) and sends the sequences (`ESC ]11;rgb:RR/GG/BB
+  ESC \`) for what differs from `SET`, what the shell last set, putting back the keys no longer wanted. It looks again
+  only when `Styles::generation`, the scheme in use or `wanted` (the `terminal-colors` setting, `$NO_COLOR`,
+  `can_ask`) changed (`SEEN`). Before setting a key for the first time it asks the terminal for it (`tty::ask`, the
+  same query as the background's, with one OSC `?` per key before DA1), keeping the answer if it is `rgb:...` (in
+  `FOUND`); restoring sends that back as it was, or resets the key (OSC 110, 111, 112, `104;N`). Answering with the
+  original rather than resetting is what makes a nested shell give back its parent's colours. `termcolors::restore`
+  puts back everything: from `Shell::exit` (not in subshells), the `exec` built-in (not in subshells, before
+  `exec_argv`), and `ask_background` (so `style --detect` and a later pair see the terminal's own background); it
+  clears `SEEN`, so the next prompt sets them again. `terminal-colors = false` (`Styles::no_terminal_colors`) is in the
+  saved state as `style --terminal-colors off`. Tests: unit tests in `style.rs` (`terminal_colors`), `tty.rs`
+  (`color_answers`) and `termcolors.rs`, `terminal_colors` and `terminal_colors_exec` in `tests/interactive.rs`,
+  `builtins/internal_style.sh`, `misc/config_toml_style.sh`, `tests/plugins/manifest_style.sh`.
 - **Autosuggestions**: the hint while the cursor is at the end of a non-blank, non-continuation line and the menu
   isn't open; accepted with rustyline's `CompleteHint`. The search goes from the newest entry and stops at the first
   match. Test: `autosuggestions` in `tests/interactive.rs`.
@@ -808,11 +826,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   under `[options]` is a setting by its `setopt` name. The `alias` table defines regular aliases, and its `global` and
   `suffix` tables the other kinds (so a string named `global` or `suffix` is a regular alias, and TOML won't have both
   in one file). The `bindkey` table goes through `keys::bind_widget`, as `bindkey KEY WIDGET` does. The `colorscheme`
-  table's schemes replace earlier ones of the same name (`Styles::replace_scheme`); the `style` table's `colorscheme`
-  is the `Choice`, and its other keys go to the user's layer. Tables under a style name are flattened (`[style.var]
-  unset = ...` is `var.unset`), so unquoted dotted keys work. A directory plugin's `plugin.toml` shares the `options`,
-  `alias`, `bindkey`, `colorscheme` and `style` tables (`config::load_plugin_manifest`, see Plugins); there, `style`
-  sets plugins' defaults and can't have `colorscheme`. Tests: `misc/config_toml.sh`, `misc/config_toml_style.sh`.
+  table's schemes replace earlier ones of the same name (`Styles::replace_scheme`), and a scheme's `terminal` table
+  holds its terminal colours (`config::terminal_colors`: strings, the palette an array or a string); the `style` table's
+  `colorscheme` is the `Choice`, `terminal-colors` (or `terminal-colours`, a boolean) the setting, and its other keys go
+  to the user's layer. Tables under a style name are flattened (`[style.var] unset = ...` is `var.unset`), so unquoted
+  dotted keys work. A directory plugin's `plugin.toml` shares the `options`, `alias`, `bindkey`, `colorscheme` and
+  `style` tables (`config::load_plugin_manifest`, see Plugins); there, `style` sets plugins' defaults and can't have
+  `colorscheme` or `terminal-colors`. Tests: `misc/config_toml.sh`, `misc/config_toml_style.sh`.
 - `config.toml`'s `env`, `vars` and `path` tables (`config::environment`): `env` exports, `vars` doesn't (a variable
   inherited exported stays so), and a table named `interactive` in `env` is `env.interactive` (a string of that name is
   a variable, as for `alias.global`). Values are strings, with `tilde`, or integers. `path`'s directories are

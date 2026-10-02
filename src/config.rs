@@ -478,6 +478,10 @@ fn colorschemes(sh: &mut Shell, mut value: Value<'_>, err: &dyn Fn(&Shell, usize
         let mut scheme = crate::style::Scheme::default();
         let own = key.name.to_string();
         for (key, mut value) in in_order(entries) {
+            if &*key.name == "terminal" {
+                terminal_colors(sh, &table, &mut value, &mut scheme, err);
+                continue;
+            }
             if &*key.name != "inherits" {
                 let name = key.name.to_string();
                 style_values(
@@ -511,15 +515,70 @@ fn colorschemes(sh: &mut Shell, mut value: Value<'_>, err: &dyn Fn(&Shell, usize
     }
 }
 
+/// The `terminal` table of a scheme: the terminal's colours, by their keys
+/// in `style::TERMINAL_KEYS`, each a `#rrggbb` string (`palette` an array
+/// of them, or a string of several).
+fn terminal_colors(
+    sh: &Shell,
+    table: &str,
+    value: &mut Value<'_>,
+    scheme: &mut crate::style::Scheme,
+    err: &dyn Fn(&Shell, usize, &str),
+) {
+    let at = value.span.start;
+    let ValueInner::Table(entries) = value.take() else {
+        err(sh, at, &format!("{table}.terminal: not a table"));
+        return;
+    };
+    for (key, value) in in_order(entries) {
+        let words: Result<Vec<String>, String> = match value.as_ref() {
+            ValueInner::String(s) => Ok(vec![s.to_string()]),
+            ValueInner::Array(a) => (a.iter())
+                .map(|v| match v.as_ref() {
+                    ValueInner::String(s) => Ok(s.to_string()),
+                    v => Err(format!("expected a string, found {}", v.type_str())),
+                })
+                .collect(),
+            v => Err(format!("expected a string, found {}", v.type_str())),
+        };
+        let parsed = words.and_then(|w| crate::style::parse_terminal(&key.name, &w));
+        match parsed {
+            Ok(colors) => {
+                scheme.terminal.insert(key.name.to_string(), colors);
+            }
+            Err(msg) => err(sh, key.span.start, &format!("{table}.terminal.{}: {msg}", key.name)),
+        }
+    }
+}
+
 /// The `style` table: styles by name (as in `style`), and in
 /// `config.toml`, the colour scheme, as `colorscheme`: a name, or a table
-/// with `dark`, `light` and optionally `default`. In `plugin.toml`, the
-/// styles are defaults, under the colour scheme.
+/// with `dark`, `light` and optionally `default`, and whether to set the
+/// schemes' terminal colours, as `terminal-colors` (or `terminal-colours`).
+/// In `plugin.toml`, the styles are defaults, under the colour scheme.
 fn styles(sh: &mut Shell, mut value: Value<'_>, plugin: bool, err: &dyn Fn(&Shell, usize, &str)) {
     let ValueInner::Table(entries) = value.take() else {
         return;
     };
     for (key, mut value) in in_order(entries) {
+        if matches!(&*key.name, "terminal-colors" | "terminal-colours") {
+            if plugin {
+                let msg = format!(
+                    "style.{}: a plugin can't choose whether to set the terminal's colours",
+                    key.name
+                );
+                err(sh, key.span.start, &msg);
+                continue;
+            }
+            match value.as_ref() {
+                ValueInner::Boolean(on) => sh.styles.set_terminal_colors(*on),
+                v => {
+                    let msg = format!("style.{}: expected a boolean, found {}", key.name, v.type_str());
+                    err(sh, key.span.start, &msg)
+                }
+            }
+            continue;
+        }
         if &*key.name != "colorscheme" {
             let mut set = Vec::new();
             style_values(

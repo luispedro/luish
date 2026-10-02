@@ -74,3 +74,24 @@ echo '--- the list'
 s -c default-dark
 s | head -3
 s | grep -c .
+echo '--- the terminal colours of a scheme'
+s -s t terminal.background '#282828'
+s -s t terminal.palette '#000' '#cc241d #98971a'
+s -s t
+s -s t terminal.background
+s -s t terminal.cursor
+e -s t terminal.bold '#000'
+e -s t terminal.cursor '#000 #111'
+e -s t terminal.palette red
+e terminal.background '#000'
+e terminal-colors on
+s -s t -r terminal.palette
+s -s t
+echo '--- whether to set them'
+s --terminal-colors
+s --terminal-colours off
+s --terminal-colors
+e --terminal-colors maybe
+s -p | grep terminal
+s --terminal-colors on
+s -p | grep terminal-colors || echo "no terminal-colors in the state"

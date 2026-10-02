@@ -1,5 +1,6 @@
 //! The terminal outside the line editor: raw mode, and asking the terminal
-//! for its background colour (DEVELOPING.md, Highlighting).
+//! for its colours: its background (DEVELOPING.md, Highlighting), and those
+//! that a colour scheme sets (`termcolors.rs`).
 
 use std::time::{Duration, Instant};
 
@@ -52,10 +53,18 @@ impl Drop for Raw {
     }
 }
 
-/// OSC 11 asks for the background colour, then DA1 for the terminal's
-/// attributes, which every terminal answers, after the OSC 11 answer if
-/// it gives one.
-const QUERY: &[u8] = b"\x1b]11;?\x1b\\\x1b[c";
+/// The question for the colours `keys` (OSC codes: `11` for the
+/// background, `4;N` for colour N of the palette), then DA1 for the
+/// terminal's attributes, which every terminal answers, after the colours
+/// it gives.
+fn query(keys: &[String]) -> Vec<u8> {
+    let mut q = Vec::new();
+    for k in keys {
+        q.extend_from_slice(format!("\x1b]{k};?\x1b\\").as_bytes());
+    }
+    q.extend_from_slice(b"\x1b[c");
+    q
+}
 
 /// How long to wait for the answers, for a terminal (or a line) that
 /// answers nothing.
@@ -64,18 +73,37 @@ const TIMEOUT: Duration = Duration::from_millis(500);
 /// What the terminal answered.
 #[derive(Debug, Default, PartialEq)]
 pub struct Answer {
-    /// The background, if the terminal told its colour.
-    pub background: Option<Background>,
+    /// The colours it told, by their OSC code (`11`, `4;1`), as it gave
+    /// them (`rgb:ffff/ffff/ffff`).
+    pub colors: Vec<(String, Vec<u8>)>,
     /// The text typed before the answers came, up to the first control
     /// character (so Enter runs nothing).
     pub typed: Vec<u8>,
 }
 
+impl Answer {
+    /// The colour `key`, if the terminal told it.
+    pub fn color(&self, key: &str) -> Option<&[u8]> {
+        self.colors.iter().find(|c| c.0 == key).map(|c| c.1.as_slice())
+    }
+
+    /// The background, if the terminal told its colour.
+    pub fn background(&self) -> Option<Background> {
+        color_background(self.color("11")?)
+    }
+}
+
 /// Asks the terminal (stdin and stderr) for its background colour, and
 /// waits for the answers. None if they didn't come.
 pub fn ask_background() -> Option<Answer> {
+    ask(&["11".to_owned()])
+}
+
+/// Asks the terminal (stdin and stderr) for the colours `keys` (OSC codes),
+/// and waits for the answers. None if they didn't come.
+pub fn ask(keys: &[String]) -> Option<Answer> {
     let raw = Raw::new()?;
-    if !sys::write_all(2, QUERY) {
+    if !sys::write_all(2, &query(keys)) {
         return None;
     }
     let end = Instant::now() + TIMEOUT;
@@ -100,8 +128,8 @@ pub fn ask_background() -> Option<Answer> {
 }
 
 /// The answers in `input`, if it has the DA1 one (`ESC [ ? ... c`); the
-/// OSC 11 one (`ESC ] 11 ; rgb:R/G/B`, ended by BEL or `ESC \`) comes
-/// before it if at all. Other bytes were typed.
+/// colours' (`ESC ] 11 ; rgb:R/G/B` and `ESC ] 4 ; N ; rgb:R/G/B`, ended
+/// by BEL or `ESC \`) come before it if at all. Other bytes were typed.
 fn parse(input: &[u8]) -> Option<Answer> {
     let mut a = Answer::default();
     let mut typed = Vec::new();
@@ -109,10 +137,12 @@ fn parse(input: &[u8]) -> Option<Answer> {
     let mut done = false;
     while i < input.len() {
         let rest = &input[i..];
-        if let Some(osc) = rest.strip_prefix(b"\x1b]11;") {
+        if let Some(osc) = rest.strip_prefix(b"\x1b]") {
             let len = osc.iter().position(|&c| c == 0x07 || c == 0x1b)?;
-            a.background = color_background(&osc[..len]);
-            i += 5 + len + if osc[len] == 0x1b { 2 } else { 1 };
+            if let Some(c) = osc_color(&osc[..len]) {
+                a.colors.push(c);
+            }
+            i += 2 + len + if osc[len] == 0x1b { 2 } else { 1 };
             continue;
         }
         if let Some(csi) = rest.strip_prefix(b"\x1b[?") {
@@ -130,6 +160,23 @@ fn parse(input: &[u8]) -> Option<Answer> {
     typed.truncate(printable);
     a.typed = typed;
     done.then_some(a)
+}
+
+/// The colour that an OSC answer gives (`11;rgb:...` or `4;1;rgb:...`),
+/// by its key (`11`, `4;1`).
+fn osc_color(osc: &[u8]) -> Option<(String, Vec<u8>)> {
+    let text = std::str::from_utf8(osc).ok()?;
+    let (code, rest) = text.split_once(';')?;
+    let (key, value) = match code {
+        "4" => {
+            let (n, value) = rest.split_once(';')?;
+            n.parse::<u8>().ok()?;
+            (format!("4;{n}"), value)
+        }
+        _ if !code.is_empty() && code.bytes().all(|c| c.is_ascii_digit()) => (code.to_owned(), rest),
+        _ => return None,
+    };
+    Some((key, value.as_bytes().to_vec()))
 }
 
 /// Whether a colour of the form `rgb:R/G/B` (or `rgba:R/G/B/A`), with 1
@@ -187,13 +234,8 @@ mod tests {
     #[test]
     fn answers() {
         let light = Some(Background::Light);
-        let p = |s: &str| parse(s.as_bytes());
-        let answer = |background, typed: &str| {
-            Some(Answer {
-                background,
-                typed: typed.into(),
-            })
-        };
+        let p = |s: &str| parse(s.as_bytes()).map(|a| (a.background(), a.typed));
+        let answer = |background, typed: &str| Some((background, typed.as_bytes().to_vec()));
         assert_eq!(p("\x1b]11;rgb:ffff/ffff/ffff\x1b\\\x1b[?62;22c"), answer(light, ""));
         assert_eq!(p("\x1b]11;rgb:ffff/ffff/ffff\x07\x1b[?6c"), answer(light, ""));
         // Only DA1: the terminal doesn't tell.
@@ -210,5 +252,25 @@ mod tests {
         );
         assert_eq!(p("ls\r\x1b[?6cx"), answer(None, "ls"));
         assert_eq!(p("a\x1b[Ab\x1b[?6c"), answer(None, "a"));
+    }
+
+    #[test]
+    fn color_answers() {
+        let a =
+            parse(b"\x1b]10;rgb:ebeb/dbdb/b2b2\x1b\\\x1b]4;1;rgb:cccc/2424/1d1d\x07\x1b]4;12;rgb:0/0/ff\x1b\\\x1b[?6c")
+                .unwrap();
+        assert_eq!(a.color("10"), Some(&b"rgb:ebeb/dbdb/b2b2"[..]));
+        assert_eq!(a.color("4;1"), Some(&b"rgb:cccc/2424/1d1d"[..]));
+        assert_eq!(a.color("4;12"), Some(&b"rgb:0/0/ff"[..]));
+        assert_eq!(a.color("11"), None);
+        assert_eq!(a.background(), None);
+        // Other OSC sequences, or malformed ones, aren't colours.
+        let a = parse(b"\x1b]4;x;rgb:0/0/0\x07\x1b]l;title\x07\x1b]11;rgb:0/0/0\x07\x1b[?6c").unwrap();
+        assert_eq!(a.colors, vec![("11".to_owned(), b"rgb:0/0/0".to_vec())]);
+        assert_eq!(a.typed, b"");
+        assert_eq!(
+            query(&["11".into(), "4;3".into()]),
+            b"\x1b]11;?\x1b\\\x1b]4;3;?\x1b\\\x1b[c"
+        );
     }
 }

@@ -3,7 +3,7 @@
 //! same command everywhere (and what the saved state uses).
 
 use crate::shell::{ExecResult, Shell};
-use crate::style::{self, Background, Choice, Style, check_name, check_scheme_name};
+use crate::style::{self, Background, Choice, Style, check_name, check_scheme_name, terminal_key, terminal_text};
 
 /// The command that the saved state uses.
 pub const STATE_COMMAND: &str = "__luish_internal style";
@@ -64,6 +64,17 @@ pub fn run(sh: &mut Shell, name: &[u8], args: &[Vec<u8>]) -> ExecResult {
             Ok(())
         }
         b"-c" => choose(sh, rest),
+        b"--terminal-colors" | b"--terminal-colours" => match rest {
+            [] => {
+                let on = if sh.styles.terminal_colors() { "on\n" } else { "off\n" };
+                return Ok(sh.out_status(on.as_bytes()));
+            }
+            [v] if v == b"on" || v == b"off" => {
+                sh.styles.set_terminal_colors(v == b"on");
+                Ok(())
+            }
+            _ => Err(format!("{}: expected on or off", text(first))),
+        },
         b"--detect" if rest.is_empty() => match crate::interactive::ask_background(sh) {
             Some(_) => Ok(()),
             None => Err("the terminal didn't tell its background colour".to_owned()),
@@ -227,6 +238,10 @@ fn scheme_command(sh: &mut Shell, cmd: &[u8], scheme: &str, args: &[Vec<u8>]) ->
                 for (n, v) in &s.values {
                     out.push_str(&format!("{n:<20} {}\n", v.text()));
                 }
+                for (k, v) in &s.terminal {
+                    let n = format!("{}{k}", style::TERMINAL_PREFIX);
+                    out.push_str(&format!("{n:<20} {}\n", terminal_text(v)));
+                }
                 sh.out(out.as_bytes());
                 Ok(())
             }
@@ -247,6 +262,25 @@ fn scheme_command(sh: &mut Shell, cmd: &[u8], scheme: &str, args: &[Vec<u8>]) ->
                 for n in names {
                     sh.styles.remove_from_scheme(scheme, &text(n));
                 }
+                Ok(())
+            }
+            Some((n, [])) if terminal_key(&text(n)).is_some() => {
+                let s = sh
+                    .styles
+                    .scheme(scheme)
+                    .ok_or(format!("no such colour scheme: {scheme}"))?;
+                let n = text(n);
+                let key = terminal_key(&n).unwrap_or_default();
+                style::check_terminal_key(key).map_err(|e| format!("{n}: {e}"))?;
+                let v = s.terminal.get(key).map_or("(not set)".to_owned(), |v| terminal_text(v));
+                sh.out(format!("{n} {v}\n").as_bytes());
+                Ok(())
+            }
+            Some((n, value)) if terminal_key(&text(n)).is_some() => {
+                let n = text(n);
+                let key = terminal_key(&n).unwrap_or_default();
+                let colors = style::parse_terminal(key, value).map_err(|e| format!("{n}: {e}"))?;
+                sh.styles.set_terminal_in_scheme(scheme, key, colors);
                 Ok(())
             }
             Some((n, [])) => {

@@ -65,3 +65,28 @@ cat > .config/luish/config.toml <<'T'
 colorscheme = { dark = "a", light = "b", other = "c" }
 T
 run '__luish_internal style -p'
+echo '--- terminal colours, and whether to set them'
+cat > .config/luish/config.toml <<'T'
+[colorscheme.g]
+keyword = "red"
+[colorscheme.g.terminal]
+background = "#282828"
+palette = ["#282828", "#cc241d"]
+cursor = 3
+bold = "#000000"
+foreground = "red"
+
+[colorscheme.h]
+inherits = "g"
+terminal.background = "#fbf1c7"
+
+[style]
+colorscheme = "h"
+terminal-colours = false
+T
+run '__luish_internal style -p'
+cat > .config/luish/config.toml <<'T'
+[style]
+terminal-colors = "no"
+T
+run '__luish_internal style --terminal-colors'

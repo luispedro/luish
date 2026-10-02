@@ -55,3 +55,17 @@ luish: ~/.config/luish/config.toml: line 11: style.colorscheme: a table needs bo
 luish: ~/.config/luish/config.toml: line 12: style.keyword: two colours: blue
 __luish_internal style -s a -i ''
 luish: ~/.config/luish/config.toml: line 2: style.colorscheme: unknown key: other (expected dark, light or default)
+--- terminal colours, and whether to set them
+luish: ~/.config/luish/config.toml: line 6: colorscheme.g.terminal.cursor: expected a string, found integer
+luish: ~/.config/luish/config.toml: line 7: colorscheme.g.terminal.bold: not a terminal colour (expected foreground, background, cursor, palette)
+luish: ~/.config/luish/config.toml: line 8: colorscheme.g.terminal.foreground: bad colour: red (expected #rrggbb)
+__luish_internal style -s g -i ''
+__luish_internal style -s g keyword red
+__luish_internal style -s g terminal.background '#282828'
+__luish_internal style -s g terminal.palette '#282828 #cc241d'
+__luish_internal style -s h -i g
+__luish_internal style -s h terminal.background '#fbf1c7'
+__luish_internal style -c h
+__luish_internal style --terminal-colors off
+luish: ~/.config/luish/config.toml: line 2: style.terminal-colors: expected a boolean, found string
+on

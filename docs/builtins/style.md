@@ -7,6 +7,7 @@ style -r name...
 style --clear
 style -c [scheme | dark light [default]]
 style --detect
+style --terminal-colors [on | off]
 style -s scheme [name [value...] | -r name... | -i [parent] | --delete]
 style -d name value... | -d -r name...
 ```
@@ -52,6 +53,18 @@ scheme (defining it if it isn't), with a name alone it shows it, and with
 nothing else it lists the scheme. `-r` removes styles from the scheme,
 `-i` sets the scheme it inherits from (none if empty), and `--delete`
 removes the scheme (a built-in one goes back to how it was).
+
+A scheme's names `terminal.background`, `terminal.foreground`,
+`terminal.cursor` and `terminal.palette` are the terminal's own colours,
+which the shell sets while the scheme is in use and puts back afterwards
+(as a scheme's `terminal` table in `config.toml` gives them): each value
+is a `#rrggbb` colour, and `terminal.palette` up to 16, for colours 0 to
+15 of the terminal's palette.
+
+`--terminal-colors off` (or `--terminal-colours`) keeps the terminal's own
+colours whatever the scheme says, as `terminal-colors = false` in the
+`[style]` table of `config.toml` does, and puts back those the shell set;
+`on` sets them again, and with neither, it shows which is in effect.
 
 `-d` sets or removes a default, as the `[style]` table of a plugin's
 `plugin.toml` does: under the colour scheme.
