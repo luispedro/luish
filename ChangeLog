@@ -6,6 +6,9 @@ Unreleased
     * A colour scheme can be a dark/light pair, chosen by
       $LUISH_BACKGROUND or $COLORFGBG
     * setopt editor.no_highlight turns off highlighting
+    * Highlighting tells kinds of command apart (built-in, function,
+      alias, external, precommand), and marks options, escapes, special
+      parameters, process substitution, tildes, brace expansion and globs
     * More colour names in %F{...}: bright-red and the like
     * zsh's modifiers in parameter expansion: ${x:h}, ${x:t}, ${x:r},
       ${x:e}, ${x:a}, ${x:A}, ${x:u}, ${x:l}, ${x:h2}

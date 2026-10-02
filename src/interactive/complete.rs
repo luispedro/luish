@@ -57,6 +57,10 @@ pub struct Names {
     pub cdpath: Vec<u8>,
     /// `setopt cd.auto`: directories are commands too.
     pub autocd: bool,
+    /// `setopt expand.braces`, for the highlighter.
+    pub braces: bool,
+    /// Not `set -f`, for the highlighter.
+    pub glob: bool,
     /// `history.expand`: the highlighter takes a command name with a `!`,
     /// or one starting with `^`, for a history reference.
     pub history_expand: bool,
@@ -1567,7 +1571,7 @@ impl Hinter for ShellHelper {
             keys.history_index = ctx.history_index();
             keys.history_len = ctx.history().len();
         }
-        let sgr = |class| String::from_utf8_lossy(self.highlight.colors.sgr(class)).into_owned();
+        let sgr = |role| String::from_utf8_lossy(self.highlight.colors.sgr(role)).into_owned();
         self.right.hint.set(0);
         let mut m = self.menu.lock().ok()?;
         if !m.is_open(line, pos) {
@@ -1578,7 +1582,7 @@ impl Hinter for ShellHelper {
                 let (row, col) = menu::position(&rest, usize::MAX);
                 self.right.hint.set(if row > 0 { usize::MAX / 2 } else { col });
             }
-            let style = sgr(super::highlight::Class::Suggest);
+            let style = sgr(super::highlight::role::SUGGESTION);
             return Some(menu::Drawn {
                 display: format!("\x1b[{style}m{rest}\x1b[0m"),
                 completion: Some(rest),
@@ -1589,8 +1593,8 @@ impl Hinter for ShellHelper {
         let rows = if rows == 0 { 24 } else { rows };
         let used = menu::rows(&[&self.prompt[..], line].concat(), cols);
         let style = menu::Style {
-            select: sgr(super::highlight::Class::Select),
-            desc: sgr(super::highlight::Class::Desc),
+            select: sgr(super::highlight::role::SELECTED),
+            desc: sgr(super::highlight::role::DESCRIPTION),
         };
         Some(menu::Drawn {
             display: m.draw(cols, rows.saturating_sub(used), &style),
@@ -1833,6 +1837,8 @@ mod tests {
                 plugin_dir: Some(dir.join("plugins").as_os_str().as_bytes().to_vec()),
                 cdpath: format!("/nonexistent::{d}").into_bytes(),
                 autocd: false,
+                braces: false,
+                glob: true,
                 history_expand: false,
                 options: vec![
                     ("errexit", false),
@@ -1846,6 +1852,18 @@ mod tests {
             ask: Some(fake_git),
             ..Default::default()
         };
+        // What the highlighter makes of command names.
+        use super::super::highlight::CommandKind;
+        for (name, kind) in [
+            ("mytool", CommandKind::External),
+            ("myfunc", CommandKind::Function),
+            ("myext", CommandKind::Builtin),
+            ("ll", CommandKind::Alias),
+            ("cd", CommandKind::Builtin),
+            ("nope", CommandKind::Unknown),
+        ] {
+            assert_eq!(h.command_kind(name.as_bytes()), kind, "{name}");
+        }
         assert_eq!(complete(&h, "myt"), ["mytool "]);
         assert_eq!(complete(&h, "myf"), ["myfunc "]);
         assert_eq!(complete(&h, "mye"), ["myext "]);

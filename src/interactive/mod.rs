@@ -278,6 +278,8 @@ fn names(sh: &Shell) -> Names {
         plugin_dir: crate::plugins::plugin_dir(sh),
         cdpath: sh.get_var(b"CDPATH").unwrap_or_default(),
         autocd: sh.opt(crate::options::Opt::Autocd),
+        braces: sh.opt(Opt::BraceExpand),
+        glob: !sh.opt(Opt::Noglob),
         history_expand: sh.opt(Opt::HistExpand),
         options: crate::options::Options::all_names()
             .filter(|o| !matches!(o.0, crate::options::Opt::Interactive | crate::options::Opt::Stdin))

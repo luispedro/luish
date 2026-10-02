@@ -78,6 +78,47 @@ pub const ROLES: &[&str] = &[
     "suggestion",
 ];
 
+const _: () = assert!(ROLES.len() < u8::MAX as usize);
+
+/// A name in [`ROLES`], by its position, or none.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct Role(u8);
+
+impl Role {
+    pub const NONE: Role = Role(u8::MAX);
+
+    /// The role `name`; a name not in [`ROLES`] fails to compile (in a
+    /// constant).
+    pub const fn of(name: &str) -> Role {
+        let (name, mut i) = (name.as_bytes(), 0);
+        while i < ROLES.len() {
+            let r = ROLES[i].as_bytes();
+            if r.len() == name.len() {
+                let mut k = 0;
+                while k < r.len() && r[k] == name[k] {
+                    k += 1;
+                }
+                if k == r.len() {
+                    return Role(i as u8);
+                }
+            }
+            i += 1;
+        }
+        panic!("not a role")
+    }
+
+    /// The position in [`ROLES`], or None for no role.
+    pub fn index(self) -> Option<usize> {
+        (self != Role::NONE).then_some(self.0 as usize)
+    }
+}
+
+impl Default for Role {
+    fn default() -> Role {
+        Role::NONE
+    }
+}
+
 /// A built-in scheme: its name, the scheme it inherits from, and its
 /// values.
 type Builtin = (
@@ -94,11 +135,14 @@ const BUILTIN: &[Builtin] = &[
         &[
             ("keyword", "bold blue"),
             ("command", "green"),
+            ("command.function", "bold green"),
+            ("command.alias", "italic green"),
             ("command.unknown", "bold red"),
             ("string", "yellow"),
             ("var", "cyan"),
             ("var.unset", "dim cyan"),
             ("subst", "magenta"),
+            ("expand", "blue"),
             ("op", "bold"),
             ("redir", "bold"),
             ("comment", "bright-black"),
@@ -303,6 +347,14 @@ impl Style {
             self.raw.clone_from(&parent.raw);
         }
         self.plain = parent.plain;
+    }
+
+    /// This style with a modifier's on top: what `modifier` sets replaces
+    /// this style's.
+    pub fn add(&self, modifier: &Style) -> Style {
+        let mut s = modifier.clone();
+        s.inherit(self);
+        s
     }
 
     /// The SGR parameters (without `ESC [` and `m`); empty for the
@@ -845,7 +897,8 @@ mod tests {
     fn layers_and_fallback() {
         let mut st = Styles::default();
         let r = st.resolver(Some("default-dark"));
-        assert_eq!(r.get("command.alias").text(), "green");
+        assert_eq!(r.get("command.builtin").text(), "green");
+        assert_eq!(r.get("command.alias").text(), "italic green");
         assert_eq!(r.get("command.unknown").text(), "bold red");
         assert_eq!(r.get("var.unset").text(), "dim cyan");
         let light = st.resolver(Some("default-light"));

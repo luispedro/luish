@@ -1,7 +1,8 @@
 --- a name, with where it comes from
 keyword bold blue
   keyword: bold blue (scheme default-dark)
-command.alias green
+command.alias italic green
+  command.alias: italic green (scheme default-dark)
   command: green (scheme default-dark)
 --- setting one, over the scheme
 command.alias bold green
@@ -91,5 +92,5 @@ __luish_internal style --clear
 --- the list
 command              green
 command.builtin      green
-command.function     green
+command.function     bold green
 48

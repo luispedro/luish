@@ -633,13 +633,26 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   hold the lock while a plugin completer runs. Column widths are capped at the 90th percentile or a third of the
   screen. rustyline's default `keyseq_timeout` is None (a lone Esc waits for the next key); luish sets 400 ms in
   emacs mode (zsh's `KEYTIMEOUT`) and 100 ms in vi mode.
-- **Highlighting** (`highlight.rs`): command lookups are cached until the next prompt. Each `Class` has a role
-  (`highlight::ROLE`), whose style gives its SGR parameters (`Colors`). `interactive::colors` resolves them before
-  each prompt only if `Styles::generation` or the scheme in use (which depends on `$LUISH_BACKGROUND` and
-  `$COLORFGBG`) changed, and reports a scheme that isn't defined then; `$NO_COLOR` and `editor.no_highlight` turn
-  the line's colours off (the menu and suggestion keep theirs, or the old fixed ones with `$NO_COLOR`). `$NAME` and `${NAME}` get the `unset` class when `NAME` is not in
-  `Names::vars`, unless an earlier word in the text is `NAME=...` (as an assignment or an argument, as for `export`)
-  or a `for` name, or the cursor is on it. Test: `unset_variables` in `highlight.rs`.
+- **Highlighting** (`highlight.rs`): `classify` gives each byte a `Cell`, a role (`style::Role`, the position of a
+  name in `style::ROLES`, made by the const fn `Role::of`, so a misspelt role doesn't compile) and a bitset of
+  `MODIFIERS` (nothing sets them yet). It needs no `Shell`: what it knows comes in `Facts` (the kind of a command
+  name, whether a variable is set, `expand.braces`, `set -f`). `ShellHelper::command_kind` finds a command's
+  `CommandKind` in the order the shell would (alias, special built-in, function, built-in or extension's built-in,
+  then `PATH`; autocd directories last), cached until the next prompt; a known name in `PRECOMMANDS` gets
+  `command.precommand` instead. Words in argument position, and array elements, get `arg` (`arg.option` if they start
+  with `-`) after a pass over their bytes that have no role yet (so are unquoted and literal) for tildes (also after
+  `=` and `:` in assignments), brace expansions (one pass, with a stack) and glob characters (also in `case`
+  patterns). `<(` and `>(` start a word's process substitution anywhere in it, as in the lexer (so `2<(ls)` is not a
+  redirection). `Colors` holds the resolved style and SGR parameters of every role (`interactive::colors` resolves
+  them before each prompt only if `Styles::generation` or the scheme in use, which depends on `$LUISH_BACKGROUND`
+  and `$COLORFGBG`, changed, and reports a scheme that isn't defined then); a cell with modifiers adds their styles
+  to its role's (`Style::add`), cached per cell. `$NO_COLOR` and `editor.no_highlight` turn the line's colours off
+  (the menu and suggestion keep theirs, or the old fixed ones with `$NO_COLOR`). `$NAME` and `${NAME}` get
+  `var.unset` when `NAME` is not in `Names::vars`, unless an earlier word in the text is `NAME=...` (as an
+  assignment or an argument, as for `export`) or a `for` name, or the cursor is on it. Unit tests compare one letter
+  per byte for the top-level role (`classes`), or the runs with their full role (`roles`). Tests: `highlight.rs`
+  (`command_roles`, `string_and_var_roles`, `expansion_roles`, `unset_variables` and others), the kinds in
+  `candidates` in `complete.rs`.
 - **Styles** (`style.rs`, `builtins/style.rs`): a `Style` has optional colours, attributes on and off (bits by
   `ATTRS`), `plain` and raw SGR; `inherit` fills what one leaves out from its parent. `Styles` (on `Shell`, empty
   maps until used) holds the user's layer, plugins' defaults, the schemes defined, and the `Choice` (None for the

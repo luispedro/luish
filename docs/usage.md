@@ -380,23 +380,44 @@ far:
 | Name | For |
 |---|---|
 | `keyword` | reserved words (`if`, `for`, `{`, `[[`) |
-| `command` | command names that are found |
-| `command.unknown` | command names that aren't |
-| `string` | quoted text and here-documents |
-| `var` | `$NAME`, `${...}` and `$((...))` |
+| `command.builtin` | built-ins, also those of plugins |
+| `command.function` | functions, and the name in a function definition |
+| `command.alias` | aliases, also suffix aliases |
+| `command.external` | commands found in `PATH`, or by a path with a `/` |
+| `command.precommand` | commands that run the next word as a command (`sudo`, `env`, `exec`, `command`, `nohup`) |
+| `command.directory` | directories, with `setopt cd.auto` |
+| `command.history` | history references, with `setopt history.expand` (`!!`, `^a^b`) |
+| `command.unknown` | command names that aren't found (not marked while the cursor is on them) |
+| `arg` | arguments |
+| `arg.option` | arguments starting with `-` |
+| `string.single` | `'...'` |
+| `string.double` | `"..."` |
+| `string.escape` | backslash escapes (`\ `, and `\$` in double quotes) |
+| `string.heredoc` | the text of here-documents |
+| `var` | `$NAME` and `${...}` |
+| `var.special` | special and positional parameters (`$?`, `$1`, `${10}`) |
 | `var.unset` | `$NAME` or `${NAME}` when `NAME` is not set (and not assigned earlier on the line, or in a `for` loop there) |
-| `subst` | the delimiters of `$(...)` and backquotes |
-| `op` | operators (`;`, `&&`, `\|`) |
-| `redir` | redirections |
+| `subst.command` | the delimiters of `$(...)` and backquotes |
+| `subst.process` | the delimiters of `<(...)` and `>(...)` |
+| `subst.arith` | `$((...))` |
+| `expand.tilde` | `~` and `~user` |
+| `expand.brace` | the braces and separators of a brace expansion, with `setopt expand.braces` (`{a,b}`, `{1..3}`) |
+| `expand.glob` | pattern characters (`*`, `?`, `[...]`) in arguments and `case` patterns, unless `set -f` |
+| `op.control` | `;`, `&`, `&&` and `\|\|` |
+| `op.pipe` | `\|` |
+| `op` | other operators (`(`, `)`, `;;`) |
+| `redir` | redirection operators, and here-document delimiters |
+| `redir.fd` | the file descriptors in redirections (`2>&1`) |
 | `comment` | comments |
 | `assign` | the `NAME=` of an assignment |
 | `menu.selected` | the selection in the completion menu |
 | `menu.description` | descriptions in the completion menu |
 | `suggestion` | autosuggestions |
 
-More names exist already, for distinctions the highlighter doesn't make yet (`command.function`, `command.alias`,
-`var.exported`, `arg.option`, `error`, `path` and others; `style` lists them). Other names, such as `git.branch`, are
-free for plugins to use, but not those that start like a name of luish's (`command.nosuch` is an error).
+So `command` sets all the kinds of command at once, `string` all the strings, and so on. More names exist already,
+for distinctions the highlighter doesn't make yet (`var.exported`, `var.array`, `error`, `path` and others; `style`
+lists them). Other names, such as `git.branch`, are free for plugins to use, but not those that start like a name of
+luish's (`command.nosuch` is an error).
 
 A style's value is words separated by spaces:
 
