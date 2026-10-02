@@ -16,6 +16,7 @@ Unreleased
       backquotes into `$$`
     * An array index of 64 Mi or more is an error instead of aborting
       the shell
+    * `!{}` in history expansion is an error instead of a crash
 
 Version 0.3.0 2026-10-01 by luispedro
     * LUISH_VERSION and LUISH_PATCHLEVEL (as zsh's ZSH_VERSION and

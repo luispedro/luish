@@ -336,6 +336,9 @@ impl Expander<'_> {
                 let rest = s[i..].strip_suffix(b"\n").unwrap_or(&s[i..]);
                 return Err(format!("{}: event not found", String::from_utf8_lossy(rest)));
             };
+            if close == i + 2 {
+                return Err("!{}: event not found".into());
+            }
             let inner = [b"!", &s[i + 2..close]].concat();
             let (text, end) = self.reference(&inner, 0, out)?;
             if end != inner.len() {
@@ -812,6 +815,8 @@ mod tests {
         assert_eq!(bang(PAST, "!-4").unwrap_err(), "!-4: event not found");
         assert_eq!(bang(PAST, "!?zz?").unwrap_err(), "!?zz?: event not found");
         assert_eq!(bang(PAST, "!{ec").unwrap_err(), "!{ec: event not found");
+        // Empty braces name no event.
+        assert_eq!(bang(PAST, "x!{}y").unwrap_err(), "!{}: event not found");
     }
 
     #[test]
