@@ -5,6 +5,7 @@
 pub mod arith;
 pub mod brace;
 pub mod glob;
+pub mod modify;
 pub mod pattern;
 pub mod qual;
 pub mod split;
@@ -507,7 +508,7 @@ impl Shell {
             push_result(n.to_string().as_bytes(), quoted, f);
             return Ok(());
         }
-        if let ParamOp::Substring(..) | ParamOp::Replace(..) = pe.op {
+        if let ParamOp::Substring(..) | ParamOp::Replace(..) | ParamOp::Modify(_) = pe.op {
             if val.is_none() && nounset {
                 return Err(unset_error(self, "parameter not set"));
             }
@@ -588,9 +589,12 @@ impl Shell {
                 let v = val.unwrap_or_default();
                 push_result(pattern::trim(&v, &pat, how), quoted, f);
             }
-            ParamOp::Length | ParamOp::Keys | ParamOp::Names | ParamOp::Substring(..) | ParamOp::Replace(..) => {
-                unreachable!()
-            }
+            ParamOp::Length
+            | ParamOp::Keys
+            | ParamOp::Names
+            | ParamOp::Substring(..)
+            | ParamOp::Replace(..)
+            | ParamOp::Modify(_) => unreachable!(),
             ParamOp::Bad(_) => {
                 self.error("Bad substitution");
                 return Err(Flow::Error(2));
@@ -959,6 +963,16 @@ impl Shell {
                     push_list(&items, at, quoted, sep, f);
                 }
             }
+            ParamOp::Modify(mods) => {
+                if quoted && !at {
+                    // As for `"${a[*]/x/y}"`, the joined string.
+                    let sep: Vec<u8> = sep.into_iter().collect();
+                    push_result(&modify_all(&items.join(&sep[..]), mods), quoted, f);
+                } else {
+                    let items: Vec<_> = items.iter().map(|v| modify_all(v, mods)).collect();
+                    push_list(&items, at, quoted, sep, f);
+                }
+            }
             ParamOp::Bad(_) => {
                 self.error("Bad substitution");
                 return Err(Flow::Error(2));
@@ -972,8 +986,8 @@ impl Shell {
         push_list(&self.positional, at, quoted, self.ifs_first(), f);
     }
 
-    /// `${x:offset:length}` and `${x/pattern/replacement}`, where `val` is
-    /// the value of `x`. For `$@` and `$*`, they apply to the list of
+    /// `${x:offset:length}`, `${x/pattern/replacement}` and `${x:h}`, where
+    /// `val` is the value of `x`. For `$@` and `$*`, they apply to the list of
     /// positional parameters and to each of them.
     fn expand_slice_op(
         &mut self,
@@ -1025,6 +1039,18 @@ impl Shell {
                 } else {
                     let v = val.unwrap_or_default();
                     push_result(&pattern::replace(&v, &pat, *how, &rep), quoted, f);
+                }
+            }
+            ParamOp::Modify(mods) => {
+                if multi && quoted && !at {
+                    let sep: Vec<u8> = self.ifs_first().into_iter().collect();
+                    let joined = self.positional.join(&sep[..]);
+                    push_result(&modify_all(&joined, mods), quoted, f);
+                } else if multi {
+                    let items: Vec<_> = self.positional.iter().map(|p| modify_all(p, mods)).collect();
+                    push_list(&items, at, quoted, self.ifs_first(), f);
+                } else {
+                    push_result(&modify_all(&val.unwrap_or_default(), mods), quoted, f);
                 }
             }
             _ => unreachable!(),
@@ -1263,9 +1289,15 @@ fn compare_words(a: &[u8], b: &[u8], nocase: bool, numeric: bool) -> std::cmp::O
     a.cmp(b)
 }
 
-/// Whether `"${...}"` alone gives no field when there are no elements, as
-/// `"$@"` does: `$@` and `${a[@]}`, also with a substring or replacement
-/// (and a trim, for arrays).
+/// Applies zsh's modifiers in turn (`${x:A:h}`).
+fn modify_all(v: &[u8], mods: &[modify::Modifier]) -> Vec<u8> {
+    let mut v = v.to_vec();
+    for &m in mods {
+        v = modify::apply(&v, m);
+    }
+    v
+}
+
 /// Whether the operator removes a prefix or suffix (`${x#pat}` and the
 /// like).
 fn is_trim(op: &ParamOp) -> bool {
@@ -1278,10 +1310,16 @@ fn is_trim(op: &ParamOp) -> bool {
     )
 }
 
+/// Whether `"${...}"` alone gives no field when there are no elements, as
+/// `"$@"` does: `$@` and `${a[@]}`, also with a substring, replacement or
+/// modifier (and a trim, for arrays).
 fn is_list(pe: &ParamExp) -> bool {
     match (&pe.name, &pe.index) {
         (ParamName::Special(b'@'), None) => {
-            matches!(pe.op, ParamOp::Plain | ParamOp::Substring(..) | ParamOp::Replace(..))
+            matches!(
+                pe.op,
+                ParamOp::Plain | ParamOp::Substring(..) | ParamOp::Replace(..) | ParamOp::Modify(_)
+            )
         }
         // Resolved in `expand_indirect`.
         (ParamName::Indirect(_), _) => true,
@@ -1292,6 +1330,7 @@ fn is_list(pe: &ParamExp) -> bool {
                 | ParamOp::Names
                 | ParamOp::Substring(..)
                 | ParamOp::Replace(..)
+                | ParamOp::Modify(_)
                 | ParamOp::RemoveSmallestSuffix(_)
                 | ParamOp::RemoveLargestSuffix(_)
                 | ParamOp::RemoveSmallestPrefix(_)

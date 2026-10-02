@@ -1,9 +1,11 @@
 f() {
     echo \G \set >\G
 }
+command __luish_internal function-file 'f' 'internal_savestate_aliases.sh'
 g() {
     \a.txt
 }
+command __luish_internal function-file 'g' 'internal_savestate_aliases.sh'
 {
 command alias -- -x='echo dash x'
 command alias -g G='| tr a-z A-Z'

@@ -59,7 +59,8 @@ diff <(sort a) <(sort b)                   # process substitution: a file to rea
   in the shell, so its variables stay), and `exec 3< <(cmd)` reads it later, from `<&3`. The word isn't split or
   globbed. It can be part of a word, as in bash and zsh: `prog --input=<(cmd)` passes `--input=/dev/fd/N`.
 - [Arrays](#arrays), including associative ones, with `typeset`, `read -A` and zsh's parameter flags.
-- [Parameter expansion](#parameter-expansion): `${x:offset:length}`, `${x/pattern/replacement}`, `${!name}` and more.
+- [Parameter expansion](#parameter-expansion): `${x:offset:length}`, `${x/pattern/replacement}`, `${!name}`, zsh's
+  modifiers (`${x:t}`, `${BASH_SOURCE:A:h}`) and more.
 - [Special variables](#special-variables): `RANDOM`, `SECONDS`, `UID`, `pipestatus`, `path` and others.
 - `source` is `.`, and looks for a name without a `/` in the current directory first, as zsh does.
 - `shopt` and `zstyle` are not built-ins. For `shopt`, luish suggests the matching `setopt`.
@@ -78,6 +79,7 @@ Besides POSIX's (`$?`, `$$`, `$!`, `$-`, `$#`, `$0`, `$@`, `$*`, `LINENO`, `PPID
 | `HISTCMD` | The history event number of the command being run (0 without a history) |
 | `pipestatus`, `PIPESTATUS` (bash's name) | An array of the statuses of the commands of the last pipeline: after `true \| false`, `${pipestatus[@]}` is `0 1`. As in zsh, every pipeline sets it, a single command or an `if` too, but not an assignment (so it survives `s=$?`) or `[[ ... ]]` |
 | `path` | An array of the directories in `PATH`: `path=(~/bin "${path[@]}")` prepends one, and `path+=(/opt/bin)` appends one. An array assignment to it sets `PATH`, but `path=x` (valid in any POSIX shell) makes it an ordinary variable, as does `unset path`, and a `local path` is an ordinary variable of the function |
+| `BASH_SOURCE` | An array of the files being run, innermost first, as in bash: the script, each file read with `.` (the path as given, or as found in `PATH`) and the startup files, and in a function the file the function was defined in. `$BASH_SOURCE` is the current one. It is unset in `-c` and when commands are read from standard input, and a function defined there has an empty file (bash has `main` or `environment`) |
 | `dirstack` | An array of the directory stack of `pushd` and `popd`, without the current directory (`dirs` shows it first): `${dirstack[0]}` is where `popd` goes. An array assignment (`dirstack=(~/src /tmp)`) replaces the stack; as for `path`, `dirstack=x`, `unset dirstack` and `local dirstack` make it an ordinary variable |
 | `LUISH_VERSION` | luish's version (`0.3.0`), as zsh's `ZSH_VERSION` and bash's `BASH_VERSION` |
 | `LUISH_PATCHLEVEL` | The git commit luish was built from, with `-dirty` if the sources had changes (`unknown` outside a git checkout), as zsh's `ZSH_PATCHLEVEL` |
@@ -99,9 +101,28 @@ Besides POSIX's forms (`${x:-word}`, `${x#pattern}`, `${#x}` and so on), luish h
 | `${x/pattern/replacement}` | `x` with the first (longest) match of the pattern replaced; without `/replacement`, removed |
 | `${x//pattern/replacement}` | Every match replaced |
 | `${x/#pattern/replacement}`, `${x/%pattern/replacement}` | A match at the start, or at the end, replaced |
+| `${x:h}`, `${x:t}`, `${x:r}`, `${x:e}` | zsh's modifiers of file names: the directory (`/usr/lib` for `/usr/lib/a.tar.gz`; `.` if there is no `/`), the last component (`a.tar.gz`), without the extension (`/usr/lib/a.tar`), the extension (`gz`). Trailing slashes are ignored by `h` and `t`. `:hN` keeps the first `N` components (`${x:h2}` is `/usr`) and `:tN` the last `N` |
+| `${x:a}`, `${x:A}` | An absolute path, with `.` and `..` removed (from the text, relative to the current directory); with `A`, also with symbolic links resolved, as far as the path exists |
+| `${x:u}`, `${x:l}` | Upper case, lower case |
 
 For `$@` and `$*`, `${@:offset:length}` selects positional parameters (offset 0 is `$0`), and `${@/pattern/rep}`
 replaces in each of them (`"${*/pattern/rep}"` replaces in the joined string, as in zsh).
+
+Modifiers can follow each other, applied from left to right: `${x:t:r}` is the name of the file without its
+extension. On `$@`, `${a[@]}` and the like they apply to each element (to the joined string in `"${*:t}"` and
+`"${a[*]:t}"`). The same modifiers work in [glob qualifiers](globbing.md) (`*(:t)`) and, except `u` and `l`, in
+[history expansion](#history-expansion).
+
+`${BASH_SOURCE:A:h}` is the directory of the file being run, with symbolic links resolved: where a script finds the
+files that come with it, without `$(dirname "$(readlink -f "$0")")`.
+
+```sh
+here=${BASH_SOURCE:A:h}
+. "$here/lib.sh"
+```
+
+Since `BASH_SOURCE` is the path as it was given to the shell or to `.`, take it before changing directory if it may
+be relative.
 
 ## Arrays
 
@@ -407,7 +428,9 @@ read.
 - **Modifiers**, each after a `:`: `h` (the directory: without the last `/`
   and what follows), `t` (the last component), `r` (without the
   extension), `e` (only the extension; `h`, `r` and `e` leave the text as it
-  is when there is no `/` or extension), `s/old/new/` (the first `old`, or
+  is when there is no `/` or extension), `a` (an absolute path) and `A`
+  (also with symbolic links resolved; see
+  [Parameter expansion](#parameter-expansion)), `s/old/new/` (the first `old`, or
   each with `gs`; `&` in `new` is `old`, an empty `old` is the previous one,
   and the last `/` can be left out at the end of the line), `&` (the
   previous substitution again; `g&` for each), `q` (quoted), `x` (each word

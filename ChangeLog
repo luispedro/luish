@@ -1,4 +1,9 @@
 Unreleased
+    * zsh's modifiers in parameter expansion: ${x:h}, ${x:t}, ${x:r},
+      ${x:e}, ${x:a}, ${x:A}, ${x:u}, ${x:l}, ${x:h2}
+    * :a and :A modifiers (and counts) in glob qualifiers, :a and :A in
+      history expansion
+    * BASH_SOURCE, so ${BASH_SOURCE:A:h} is the script's directory
     * config.toml: [env], [env.interactive] and [vars] set variables, and
       [path] adds directories to PATH (before = [...], after = [...])
     * Plugins of a collection load as SOURCE/NAME (std/completion), so

@@ -29,6 +29,7 @@ echo time: *(m+300) / *(^m+300) / *(Mm+3) / *(mh-1^@)
 echo sort: d/*(.) / d/*(.n) / d/*(.on) / d/*(.On) / d/*(.nOn)
 echo slices: d/*(n[0]) / d/*(n[1]) / d/*(n[-1]) / d/*(n[1,2]) / d/*(n[1,-1]) / d/*(n[4]) / d/*(n[-9,0]) / d/*(n[2,1])
 echo modifiers: d/*(:t) / d/*(n:t:u) / *.md(:r) / *.md(:e) / d/*(n[0]:h) / x.md(:h)
+echo more modifiers: d/*(n:t2) / d/sub(:h1) / lnk(:A:t) / d/f9(:a:h:t) / lnk/f9(:A:h:t)
 echo plain: x.md(N) nothing(N) x.md(/N) x.md(/) end
 x=d
 echo expansions: $x/*(/) "$x"/*(.n) ${x}(N/)

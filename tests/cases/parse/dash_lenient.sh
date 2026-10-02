@@ -10,7 +10,7 @@ v=abc
 [ -n "$BASH_VERSION" ] && echo "${v^^}"
 $SH -c 'v=abc; echo "${v^^}"; echo notreached' 2>/dev/null; echo "status $?"
 $SH -c 'echo ${%}; echo notreached' 2>/dev/null; echo "status $?"
-$SH -c 'x=${x:h}; echo notreached' 2>/dev/null; echo "status $?"
+$SH -c 'x=${x:z}; echo notreached' 2>/dev/null; echo "status $?"
 f() echo hi
 f
 g() h() { echo in; }

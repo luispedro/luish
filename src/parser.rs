@@ -864,7 +864,7 @@ fn parts_fork(parts: &[WordPart]) -> bool {
                     | ParamOp::Bad(w) => forks(w),
                     ParamOp::Substring(a, b) => forks(a) || b.as_ref().is_some_and(forks),
                     ParamOp::Replace(_, a, b) => forks(a) || forks(b),
-                    ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names => false,
+                    ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names | ParamOp::Modify(_) => false,
                 }
         }
         _ => false,

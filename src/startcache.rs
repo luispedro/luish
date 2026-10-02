@@ -651,7 +651,7 @@ pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8], config: Option<&[u8]>) {
         if !text.as_ref().is_some_and(|t| has_block(sh, t)) {
             cached(sh, &mut run, &id, Some(fstamp), |sh| {
                 match text {
-                    Some(t) => run_file(sh, &t),
+                    Some(t) => run_file(sh, &path, &t),
                     None => source_file(sh, &path),
                 }
                 true
@@ -705,7 +705,7 @@ pub(crate) fn run_mixed(sh: &mut Shell, run: &mut Run, path: &[u8], text: Option
     let placeholder = Run::new(Cache::new(b""), None, false);
     sh.startcache = Some(Box::new(std::mem::replace(run, placeholder)));
     match text {
-        Some(t) => run_file(sh, &t),
+        Some(t) => run_file(sh, path, &t),
         None => source_file(sh, path),
     }
     if let Some(r) = sh.startcache.take() {

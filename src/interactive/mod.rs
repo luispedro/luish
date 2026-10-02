@@ -520,13 +520,15 @@ pub fn read_answer() -> Option<Vec<u8>> {
 /// Sources a file in the current shell if it exists.
 pub fn source_file(sh: &mut Shell, path: &[u8]) {
     if let Ok(text) = std::fs::read(to_path(path)) {
-        run_file(sh, &text);
+        run_file(sh, path, &text);
     }
 }
 
 /// Runs the text of a startup file in the current shell.
-pub fn run_file(sh: &mut Shell, text: &[u8]) {
+pub fn run_file(sh: &mut Shell, path: &[u8], text: &[u8]) {
+    sh.sources.push(Some(path.into()));
     run_text(sh, text, true);
+    sh.sources.pop();
 }
 
 /// [`run_file`], without expanding aliases if not `aliases`.

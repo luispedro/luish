@@ -1,14 +1,12 @@
 //! Simple commands: expansion, assignments, command lookup, and exec.
 
-use std::rc::Rc;
-
 use crate::ast::*;
 use crate::builtins::{self, BuiltinFn};
 use crate::cmdtext;
 use crate::exec::ForkKind;
 use crate::exec::redirect::RedirError;
 use crate::options::Opt;
-use crate::shell::{ExecResult, Flow, Shell};
+use crate::shell::{ExecResult, Flow, Function, Shell};
 
 type EResult = Result<Vec<Assignment>, Flow>;
 use crate::sys;
@@ -35,7 +33,7 @@ pub enum AssignValue {
 
 pub enum CommandKind {
     Special(BuiltinFn),
-    Function(Rc<FunctionBody>),
+    Function(Function),
     Builtin(BuiltinFn),
     /// A built-in registered by a plugin's extension (`sh::builtin`).
     Extension,

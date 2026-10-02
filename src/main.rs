@@ -293,6 +293,9 @@ fn run(args: Vec<Vec<u8>>) -> ! {
     }
     sh.set_jobctl(sh.opt(Opt::Monitor));
 
+    if !command_mode && !stdin_mode {
+        sh.sources.push(Some(operands[0].as_slice().into()));
+    }
     sh.run_input(&mut input);
     let status = sh.last_status;
     sh.exit(status);

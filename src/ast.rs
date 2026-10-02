@@ -418,6 +418,8 @@ pub enum ParamOp {
     Substring(Word, Option<Word>),
     /// `${x/pattern/replacement}` and its variants.
     Replace(Replace, Word, Word),
+    /// zsh's modifiers, `${x:h}`, `${x:A:h}`.
+    Modify(Vec<crate::expand::modify::Modifier>),
     /// Not a valid substitution (such as bash's `${x^^}`). As in dash,
     /// this is an error only when it is expanded; the word is the rest of
     /// the text up to `}`.

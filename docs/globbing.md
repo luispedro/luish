@@ -79,7 +79,7 @@ Other qualifiers change the result:
 | `[`*n*`]`, `[`*n*`,`*m*`]` | only the *n*-th match, or the *n*-th to the *m*-th, after sorting. They count from 0, and negative numbers count from the end (`-1` is the last) |
 | `M` | add `/` after directories |
 | `T` | add a character after each name for its type, as `ls -F`: `/` directory, `@` symbolic link, `*` executable, `\|` named pipe, `=` socket, `#` block device, `%` character device, and a space for other files |
-| `:h`, `:t`, `:r`, `:e`, `:u`, `:l` | modifiers, at the end of the list: remove the last path component (head), keep only it (tail), remove the extension (root), keep only the extension, convert to upper or lower case |
+| `:h`, `:t`, `:r`, `:e`, `:a`, `:A`, `:u`, `:l` | modifiers, at the end of the list: remove the last path component (head; `:hN` keeps the first *N*), keep only it (tail; `:tN` the last *N*), remove the extension (root), keep only the extension, make the path absolute (also resolving symbolic links with `:A`), convert to upper or lower case. They are those of [parameter expansion](usage.md#parameter-expansion) |
 
 A bad qualifier is an error, with status 1, as in zsh: `*(Z)` gives `unknown file attribute: Z`.
 

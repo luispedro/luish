@@ -156,8 +156,8 @@ tools such as direnv, zoxide or mise work, as those use other zsh syntax too, an
 with `sh::run`. The setup's terminal title in `chpwd` becomes a small extension. If compatibility is ever wanted, a
 std plugin can map the zsh names onto the hooks.
 
-Not planned, because the history shows they aren't used or they are easy to rewrite in POSIX sh: the `:h`/`:t`
-modifiers, zsh's two-argument `cd old new`, `vared`, `zmv`, `mmv`, `zed`, `zcalc`,
+Not planned, because the history shows they aren't used or they are easy to rewrite in POSIX sh: zsh's
+two-argument `cd old new`, `vared`, `zmv`, `mmv`, `zed`, `zcalc`,
 `noglob`, zsh-history-substring-search, zsh-nvm, zplug, and `fpath`/`compinit`.
 
 The user's config (`~/.config/luish/rc.d`) also needs porting: `setopt prompt.percent` and `PS1`, `CDPATH`,
@@ -228,7 +228,16 @@ shell tracks the current file as well as the line, for provenance and for error 
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL
   around the prompt and command output. Unicode width handling and bracketed paste belong to the line editor.
 - **Scripting**: error messages with file, line and function stack (from call frames), a predictable strict mode,
-  and a debugger or step-trace mode.
+  and a debugger or step-trace mode. The frames exist (`Shell::sources`, for `BASH_SOURCE`, with the file of each
+  script, `.` and function call); they need the function's name and the line of the call. With those, bash's
+  `FUNCNAME`, `BASH_LINENO` and `caller` and zsh's `funcstack` and `funcfiletrace` are cheap, and an option (as
+  error messages are dash's by default) can print the stack with an error in a script.
+- **The directory of the current file**, `~.` (decided 2026-10-02 to wait; `${BASH_SOURCE:A:h}` is done): a tilde
+  prefix for `${BASH_SOURCE:A:h}`, so `. ~./lib.sh` and `cfg=~./defaults.conf` need no quoting (tilde expansion isn't
+  split), in the spirit of `~+` and `~-`. dash leaves `~.` as it is (no user `.`), so this changes behaviour, though
+  only for a name that can't be a user. It should take the path made absolute when the file started (joined with
+  the current directory then, without a syscall), so that it still works after `cd`, unlike a relative
+  `BASH_SOURCE`. Open: in `-c` and on standard input, an error or `~.` left as it is.
 - **Variable provenance**: a built-in (e.g. `whereset`) that shows where each variable was set, like a more
   informative `env`:
 

@@ -732,7 +732,7 @@ fn print_functions(sh: &Shell, cmd: &[u8], names: &[Vec<u8>], defs: bool, attrs:
     let mut status = 0;
     for name in names {
         match sh.functions.get(name) {
-            Some(body) if defs => out.extend(crate::unparse::function(name, body, &sh.aliases).0),
+            Some(f) if defs => out.extend(crate::unparse::function(name, &f.body, &sh.aliases).0),
             Some(_) => {
                 out.extend_from_slice(name);
                 out.push(b'\n');

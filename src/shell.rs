@@ -28,6 +28,14 @@ pub enum Flow {
 
 pub type ExecResult = Result<i32, Flow>;
 
+/// A shell function.
+#[derive(Clone)]
+pub struct Function {
+    pub body: Rc<FunctionBody>,
+    /// The file it was defined in (`BASH_SOURCE` while it runs).
+    pub file: Option<Rc<[u8]>>,
+}
+
 pub struct Shell {
     pub vars: Vars,
     pub positional: Vec<Vec<u8>>,
@@ -37,7 +45,12 @@ pub struct Shell {
     pub pipestatus: Vec<i32>,
     pub last_bg_pid: Option<i32>,
     pub options: Options,
-    pub functions: HashMap<Vec<u8>, Rc<FunctionBody>>,
+    pub functions: HashMap<Vec<u8>, Function>,
+    /// The files being run, innermost last, for `BASH_SOURCE`: the script,
+    /// each file of `.` and each function called (the file it was defined
+    /// in). `None` is code that isn't in a file (`-c`, standard input, the
+    /// command line).
+    pub sources: Vec<Option<Rc<[u8]>>>,
     pub aliases: Rc<AliasMap>,
     /// Trap actions by signal number (0 is EXIT). An empty action ignores
     /// the signal.
@@ -147,6 +160,7 @@ impl Shell {
             last_bg_pid: None,
             options: Options::default(),
             functions: HashMap::default(),
+            sources: Vec::new(),
             aliases: Rc::new(AliasMap::default()),
             traps: vec![None; NSIG],
             jobs: JobTable::default(),
@@ -233,12 +247,13 @@ impl Shell {
             Special::Pipestatus | Special::PipestatusBash => Some(self.pipestatus.first()?.to_string().into_bytes()),
             Special::Path => Some(self.vars.get(b"PATH")?.split(|&c| c == b':').next()?.to_vec()),
             Special::Dirstack => self.dirstack.first().cloned(),
+            Special::BashSource => Some(self.sources.last()?.as_deref().unwrap_or_default().to_vec()),
             s => Some(self.vars.special_value(s)),
         }
     }
 
     /// The elements of a variable that isn't stored, for `${a[@]}` and
-    /// `${a[i]}`: `pipestatus`, `path`, `dirstack`, or one element for
+    /// `${a[i]}`: `pipestatus`, `path`, `dirstack`, `BASH_SOURCE`, or one element for
     /// `LINENO` or another special.
     pub fn special_elements(&self, name: &[u8]) -> Option<Vec<Vec<u8>>> {
         match self.vars.special(name) {
@@ -246,6 +261,13 @@ impl Shell {
                 Some(self.pipestatus.iter().map(|s| s.to_string().into_bytes()).collect())
             }
             Some(s @ (Special::Path | Special::Dirstack)) => Some(self.tied_elements(s)),
+            // Unset while no file runs, as in bash.
+            Some(Special::BashSource) if self.sources.is_empty() => None,
+            Some(Special::BashSource) => Some(
+                (self.sources.iter().rev())
+                    .map(|f| f.as_deref().unwrap_or_default().to_vec())
+                    .collect(),
+            ),
             _ => self.get_var(name).map(|v| vec![v]),
         }
     }
@@ -255,7 +277,7 @@ impl Shell {
     /// `dirstack`), with the attributes that `export` or `readonly` gave it.
     pub fn special_var(&self, name: &[u8]) -> Option<Var> {
         let value = match self.vars.special(name)? {
-            Special::Pipestatus | Special::PipestatusBash | Special::Path | Special::Dirstack => {
+            Special::Pipestatus | Special::PipestatusBash | Special::Path | Special::Dirstack | Special::BashSource => {
                 Value::Array(Box::new(self.special_elements(name)?))
             }
             _ => Value::Str(self.special_value(name)?),

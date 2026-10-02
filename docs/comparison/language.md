@@ -39,7 +39,7 @@ All four have POSIX's forms: `${x:-word}`, `${x:=word}`, `${x:?word}`, `${x:+wor
 | zsh's flags `@ k v j s f F L U C u o O i n a`, as in `${(j:,:)a[@]}`, `${(o)a[@]}`, `${(s:,:)x}`, `${(f)x}` | – | – | ✓ | ✓ | |
 | zsh's other flags, such as `P`, `q`, `e`, `l:n:`, `r:n:`, `%` | – | – | ✓ | – | |
 | Nested, `${${x#a}%b}` | – | – | ✓ | – | |
-| Modifiers, `${x:h}`, `${x:t}`, `${x:r}`, `${x:e}` | – | – | ✓ | – | luish has them in [history expansion](../usage.md#history-expansion) only |
+| Modifiers, `${x:h}`, `${x:t}`, `${x:r}`, `${x:e}`, `${x:A}` | – | – | ✓ | ✓ | luish has `h`, `t`, `r`, `e`, `a`, `A`, `u` and `l` |
 | Lengths and offsets in characters | – | ✓ | ✓ | – | luish, as dash, counts bytes: in a UTF-8 locale, `x=é; echo ${#x}` prints 2 (bash and zsh: 1) |
 
 ## Arrays
@@ -160,7 +160,8 @@ All four have POSIX's `*`, `?` and `[...]`. luish sorts matches by bytes, where 
 | `$LINENO` | – | ✓ | ✓ | ✓ | |
 | `ERR` trap (zsh also `ZERR`) | – | ✓ | ✓ | – | |
 | `DEBUG` trap | – | ✓ | ✓ | – | |
-| Call stack: `FUNCNAME`, `BASH_SOURCE`, `caller` (bash); `funcstack`, `funcfiletrace` (zsh) | – | ✓ | ✓ | – | |
+| `BASH_SOURCE`, the files being run | – | ✓ | – | ✓ | zsh has `funcfiletrace` and `%x` |
+| Call stack: `FUNCNAME`, `caller` (bash); `funcstack`, `funcfiletrace` (zsh) | – | ✓ | ✓ | – | |
 | Deep recursion | Limit for functions (Debian's), crashes otherwise | Crashes, unless `FUNCNEST` is set | Limit (`FUNCNEST`) | Error | luish stops at 1000 levels of function calls, and makes other nesting that would run out of stack an error |
 
 ## Variables the shell sets

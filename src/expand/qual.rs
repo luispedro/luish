@@ -5,6 +5,7 @@
 
 use std::cmp::Ordering;
 
+use super::modify::{self, Modifier};
 use crate::sys;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -79,16 +80,6 @@ enum Mark {
     Dirs,
     /// `T`: a character after each name giving its type, as `ls -F`.
     Types,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Modifier {
-    Head,
-    Tail,
-    Root,
-    Ext,
-    Upper,
-    Lower,
 }
 
 /// A parsed qualifier list.
@@ -412,7 +403,7 @@ impl Qualifiers {
                     };
                     let mut p = f.path;
                     for &m in &self.mods {
-                        p = modify(&p, m);
+                        p = modify::apply(&p, m);
                     }
                     p.extend(mark);
                     p
@@ -425,17 +416,15 @@ impl Qualifiers {
 fn parse_modifiers(r: &mut Reader) -> Result<Vec<Modifier>, QualError> {
     let mut mods = Vec::new();
     while let Some(c) = r.next() {
-        let m = if c == b':' { r.next() } else { Some(c) };
-        mods.push(match m {
-            Some(b'h') if c == b':' => Modifier::Head,
-            Some(b't') if c == b':' => Modifier::Tail,
-            Some(b'r') if c == b':' => Modifier::Root,
-            Some(b'e') if c == b':' => Modifier::Ext,
-            Some(b'u') if c == b':' => Modifier::Upper,
-            Some(b'l') if c == b':' => Modifier::Lower,
-            Some(c) => return Err(format!("unrecognized modifier `{}'", c as char)),
-            None => return Err("unrecognized modifier".into()),
-        });
+        let m = if c == b':' { Modifier::read(r.s, &mut r.i) } else { None };
+        let Some(m) = m else {
+            let bad = if c == b':' { r.peek() } else { Some(c) };
+            return Err(match bad {
+                Some(c) => format!("unrecognized modifier `{}'", c as char),
+                None => "unrecognized modifier".into(),
+            });
+        };
+        mods.push(m);
     }
     Ok(mods)
 }
@@ -451,27 +440,6 @@ fn type_char(st: &libc::stat) -> u8 {
         libc::S_IFCHR => b'%',
         libc::S_IFREG if st.st_mode & 0o111 != 0 => b'*',
         _ => b' ',
-    }
-}
-
-/// The `:h`, `:t`, `:r`, `:e`, `:u` and `:l` modifiers of zsh (and csh).
-fn modify(p: &[u8], m: Modifier) -> Vec<u8> {
-    let slash = p.iter().rposition(|&c| c == b'/');
-    let dot = p
-        .iter()
-        .rposition(|&c| c == b'.')
-        .filter(|&d| slash.is_none_or(|s| d > s));
-    match m {
-        Modifier::Head => match slash {
-            Some(0) => b"/".to_vec(),
-            Some(s) => p[..s].to_vec(),
-            None => b".".to_vec(),
-        },
-        Modifier::Tail => p[slash.map_or(0, |s| s + 1)..].to_vec(),
-        Modifier::Root => p[..dot.unwrap_or(p.len())].to_vec(),
-        Modifier::Ext => dot.map_or_else(Vec::new, |d| p[d + 1..].to_vec()),
-        Modifier::Upper => p.to_ascii_uppercase(),
-        Modifier::Lower => p.to_ascii_lowercase(),
     }
 }
 
@@ -597,26 +565,13 @@ mod tests {
         let q = parse("mh-2").unwrap();
         assert_eq!(q.alts[0][0].kind, TestKind::Age(Time::Modify, 3600, Cmp::Less, 2));
         let q = parse(".:t:r").unwrap();
-        assert_eq!(q.mods, [Modifier::Tail, Modifier::Root]);
+        assert_eq!(q.mods, [Modifier::Tail(0), Modifier::Root]);
         assert!(parse("DN").unwrap().alts.is_empty());
         assert!(parse("Z").unwrap_err().contains("unknown file attribute: Z"));
         assert!(parse("L").is_err());
         assert!(parse("oz").is_err());
         assert!(parse(":z").is_err());
         assert!(parse("[1").is_err());
-    }
-
-    #[test]
-    fn modifiers() {
-        let m = |p: &str, m| String::from_utf8(modify(p.as_bytes(), m)).unwrap();
-        assert_eq!(m("a/b.c/d.tar.gz", Modifier::Head), "a/b.c");
-        assert_eq!(m("d", Modifier::Head), ".");
-        assert_eq!(m("/d", Modifier::Head), "/");
-        assert_eq!(m("a/b.c/d.tar.gz", Modifier::Tail), "d.tar.gz");
-        assert_eq!(m("a/b.c/d.tar.gz", Modifier::Root), "a/b.c/d.tar");
-        assert_eq!(m("a/b.c/d", Modifier::Root), "a/b.c/d");
-        assert_eq!(m("a/b.c/d.tar.gz", Modifier::Ext), "gz");
-        assert_eq!(m("a/b.c/d", Modifier::Ext), "");
     }
 
     #[test]

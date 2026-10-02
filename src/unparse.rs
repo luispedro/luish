@@ -539,6 +539,14 @@ impl<'a> Printer<'a> {
                 self.w(b"}");
                 return;
             }
+            ParamOp::Modify(mods) => {
+                for m in mods {
+                    self.w(b":");
+                    self.w(m.text().as_bytes());
+                }
+                self.w(b"}");
+                return;
+            }
         };
         if pe.colon {
             self.w(b":");
@@ -683,7 +691,7 @@ pub fn strip_lines(list: &mut List) {
     }
     fn param_op(op: &mut ParamOp) {
         match op {
-            ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names => {}
+            ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names | ParamOp::Modify(_) => {}
             ParamOp::Default(w)
             | ParamOp::Assign(w)
             | ParamOp::Error(w)

@@ -88,6 +88,23 @@ pub fn getcwd() -> Option<Vec<u8>> {
     std::env::current_dir().ok().map(|p| p.as_os_str().as_bytes().to_vec())
 }
 
+/// `realpath(3)`: the absolute path with symbolic links, `.` and `..`
+/// resolved, if the file exists.
+pub fn realpath(path: &[u8]) -> Option<Vec<u8>> {
+    let c = cstr(path);
+    // SAFETY: valid path; with a null buffer, realpath allocates the result,
+    // which is freed after copying.
+    unsafe {
+        let p = libc::realpath(c.as_ptr(), std::ptr::null_mut());
+        if p.is_null() {
+            return None;
+        }
+        let r = std::ffi::CStr::from_ptr(p).to_bytes().to_vec();
+        libc::free(p.cast());
+        Some(r)
+    }
+}
+
 pub fn stat(path: &[u8]) -> Option<libc::stat> {
     let c = cstr(path);
     // SAFETY: valid path and output buffer.

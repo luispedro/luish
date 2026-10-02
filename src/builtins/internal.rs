@@ -11,6 +11,7 @@ const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
     (b"bindkey", bindkey),
     (b"check-cache", crate::startcache::check),
     (b"complete", complete),
+    (b"function-file", function_file),
     (b"help", help),
     (b"plugin", plugin),
     (b"print", print),
@@ -111,6 +112,24 @@ fn no_args(sh: &Shell, argv: &[Vec<u8>]) -> Result<(), i32> {
             Err(2)
         }
         None => Ok(()),
+    }
+}
+
+/// `function-file NAME FILE`: records that the function was defined in
+/// the file, for `BASH_SOURCE` while it runs (written by `savestate`, as
+/// restoring a function defines it again). Status 1 if there is no such
+/// function.
+fn function_file(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    let [_, name, file] = argv else {
+        sh.berr(b"__luish_internal function-file", "usage: function-file NAME FILE");
+        return Ok(2);
+    };
+    match sh.functions.get_mut(name) {
+        Some(f) => {
+            f.file = Some(file.as_slice().into());
+            Ok(0)
+        }
+        None => Ok(1),
     }
 }
 

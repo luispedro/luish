@@ -7,6 +7,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::ast::*;
+use crate::expand::modify::Modifier;
 
 /// The aliases. Regular and global aliases share one table (as in zsh, a
 /// name is one or the other); suffix aliases, keyed by what follows the
@@ -1118,8 +1119,25 @@ impl Parser {
         let Some(c) = self.at(0) else {
             return self.eof_err("Syntax error: Missing '}'");
         };
-        // `${x:offset:length}`. As in zsh, a letter after the `:` would
-        // start a modifier (`${x:h}`), which luish doesn't have.
+        // zsh's modifiers, `${x:h}` and `${x:A:h}`. Anything else after the
+        // letters is a bad substitution.
+        if colon && c.is_ascii_alphabetic() {
+            let mut i = self.pos;
+            let mut mods = Vec::new();
+            while let Some(m) = Modifier::read(&self.src, &mut i) {
+                mods.push(m);
+                match self.src.get(i) {
+                    Some(b':') => i += 1,
+                    Some(b'}') => {
+                        self.pos = i + 1;
+                        return Ok(mk(name, ParamOp::Modify(mods), false));
+                    }
+                    _ => break,
+                }
+            }
+        }
+        // `${x:offset:length}`. As in zsh, a letter after the `:` starts a
+        // modifier.
         if colon
             && !c.is_ascii_alphabetic()
             && !matches!(c, b'-' | b'=' | b'?' | b'+' | b'#' | b'%' | b'/' | b':' | b'}')

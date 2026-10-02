@@ -1,0 +1,28 @@
+main: [bash_source.sh] [bash_source.sh] 1
+call: [bash_source.sh]
+a.sh: [./lib/a.sh bash_source.sh]
+a_fn: [./lib/a.sh bash_source.sh]
+b.sh: [./lib/b.sh ./lib/a.sh bash_source.sh]
+a_fn: [./lib/a.sh bash_source.sh bash_source.sh]
+a_fn: [./lib/a.sh bash_source.sh]
+a_fn: [./lib/a.sh bash_source.sh]
+a_fn: [./lib/a.sh bash_source.sh]
+path.sh: [PWD/bin/path.sh bash_source.sh]
+run
+sourced
+c: [unset] 0
+f: 1 []
+a.sh: [./lib/a.sh]
+a_fn: [./lib/a.sh]
+stdin: [unset]
+b.sh: [./lib/b.sh]
+stdin: []
+unset: 2
+dir: real .
+dir: real .
+typeset -a BASH_SOURCE=('bash_source.sh')
+assigned: x 1
+a_fn: []
+unset: unset
+4
+a_fn: [./lib/a.sh]

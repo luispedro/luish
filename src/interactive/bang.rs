@@ -5,11 +5,12 @@
 //!
 //! A reference is an event (`!!`, `!n`, `!-n`, `!str`, `!?str?`, `!#`, or
 //! `!{...}` around one), then optionally a word designator (`:n`, `:x-y`,
-//! `^`, `$`, `*`, `%`) and modifiers (`:h`, `:t`, `:r`, `:e`, `:s/l/r/`,
-//! `:&`, `:g`, `:p`, `:q`, `:x`). `^old^new` at the start of a command is
+//! `^`, `$`, `*`, `%`) and modifiers (`:h`, `:t`, `:r`, `:e`, `:a`, `:A`,
+//! `:s/l/r/`, `:&`, `:g`, `:p`, `:q`, `:x`). `^old^new` at the start of a command is
 //! `!!:s^old^new^`.
 
 use super::history::ShellHistory;
+use crate::expand::modify::{self, Modifier};
 
 /// What is kept from one line to the next: the last substitution (for `:&`
 /// and an empty pattern) and the string of the last `!?str?`.
@@ -559,6 +560,8 @@ impl Expander<'_> {
                 Some(d) => text[d + 1..].to_vec(),
                 None => text.to_vec(),
             },
+            b'a' => modify::apply(text, Modifier::Absolute),
+            b'A' => modify::apply(text, Modifier::Resolve),
             b'p' => {
                 self.print = true;
                 text.to_vec()
@@ -923,6 +926,8 @@ mod tests {
         assert_eq!(bang(&["echo a  b"], "!!:x").unwrap(), "'echo' 'a' 'b'");
         assert_eq!(bang(past, "!!:p").unwrap(), "vi src/lib/main.tar.gz [p]");
         assert_eq!(bang(past, "!!:zz").unwrap(), "vi src/lib/main.tar.gz:zz");
+        assert_eq!(bang(&["vi /a/./b/../c"], "!$:a").unwrap(), "/a/c");
+        assert_eq!(bang(&["vi /nonexistent/x/../y"], "!$:A").unwrap(), "/nonexistent/y");
     }
 
     #[test]

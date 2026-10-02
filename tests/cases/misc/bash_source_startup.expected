@@ -1,0 +1,10 @@
+--- building the cache
+rc: .config/luish/rc.d/a.lsh
+env: ./envfile
+rcf: .config/luish/rc.d/a.lsh
+envf: ./envfile
+--- from the cache
+env: ./envfile
+rcf: .config/luish/rc.d/a.lsh
+envf: ./envfile
+c: unset

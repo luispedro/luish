@@ -344,6 +344,14 @@ fn push_param(out: &mut Vec<u8>, pe: &ParamExp) {
             out.push(b'}');
             return;
         }
+        ParamOp::Modify(mods) => {
+            for m in mods {
+                out.push(b':');
+                out.extend_from_slice(m.text().as_bytes());
+            }
+            out.push(b'}');
+            return;
+        }
     };
     if pe.colon {
         out.push(b':');

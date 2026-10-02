@@ -250,8 +250,13 @@ impl Shell {
                 r
             }
             Command::FunctionDef { names, body } => {
+                let file = self.sources.last().cloned().flatten();
                 for name in names {
-                    self.functions.insert(name.clone(), Rc::clone(body));
+                    let f = crate::shell::Function {
+                        body: Rc::clone(body),
+                        file: file.clone(),
+                    };
+                    self.functions.insert(name.clone(), f);
                 }
                 Ok(0)
             }
@@ -417,7 +422,8 @@ impl Shell {
 
     /// Calls a shell function with the given arguments (`argv[0]` is the
     /// function name).
-    pub fn call_function(&mut self, body: &FunctionBody, argv: &[Vec<u8>]) -> ExecResult {
+    pub fn call_function(&mut self, func: &crate::shell::Function, argv: &[Vec<u8>]) -> ExecResult {
+        let body = &*func.body;
         if self.func_depth >= crate::stack::MAX_FUNC_DEPTH {
             let max = crate::stack::MAX_FUNC_DEPTH;
             self.error(format!("Maximum function recursion depth ({max}) reached"));
@@ -428,6 +434,7 @@ impl Shell {
         self.reset_getopts();
         let saved_loop = std::mem::replace(&mut self.loop_depth, 0);
         self.func_depth += 1;
+        self.sources.push(func.file.clone());
         self.locals.push(Vec::new());
         let r = match self.redirect(&body.redirs, true) {
             Ok(saved) => {
@@ -441,6 +448,7 @@ impl Shell {
         for (name, saved) in self.locals.pop().unwrap().into_iter().rev() {
             self.restore_saved(name, saved);
         }
+        self.sources.pop();
         self.func_depth -= 1;
         self.loop_depth = saved_loop;
         self.positional = saved_pos;

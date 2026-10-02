@@ -215,6 +215,9 @@ pub struct Vars {
 /// `dirstack` (zsh's directory stack, without the current directory) is
 /// tied to `Shell::dirstack` in the same way.
 ///
+/// `BASH_SOURCE` (bash's) is the array of the files being run, innermost
+/// first (`Shell::sources`).
+///
 /// `LUISH_VERSION` and `LUISH_PATCHLEVEL` (zsh's `ZSH_VERSION` and
 /// `ZSH_PATCHLEVEL`), `MACHTYPE`, `OSTYPE` and bash's `HOSTTYPE` are
 /// constants. Like the others, they are not exported, so that a script
@@ -235,6 +238,7 @@ pub enum Special {
     PipestatusBash,
     Path,
     Dirstack,
+    BashSource,
     LuishVersion,
     LuishPatchlevel,
     Machtype,
@@ -256,6 +260,7 @@ pub const SPECIALS: &[(&[u8], Special)] = &[
     (b"PIPESTATUS", Special::PipestatusBash),
     (b"path", Special::Path),
     (b"dirstack", Special::Dirstack),
+    (b"BASH_SOURCE", Special::BashSource),
     (b"LUISH_VERSION", Special::LuishVersion),
     (b"LUISH_PATCHLEVEL", Special::LuishPatchlevel),
     (b"MACHTYPE", Special::Machtype),
@@ -275,7 +280,7 @@ impl Special {
         // Most names are rejected on their first byte.
         if !matches!(
             name.first(),
-            Some(b'E' | b'G' | b'H' | b'L' | b'M' | b'O' | b'P' | b'R' | b'S' | b'U' | b'd' | b'p')
+            Some(b'B' | b'E' | b'G' | b'H' | b'L' | b'M' | b'O' | b'P' | b'R' | b'S' | b'U' | b'd' | b'p')
         ) {
             return None;
         }
@@ -446,7 +451,12 @@ impl Vars {
             // zsh's `MACHTYPE` is the processor, bash's `HOSTTYPE`.
             Special::Machtype | Special::Hosttype => return std::env::consts::ARCH.into(),
             Special::Ostype => return OSTYPE.into(),
-            Special::Histcmd | Special::Pipestatus | Special::PipestatusBash | Special::Path | Special::Dirstack => 0,
+            Special::Histcmd
+            | Special::Pipestatus
+            | Special::PipestatusBash
+            | Special::Path
+            | Special::Dirstack
+            | Special::BashSource => 0,
         };
         n.to_string().into_bytes()
     }

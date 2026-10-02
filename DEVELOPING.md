@@ -233,10 +233,29 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
 - Glob qualifiers (`qual.rs`): kept as text and recognized when a field ends in an unquoted `(...)` at glob time, so
   that, as in zsh's `sh` emulation, they can come from an expansion. Supported: file type, permission, owner,
   device, link count, size and time tests, `^ - , N D n`, `o`/`O` (`n L l a m c d N`), subscripts (from 0), `M`,
-  `T`, and `:h :t :r :e :u :l`. Errors have status 1. `savestate` sets the option before the functions, and wraps a function
+  `T`, and the modifiers of `modify.rs`. Errors have status 1. `savestate` sets the option before the functions, and wraps a function
   with a qualifier in `set -o`/`+o` when it is off. Tests: `expand/glob_qualifiers.sh`,
   `expand/glob_qualifier_errors.sh`, `builtins/internal_savestate_globqual.sh`, unit tests in `qual.rs` and
   `parser.rs`.
+- zsh's modifiers (`modify.rs`): `Modifier::read` reads one (a letter, and a count after `h` or `t`) and `apply`
+  applies it, with zsh's results (`remtpath`, `remlpath`, `chabspath`, `chrealpath` in zsh's `hist.c`): `h` and `t`
+  ignore trailing slashes and count runs of slashes as one, `h` keeps a leading `//` (but not `///`), `a` is relative
+  to `getcwd` (not `PWD`, as in zsh) and canonicalized from the text (`cd::canonicalize`, so `/..` is `/` where zsh
+  gives `//`), and `A` is `a`, then `realpath` of the longest prefix that exists, with the rest appended. The lexer
+  reads `${name:X...}` with a letter `X` as `ParamOp::Modify` if every `:` is followed by a modifier up to the `}`
+  (anything else is a bad substitution, as before, so `${x:h-y}` is too); `expand_slice_op` and `array_op` apply it
+  as they apply `Replace` (to each element, or to the joined string in `"${*:t}"` and `"${a[*]:t}"`). Glob qualifiers
+  and history expansion (`a` and `A` only; its other modifiers are bash's) use the same functions. Tests:
+  `expand/modifiers.sh` (zsh), `expand/modifiers_luish.sh`, `expand/glob_qualifiers.sh`, unit tests in `modify.rs`
+  and `bang.rs`.
+- bash's `BASH_SOURCE` is a special (`Special::BashSource`), read from `Shell::sources`, a stack of the files being
+  run (`Option<Rc<[u8]>>`, `None` outside a file): `main` pushes the script before `run_input`, `misc::run_file` (`.`,
+  `source` and plugins' `.lsh` files) the path as found, `interactive::run_file` a startup file, and
+  `call_function` the file of the function (`Function::file`, the innermost entry when it was defined), so a call
+  costs a reference count and a push. Elements are innermost first; `None` is an empty string, and with no entries
+  it is unset. As restoring a saved state defines the functions again, `state.rs` writes `__luish_internal
+  function-file NAME FILE` after a function with a file, so that the startup cache and `savestate` keep it. Tests:
+  `misc/bash_source.sh`, `misc/bash_source_startup.sh`, `builtins/internal_savestate_aliases.sh`.
 - zsh's special parameters (`RANDOM`, `SECONDS`, `EPOCH*`, `UID`/`EUID`/`GID`/`EGID`, `HISTCMD`, `pipestatus`
   and bash's `PIPESTATUS`, and the constants `LUISH_VERSION`, `LUISH_PATCHLEVEL` (`GIT_REV` from `build.rs`),
   `MACHTYPE`, `HOSTTYPE` and `OSTYPE`, in `vars.rs`) are not in the variable map, so plain lookups and assignments of other names cost only a check of the
@@ -989,6 +1008,7 @@ truncates when it relocates the package.
 | `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh`, `builtins/typeset_case.sh` (zsh), `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh`, `builtins/typeset_functions.sh` (zsh), `builtins/typeset_functions_luish.sh` |
 | `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |
+| Modifiers, `${x:h}` | `expand/modifiers.sh` (zsh), `expand/modifiers_luish.sh`, `parse/dash_lenient.sh` |
 | `SHLVL` | `misc/shlvl.sh`, `histcmd_shlvl` in `tests/interactive.rs` |
 | Last command of `sh -c` | `exec/c_exec_last.sh` (zsh) |
 | Script read from a pipe | `misc/stdin_script.sh` (zsh) |
@@ -1004,6 +1024,7 @@ truncates when it relocates the package.
 | `fc` | `builtins/fc_noninteractive.sh`, `fc_history` in `tests/interactive.rs` |
 | `$((` fallback | `parse/arith_fallback.sh` |
 | `emacs` option | `options/interactive_c.sh` |
+| `BASH_SOURCE` | `misc/bash_source.sh`, `misc/bash_source_startup.sh` |
 | Command cache | `path_cache` in `tests/interactive.rs` |
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |

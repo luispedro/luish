@@ -4,6 +4,7 @@
 __luish_internal bindkey [arg...]
 __luish_internal check-cache [-q] [rc|login|startup]...
 __luish_internal complete line
+__luish_internal function-file name file
 __luish_internal help [name...]
 __luish_internal plugin subcommand [arg...]
 __luish_internal print [arg...]
@@ -37,6 +38,12 @@ take names that scripts might use for something else.
   single match, then a tab and the match's description, if it has one. The
   status is 1 if there are no matches, or if a completer failed. It works
   in any shell, for example to test a completer from a script.
+
+`function-file`
+: Record that the function `name` was defined in `file`, which is then
+  `BASH_SOURCE` while it runs. The state that `savestate` prints uses it,
+  since reading it back defines the functions again. The status is 1 if
+  there is no such function.
 
 `help`
 : Show help for built-in commands (see `help help`).

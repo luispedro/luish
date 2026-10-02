@@ -209,7 +209,8 @@ impl Shell {
 
         let mut funcs: Vec<_> = self.functions.iter().collect();
         funcs.sort_by(|a, b| a.0.cmp(b.0));
-        for (name, body) in funcs {
+        for (name, func) in funcs {
+            let body = &func.body;
             // The name of a function can't be quoted to keep it from being
             // expanded as an alias (restored later).
             let mut t = Vec::new();
@@ -228,6 +229,13 @@ impl Shell {
             t.extend(text);
             if wrap {
                 t.extend_from_slice(b"unsetopt glob.bare_qualifiers\n");
+            }
+            if let Some(file) = &func.file {
+                t.extend_from_slice(b"command __luish_internal function-file ");
+                t.extend(single_quote(name));
+                t.push(b' ');
+                t.extend(single_quote(file));
+                t.push(b'\n');
             }
             add(Kind::Function, name, t);
         }

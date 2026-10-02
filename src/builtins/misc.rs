@@ -60,7 +60,7 @@ fn run_file(sh: &mut Shell, argv: &[Vec<u8>], cwd_first: bool) -> ExecResult {
             _ => p.clone(),
         });
     }
-    let text = match path.map(|p| std::fs::read(OsStr::from_bytes(&p))) {
+    let text = match path.as_ref().map(|p| std::fs::read(OsStr::from_bytes(p))) {
         Some(Ok(t)) => t,
         // As in dash, a directory reads as empty.
         Some(Err(e)) if e.raw_os_error() == Some(libc::EISDIR) => Vec::new(),
@@ -83,7 +83,9 @@ fn run_file(sh: &mut Shell, argv: &[Vec<u8>], cwd_first: bool) -> ExecResult {
     let saved_lineno = sh.lineno;
     sh.lineno = 1;
     sh.dot_depth += 1;
+    sh.sources.push(path.map(Rc::from));
     let r = sh.run_string(&text);
+    sh.sources.pop();
     sh.dot_depth -= 1;
     sh.lineno = saved_lineno;
     match r {
