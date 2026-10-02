@@ -9,6 +9,8 @@ Unreleased
       show the call stack
     * Error messages show the text of the failing line
     * Error messages show the text of each call in the stack
+    * Functions from the startup cache or a saved state keep their lines
+      for error messages
     * config.toml: [env], [env.interactive] and [vars] set variables, and
       [path] adds directories to PATH (before = [...], after = [...])
     * Plugins of a collection load as SOURCE/NAME (std/completion), so

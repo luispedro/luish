@@ -98,6 +98,36 @@ impl Kind {
     }
 }
 
+/// Line numbers for `__luish_internal function-file`: each as the
+/// difference from the one before, separated by commas (`12,1,0,3`).
+pub fn encode_lines(lines: &[u32]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut prev = 0;
+    for &l in lines {
+        if !out.is_empty() {
+            out.push(b',');
+        }
+        out.extend_from_slice((i64::from(l) - prev).to_string().as_bytes());
+        prev = i64::from(l);
+    }
+    out
+}
+
+/// The line numbers of [`encode_lines`], or `None` if `text` isn't such a
+/// list.
+pub fn decode_lines(text: &[u8]) -> Option<Vec<u32>> {
+    if text.is_empty() {
+        return Some(Vec::new());
+    }
+    let mut prev = 0i64;
+    text.split(|&c| c == b',')
+        .map(|d| {
+            prev += std::str::from_utf8(d).ok()?.parse::<i64>().ok()?;
+            u32::try_from(prev).ok()
+        })
+        .collect()
+}
+
 /// One piece of state: its kind and name, and the commands that restore it.
 pub struct Entry {
     pub kind: Kind,
@@ -235,6 +265,19 @@ impl Shell {
                 t.extend(single_quote(name));
                 t.push(b' ');
                 t.extend(single_quote(&file.name));
+                // The lines of its body in the file, which the text above
+                // doesn't keep, and where a relative file was.
+                if func.lines_in_file {
+                    t.push(b' ');
+                    match &func.pending_lines {
+                        Some(lines) => t.extend_from_slice(lines),
+                        None => t.extend(encode_lines(&unparse::body_lines(body))),
+                    }
+                    if let Some(dir) = file.dir() {
+                        t.push(b' ');
+                        t.extend(single_quote(dir));
+                    }
+                }
                 t.push(b'\n');
             }
             add(Kind::Function, name, t);
@@ -369,5 +412,22 @@ pub fn join(out: &mut Vec<u8>, entries: &[(Kind, &[u8])]) {
     }
     if group.is_some() {
         out.extend_from_slice(b"}\n");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lines() {
+        let lines = [12, 13, 13, 9, 0, 4_000_000_000];
+        let text = encode_lines(&lines);
+        assert_eq!(text, b"12,1,0,-4,-9,4000000000");
+        assert_eq!(decode_lines(&text).as_deref(), Some(&lines[..]));
+        assert_eq!(decode_lines(b"").as_deref(), Some(&[][..]));
+        for bad in [&b"1,"[..], b"x", b"1,-2", b"5000000000", b",1"] {
+            assert_eq!(decode_lines(bad), None, "{}", String::from_utf8_lossy(bad));
+        }
     }
 }

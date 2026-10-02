@@ -91,7 +91,8 @@ fn functions(list: &List) -> Vec<(Vec<u8>, Rc<ast::FunctionBody>)> {
 
 /// `unparse.rs`, which writes functions back as source text (`typeset -f`,
 /// the saved state): the text must parse back to the same tree, apart from
-/// line numbers. The input is made the body of a function.
+/// line numbers, which the saved state records separately and must fit
+/// that tree. The input is made the body of a function.
 pub fn unparse(data: &[u8]) {
     stack::init();
     let src = [&b"f() {\n"[..], data, b"\n}\n"].concat();
@@ -111,6 +112,11 @@ pub fn unparse(data: &[u8]) {
             1,
             "printed function parses to {} functions:\n{shown}",
             back.len()
+        );
+        let mut back_body = (*back[0].1).clone();
+        assert!(
+            unparse::set_body_lines(&mut back_body, &unparse::body_lines(&body)),
+            "the line numbers don't fit the printed function:\n{shown}"
         );
         let mut a: List = vec![function_command(&name, &body)];
         let mut b: List = vec![function_command(&back[0].0, &back[0].1)];

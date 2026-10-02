@@ -39,6 +39,11 @@ pub struct Function {
     /// Whether the line numbers of its body are lines of `file` (see
     /// [`Frame::lines_in_file`]).
     pub lines_in_file: bool,
+    /// The lines of its body in `file`, for a function read back from a
+    /// saved state, until its first call gives them to the body
+    /// (`__luish_internal function-file`, [`Shell::call_function`]): most
+    /// functions of the startup cache are never called.
+    pub pending_lines: Option<Rc<[u8]>>,
 }
 
 pub struct Shell {

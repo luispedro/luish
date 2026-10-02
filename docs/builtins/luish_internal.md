@@ -4,7 +4,7 @@
 __luish_internal bindkey [arg...]
 __luish_internal check-cache [-q] [rc|login|startup]...
 __luish_internal complete line
-__luish_internal function-file name file
+__luish_internal function-file name file [lines [dir]]
 __luish_internal help [name...]
 __luish_internal plugin subcommand [arg...]
 __luish_internal print [arg...]
@@ -41,9 +41,14 @@ take names that scripts might use for something else.
 
 `function-file`
 : Record that the function `name` was defined in `file`, which is then
-  `BASH_SOURCE` while it runs. The state that `savestate` prints uses it,
-  since reading it back defines the functions again. The status is 1 if
-  there is no such function.
+  `BASH_SOURCE` while it runs and named in its error messages. The state
+  that `savestate` prints uses it, since reading it back defines the
+  functions again: `lines` are the line numbers of the body in `file` (each
+  as the difference from the one before, separated by commas), which its
+  text written again doesn't have, and `dir` the directory that a relative
+  `file` is in. Without `lines` (or if they don't fit the body), errors
+  name no line. The status is 1 if there is no such function, 2 if `lines`
+  has characters other than digits, `,` and `-`.
 
 `help`
 : Show help for built-in commands (see `help help`).

@@ -638,162 +638,236 @@ fn heredoc_delim(body: &[u8]) -> Vec<u8> {
     }
 }
 
-/// Clears line numbers, which differ between the original and the
-/// printed text (for the round-trip tests, and the fuzzer's). Also turns
-/// the `\$` written before `$(...)` (`parts`) back into a literal `$`.
-#[cfg(any(test, fuzzing))]
-pub fn strip_lines(list: &mut List) {
-    fn words(ws: &mut [Word]) {
-        ws.iter_mut().for_each(word);
-    }
-    fn word(w: &mut Word) {
-        parts(&mut w.0);
-    }
-    fn parts(ps: &mut Vec<WordPart>) {
-        ps.iter_mut().for_each(part);
-        for i in 0..ps.len() {
-            if matches!(ps[i], WordPart::Escaped(b'$')) && matches!(ps.get(i + 1), Some(WordPart::CmdSubst(_))) {
-                ps[i] = WordPart::Literal(b"$".to_vec());
-            }
-        }
-        // Adjacent literals, as the lexer reads them.
-        let mut merged: Vec<WordPart> = Vec::with_capacity(ps.len());
-        for p in ps.drain(..) {
-            match (merged.last_mut(), p) {
-                (Some(WordPart::Literal(a)), WordPart::Literal(b)) => a.extend(b),
-                (_, p) => merged.push(p),
-            }
-        }
-        *ps = merged;
-    }
-    fn part(p: &mut WordPart) {
-        match p {
-            WordPart::DoubleQuoted(ps) => parts(ps),
-            WordPart::CmdSubst(l) | WordPart::ProcSubst { list: l, .. } => strip_lines(std::rc::Rc::make_mut(l)),
-            WordPart::Arith(w) => word(w),
-            WordPart::Array(items) => items.iter_mut().for_each(|item| {
-                item.key.iter_mut().for_each(word);
-                word(&mut item.value);
-            }),
-            WordPart::Param(pe) => {
-                match &mut pe.index {
-                    Some(Index::Expr(w)) => word(w),
-                    Some(Index::Slice(ends)) => {
-                        ends.0.iter_mut().for_each(word);
-                        ends.1.iter_mut().for_each(word);
-                    }
-                    _ => {}
-                }
-                param_op(&mut pe.op);
-            }
-            _ => {}
-        }
-    }
-    fn param_op(op: &mut ParamOp) {
-        match op {
-            ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names | ParamOp::Modify(_) => {}
-            ParamOp::Default(w)
-            | ParamOp::Assign(w)
-            | ParamOp::Error(w)
-            | ParamOp::Alternative(w)
-            | ParamOp::RemoveSmallestSuffix(w)
-            | ParamOp::RemoveLargestSuffix(w)
-            | ParamOp::RemoveSmallestPrefix(w)
-            | ParamOp::RemoveLargestPrefix(w)
-            | ParamOp::Bad(w) => word(w),
-            ParamOp::Substring(offset, len) => {
-                word(offset);
-                len.iter_mut().for_each(word);
-            }
-            ParamOp::Replace(_, pat, rep) => {
-                word(pat);
-                word(rep);
-            }
-        }
-    }
-    fn redirs(rs: &mut [Redirect]) {
-        for r in rs {
-            match &mut r.target {
-                RedirTarget::Word(w) => word(w),
-                RedirTarget::HereDoc(hd) => word(&mut hd.borrow_mut().body),
-            }
-        }
-    }
-    fn compound(cc: &mut CompoundCommand) {
-        match cc {
-            CompoundCommand::BraceGroup(l) | CompoundCommand::Subshell(l) => strip_lines(l),
-            CompoundCommand::If { conds, else_ } => {
-                for (c, b) in conds {
-                    strip_lines(c);
-                    strip_lines(b);
-                }
-                if let Some(e) = else_ {
-                    strip_lines(e);
-                }
-            }
-            CompoundCommand::While { cond, body, .. } => {
-                strip_lines(cond);
-                strip_lines(body);
-            }
-            CompoundCommand::For {
-                words: ws,
-                body,
-                lineno,
-                ..
-            } => {
-                *lineno = 0;
-                if let Some(ws) = ws {
-                    words(ws);
-                }
-                strip_lines(body);
-            }
-            CompoundCommand::Case { word: w, arms, lineno } => {
-                *lineno = 0;
-                word(w);
-                for a in arms {
-                    words(&mut a.patterns);
-                    strip_lines(&mut a.body);
-                }
-            }
-            CompoundCommand::Cond { expr, lineno } => {
-                *lineno = 0;
-                expr.words_mut(&mut |w| word(w));
-            }
-        }
-    }
+/// What [`walk_lines`] does with what it visits.
+pub trait LineVisitor {
+    /// Whether the walk changes the tree: here-document bodies, which may
+    /// be shared with the tree being run, are only read otherwise.
+    const WRITES: bool;
+    fn line(&mut self, n: &mut u32);
+    /// The parts of a word, after those nested in them.
+    fn parts(&mut self, _: &mut Vec<WordPart>) {}
+}
+
+/// Visits every line number in the list, in an order that is the same for
+/// a tree and the tree its printed text parses to (its structure is the
+/// same, only the line numbers differ). Shared lists in words are copied
+/// before they are visited (`Rc::make_mut`).
+pub fn walk_lines<V: LineVisitor>(list: &mut List, v: &mut V) {
     for cc in list {
         let ao = &mut cc.list;
         for p in std::iter::once(&mut ao.first).chain(ao.rest.iter_mut().map(|(_, p)| p)) {
             for c in &mut p.cmds {
                 match c {
                     Command::Simple(sc) => {
-                        sc.lineno = 0;
-                        sc.assigns.iter_mut().for_each(|a| {
-                            a.index.iter_mut().for_each(word);
-                            word(&mut a.value);
-                        });
-                        words(&mut sc.words);
-                        redirs(&mut sc.redirs);
+                        v.line(&mut sc.lineno);
+                        for a in &mut sc.assigns {
+                            a.index.iter_mut().for_each(|w| word(w, v));
+                            word(&mut a.value, v);
+                        }
+                        words(&mut sc.words, v);
+                        redirs(&mut sc.redirs, v);
                     }
                     Command::Compound(cc, rs) => {
-                        compound(cc);
-                        redirs(rs);
+                        compound(cc, v);
+                        redirs(rs, v);
                     }
-                    Command::FunctionDef { body, .. } => {
-                        let b = std::rc::Rc::make_mut(body);
-                        compound(&mut b.cmd);
-                        redirs(&mut b.redirs);
-                    }
+                    Command::FunctionDef { body, .. } => walk_body_lines(std::rc::Rc::make_mut(body), v),
                     Command::Cache(block) => {
                         let b = std::rc::Rc::make_mut(block);
-                        b.lineno = 0;
-                        words(&mut b.files);
-                        strip_lines(&mut b.body);
+                        v.line(&mut b.lineno);
+                        words(&mut b.files, v);
+                        walk_lines(&mut b.body, v);
                     }
                 }
             }
         }
     }
+}
+
+/// [`walk_lines`] for the body of a function.
+pub fn walk_body_lines<V: LineVisitor>(body: &mut FunctionBody, v: &mut V) {
+    compound(&mut body.cmd, v);
+    redirs(&mut body.redirs, v);
+}
+
+fn words<V: LineVisitor>(ws: &mut [Word], v: &mut V) {
+    ws.iter_mut().for_each(|w| word(w, v));
+}
+
+fn word<V: LineVisitor>(w: &mut Word, v: &mut V) {
+    w.0.iter_mut().for_each(|p| part(p, v));
+    v.parts(&mut w.0);
+}
+
+fn part<V: LineVisitor>(p: &mut WordPart, v: &mut V) {
+    match p {
+        WordPart::DoubleQuoted(ps) => {
+            ps.iter_mut().for_each(|p| part(p, v));
+            v.parts(ps);
+        }
+        WordPart::CmdSubst(l) | WordPart::ProcSubst { list: l, .. } => walk_lines(std::rc::Rc::make_mut(l), v),
+        WordPart::Arith(w) => word(w, v),
+        WordPart::Array(items) => {
+            for item in items {
+                item.key.iter_mut().for_each(|w| word(w, v));
+                word(&mut item.value, v);
+            }
+        }
+        WordPart::Param(pe) => {
+            match &mut pe.index {
+                Some(Index::Expr(w)) => word(w, v),
+                Some(Index::Slice(ends)) => {
+                    ends.0.iter_mut().for_each(|w| word(w, v));
+                    ends.1.iter_mut().for_each(|w| word(w, v));
+                }
+                _ => {}
+            }
+            param_op(&mut pe.op, v);
+        }
+        _ => {}
+    }
+}
+
+fn param_op<V: LineVisitor>(op: &mut ParamOp, v: &mut V) {
+    match op {
+        ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names | ParamOp::Modify(_) => {}
+        ParamOp::Default(w)
+        | ParamOp::Assign(w)
+        | ParamOp::Error(w)
+        | ParamOp::Alternative(w)
+        | ParamOp::RemoveSmallestSuffix(w)
+        | ParamOp::RemoveLargestSuffix(w)
+        | ParamOp::RemoveSmallestPrefix(w)
+        | ParamOp::RemoveLargestPrefix(w)
+        | ParamOp::Bad(w) => word(w, v),
+        ParamOp::Substring(offset, len) => {
+            word(offset, v);
+            len.iter_mut().for_each(|w| word(w, v));
+        }
+        ParamOp::Replace(_, pat, rep) => {
+            word(pat, v);
+            word(rep, v);
+        }
+    }
+}
+
+fn redirs<V: LineVisitor>(rs: &mut [Redirect], v: &mut V) {
+    for r in rs {
+        match &mut r.target {
+            RedirTarget::Word(w) => word(w, v),
+            RedirTarget::HereDoc(hd) if V::WRITES => word(&mut hd.borrow_mut().body, v),
+            RedirTarget::HereDoc(hd) => word(&mut hd.borrow().body.clone(), v),
+        }
+    }
+}
+
+fn compound<V: LineVisitor>(cc: &mut CompoundCommand, v: &mut V) {
+    match cc {
+        CompoundCommand::BraceGroup(l) | CompoundCommand::Subshell(l) => walk_lines(l, v),
+        CompoundCommand::If { conds, else_ } => {
+            for (c, b) in conds {
+                walk_lines(c, v);
+                walk_lines(b, v);
+            }
+            if let Some(e) = else_ {
+                walk_lines(e, v);
+            }
+        }
+        CompoundCommand::While { cond, body, .. } => {
+            walk_lines(cond, v);
+            walk_lines(body, v);
+        }
+        CompoundCommand::For {
+            words: ws,
+            body,
+            lineno,
+            ..
+        } => {
+            v.line(lineno);
+            if let Some(ws) = ws {
+                words(ws, v);
+            }
+            walk_lines(body, v);
+        }
+        CompoundCommand::Case { word: w, arms, lineno } => {
+            v.line(lineno);
+            word(w, v);
+            for a in arms {
+                words(&mut a.patterns, v);
+                walk_lines(&mut a.body, v);
+            }
+        }
+        CompoundCommand::Cond { expr, lineno } => {
+            v.line(lineno);
+            expr.words_mut(&mut |w| word(w, v));
+        }
+    }
+}
+
+/// The line numbers of a function's body, in the order of [`walk_lines`],
+/// for the function to keep them when its printed text is read back
+/// ([`set_body_lines`]).
+pub fn body_lines(body: &FunctionBody) -> Vec<u32> {
+    struct Collect(Vec<u32>);
+    impl LineVisitor for Collect {
+        const WRITES: bool = false;
+        fn line(&mut self, n: &mut u32) {
+            self.0.push(*n);
+        }
+    }
+    let mut c = Collect(Vec::new());
+    walk_body_lines(&mut body.clone(), &mut c);
+    c.0
+}
+
+/// Gives the body of a function read back from its printed text the line
+/// numbers of the original ([`body_lines`]). False if they don't fit (its
+/// text came from elsewhere), when its line numbers are left wrong.
+pub fn set_body_lines(body: &mut FunctionBody, lines: &[u32]) -> bool {
+    struct Set<'a>(std::slice::Iter<'a, u32>, bool);
+    impl LineVisitor for Set<'_> {
+        const WRITES: bool = true;
+        fn line(&mut self, n: &mut u32) {
+            match self.0.next() {
+                Some(l) => *n = *l,
+                None => self.1 = false,
+            }
+        }
+    }
+    let mut set = Set(lines.iter(), true);
+    walk_body_lines(body, &mut set);
+    set.1 && set.0.next().is_none()
+}
+
+/// Clears line numbers, which differ between the original and the
+/// printed text (for the round-trip tests, and the fuzzer's). Also turns
+/// the `\$` written before `$(...)` (`parts`) back into a literal `$`.
+#[cfg(any(test, fuzzing))]
+pub fn strip_lines(list: &mut List) {
+    struct Strip;
+    impl LineVisitor for Strip {
+        const WRITES: bool = true;
+        fn line(&mut self, n: &mut u32) {
+            *n = 0;
+        }
+        fn parts(&mut self, ps: &mut Vec<WordPart>) {
+            for i in 0..ps.len() {
+                if matches!(ps[i], WordPart::Escaped(b'$')) && matches!(ps.get(i + 1), Some(WordPart::CmdSubst(_))) {
+                    ps[i] = WordPart::Literal(b"$".to_vec());
+                }
+            }
+            // Adjacent literals, as the lexer reads them.
+            let mut merged: Vec<WordPart> = Vec::with_capacity(ps.len());
+            for p in ps.drain(..) {
+                match (merged.last_mut(), p) {
+                    (Some(WordPart::Literal(a)), WordPart::Literal(b)) => a.extend(b),
+                    (_, p) => merged.push(p),
+                }
+            }
+            *ps = merged;
+        }
+    }
+    walk_lines(list, &mut Strip);
 }
 
 #[cfg(test)]
@@ -817,11 +891,19 @@ mod tests {
         String::from_utf8(p.finish()).unwrap()
     }
 
-    /// Printing `src` gives text that parses to the same tree.
+    /// Printing `src` gives text that parses to the same tree, to which
+    /// the original line numbers can be given back.
     fn round_trip(src: &str) -> String {
         let printed = print(src.as_bytes(), &AliasMap::default());
         let mut a = parse(src.as_bytes());
         let mut b = parse(printed.as_bytes());
+        if let (Command::FunctionDef { body: x, .. }, Command::FunctionDef { body: y, .. }) =
+            (&a[0].list.first.cmds[0], &mut b[0].list.first.cmds[0])
+        {
+            let lines = body_lines(x);
+            assert!(set_body_lines(std::rc::Rc::make_mut(y), &lines), "{printed}");
+            assert_eq!(body_lines(y), lines);
+        }
         strip_lines(&mut a);
         strip_lines(&mut b);
         assert_eq!(a, b, "\nsource:\n{src}\nprinted:\n{printed}");

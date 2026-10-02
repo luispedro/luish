@@ -32,9 +32,16 @@ echo '--- in -c, the calls are at lines of the command'
 $SH -c '. ./lib.sh
 f() { load_config; }
 f' 2>&1
-echo '--- a function from a saved state has no line in its file'
+echo '--- a function from a saved state (or the startup cache) keeps its lines, also read elsewhere'
+mkdir sub
 $SH -c '. ./lib.sh; __luish_internal savestate > state'
-$SH -c '. ./state; load_config' 2>&1 | head -2
+(cd sub && $SH -c '. ../state; load_config' 2>&1 | head -4)
+echo '--- but not one that eval defined, nor one whose recorded lines do not fit'
+echo 'eval "h() { nosuchcmd; }"' > evaldef.sh
+$SH -c '. ./evaldef.sh; __luish_internal savestate > state2'
+$SH -c '. ./state2; h' 2>&1 | head -1
+$SH -c '. ./lib.sh; __luish_internal function-file load_config ./lib.sh 1,2; load_config' 2>&1 | head -1
+$SH -c 'f() { :; }; __luish_internal function-file f ./lib.sh 1,x; echo "status $?"' 2>&1 | sed 's/^[^:]*: //'
 echo '--- recursion'
 ulimit -s 65536 2>/dev/null
 $SH -c 'r() { r; }; r' 2>&1 | sed 's/^[^:]*: //'
@@ -44,7 +51,6 @@ f' 2>&1 | sed 's/^[^:]*: //'
 echo '--- an interactive shell names no lines at the prompt'
 $SH -i -c 'g() { nosuchcmd; }; g' 2>&1 </dev/null | grep -v 'job control' | sed 's/^[^:]*: //'
 echo '--- the failing line is read again from its file, also after cd'
-mkdir sub
 $SH -c '. ./lib.sh; cd sub; load_config' 2>&1 | head -2
 echo '--- no text for eval, nor line for a function that eval defined'
 $SH -c 'eval "a=1

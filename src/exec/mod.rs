@@ -258,6 +258,7 @@ impl Shell {
                         body: Rc::clone(body),
                         file: file.clone(),
                         lines_in_file,
+                        pending_lines: None,
                     };
                     self.functions.insert(name.clone(), f);
                 }
@@ -423,9 +424,30 @@ impl Shell {
         Err(Flow::Error(2))
     }
 
+    /// Gives a function read back from a saved state the lines of its body
+    /// in its file, on its first call: in a copy of its body, which also
+    /// replaces it in the table if it wasn't defined again since.
+    #[cold]
+    fn give_lines(&mut self, func: &crate::shell::Function, lines: &[u8]) -> crate::shell::Function {
+        let mut f = func.clone();
+        f.pending_lines = None;
+        f.lines_in_file = crate::state::decode_lines(lines)
+            .is_some_and(|l| crate::unparse::set_body_lines(Rc::make_mut(&mut f.body), &l));
+        if let Some(g) = self.functions.get_mut(&f.name[..])
+            && Rc::ptr_eq(&g.body, &func.body)
+        {
+            *g = f.clone();
+        }
+        f
+    }
+
     /// Calls a shell function with the given arguments (`argv[0]` is the
     /// function name).
     pub fn call_function(&mut self, func: &crate::shell::Function, argv: &[Vec<u8>]) -> ExecResult {
+        if let Some(lines) = &func.pending_lines {
+            let func = self.give_lines(func, lines);
+            return self.call_function(&func, argv);
+        }
         let body = &*func.body;
         if self.func_depth >= crate::stack::MAX_FUNC_DEPTH {
             let max = crate::stack::MAX_FUNC_DEPTH;

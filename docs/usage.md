@@ -231,7 +231,7 @@ text), or from the `-c` command; they aren't shown for code typed at the prompt 
 long line is cut. A line of the stack that repeats (in recursion) is shown once with a count, and a stack of
 more than 20 lines loses its middle. In `-c`, calls are at lines of the command (`called at line 2`), and at the
 prompt of an interactive shell the stack has no lines. A function that the startup cache or a saved state restored
-was written anew, so its errors name its file without a line.
+keeps the lines of its file.
 
 `caller` prints a frame of the stack from a script, as in bash (see `help caller`), and `BASH_SOURCE`, `FUNCNAME`
 and `BASH_LINENO` hold all of it ([Special variables](#special-variables)).

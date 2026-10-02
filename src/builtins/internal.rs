@@ -115,20 +115,37 @@ fn no_args(sh: &Shell, argv: &[Vec<u8>]) -> Result<(), i32> {
     }
 }
 
-/// `function-file NAME FILE`: records that the function was defined in
-/// the file, for `BASH_SOURCE` while it runs (written by `savestate`, as
-/// restoring a function defines it again). Status 1 if there is no such
-/// function.
+/// `function-file NAME FILE [LINES [DIR]]`: records that the function was
+/// defined in the file, for `BASH_SOURCE` while it runs and error messages
+/// (written by `savestate`, as restoring a function defines it again).
+/// `LINES` are the lines of its body in the file (`state::encode_lines`),
+/// which its text written again doesn't have, and `DIR` the directory a
+/// relative `FILE` is in. Status 1 if there is no such function.
 fn function_file(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    let [_, name, file] = argv else {
-        sh.berr(b"__luish_internal function-file", "usage: function-file NAME FILE");
-        return Ok(2);
+    let (name, file, lines, dir) = match argv {
+        [_, name, file] => (name, file, None, None),
+        [_, name, file, lines] => (name, file, Some(lines), None),
+        [_, name, file, lines, dir] => (name, file, Some(lines), Some(dir)),
+        _ => {
+            sh.berr(
+                b"__luish_internal function-file",
+                "usage: function-file NAME FILE [LINES [DIR]]",
+            );
+            return Ok(2);
+        }
     };
+    if lines.is_some_and(|l| !l.iter().all(|&c| c.is_ascii_digit() || c == b',' || c == b'-')) {
+        sh.berr(b"__luish_internal function-file", "bad line numbers");
+        return Ok(2);
+    }
     match sh.functions.get_mut(name) {
         Some(f) => {
-            f.file = Some(crate::frames::SourceFile::new(file, None));
-            // Its text was written again, so its lines aren't the file's.
-            f.lines_in_file = false;
+            f.file = Some(crate::frames::SourceFile::new(file, dir.map(|d| &d[..])));
+            // Without its lines, its text was written again, so its lines
+            // aren't the file's. They are given to its body when it is
+            // first called (`Shell::call_function`).
+            f.lines_in_file = lines.is_some();
+            f.pending_lines = lines.map(|l| l[..].into());
             Ok(0)
         }
         None => Ok(1),

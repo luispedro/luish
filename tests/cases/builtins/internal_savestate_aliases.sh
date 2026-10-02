@@ -8,7 +8,7 @@ alias ll='echo ll' -x='echo dash x'
 alias -g G='| tr a-z A-Z' set=SET
 alias -s txt='echo TXT'
 __luish_internal savestate > state
-tail() { sed -n '/^f()/,$p' "$1" | grep -v '^set [-+]o\|^setopt\|^unsetopt'; }
+tail() { sed -n '/^f()/,$p' "$1" | grep -v '^set [-+]o\|^setopt\|^unsetopt' | sed "s|$PWD|DIR|"; }
 tail state
 $SH -c '. ./state; __luish_internal savestate > state2'
 tail state > a; tail state2 > b; cmp a b && echo same

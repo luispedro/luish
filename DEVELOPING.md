@@ -258,10 +258,19 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   (`stack_elements`): innermost first, unset without frames, and `FUNCNAME` only while a function runs, with
   `main` and `source` for the other frames; a frame outside a file has an empty file (bash's `main` or
   `environment`). `caller` (`misc::caller`, `Shell::caller`) is bash's, `NULL` included. As restoring a saved state
-  defines the functions again, `state.rs` writes `__luish_internal function-file NAME FILE` after a function with a
-  file, so that the startup cache and `savestate` keep it; such a function's `lines_in_file` is false, as its text
-  was written anew. Tests: `misc/bash_source.sh`, `misc/bash_source_startup.sh`, `misc/call_stack.sh`,
-  `builtins/internal_savestate_aliases.sh`.
+  defines the functions again, `state.rs` writes `__luish_internal function-file NAME FILE LINES DIR` after a
+  function with a file, so that the startup cache and `savestate` keep it. Its text is written anew, so `LINES` keeps
+  the original line numbers of its body (`unparse::body_lines`, as differences: `12,1,0,3`). They are kept as text
+  (`Function::pending_lines`) until the function's first call (`Shell::give_lines`, from `call_function`), as most
+  functions in a startup cache are never called: applying them to nvm's 110 functions at startup cost 7% more
+  instructions for a cached interactive start, and keeping them as text costs 3% (lexing the longer text).
+  `unparse::set_body_lines` then gives them to a copy of the body read again: `unparse::walk_lines` visits every line number in an
+  order that only depends on the tree's structure, which is the same for the printed text (checked by the round-trip
+  tests and the `unparse` fuzz target). If they don't fit, or for a function whose lines weren't its file's (defined
+  by `eval`), `lines_in_file` is false. `DIR` is the directory of a relative file (`SourceFile::dir`). Walking a
+  tree to read it copies it, and here-document bodies (shared, in a `RefCell`, with the tree that may be running) are
+  only borrowed for reading then (`LineVisitor::WRITES`). Tests: `misc/bash_source.sh`, `misc/bash_source_startup.sh`, `misc/call_stack.sh`,
+  `builtins/internal_savestate_aliases.sh`, `exec/error_stack.sh`, `state::tests::lines`.
 - Error messages (`Shell::error`, which `berr` and syntax errors go through) start with `error_location`: the file
   of the innermost frame and `LINENO` (no line if `lines_in_file` is false), else `$0` as in dash. `stack_trace` then
   adds a line for each frame but the script and startup files, innermost first, with where it was called (`file:line`

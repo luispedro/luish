@@ -46,9 +46,17 @@ top.sh: 1: nosuchcmd: not found
       f() { load_config; }
   in function f, called at line 3
       f
---- a function from a saved state has no line in its file
-./lib.sh: nosuchcmd: not found
+--- a function from a saved state (or the startup cache) keeps its lines, also read elsewhere
+./lib.sh: 2: nosuchcmd: not found
+    nosuchcmd
   in function load_config, called at line 1
+      . ../state; load_config
+--- but not one that eval defined, nor one whose recorded lines do not fit
+./evaldef.sh: nosuchcmd: not found
+./lib.sh: nosuchcmd: not found
+1: __luish_internal function-file: bad line numbers
+    f() { :; }; __luish_internal function-file f ./lib.sh 1,x; echo "status $?"
+status 2
 --- recursion
 1: Maximum function recursion depth (1000) reached
     r() { r; }; r

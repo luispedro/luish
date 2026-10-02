@@ -27,6 +27,11 @@ impl SourceFile {
         })
     }
 
+    /// The directory a relative name is in, if it was recorded.
+    pub fn dir(&self) -> Option<&[u8]> {
+        self.dir.as_deref()
+    }
+
     fn path(&self) -> Vec<u8> {
         match &self.dir {
             Some(dir) => [&dir[..], b"/", &self.name].concat(),
