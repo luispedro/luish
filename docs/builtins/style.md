@@ -6,6 +6,7 @@ style name [value...]
 style -r name...
 style --clear
 style -c [scheme | dark light [default]]
+style --detect
 style -s scheme [name [value...] | -r name... | -i [parent] | --delete]
 style -d name value... | -d -r name...
 ```
@@ -36,9 +37,12 @@ recreate the schemes defined, the scheme chosen and the styles set.
 `-c` with a scheme chooses it. With two, it chooses the first if the
 terminal's background is dark and the second if it is light, and with a
 third, that one if the background is not known (otherwise the first). The
-background is known from `$LUISH_BACKGROUND` (`dark` or `light`) or from
-`$COLORFGBG`, which some terminals set. `-c` alone lists the schemes,
-marking the one in use.
+background is known from `$LUISH_BACKGROUND` (`dark` or `light`), which
+the shell sets before its first prompt from `$COLORFGBG` (which some
+terminals set) or else by asking the terminal for its background colour.
+`--detect` asks the terminal again, after its colours have changed, and
+fails if it doesn't tell. `-c` alone lists the schemes, marking the one in
+use.
 
 `-s` defines or changes a scheme, as a `[colorscheme.NAME]` table in
 `config.toml` does: with a name and a value, it sets the style in the

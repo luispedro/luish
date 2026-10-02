@@ -1,4 +1,6 @@
 Unreleased
+    * The terminal's background colour is detected, to choose between
+      dark and light colour schemes (style --detect asks again)
     * setopt highlight.paths: highlighting marks words that name files
     * Highlighting marks syntax errors, from the error to the end of the
       line (style `error`)

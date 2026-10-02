@@ -9,6 +9,7 @@ pub mod history;
 pub mod keys;
 mod menu;
 mod rprompt;
+mod tty;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -29,6 +30,7 @@ use crate::input::Line;
 use crate::jobs::JobTable;
 use crate::options::Opt;
 use crate::shell::{Flow, Shell};
+use crate::style::Background;
 use crate::sys;
 use crate::vars::Value;
 
@@ -53,6 +55,81 @@ thread_local! {
     /// Whether the editor can start a line with text: not on the terminals
     /// rustyline doesn't support, where it reads lines without editing.
     static EDITS: Cell<bool> = const { Cell::new(true) };
+    /// What the shell found out about the terminal's background.
+    static BACKGROUND: Cell<Detected> = const { Cell::new(Detected::NotYet) };
+}
+
+/// What the shell found out about the terminal's background.
+#[derive(Clone, Copy)]
+enum Detected {
+    NotYet,
+    Unknown,
+    /// The background, which the shell put in `$LUISH_BACKGROUND`, and
+    /// where it came from.
+    Known(Background, &'static str),
+}
+
+/// The background that the shell put in `$LUISH_BACKGROUND`, and where it
+/// came from: `$COLORFGBG` or the terminal.
+pub fn detected_background() -> Option<(Background, &'static str)> {
+    match BACKGROUND.get() {
+        Detected::Known(b, source) => Some((b, source)),
+        _ => None,
+    }
+}
+
+/// Whether the terminal can be asked for its background: stdin and stderr
+/// are a terminal, and `TERM` is set and one the line editor supports.
+fn can_ask(sh: &Shell) -> bool {
+    let term = sh.get_var(b"TERM").unwrap_or_default();
+    !term.is_empty()
+        && !UNSUPPORTED.iter().any(|t| t.as_bytes().eq_ignore_ascii_case(&term))
+        && sys::isatty(0)
+        && sys::isatty(2)
+}
+
+/// Asks the terminal for its background, and puts it in
+/// `$LUISH_BACKGROUND` (`style --detect`). Keys typed meanwhile start the
+/// next command line. None if the terminal didn't tell.
+pub fn ask_background(sh: &mut Shell) -> Option<Background> {
+    let answer = can_ask(sh).then(tty::ask_background).flatten()?;
+    if !answer.typed.is_empty() && EDITS.get() {
+        push_buffer(String::from_utf8_lossy(&answer.typed).into_owned());
+    }
+    let bg = answer.background?;
+    set_background(sh, bg, "the terminal");
+    Some(bg)
+}
+
+fn set_background(sh: &mut Shell, bg: Background, source: &'static str) {
+    let value = match bg {
+        Background::Dark => "dark",
+        Background::Light => "light",
+    };
+    // Not if it is read-only, in which case the user chose.
+    if sh.set_var(b"LUISH_BACKGROUND", value.into()).is_ok() {
+        BACKGROUND.set(Detected::Known(bg, source));
+    }
+}
+
+/// Before the first prompt that uses a dark/light pair of schemes (with
+/// colours on), finds out the background unless `$LUISH_BACKGROUND` gives
+/// it: from `$COLORFGBG`, or else by asking the terminal.
+fn find_background(sh: &mut Shell) {
+    if !matches!(BACKGROUND.get(), Detected::NotYet)
+        || !matches!(sh.styles.choice(), crate::style::Choice::Pair { .. })
+        || sh.get_var(b"NO_COLOR").is_some_and(|v| !v.is_empty())
+        || crate::style::background(sh.get_var(b"LUISH_BACKGROUND").as_deref(), None).is_some()
+    {
+        return;
+    }
+    BACKGROUND.set(Detected::Unknown);
+    match crate::style::background(None, sh.get_var(b"COLORFGBG").as_deref()) {
+        Some(bg) => set_background(sh, bg, "$COLORFGBG"),
+        None => {
+            ask_background(sh);
+        }
+    }
 }
 
 /// `$HISTFILE`, or by default `$XDG_STATE_HOME/luish/history` (or
@@ -93,6 +170,10 @@ pub fn to_path(b: &[u8]) -> std::path::PathBuf {
     std::ffi::OsStr::from_bytes(b).into()
 }
 
+/// The terminals that the line editor doesn't support (as rustyline's
+/// `is_unsupported_term`), where it reads lines without editing.
+const UNSUPPORTED: [&str; 3] = ["dumb", "cons25", "emacs"];
+
 /// Sets up the line editor. Returns false if it can't be used.
 pub fn init_editor() -> bool {
     let Ok(mut ed) = Editor::with_history(Config::default(), ShellHistory::default()) else {
@@ -106,13 +187,8 @@ pub fn init_editor() -> bool {
     keys::bind(&mut ed, &helper.menu, &helper.keys);
     ed.set_helper(Some(helper));
     ed.set_completion_type(CompletionType::List);
-    // As rustyline's `is_unsupported_term`.
     let term = std::env::var("TERM").unwrap_or_default();
-    EDITS.set(
-        !["dumb", "cons25", "emacs"]
-            .iter()
-            .any(|t| t.eq_ignore_ascii_case(&term)),
-    );
+    EDITS.set(!UNSUPPORTED.iter().any(|t| t.eq_ignore_ascii_case(&term)));
     EDITOR.with(|e| *e.borrow_mut() = Some(ed));
     true
 }
@@ -445,6 +521,7 @@ fn colors(sh: &Shell) -> (Rc<highlight::Colors>, bool) {
 pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
     if !continuation {
         update_history(sh);
+        find_background(sh);
     }
     let (p, right) = prompts(sh, continuation, true);
     let text = String::from_utf8_lossy(&p.text).into_owned();

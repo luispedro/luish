@@ -12,12 +12,16 @@ pub fn style(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     run(sh, &argv[0], &argv[1..])
 }
 
-/// The background, and what told it: `$LUISH_BACKGROUND`, then
+/// The background, and what told it: `$LUISH_BACKGROUND` (as the user set
+/// it, or as the shell did from `$COLORFGBG` or the terminal), then
 /// `$COLORFGBG`.
 pub fn background(sh: &Shell) -> (Option<Background>, &'static str) {
     let luish = sh.get_var(b"LUISH_BACKGROUND");
     if let Some(b) = style::background(luish.as_deref(), None) {
-        return (Some(b), "$LUISH_BACKGROUND");
+        return match crate::interactive::detected_background() {
+            Some((d, source)) if d == b => (Some(b), source),
+            _ => (Some(b), "$LUISH_BACKGROUND"),
+        };
     }
     match style::background(None, sh.get_var(b"COLORFGBG").as_deref()) {
         Some(b) => (Some(b), "$COLORFGBG"),
@@ -60,6 +64,10 @@ pub fn run(sh: &mut Shell, name: &[u8], args: &[Vec<u8>]) -> ExecResult {
             Ok(())
         }
         b"-c" => choose(sh, rest),
+        b"--detect" if rest.is_empty() => match crate::interactive::ask_background(sh) {
+            Some(_) => Ok(()),
+            None => Err("the terminal didn't tell its background colour".to_owned()),
+        },
         b"-s" => match rest.split_first() {
             Some((scheme, rest)) => return scheme_command(sh, name, &text(scheme), rest),
             None => Err("-s: missing scheme".to_owned()),

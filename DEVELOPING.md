@@ -646,7 +646,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   patterns). `<(` and `>(` start a word's process substitution anywhere in it, as in the lexer (so `2<(ls)` is not a
   redirection). `Colors` holds the resolved style and SGR parameters of every role (`interactive::colors` resolves
   them before each prompt only if `Styles::generation` or the scheme in use, which depends on `$LUISH_BACKGROUND`
-  and `$COLORFGBG`, changed, and reports a scheme that isn't defined then); a cell with modifiers adds their styles
+  and `$COLORFGBG` (see The background), changed, and reports a scheme that isn't defined then); a cell with modifiers adds their styles
   to its role's (`Style::add`), cached per cell. `$NO_COLOR` and `editor.no_highlight` turn the line's colours off
   (the menu and suggestion keep theirs, or the old fixed ones with `$NO_COLOR`). `$NAME` and `${NAME}` get
   `var.unset` when `NAME` is not in `Names::vars`, unless an earlier word in the text is `NAME=...` (as an
@@ -692,6 +692,18 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   `style -c`. Styles are saved state (`Kind::Style`, as `__luish_internal style` commands; `style::removal` undoes
   one). Tests: unit tests in `style.rs` and `highlight.rs` (`colors`), `builtins/internal_style.sh`,
   `misc/config_toml_style.sh`, `tests/plugins/manifest_style.sh`, `syntax_highlighting` in `tests/interactive.rs`.
+- **The background** (`interactive::find_background`, `interactive/tty.rs`): before the first prompt with a dark/light
+  pair chosen (the default) and colours on, unless `$LUISH_BACKGROUND` is `dark` or `light`, the shell takes it from
+  `$COLORFGBG`, or else asks the terminal, if stdin and stderr are one and `TERM` is set and not one the editor
+  doesn't support (`dumb`): in raw mode, it writes OSC 11 (`ESC ]11;? ESC \`) and DA1 (`ESC [c`) to stderr and reads
+  until the DA1 answer, which every terminal gives, so a terminal that doesn't know OSC 11 costs no wait; the hard
+  timeout (500 ms) is for one that answers nothing, whose late answers then reach the editor as keys. A colour is
+  dark if its L* is below 50 (mid-grey is light). The result goes in `$LUISH_BACKGROUND` (not exported), and
+  `interactive::detected_background` remembers where it came from for `style -c`. Bytes that aren't the answers
+  were typed: those up to the first control character start the line (`push_buffer`), so Enter typed early runs
+  nothing. It is asked once per shell (`BACKGROUND`); `style --detect` asks again. The pty tests set
+  `LUISH_BACKGROUND` (`Pty::spawn_at`) except `background_detection`, which answers itself. Tests: unit tests in
+  `tty.rs`, `background_detection` in `tests/interactive.rs`.
 - **Autosuggestions**: the hint while the cursor is at the end of a non-blank, non-continuation line and the menu
   isn't open; accepted with rustyline's `CompleteHint`. The search goes from the newest entry and stops at the first
   match. Test: `autosuggestions` in `tests/interactive.rs`.

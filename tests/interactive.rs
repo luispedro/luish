@@ -52,8 +52,15 @@ impl Pty {
         Pty::spawn_at(other.dir.clone(), "dumb", false, None)
     }
 
-    /// `path` is `$PATH`, if not the tests' own.
+    /// `path` is `$PATH`, if not the tests' own. `$LUISH_BACKGROUND` is
+    /// set, so that the shell doesn't ask the terminal for its background
+    /// (and wait for the answers, which nothing gives).
     fn spawn_at(dir: PathBuf, term: &str, owns_dir: bool, path: Option<&str>) -> Pty {
+        Pty::spawn_env(dir, term, owns_dir, path, &["LUISH_BACKGROUND=dark"])
+    }
+
+    /// `extra` are further variables of the environment.
+    fn spawn_env(dir: PathBuf, term: &str, owns_dir: bool, path: Option<&str>, extra: &[&str]) -> Pty {
         let shell = CString::new(env!("CARGO_BIN_EXE_luish")).unwrap();
         let argv = [CString::new("luish").unwrap(), CString::new("-i").unwrap()];
         let path = path.map_or_else(|| std::env::var("PATH").unwrap_or_default(), Into::into);
@@ -64,7 +71,8 @@ impl Pty {
             format!("TERM={term}"),
             "LC_ALL=C".to_string(),
         ];
-        let env: Vec<CString> = env.into_iter().map(|e| CString::new(e).unwrap()).collect();
+        let extra = extra.iter().map(|e| e.to_string());
+        let env: Vec<CString> = env.into_iter().chain(extra).map(|e| CString::new(e).unwrap()).collect();
         let mut argv_p: Vec<*const libc::c_char> = argv.iter().map(|a| a.as_ptr()).collect();
         argv_p.push(std::ptr::null());
         let mut env_p: Vec<*const libc::c_char> = env.iter().map(|a| a.as_ptr()).collect();
@@ -472,6 +480,40 @@ fn syntax_highlighting() {
     assert!(!sh.transcript()[sh.transcript().rfind("NO_COLOR").unwrap()..].contains("\x1b[1;34m"));
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
+}
+
+/// Without `$LUISH_BACKGROUND`, the shell asks the terminal for its
+/// background before the first prompt, and `style --detect` asks again.
+#[test]
+fn background_detection() {
+    const QUERY: &str = "\x1b]11;?\x1b\\\x1b[c";
+    let dir = Pty::new_dir("background");
+    std::fs::create_dir_all(dir.join(".config/luish")).unwrap();
+    std::fs::write(dir.join(".config/luish/luishrc"), "").unwrap();
+    let mut sh = Pty::spawn_env(dir, "vt100", true, None, &[]);
+    // Only DA1 answers: the background isn't known. The text typed before
+    // the answer starts the line, without what follows a control key.
+    sh.expect(QUERY);
+    sh.send("echo typed\x1b[Ax\x1b[?62;22c");
+    sh.expect("$ ");
+    sh.send(" $LUISH_BACKGROUND.\n");
+    sh.expect("\ntyped .\n");
+    sh.send("style -c\n");
+    sh.expect("* default-dark (background unknown)");
+    // The terminal tells a light colour, ended by BEL.
+    sh.send("style --detect\n");
+    sh.expect(QUERY);
+    sh.send("\x1b]11;rgb:ffff/ffff/dddd\x07\x1b[?62;22c");
+    sh.expect("$ ");
+    sh.send("style -c\n");
+    sh.expect("* default-light (light background, from the terminal)");
+    // Unknown again: an error, and the background stays as it was.
+    sh.send("style --detect || echo failed\n");
+    sh.expect(QUERY);
+    sh.send("\x1b[?6c");
+    sh.expect("style: the terminal didn't tell its background colour\nfailed\n");
+    sh.send("echo $LUISH_BACKGROUND\n");
+    sh.expect("\nlight\n");
 }
 
 #[test]

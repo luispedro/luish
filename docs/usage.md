@@ -494,8 +494,13 @@ colorscheme = { dark = "green", light = "blue", default = "green" }
 
 `default` is for when the background isn't known; without it, `dark` is used. The default choice is `{ dark =
 "default-dark", light = "default-light" }`. luish knows the background from `$LUISH_BACKGROUND`, if it is `dark` or
-`light`, or else from `$COLORFGBG`, which some terminals (rxvt, Konsole) set. `style -c` lists the schemes and shows
-which is in use, and why; `style -c NAME` (or `style -c DARK LIGHT [DEFAULT]`) chooses.
+`light`, or else from `$COLORFGBG`, which some terminals (rxvt, Konsole) set, or else by asking the terminal for its
+background colour before the first prompt, which most terminals answer (xterm, GNOME Terminal and other VTE ones,
+Konsole, kitty, Alacritty, WezTerm, foot, iTerm2, Ghostty, Windows Terminal). It puts what it found in
+`$LUISH_BACKGROUND`, so set that variable (in `luishrc`, or in the environment) to say it instead, for a terminal
+that answers wrongly. Keys typed while the shell waits for the answer start the command line. `style --detect` asks
+again, after the terminal's colours have changed. `style -c` lists the schemes and shows which is in use, and why;
+`style -c NAME` (or `style -c DARK LIGHT [DEFAULT]`) chooses.
 
 ## History
 

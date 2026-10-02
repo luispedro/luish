@@ -7,6 +7,7 @@
 //! minimal file with only a personal plugin (as `plugin add` takes it), or
 //! nothing (so the question is asked again), in a menu.
 
+use super::tty::{Raw, read_byte, readable};
 use crate::shell::Shell;
 use crate::sys;
 
@@ -119,29 +120,6 @@ enum Key {
     Other,
 }
 
-/// Whether a byte can be read from fd 0 within `ms` milliseconds.
-fn readable(ms: i32) -> bool {
-    let mut pfd = libc::pollfd {
-        fd: 0,
-        events: libc::POLLIN,
-        revents: 0,
-    };
-    // SAFETY: poll on one valid pollfd.
-    unsafe { libc::poll(&mut pfd, 1, ms) > 0 }
-}
-
-/// Reads a byte from fd 0 (in raw mode), retrying after a signal.
-fn read_byte() -> Option<u8> {
-    let mut buf = [0u8; 1];
-    loop {
-        match sys::read(0, &mut buf, true) {
-            Ok(1) => return Some(buf[0]),
-            Err(libc::EINTR) => {}
-            _ => return None,
-        }
-    }
-}
-
 /// Reads a key from the terminal, in raw mode. An escape sequence is read
 /// whole; Esc alone is one with nothing after it for 50 ms.
 fn read_key() -> Key {
@@ -168,29 +146,6 @@ fn read_key() -> Key {
             _ => Key::Other,
         },
         Some(_) => Key::Other,
-    }
-}
-
-/// The terminal in raw mode (no echo, no line buffering, no signals from
-/// keys) while it lives; its modes are restored when it is dropped.
-struct Raw(libc::termios);
-
-impl Raw {
-    fn new() -> Option<Raw> {
-        let old = sys::tcgetattr(0)?;
-        let mut raw = old;
-        raw.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ISIG);
-        raw.c_iflag &= !(libc::ICRNL | libc::IXON);
-        raw.c_cc[libc::VMIN] = 1;
-        raw.c_cc[libc::VTIME] = 0;
-        sys::tcsetattr(0, &raw);
-        Some(Raw(old))
-    }
-}
-
-impl Drop for Raw {
-    fn drop(&mut self) {
-        sys::tcsetattr(0, &self.0);
     }
 }
 
