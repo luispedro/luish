@@ -65,6 +65,20 @@ impl Input {
         }
     }
 
+    /// Before a command read with the line editor runs.
+    pub fn command_starts(&self, sh: &Shell) {
+        if let Input::Editor = self {
+            interactive::command_starts(sh);
+        }
+    }
+
+    /// After a command read with the line editor ran, with its status.
+    pub fn command_done(&self, status: i32) {
+        if let Input::Editor = self {
+            interactive::command_done(status);
+        }
+    }
+
     pub fn add_history(&mut self, sh: &Shell, text: &[u8]) {
         if let Input::Editor = self {
             interactive::add_history(sh, text);

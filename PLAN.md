@@ -225,8 +225,15 @@ shell tracks the current file as well as the line, for provenance and for error 
   collation for `(o)`. Not to be done (decided 2026-09-29): zsh's `integer` built-in and base argument
   (`typeset -i 16 x`), `typeset -F`, highlighting subscripts beyond what the highlighter already does, completing
   keys that contain `'`, and `0` rather than `''` for the holes filled in integer arrays.
-- **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) from the REPL
-  around the prompt and command output. Unicode width handling and bracketed paste belong to the line editor.
+- **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) are done
+  (`interactive/integration.rs`). Still to do, roughly by value: desktop notifications when a long command ends
+  while the window is unfocused (OSC 9/777/99 and focus reporting, `?1004`), the kill ring on the system clipboard
+  (OSC 52, which also works over ssh), the cursor's shape by vi mode (DECSCUSR), curly and coloured underlines in
+  styles (`4:3`, `58;2;R;G;B`), hyperlinks for file names in error messages (OSC 8), kitty's `click_events=1` (it
+  moves the cursor with arrow keys, so Up and Down must not search the history then), and the kitty keyboard
+  protocol (needs rustyline support). Capabilities can be asked (XTVERSION, `CSI ? u`) with the DA1 query that
+  `tty.rs` already sends. Unicode width handling belongs to the line editor; bracketed paste and synchronized output
+  come from rustyline.
 - **Scripting**: a predictable strict mode, and a debugger or step-trace mode (error messages with the call stack
   are done, `frames.rs`, with the text of the failing line and of the call sites, also in functions restored from
   the startup cache).

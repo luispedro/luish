@@ -96,6 +96,11 @@ luish's own options, all off by default:
   exist (style `path`), and the word under the cursor if it begins the
   name of one (`path.prefix`), as the command line is typed.
 
+`terminal.no_integration`
+: Don't tell the terminal where the prompts, command lines and command
+  outputs are (OSC 133), nor the current directory (OSC 7). See the user
+  documentation on terminal integration.
+
 The history options (see the user documentation on history):
 
 `history.ignore_space` (`histignorespace`)

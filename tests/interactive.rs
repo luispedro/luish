@@ -24,6 +24,11 @@ struct Pty {
     dir: PathBuf,
     /// The directory is removed when the shell is dropped.
     owns_dir: bool,
+    /// Whether to keep the marks for the terminal (OSC 133 and OSC 7) in
+    /// `out`, rather than leave them out.
+    marks: bool,
+    /// Output not yet in `out`: what may be the start of a mark.
+    partial: Vec<u8>,
 }
 
 impl Pty {
@@ -112,6 +117,8 @@ impl Pty {
                 mark: 0,
                 dir,
                 owns_dir,
+                marks: false,
+                partial: Vec::new(),
             }
         }
     }
@@ -142,9 +149,40 @@ impl Pty {
             if n <= 0 {
                 return false;
             }
-            self.out.extend(buf[..n as usize].iter().filter(|&&c| c != b'\r'));
+            let mut data = std::mem::take(&mut self.partial);
+            data.extend(buf[..n as usize].iter().filter(|&&c| c != b'\r'));
+            if !self.marks {
+                data = self.strip_marks(data);
+            }
+            self.out.extend(data);
         }
         true
+    }
+
+    /// `data` without the marks for the terminal; an unfinished one at its
+    /// end is kept in `partial`.
+    fn strip_marks(&mut self, data: Vec<u8>) -> Vec<u8> {
+        const MARKS: [&[u8]; 2] = [b"\x1b]133;", b"\x1b]7;"];
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < data.len() {
+            let rest = &data[i..];
+            if let Some(m) = MARKS.iter().find(|m| rest.starts_with(m) || m.starts_with(rest)) {
+                match rest.iter().position(|&c| c == 0x07).filter(|_| rest.starts_with(m)) {
+                    Some(end) => {
+                        i += end + 1;
+                        continue;
+                    }
+                    None => {
+                        self.partial = rest.to_vec();
+                        break;
+                    }
+                }
+            }
+            out.push(data[i]);
+            i += 1;
+        }
+        out
     }
 
     /// Sets the terminal's size.
@@ -604,6 +642,57 @@ fn prompt_percent() {
     sh.send(" x\n");
     sh.expect("x\n");
     sh.expect("ab\x1b[39m% ");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+/// The marks for the terminal: where each prompt, command line and
+/// command output is (OSC 133), and the current directory (OSC 7) when it
+/// changes; none with `terminal.no_integration`.
+#[test]
+fn terminal_integration() {
+    let mut sh = Pty::spawn_term("integration", "vt100");
+    sh.marks = true;
+    let host = {
+        let mut buf = [0u8; 256];
+        // SAFETY: gethostname into a buffer of the given size.
+        unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len() - 1) };
+        String::from_utf8_lossy(&buf[..buf.iter().position(|&c| c == 0).unwrap()]).into_owned()
+    };
+    let dir = sh.dir.display().to_string();
+    const PROMPT: &str = "\x1b]133;A\x07$ \x1b]133;B\x07";
+    sh.expect(&format!("\x1b]7;file://{host}{dir}\x07"));
+    sh.expect(PROMPT);
+    sh.send("echo hi; false\n");
+    sh.expect("\n\x1b]133;C\x07hi\n\x1b]133;D;1\x07");
+    sh.expect(PROMPT);
+    // The directory is reported again only once it changes.
+    sh.send("mkdir 'a b' && cd 'a b'\n");
+    sh.expect(&format!("\x1b]133;D;0\x07\x1b]7;file://{host}{dir}/a%20b\x07"));
+    sh.expect(PROMPT);
+    sh.send(":\n");
+    sh.expect("\x1b]133;C\x07");
+    let got = sh.expect(PROMPT);
+    assert!(got.contains("\x1b]133;D;0\x07") && !got.contains("\x1b]7;"), "{got:?}");
+    // A continuation line's prompt is marked as one.
+    sh.send("if :\n");
+    sh.expect("\x1b]133;A;k=s\x07> \x1b]133;B\x07");
+    sh.send("then echo ok; fi\n");
+    sh.expect("\x1b]133;C\x07ok\n\x1b]133;D;0\x07");
+    sh.expect(PROMPT);
+    // A syntax error is the output of a command that failed.
+    sh.send("fi\n");
+    sh.expect("\x1b]133;C\x07");
+    sh.expect("unexpected");
+    sh.expect("\x1b]133;D;2\x07");
+    sh.expect(PROMPT);
+    sh.send("setopt terminal.no_integration\n");
+    sh.expect("\x1b]133;D;0\x07");
+    sh.expect("$ ");
+    sh.send("cd .. && echo x\n");
+    let got = sh.expect("\nx\n");
+    let got = got + &sh.expect("$ ");
+    assert!(!got.contains("\x1b]"), "{got:?}");
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
 }

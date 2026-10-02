@@ -559,6 +559,15 @@ terminal-colors = false     # or terminal-colours
 
 or `style --terminal-colors off` in a running shell. A non-empty `$NO_COLOR` turns them off too.
 
+## Terminal integration
+
+In the line editor, the shell tells the terminal where each prompt, command line and command output is, and the
+exit status of each command (the semantic prompt marks, OSC 133), and the current directory whenever it changes
+(OSC 7). Terminals that know them use them: kitty, WezTerm, Ghostty, foot, iTerm2, Windows Terminal, VS Code's
+terminal and tmux (3.4 or later) can jump from prompt to prompt, select or copy a command's output, mark the
+commands that failed, or open a new window or tab in the same directory (GNOME Terminal and other VTE ones need only
+OSC 7 for that). Other terminals ignore them. `setopt terminal.no_integration` turns them off.
+
 ## History
 
 An interactive shell keeps the last `HISTSIZE` commands (1000 by default) in

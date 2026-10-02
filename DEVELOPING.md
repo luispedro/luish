@@ -728,6 +728,17 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   saved state as `style --terminal-colors off`. Tests: unit tests in `style.rs` (`terminal_colors`), `tty.rs`
   (`color_answers`) and `termcolors.rs`, `terminal_colors` and `terminal_colors_exec` in `tests/interactive.rs`,
   `builtins/internal_style.sh`, `misc/config_toml_style.sh`, `tests/plugins/manifest_style.sh`.
+- **Terminal integration** (`interactive/integration.rs`): with the line editor on a terminal it supports (`EDITS`)
+  and fd 1 a terminal (checked each time), unless `terminal.no_integration` is set. Before a primary prompt,
+  `before_prompt` sends OSC 7 (`ESC ]7;file://HOST/PATH BEL`, the path's bytes other than `[A-Za-z0-9/._~-]`
+  percent-encoded) if `curdir` differs from the last one sent (`DIR`). The prompt given to rustyline is wrapped in
+  `ESC ]133;A BEL` (`A;k=s` for `PS2`) and `ESC ]133;B BEL`, with the unwrapped text as the plain prompt that rustyline
+  measures; rustyline redraws the whole prompt, so the marks are sent again on each redraw, which terminals take as
+  the same prompt. `run_incremental` calls `Input::command_starts` (`ESC ]133;C BEL`) before each list read with the
+  editor (after `preexec`) and `command_done` (`ESC ]133;D;STATUS BEL`, only if C was sent: `RUNNING`) after it, and
+  does the same around a syntax error (status 2), so lines with several lists give one C/D pair each. All are written
+  to fd 1, where rustyline writes. Other pty tests drop the marks from the transcript (`Pty::strip_marks`, unless
+  `Pty::marks`). Tests: unit tests in `integration.rs`, `terminal_integration` in `tests/interactive.rs`.
 - **Autosuggestions**: the hint while the cursor is at the end of a non-blank, non-continuation line and the menu
   isn't open; accepted with rustyline's `CompleteHint`. The search goes from the newest entry and stops at the first
   match. Test: `autosuggestions` in `tests/interactive.rs`.

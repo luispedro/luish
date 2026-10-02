@@ -859,8 +859,10 @@ impl Shell {
                         self.exit(n);
                     }
                     if !self.opt(Opt::Noexec) || self.interactive {
+                        input.command_starts(self);
                         let r = self.run_list(&list);
                         self.top_level_result(r);
+                        input.command_done(self.last_status);
                     }
                 }
                 Ok(None) => break,
@@ -918,11 +920,13 @@ impl Shell {
                     }
                 }
                 Err(e) => {
+                    input.command_starts(self);
                     self.syntax_error(&e);
                     if !self.interactive {
                         self.exit(2);
                     }
                     self.last_status = 2;
+                    input.command_done(2);
                     lineno += buf.iter().filter(|&&c| c == b'\n').count() as u32;
                     buf.clear();
                     continuation = false;

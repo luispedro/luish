@@ -6,6 +6,7 @@ pub mod firstrun;
 pub(crate) mod highlight;
 mod histfile;
 pub mod history;
+mod integration;
 pub mod keys;
 mod menu;
 mod rprompt;
@@ -536,10 +537,18 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
         find_background(sh);
         termcolors::update(sh);
     }
+    let marks = EDITS.get() && integration::on(sh);
+    if marks && !continuation {
+        integration::before_prompt(sh);
+    }
     let (p, right) = prompts(sh, continuation, true);
-    let text = String::from_utf8_lossy(&p.text).into_owned();
+    let mut text = String::from_utf8_lossy(&p.text).into_owned();
     // The line editor measures the prompt without its escape sequences.
-    let plain = p.plain.map(|s| String::from_utf8_lossy(&s).into_owned());
+    let mut plain = p.plain.map(|s| String::from_utf8_lossy(&s).into_owned());
+    if marks {
+        plain.get_or_insert_with(|| text.clone());
+        text = integration::mark_prompt(&text, continuation);
+    }
     let vi = sh.opt(Opt::Vi);
     // Not for the continuation lines of a command.
     let suggest = sh.opt(Opt::Autosuggest) && !continuation;
@@ -632,6 +641,19 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
         sh.exit(n);
     }
     line
+}
+
+/// Marks the start of a command's output for the terminal (OSC 133), as
+/// the command read at the prompt runs.
+pub fn command_starts(sh: &Shell) {
+    if EDITS.get() {
+        integration::command_starts(sh);
+    }
+}
+
+/// Marks the end of a command's output, with its status.
+pub fn command_done(status: i32) {
+    integration::command_done(status);
 }
 
 /// Reads a line from standard input, a byte at a time (so that nothing

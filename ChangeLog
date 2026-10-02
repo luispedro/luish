@@ -1,4 +1,6 @@
 Unreleased
+    * Terminal integration: prompt marks (OSC 133) and the current
+      directory (OSC 7); setopt terminal.no_integration turns it off
     * A colour scheme can set the terminal's own colours (background,
       text, cursor, palette), put back when it no longer applies or the
       shell exits; [style] terminal-colors = false keeps them

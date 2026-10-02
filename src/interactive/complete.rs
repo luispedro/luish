@@ -1925,7 +1925,8 @@ mod tests {
                 "highlight ",
                 "history ",
                 "prompt ",
-                "pushd "
+                "pushd ",
+                "terminal "
             ]
         );
         assert_eq!(

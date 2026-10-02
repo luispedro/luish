@@ -41,6 +41,7 @@ pub enum Opt {
     AutoPushd,
     PushdIgnoreDups,
     PushdSilent,
+    NoTermIntegration,
 }
 
 /// Option table: (option, letter, long name), in dash's order (with POSIX's
@@ -92,6 +93,7 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::AutoPushd, "pushd.auto"),
     (Opt::PushdIgnoreDups, "pushd.ignore_dups"),
     (Opt::PushdSilent, "pushd.silent"),
+    (Opt::NoTermIntegration, "terminal.no_integration"),
 ];
 
 /// Other names of luish's own options: zsh's, and those they had before
@@ -337,7 +339,8 @@ mod tests {
                 "highlight",
                 "history",
                 "prompt",
-                "pushd"
+                "pushd",
+                "terminal"
             ]
         );
         assert_eq!(find_group(b"History"), Some("history"));
