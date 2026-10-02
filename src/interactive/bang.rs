@@ -31,6 +31,12 @@ pub struct Expansion {
     pub print: bool,
 }
 
+/// The longest text an expansion can make: `!#` doubles the line, and a
+/// substitution can repeat its replacement for each byte.
+const MAX_LEN: usize = 1 << 20;
+
+const TOO_LONG: &str = "expansion too long";
+
 /// Expands the history references in `line`, a line read by the editor.
 /// `pending` is the text read before it of the same command, whose quotes
 /// and here-documents the line continues. `None` if there are none; an
@@ -65,6 +71,10 @@ pub fn expand(h: &ShellHistory, mem: &mut Memory, pending: &[u8], line: &[u8]) -
     while let Some(i) = scan.next_bang(line, pos) {
         out.extend_from_slice(&line[pos..i]);
         let (text, end) = x.reference(line, i, &out)?;
+        if out.len() + text.len() > MAX_LEN {
+            let r = line[i..end].strip_suffix(b"\n").unwrap_or(&line[i..end]);
+            return Err(format!("{}: {TOO_LONG}", String::from_utf8_lossy(r)));
+        }
         out.extend_from_slice(&text);
         pos = end;
         found = true;
@@ -368,6 +378,7 @@ impl Expander<'_> {
         };
         while s.get(j) == Some(&b':') {
             match self.modifier(s, j + 1, &text) {
+                Ok(Some((t, end))) if t.len() > MAX_LEN => return Err(format!("{}: {TOO_LONG}", quoted(end))),
                 Ok(Some((t, end))) => {
                     text = t;
                     j = end;
@@ -559,19 +570,17 @@ impl Expander<'_> {
             }
             b's' => {
                 let (from, to, end) = self.substitution(s, k + 1).map_err(|e| (e, s.len()))?;
-                return match replace(text, &from, &to, global) {
-                    Some(t) => Ok(Some((t, end))),
-                    None => Err(("substitution failed", end)),
-                };
+                return replace(text, &from, &to, global)
+                    .map(|t| Some((t, end)))
+                    .map_err(|e| (e, end));
             }
             b'&' => {
                 let Some((from, to)) = &self.mem.subst else {
                     return Err(("no previous substitution", k + 1));
                 };
-                return match replace(text, from, to, global) {
-                    Some(t) => Ok(Some((t, k + 1))),
-                    None => Err(("substitution failed", k + 1)),
-                };
+                return replace(text, from, to, global)
+                    .map(|t| Some((t, k + 1)))
+                    .map_err(|e| (e, k + 1));
             }
             _ => return Ok(None),
         };
@@ -622,8 +631,8 @@ impl Expander<'_> {
 }
 
 /// Replaces the first `from` in `text` by `to`, or each with `global`.
-/// `None` if there is none.
-fn replace(text: &[u8], from: &[u8], to: &[u8], global: bool) -> Option<Vec<u8>> {
+/// An error if there is none, or the text gets too long.
+fn replace(text: &[u8], from: &[u8], to: &[u8], global: bool) -> Result<Vec<u8>, &'static str> {
     let mut out = Vec::new();
     let mut rest = text;
     let mut found = false;
@@ -631,13 +640,19 @@ fn replace(text: &[u8], from: &[u8], to: &[u8], global: bool) -> Option<Vec<u8>>
         found = true;
         out.extend_from_slice(&rest[..p]);
         out.extend_from_slice(to);
+        if out.len() > MAX_LEN {
+            return Err(TOO_LONG);
+        }
         rest = &rest[p + from.len()..];
         if !global || from.is_empty() {
             break;
         }
     }
     out.extend_from_slice(rest);
-    found.then_some(out)
+    if !found {
+        return Err("substitution failed");
+    }
+    Ok(out)
 }
 
 fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
@@ -870,6 +885,24 @@ mod tests {
         // Ranges keep the text between the words.
         assert_eq!(bang(past, "!!:1-3").unwrap(), "a>b");
         assert_eq!(bang(&["a\nb  c"], "!:1-2").unwrap(), "b  c");
+    }
+
+    #[test]
+    fn too_long() {
+        // Each `!#` doubles the line.
+        let line = format!("{}{}", "x".repeat(1000), " !#".repeat(10));
+        assert_eq!(bang(PAST, &line).unwrap().len(), 1002 * 1024 - 2);
+        let line = format!("{}{}", "x".repeat(1000), " !#".repeat(11));
+        assert_eq!(bang(PAST, &line).unwrap_err(), "!#: expansion too long");
+        // As does each `:q`, almost.
+        let line = format!("'' !#{}", ":q".repeat(20));
+        assert!(bang(PAST, &line).unwrap_err().ends_with(": expansion too long"));
+        // A substitution of every byte.
+        let line = format!("{} !#:gs/a/{}/", "a".repeat(2000), "b".repeat(600));
+        assert_eq!(
+            bang(PAST, &line).unwrap_err(),
+            format!("!#:gs/a/{}/: expansion too long", "b".repeat(600))
+        );
     }
 
     #[test]

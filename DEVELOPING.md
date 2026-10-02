@@ -519,6 +519,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   context is found by scanning the pending text of the command first (`Scanner`: quotes, `$'...'`, `$(...)`,
   `$((...))`, backquotes, comments and here-document bodies). `!` is literal where bash's
   `bash_history_inhibit_expansion` makes it so (`$!`, `${!`, `[!`) and before `"`, `=`, `(`, blanks and operators.
+  An expansion longer than 1 MiB (`MAX_LEN`) is an error, as each `!#` doubles the line and a `:gs` repeats its
+  replacement for each match (`bang::tests::too_long`).
   Results: the line (echoed to stderr, as bash and zsh do), `Again` (`history.verify`: `REFILL` starts the next
   `read_line` with it, unless rustyline doesn't support the terminal, where it would be lost), or `Drop` (an error,
   or `:p`), which clears the pending text. `bang::Memory` keeps the last substitution and `?str?` across lines. The
