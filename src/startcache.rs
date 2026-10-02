@@ -66,7 +66,7 @@ use crate::state::{self, Change, Kind};
 use crate::sys;
 
 /// Bumped when the format of the cache changes.
-const HEADER: &[u8] = b"# luish startup cache 4\n";
+const HEADER: &[u8] = b"# luish startup cache 5\n";
 
 /// How many keys are kept for each file or block.
 const KEEP: usize = 4;

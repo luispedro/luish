@@ -4,7 +4,7 @@
 //!
 //! The state is the working directory and the directory stack, the file
 //! mode mask, variables (with their export and readonly attributes), traps,
-//! functions, aliases, loaded plugins, key bindings and options. It is written as shell
+//! functions, aliases, loaded plugins, key bindings, styles and options. It is written as shell
 //! commands, so it is restored
 //! by running them with `.`. Restoring sets everything that was saved, but
 //! doesn't remove what wasn't (such as variables set since).
@@ -49,11 +49,12 @@ pub enum Kind {
     SuffixAlias,
     Plugin,
     Binding,
+    Style,
     Option,
 }
 
 /// Every kind, in order (for [`Kind::code`]).
-const KINDS: [Kind; 13] = [
+const KINDS: [Kind; 14] = [
     Kind::Dir,
     Kind::DirStack,
     Kind::Umask,
@@ -66,6 +67,7 @@ const KINDS: [Kind; 13] = [
     Kind::SuffixAlias,
     Kind::Plugin,
     Kind::Binding,
+    Kind::Style,
     Kind::Option,
 ];
 
@@ -94,6 +96,7 @@ impl Kind {
             Kind::SuffixAlias => "suffix alias",
             Kind::Plugin => "plugin",
             Kind::Binding => "key binding",
+            Kind::Style => "style",
         }
     }
 }
@@ -320,6 +323,10 @@ impl Shell {
             add(Kind::Binding, &seq, t);
         }
 
+        for (name, t) in self.styles.state(crate::builtins::style::STATE_COMMAND) {
+            add(Kind::Style, name.as_bytes(), t);
+        }
+
         for (o, _, name) in OPTIONS {
             if !MODE_OPTIONS.contains(o) {
                 add(Kind::Option, name.as_bytes(), option(o, name));
@@ -377,6 +384,10 @@ pub fn changes(before: &[Entry], after: &[Entry]) -> Vec<Change> {
             Kind::Plugin => [b"__luish_internal plugin unload ".to_vec(), quoted()].concat(),
             Kind::DirStack => b"command dirs -c".to_vec(),
             Kind::Binding => crate::interactive::keys::restore_command(&e.name),
+            Kind::Style => {
+                crate::style::removal(crate::builtins::style::STATE_COMMAND, &String::from_utf8_lossy(&e.name))
+                    .into_bytes()
+            }
             Kind::Dir | Kind::Umask | Kind::Readonly | Kind::SyntaxOption | Kind::Option => continue,
         };
         if e.kind != Kind::Binding {

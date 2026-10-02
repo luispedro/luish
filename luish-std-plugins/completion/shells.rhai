@@ -9,7 +9,8 @@ fn luish_options() {
         "notify", "nounset", "pipefail", "privileged", "verbose", "vi", "xtrace", "prompt.percent",
         "prompt.transient_rprompt", "glob.star", "glob.bare_qualifiers", "expand.braces", "cd.auto",
         "history.ignore_space", "history.reduce_blanks", "history.save_no_dups", "history.inc_append", "history.share",
-        "history.expand", "history.verify", "editor.autosuggest", "pushd.auto", "pushd.ignore_dups", "pushd.silent",
+        "history.expand", "history.verify", "editor.autosuggest", "editor.no_highlight",
+        "pushd.auto", "pushd.ignore_dups", "pushd.silent",
     ]
 }
 

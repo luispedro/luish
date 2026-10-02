@@ -62,6 +62,7 @@ src/
 ├── cmdtext.rs          # job text from the AST (dash's cmdtxt)
 ├── unparse.rs          # AST back to source text that re-parses exactly
 ├── prompt.rs           # zsh's % sequences (setopt prompt.percent)
+├── style.rs            # styles and colour schemes (the `style` built-in is builtins/style.rs)
 ├── state.rs            # the shell's state as commands (savestate), and differences of states
 ├── startcache.rs       # cached rc.d / login.d
 ├── config.rs           # config.toml
@@ -632,10 +633,26 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   hold the lock while a plugin completer runs. Column widths are capped at the 90th percentile or a third of the
   screen. rustyline's default `keyseq_timeout` is None (a lone Esc waits for the next key); luish sets 400 ms in
   emacs mode (zsh's `KEYTIMEOUT`) and 100 ms in vi mode.
-- **Highlighting** (`highlight.rs`): command lookups are cached until the next prompt; `$LUISH_HIGHLIGHT` and
-  `$NO_COLOR` are read before each prompt. `$NAME` and `${NAME}` get the `unset` class when `NAME` is not in
+- **Highlighting** (`highlight.rs`): command lookups are cached until the next prompt. Each `Class` has a role
+  (`highlight::ROLE`), whose style gives its SGR parameters (`Colors`). `interactive::colors` resolves them before
+  each prompt only if `Styles::generation` or the scheme in use (which depends on `$LUISH_BACKGROUND` and
+  `$COLORFGBG`) changed, and reports a scheme that isn't defined then; `$NO_COLOR` and `editor.no_highlight` turn
+  the line's colours off (the menu and suggestion keep theirs, or the old fixed ones with `$NO_COLOR`). `$NAME` and `${NAME}` get the `unset` class when `NAME` is not in
   `Names::vars`, unless an earlier word in the text is `NAME=...` (as an assignment or an argument, as for `export`)
   or a `for` name, or the cursor is on it. Test: `unset_variables` in `highlight.rs`.
+- **Styles** (`style.rs`, `builtins/style.rs`): a `Style` has optional colours, attributes on and off (bits by
+  `ATTRS`), `plain` and raw SGR; `inherit` fills what one leaves out from its parent. `Styles` (on `Shell`, empty
+  maps until used) holds the user's layer, plugins' defaults, the schemes defined, and the `Choice` (None for the
+  built-in pair). The built-in schemes are const tables, made into a `Scheme` when looked up; changing one with `style
+  -s` copies it first, but `-i` (which the saved state uses to start each scheme) defines an empty one, so a replayed
+  state is exact. `Resolver::value` takes a name's value from the first layer that has it (user, then the scheme
+  chain, then plugins), and `get` then walks the parents, so a scheme's specific name beats the user's general one.
+  Names in `ROLES` are fixed; another name is free unless its first component is a role's (then it must be in
+  `ROLES`) or it has no dot and is within edit distance 2 of a top-level role ("did you mean"). Undefined schemes
+  are allowed in a choice from `config.toml` and in `inherits` (a plugin loaded later may define them), but not by
+  `style -c`. Styles are saved state (`Kind::Style`, as `__luish_internal style` commands; `style::removal` undoes
+  one). Tests: unit tests in `style.rs` and `highlight.rs` (`colors`), `builtins/internal_style.sh`,
+  `misc/config_toml_style.sh`, `tests/plugins/manifest_style.sh`, `syntax_highlighting` in `tests/interactive.rs`.
 - **Autosuggestions**: the hint while the cursor is at the end of a non-blank, non-continuation line and the menu
   isn't open; accepted with rustyline's `CompleteHint`. The search goes from the newest entry and stops at the first
   match. Test: `autosuggestions` in `tests/interactive.rs`.
@@ -733,9 +750,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
 - `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. A key directly
   under `[options]` is a setting by its `setopt` name. The `alias` table defines regular aliases, and its `global` and
   `suffix` tables the other kinds (so a string named `global` or `suffix` is a regular alias, and TOML won't have both
-  in one file). The `bindkey` table goes through `keys::bind_widget`, as `bindkey KEY WIDGET` does. A directory
-  plugin's `plugin.toml` shares the `options`, `alias` and `bindkey` tables (`config::load_plugin_manifest`, see
-  Plugins). Test: `misc/config_toml.sh`.
+  in one file). The `bindkey` table goes through `keys::bind_widget`, as `bindkey KEY WIDGET` does. The `colorscheme`
+  table's schemes replace earlier ones of the same name (`Styles::replace_scheme`); the `style` table's `colorscheme`
+  is the `Choice`, and its other keys go to the user's layer. Tables under a style name are flattened (`[style.var]
+  unset = ...` is `var.unset`), so unquoted dotted keys work. A directory plugin's `plugin.toml` shares the `options`,
+  `alias`, `bindkey`, `colorscheme` and `style` tables (`config::load_plugin_manifest`, see Plugins); there, `style`
+  sets plugins' defaults and can't have `colorscheme`. Tests: `misc/config_toml.sh`, `misc/config_toml_style.sh`.
 - `config.toml`'s `env`, `vars` and `path` tables (`config::environment`): `env` exports, `vars` doesn't (a variable
   inherited exported stays so), and a table named `interactive` in `env` is `env.interactive` (a string of that name is
   a variable, as for `alias.global`). Values are strings, with `tilde`, or integers. `path`'s directories are
@@ -960,7 +980,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   nothing else. `plugin.toml` itself counts as an entry point (`ENTRY_POINTS`), so a library of Rhai modules needs
   no other file; the resolver's `manifest` reports a `library` that isn't a boolean. Test:
   `tests/plugins/library.sh`.
-- `plugin.toml`'s `options`, `alias` and `bindkey` tables are applied by `load_found` (with `config.rs`'s code), in
+- `plugin.toml`'s `options`, `alias`, `bindkey`, `colorscheme` and `style` tables are applied by `load_found` (with `config.rs`'s code), in
   interactive shells, after the extension loads and before `rc.lsh`; its options override `config.toml`'s, by design
   (a plugin can package a set of options). The file is parsed again there (the resolver only keeps the
   dependencies), and syntax errors are left to the resolver, so they are reported once. `load_found` records the
@@ -1027,6 +1047,7 @@ truncates when it relocates the package.
 | Glob qualifiers | `expand/glob_qualifiers.sh`, `expand/glob_qualifier_errors.sh` (zsh `+o shglob -o bareglobqual +o ksharrays`), `builtins/internal_savestate_globqual.sh` |
 | A directory as a command | `builtins/autocd.sh` (zsh) |
 | `bindkey` | `builtins/bindkey.sh` (same as dash), `builtins/internal_bindkey.sh`, `line_editor_keys` in `tests/interactive.rs` |
+| `style`, colour schemes | `builtins/internal_style.sh`, `misc/config_toml_style.sh`, `tests/plugins/manifest_style.sh`, `syntax_highlighting` in `tests/interactive.rs` |
 | History file | `history_file` and `share_history` in `tests/interactive.rs`, unit tests in `interactive/histfile.rs` |
 | History expansion | `history_expansion` in `tests/interactive.rs`, unit tests in `interactive/bang.rs` |
 | `alias`, `unalias` options | `builtins/alias_options.sh` (zsh), `builtins/alias_deviations.sh` |

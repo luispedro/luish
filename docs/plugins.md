@@ -259,7 +259,7 @@ A plugin directory can have multiple files which luish uses the following ways:
 
 | File | Meaning |
 |---|---|
-| `plugin.toml` | Parsed first, to load dependencies and set options, aliases and key bindings. |
+| `plugin.toml` | Parsed first, to load dependencies, set options, aliases and key bindings, and define colour schemes. |
 | `init.lsh` | Next: sourced in the current shell (as with `.`). |
 | `extension.rhai` | Next: the plugin's extension, which is loaded and run (see [](extensions.md)). |
 | `rc.lsh` | Next, as with `.`, but only in interactive shells (and their subshells). |
@@ -317,6 +317,37 @@ pdf = "evince"
 "Ctrl-X Ctrl-G" = "undo"
 ```
 
+### Themes
+
+A theme is a plugin whose `plugin.toml` defines colour schemes, in `[colorscheme.NAME]` tables as in `config.toml`
+(see [Colour schemes](usage.md#colour-schemes)). Loading it only makes them available: the user chooses one with
+`colorscheme` in the `[style]` table of `config.toml`, or with `style -c`, which a plugin can't do. A plugin's
+`[style]` table sets defaults for the styles of its own names (such as a prompt's `git.branch`), which any scheme, and
+the user, can override:
+
+```toml
+[colorscheme.solarized-dark]
+inherits = "default-dark"
+keyword = "#268bd2"
+string = "#b58900"
+
+[colorscheme.solarized-light]
+inherits = "default-light"
+keyword = "#268bd2"
+string = "#b58900"
+
+[style]
+"git.branch" = "magenta"
+```
+
+The user then chooses the pair:
+
+```toml
+# config.toml
+[style]
+colorscheme = { dark = "solarized-dark", light = "solarized-light" }
+```
+
 ### Libraries
 
 A plugin can be meant for other plugins to use rather than for users to load: a set of Rhai modules that their
@@ -338,8 +369,8 @@ Rhai modules needs no other file than `plugin.toml`.
 An interactive shell starts in this order:
 
 1. the settings in `config.toml`;
-2. the plugins that `config.toml` enables (each plugin's `init.lsh`, `extension.rhai`, the options, aliases and key
-   bindings in its `plugin.toml`, and `rc.lsh`);
+2. the plugins that `config.toml` enables (each plugin's `init.lsh`, `extension.rhai`, the options, aliases, key
+   bindings and styles in its `plugin.toml`, and `rc.lsh`);
 3. the files in `rc.d`, which can load more plugins;
 4. the `post-rc.lsh` of each plugin loaded so far, in the order they were loaded;
 5. the `post-rc` hooks of their extensions, in the same order;

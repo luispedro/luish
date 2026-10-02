@@ -11,6 +11,7 @@ mod menu;
 mod rprompt;
 
 use std::cell::{Cell, RefCell};
+use std::rc::Rc;
 
 use rustyline::config::Configurer;
 use rustyline::error::ReadlineError;
@@ -390,12 +391,40 @@ pub fn completions(sh: &mut Shell, line: &[u8]) -> Result<Option<Vec<Match>>, Fl
     Ok(r.map(|items| items.into_iter().map(|i| (i.replacement, i.desc)).collect()))
 }
 
-/// The highlighting colours, or None if highlighting is off.
-fn colors(sh: &Shell) -> Option<highlight::Colors> {
+/// Colours resolved from the styles: the generation of the styles, the
+/// scheme, and the colours.
+type Resolved = (u64, Option<String>, Rc<highlight::Colors>);
+
+thread_local! {
+    /// The colours last resolved.
+    static COLORS: RefCell<Option<Resolved>> = const { RefCell::new(None) };
+}
+
+/// The colours, and whether the line is highlighted. They are resolved
+/// again only when the styles or the scheme in use have changed; a scheme
+/// that isn't defined is reported then.
+fn colors(sh: &Shell) -> (Rc<highlight::Colors>, bool) {
     if sh.get_var(b"NO_COLOR").is_some_and(|v| !v.is_empty()) {
-        return None;
+        return (Rc::new(highlight::Colors::no_color()), false);
     }
-    highlight::Colors::parse(&sh.get_var(b"LUISH_HIGHLIGHT").unwrap_or_default())
+    let on = !sh.opt(Opt::NoHighlight);
+    let scheme = crate::builtins::style::scheme_in_use(sh);
+    let generation = sh.styles.generation;
+    let cached = COLORS.with_borrow(|c| {
+        (c.as_ref())
+            .filter(|(g, s, _)| *g == generation && *s == scheme)
+            .map(|c| c.2.clone())
+    });
+    if let Some(c) = cached {
+        return (c, on);
+    }
+    if let Some(m) = sh.styles.missing(scheme.as_deref()) {
+        sh.error(format!("style: no such colour scheme: {m}"));
+    }
+    let r = sh.styles.resolver(scheme.as_deref());
+    let c = Rc::new(highlight::Colors::new(|n| r.get(n)));
+    COLORS.set(Some((generation, scheme, c.clone())));
+    (c, on)
 }
 
 /// Reads a line with the editor. `pending` is the text read so far of an
@@ -412,7 +441,7 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
     // Not for the continuation lines of a command.
     let suggest = sh.opt(Opt::Autosuggest) && !continuation;
     let names = names(sh);
-    let colors = colors(sh);
+    let (colors, highlight_on) = colors(sh);
     let wordchars = sh
         .get_var(b"WORDCHARS")
         .map(|w| String::from_utf8_lossy(&w).into_owned());
@@ -451,6 +480,7 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
                 m.close();
             }
             h.highlight.colors = colors;
+            h.highlight.on = highlight_on;
             h.suggest = suggest;
             h.right.set(right.as_ref(), indent, transient);
             h.highlight.context.clear();

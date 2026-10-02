@@ -55,11 +55,22 @@
 //! after = ["/opt/tools/bin"]
 //! ```
 //!
+//! The `colorscheme` table defines colour schemes, and the `style` table
+//! chooses one and sets styles over it (see `style.rs`):
+//!
+//! ```toml
+//! [colorscheme.blue]
+//! keyword = "bold blue"
+//! [style]
+//! colorscheme = { dark = "blue", light = "default-light" }
+//! "command.unknown" = "bold red"
+//! ```
+//!
 //! A login shell that isn't interactive reads only `env` (not
 //! `env.interactive`) and `path` (`load_login`).
 //!
-//! A directory plugin's `plugin.toml` can have `options`, `alias` and
-//! `bindkey` tables too (`load_plugin_manifest`).
+//! A directory plugin's `plugin.toml` can have `options`, `alias`,
+//! `bindkey`, `colorscheme` and `style` tables too (`load_plugin_manifest`).
 //!
 //! An unknown key, or a value of the wrong type, is reported with its line
 //! and skipped; a file that isn't valid TOML is reported and ignored. The
@@ -101,7 +112,7 @@ pub fn load(sh: &mut Shell, path: &[u8]) {
         "plugins" => {}
         "env" | "vars" | "path" => environment(sh, &key.name, value, true, &mut dirs, err),
         name => {
-            if !shared_table(sh, &key, value, err) {
+            if !shared_table(sh, &key, value, false, err) {
                 err(sh, key.span.start, &format!("unknown key: {name}"));
             }
         }
@@ -263,16 +274,18 @@ impl Dirs {
 #[cfg(feature = "plugins")]
 pub fn load_plugin_manifest(sh: &mut Shell, path: &[u8]) {
     read(sh, path, false, |sh, key, value, err| {
-        shared_table(sh, &key, value, err);
+        shared_table(sh, &key, value, true, err);
     });
 }
 
-/// The tables that `config.toml` and `plugin.toml` share: `options`,
-/// `alias` and `bindkey`. False for another key.
+/// The tables that `config.toml` and `plugin.toml` (`plugin`) share:
+/// `options`, `alias`, `bindkey`, `colorscheme` and `style`. False for
+/// another key.
 fn shared_table(
     sh: &mut Shell,
     key: &toml_span::value::Key<'_>,
     value: Value<'_>,
+    plugin: bool,
     err: &dyn Fn(&Shell, usize, &str),
 ) -> bool {
     match &*key.name {
@@ -287,6 +300,14 @@ fn shared_table(
         "bindkey" => match value.as_table() {
             Some(_) => bindkeys(sh, value, err),
             None => err(sh, value.span.start, "bindkey: not a table"),
+        },
+        "colorscheme" => match value.as_table() {
+            Some(_) => colorschemes(sh, value, err),
+            None => err(sh, value.span.start, "colorscheme: not a table"),
+        },
+        "style" => match value.as_table() {
+            Some(_) => styles(sh, value, plugin, err),
+            None => err(sh, value.span.start, "style: not a table"),
         },
         _ => return false,
     }
@@ -434,6 +455,167 @@ fn bindkeys(sh: &mut Shell, mut value: Value<'_>, err: &dyn Fn(&Shell, usize, &s
         if let Err(msg) = result {
             err(sh, key.span.start, &format!("bindkey.{}: {msg}", key.name));
         }
+    }
+}
+
+/// The `colorscheme` table: a table for each scheme, of styles by name (as
+/// in `style`), with the scheme it inherits from as `inherits`. A scheme
+/// replaces an earlier one of the same name.
+fn colorschemes(sh: &mut Shell, mut value: Value<'_>, err: &dyn Fn(&Shell, usize, &str)) {
+    let ValueInner::Table(entries) = value.take() else {
+        return;
+    };
+    for (key, mut value) in in_order(entries) {
+        let table = format!("colorscheme.{}", key.name);
+        if let Err(msg) = crate::style::check_scheme_name(&key.name) {
+            err(sh, key.span.start, &format!("colorscheme: {msg}"));
+            continue;
+        }
+        let ValueInner::Table(entries) = value.take() else {
+            err(sh, key.span.start, &format!("{table}: not a table"));
+            continue;
+        };
+        let mut scheme = crate::style::Scheme::default();
+        let own = key.name.to_string();
+        for (key, mut value) in in_order(entries) {
+            if &*key.name != "inherits" {
+                let name = key.name.to_string();
+                style_values(
+                    sh,
+                    &table,
+                    name,
+                    &mut value,
+                    &mut |n, v| {
+                        scheme.values.insert(n, v);
+                    },
+                    err,
+                );
+                continue;
+            }
+            match value.as_ref() {
+                ValueInner::String(p) if **p == own => {
+                    err(sh, key.span.start, &format!("{table}: inherits from itself"))
+                }
+                ValueInner::String(p) => match crate::style::check_scheme_name(p) {
+                    Ok(()) => scheme.inherits = Some(p.to_string()),
+                    Err(msg) => err(sh, key.span.start, &format!("{table}.inherits: {msg}")),
+                },
+                v => err(
+                    sh,
+                    key.span.start,
+                    &format!("{table}.inherits: expected a string, found {}", v.type_str()),
+                ),
+            }
+        }
+        sh.styles.replace_scheme(&key.name, scheme);
+    }
+}
+
+/// The `style` table: styles by name (as in `style`), and in
+/// `config.toml`, the colour scheme, as `colorscheme`: a name, or a table
+/// with `dark`, `light` and optionally `default`. In `plugin.toml`, the
+/// styles are defaults, under the colour scheme.
+fn styles(sh: &mut Shell, mut value: Value<'_>, plugin: bool, err: &dyn Fn(&Shell, usize, &str)) {
+    let ValueInner::Table(entries) = value.take() else {
+        return;
+    };
+    for (key, mut value) in in_order(entries) {
+        if &*key.name != "colorscheme" {
+            let mut set = Vec::new();
+            style_values(
+                sh,
+                "style",
+                key.name.to_string(),
+                &mut value,
+                &mut |n, v| set.push((n, v)),
+                err,
+            );
+            for (n, v) in set {
+                match plugin {
+                    true => sh.styles.set_default(&n, v),
+                    false => sh.styles.set_user(&n, v),
+                }
+            }
+            continue;
+        }
+        if plugin {
+            err(
+                sh,
+                key.span.start,
+                "style.colorscheme: a plugin can't choose the colour scheme",
+            );
+            continue;
+        }
+        match choice(&mut value) {
+            Ok(c) => sh.styles.set_choice(c),
+            Err(msg) => err(sh, key.span.start, &format!("style.colorscheme: {msg}")),
+        }
+    }
+}
+
+/// The colour scheme chosen in `[style]`.
+fn choice(value: &mut Value<'_>) -> Result<crate::style::Choice, String> {
+    use crate::style::{Choice, check_scheme_name};
+    let name = |v: &Value<'_>| match v.as_ref() {
+        ValueInner::String(s) => check_scheme_name(s).map(|()| s.to_string()),
+        v => Err(format!("expected a string, found {}", v.type_str())),
+    };
+    if !matches!(value.as_ref(), ValueInner::Table(_)) {
+        return name(value).map(Choice::One);
+    }
+    let ValueInner::Table(entries) = value.take() else {
+        unreachable!()
+    };
+    let (mut dark, mut light, mut default) = (None, None, None);
+    for (key, value) in in_order(entries) {
+        let slot = match &*key.name {
+            "dark" => &mut dark,
+            "light" => &mut light,
+            "default" => &mut default,
+            k => return Err(format!("unknown key: {k} (expected dark, light or default)")),
+        };
+        *slot = Some(name(&value).map_err(|e| format!("{}: {e}", key.name))?);
+    }
+    match (dark, light) {
+        (Some(dark), Some(light)) => Ok(Choice::Pair { dark, light, default }),
+        _ => Err("a table needs both dark and light".to_owned()),
+    }
+}
+
+/// Calls `set` with the style `name` from a TOML string, or with the styles
+/// of a table under it (`[style.command]` holds `command.unknown`, and so
+/// does `command.unknown = "..."` without quotes), reporting errors as in
+/// `table`.
+fn style_values(
+    sh: &Shell,
+    table: &str,
+    name: String,
+    value: &mut Value<'_>,
+    set: &mut dyn FnMut(String, crate::style::Style),
+    err: &dyn Fn(&Shell, usize, &str),
+) {
+    let at = value.span.start;
+    match value.as_ref() {
+        ValueInner::String(s) => match crate::style::check_name(&name) {
+            Err(msg) => err(sh, at, &format!("{table}: {msg}")),
+            Ok(()) => match crate::style::Style::parse(&[s.as_bytes()]) {
+                Ok(v) => set(name, v),
+                Err(msg) => err(sh, at, &format!("{table}.{name}: {msg}")),
+            },
+        },
+        ValueInner::Table(_) => {
+            let ValueInner::Table(entries) = value.take() else {
+                return;
+            };
+            for (key, mut value) in in_order(entries) {
+                style_values(sh, table, format!("{name}.{}", key.name), &mut value, set, err);
+            }
+        }
+        v => err(
+            sh,
+            at,
+            &format!("{table}.{name}: expected a string, found {}", v.type_str()),
+        ),
     }
 }
 

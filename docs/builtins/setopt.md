@@ -87,6 +87,10 @@ luish's own options, all off by default:
   zsh-autosuggestions does. Right, End, Ctrl-F or Ctrl-E accept it, and
   Alt-F accepts its next word.
 
+`editor.no_highlight`
+: Don't colour the command line as it is typed (see `style`). The
+  completion menu and autosuggestions keep their styles.
+
 The history options (see the user documentation on history):
 
 `history.ignore_space` (`histignorespace`)

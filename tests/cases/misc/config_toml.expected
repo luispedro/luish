@@ -84,6 +84,7 @@ setopt cd.auto
 --- a setting by its own name, directly under options
 rc.d sees star=1 HISTSIZE=
 setopt editor.autosuggest
+unsetopt editor.no_highlight
 unsetopt glob.bare_qualifiers
 setopt glob.star
 --- aliases, with global and suffix ones in their own tables

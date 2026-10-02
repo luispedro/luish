@@ -1567,12 +1567,7 @@ impl Hinter for ShellHelper {
             keys.history_index = ctx.history_index();
             keys.history_len = ctx.history().len();
         }
-        let colors = self.highlight.colors.as_ref();
-        let sgr = |class, default: &str| {
-            colors.map_or(default.to_owned(), |c| {
-                String::from_utf8_lossy(c.sgr(class)).into_owned()
-            })
-        };
+        let sgr = |class| String::from_utf8_lossy(self.highlight.colors.sgr(class)).into_owned();
         self.right.hint.set(0);
         let mut m = self.menu.lock().ok()?;
         if !m.is_open(line, pos) {
@@ -1583,7 +1578,7 @@ impl Hinter for ShellHelper {
                 let (row, col) = menu::position(&rest, usize::MAX);
                 self.right.hint.set(if row > 0 { usize::MAX / 2 } else { col });
             }
-            let style = sgr(super::highlight::Class::Suggest, "90");
+            let style = sgr(super::highlight::Class::Suggest);
             return Some(menu::Drawn {
                 display: format!("\x1b[{style}m{rest}\x1b[0m"),
                 completion: Some(rest),
@@ -1594,8 +1589,8 @@ impl Hinter for ShellHelper {
         let rows = if rows == 0 { 24 } else { rows };
         let used = menu::rows(&[&self.prompt[..], line].concat(), cols);
         let style = menu::Style {
-            select: sgr(super::highlight::Class::Select, "7"),
-            desc: sgr(super::highlight::Class::Desc, ""),
+            select: sgr(super::highlight::Class::Select),
+            desc: sgr(super::highlight::Class::Desc),
         };
         Some(menu::Drawn {
             display: m.draw(cols, rows.saturating_sub(used), &style),

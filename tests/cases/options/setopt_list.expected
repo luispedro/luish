@@ -5,6 +5,7 @@ prompt.percent
 allexport
 cd.auto
 editor.autosuggest
+editor.no_highlight
 emacs
 errexit
 expand.braces

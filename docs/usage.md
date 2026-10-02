@@ -273,7 +273,7 @@ variable is expanded too; write `%%` for a literal `%`. The sequences are those 
 | `%D`, `%T`, `%*`, `%t` or `%@`, `%w`, `%W` | The date as `yy-mm-dd`, the time as `HH:MM` or `HH:MM:SS`, or in 12-hour format, the weekday and day, the date as `mm/dd/yy` | `%[date]`, `%[time]`, `%[time_seconds]`, `%[time_12h]`, `%[date_weekday]`, `%[date_us]` |
 | `%D{format}` | The time in a `strftime` format (and zsh's `%f`, `%K` and `%L`, the day and hours without padding) | `%[date:format]` |
 | `%B` `%b`, `%U` `%u`, `%S` `%s` | Start and stop bold, underline and standout (reverse video) | `%[bold]` `%[bold_off]`, `%[underline]` `%[underline_off]`, `%[standout]` `%[standout_off]` |
-| `%F{colour}` `%f`, `%K{colour}` `%k` | Start and stop a foreground and a background colour: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, a number from 0 to 255, or `#rrggbb`. `%NF` is `%F{N}` | `%[fg:colour]` `%[fg_off]`, `%[bg:colour]` `%[bg_off]` |
+| `%F{colour}` `%f`, `%K{colour}` `%k` | Start and stop a foreground and a background colour: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, the same with `bright-`, `default`, a number from 0 to 255, or `#rrggbb`. `%NF` is `%F{N}` | `%[fg:colour]` `%[fg_off]`, `%[bg:colour]` `%[bg_off]` |
 | `%E` | Clear to the end of the line | `%[clear_eol]` |
 | `%{...%}` | Text written as it is, taking no room on the screen: for other escape sequences, such as a terminal title | |
 | `%NG` | Within `%{...%}`: the escape sequence takes `N` columns (at most 65536) | |
@@ -353,8 +353,8 @@ WORDCHARS='*?_-.[]~=&;!#$%^(){}<>'
 
 With `setopt editor.autosuggest`, the line editor suggests the rest of the newest command in the history that starts
 with what has been typed, in grey after the cursor, as the zsh-autosuggestions plugin does. Right, End, Ctrl-F or
-Ctrl-E accept the suggestion, and Alt-F accepts its next word. Its colour is the `suggest` entry of
-`$LUISH_HIGHLIGHT` (see [Syntax highlighting](#syntax-highlighting); by default grey, `90`).
+Ctrl-E accept the suggestion, and Alt-F accepts its next word. Its colour is the `suggestion` style (see [Syntax
+highlighting](#syntax-highlighting); by default grey, `bright-black`).
 
 To bind Up and Down as zsh does by default:
 
@@ -368,18 +368,96 @@ and bindings can also go in `config.toml` (see below).
 
 ## Syntax highlighting
 
-The line editor colours the command line as it is typed.
+The line editor colours the command line as it is typed. `setopt editor.no_highlight`, or a non-empty `$NO_COLOR`,
+turns it off.
 
-`$LUISH_HIGHLIGHT` sets the colours, as a list of `class=SGR` entries separated by `:` (as in `GREP_COLORS`), where
-SGR is the parameters of a terminal escape sequence. Its entries replace these defaults:
+### Styles
 
-```text
-keyword=1;34:command=32:unknown=1;31:string=33:var=36:unset=2;36:subst=35:op=1:redir=1:comment=90:assign=34:select=7:desc=90:suggest=90
+Each part of the line has a style, by name. The names are dotted, and a style that isn't set takes what it doesn't
+say from its parent: `command.unknown` from `command`, for instance. These are the names luish highlights with so
+far:
+
+| Name | For |
+|---|---|
+| `keyword` | reserved words (`if`, `for`, `{`, `[[`) |
+| `command` | command names that are found |
+| `command.unknown` | command names that aren't |
+| `string` | quoted text and here-documents |
+| `var` | `$NAME`, `${...}` and `$((...))` |
+| `var.unset` | `$NAME` or `${NAME}` when `NAME` is not set (and not assigned earlier on the line, or in a `for` loop there) |
+| `subst` | the delimiters of `$(...)` and backquotes |
+| `op` | operators (`;`, `&&`, `\|`) |
+| `redir` | redirections |
+| `comment` | comments |
+| `assign` | the `NAME=` of an assignment |
+| `menu.selected` | the selection in the completion menu |
+| `menu.description` | descriptions in the completion menu |
+| `suggestion` | autosuggestions |
+
+More names exist already, for distinctions the highlighter doesn't make yet (`command.function`, `command.alias`,
+`var.exported`, `arg.option`, `error`, `path` and others; `style` lists them). Other names, such as `git.branch`, are
+free for plugins to use, but not those that start like a name of luish's (`command.nosuch` is an error).
+
+A style's value is words separated by spaces:
+
+- a colour for the text: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`, the same with
+  `bright-` (`bright-black` is grey), `default`, a number from 0 to 255, or `#rrggbb` (as in `%F{...}` in prompts);
+- `bg:` and a colour for the background;
+- attributes: `bold`, `dim`, `italic`, `underline`, `blink`, `reverse`, `strike`, and the same with `no-` to turn
+  one off that the parent has;
+- `plain`: the terminal's defaults, taking nothing from the parent;
+- `sgr:` and the parameters of a terminal escape sequence, such as `sgr:1;38;5;208`.
+
+The `style` built-in shows and changes them (see `help style`):
+
+```sh
+style command.unknown            # its value, and where it comes from
+style command.unknown bold red   # set it
+style -r command.unknown         # back to the colour scheme's
 ```
 
-`unset` is for `$NAME` or `${NAME}` when `NAME` is not set (and not assigned earlier on the line, or in a `for`
-loop there). `select` and `desc` are for the completion menu, and `suggest` for autosuggestions. An empty SGR leaves a class
-uncoloured. `LUISH_HIGHLIGHT=none`, or a non-empty `$NO_COLOR`, turns highlighting off.
+### Colour schemes
+
+A colour scheme is a named set of styles. luish has two, `default-dark` and `default-light` (the same but for the
+strings, as yellow is hard to read on a light background), and more can be defined in `config.toml`, by a plugin, or
+with `style -s`. A scheme can inherit what it doesn't set from another:
+
+```toml
+[colorscheme.blue]
+keyword = "bold blue"
+command = "blue"
+"command.unknown" = "bold red"
+string = "yellow"
+var = "cyan"
+"var.unset" = "dim cyan"
+
+[colorscheme.green]
+inherits = "blue"
+keyword = "bold green"
+subst = "magenta"
+
+[style]
+colorscheme = "green"
+"command.function" = "bold"     # over the scheme
+```
+
+`colorscheme` in the `style` table chooses the scheme, and the other keys there set styles over it (as `style NAME
+VALUE` does). A scheme starts empty: it has only what it sets and what it inherits. Each name's value comes from the
+first of: the `style` table (or the `style` built-in), the scheme, the schemes it inherits from, then the defaults
+of plugins; then what it leaves out comes from its parent the same way. So a scheme's `command.unknown` is kept even
+if `[style]` sets `command`.
+
+The scheme can depend on whether the terminal's background is dark or light:
+
+```toml
+[style]
+colorscheme = { dark = "green", light = "blue", default = "green" }
+```
+
+`default` is for when the background isn't known; without it, `dark` is used. The default choice is `{ dark =
+"default-dark", light = "default-light" }`. luish knows the background from `$LUISH_BACKGROUND`, if it is `dark` or
+`light`, or else from `$COLORFGBG`, which some terminals (rxvt, Konsole) set. `style -c` lists the schemes and shows
+which is in use, and why; `style -c NAME` (or `style -c DARK LIGHT [DEFAULT]`) chooses.
 
 ## History
 
@@ -616,9 +694,13 @@ skipped, wherever it is, so a shell started from another doesn't add it
 again, and one started by `pixi shell`, `nix-shell` or a Python virtual
 environment's activation keeps that environment's directories first.
 
+Colour schemes go in the `colorscheme` table, and styles and the scheme to use
+in the `style` table: see [Colour schemes](#colour-schemes).
+
 A key that isn't a setting, a value of the wrong type, an alias name with `=`
-in it, a variable name that isn't one, or a key or widget that `bindkey`
-doesn't take is reported with its line and skipped; a file that isn't valid
+in it, a variable name that isn't one, a key or widget that `bindkey`
+doesn't take, or a style name or value that `style` doesn't take is reported
+with its line and skipped; a file that isn't valid
 TOML is reported and ignored.
 
 You also [install plugins in

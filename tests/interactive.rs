@@ -416,14 +416,24 @@ fn syntax_highlighting() {
     sh.expect("\x1b[36m$PWD\x1b[0m \x1b[2;36m$NOSUCH\x1b[0m ");
     sh.send("\x03");
     sh.expect("$ ");
-    // $LUISH_HIGHLIGHT overrides a class; the second line continues a quote.
-    sh.send("LUISH_HIGHLIGHT='string=4'\n");
+    // `style` changes a role; the second line continues a quote.
+    sh.send("style string underline\n");
     sh.expect("$ ");
     sh.send("echo 'a\n");
     sh.expect("> ");
     sh.send("b' x");
     sh.expect("\x1b[4mb'\x1b[0m x");
     sh.send("\x03");
+    sh.expect("$ ");
+    // `setopt editor.no_highlight` turns it off.
+    sh.send("setopt editor.no_highlight\n");
+    sh.expect("$ ");
+    sh.send("fi");
+    sh.expect("fi");
+    sh.send("\x03");
+    sh.expect("$ ");
+    assert!(!sh.transcript()[sh.transcript().rfind("no_highlight").unwrap()..].contains("\x1b[1;34m"));
+    sh.send("unsetopt editor.no_highlight\n");
     sh.expect("$ ");
     // NO_COLOR turns it off.
     sh.send("NO_COLOR=1\n");

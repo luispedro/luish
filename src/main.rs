@@ -31,6 +31,7 @@ mod signals;
 mod stack;
 mod startcache;
 mod state;
+mod style;
 mod sys;
 mod unparse;
 mod vars;

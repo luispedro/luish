@@ -506,7 +506,7 @@ fn suggest<'a>(table: &[(&'a str, u8)], key: &[u8]) -> Option<&'a str> {
 }
 
 /// The Levenshtein distance between two strings.
-fn distance(a: &[u8], b: &[u8]) -> usize {
+pub(crate) fn distance(a: &[u8], b: &[u8]) -> usize {
     let mut row: Vec<usize> = (0..=b.len()).collect();
     for (i, &ca) in a.iter().enumerate() {
         let mut diag = row[0];
@@ -660,41 +660,15 @@ fn history_number() -> usize {
 }
 
 /// The SGR sequence for `%F{spec}` (or `%K{spec}` for the background): a
-/// colour name, a number (0 to 255) or `#rrggbb`. Anything else is the
+/// colour as styles take it (`crate::style::Color`). Anything else is the
 /// default colour.
 fn color(spec: &[u8], bg: bool) -> Vec<u8> {
-    const NAMES: &[&[u8]] = &[
-        b"black", b"red", b"green", b"yellow", b"blue", b"magenta", b"cyan", b"white",
-    ];
-    let base = if bg { 40 } else { 30 };
-    let n = NAMES
-        .iter()
-        .position(|&c| c == spec)
-        .or_else(|| std::str::from_utf8(spec).ok()?.parse::<usize>().ok());
-    let code = match n {
-        Some(n @ 0..8) => format!("{}", base + n),
-        Some(n @ 8..16) => format!("{}", base + 60 + n - 8),
-        Some(n @ 16..256) => format!("{};5;{n}", base + 8),
-        _ => match rgb(spec) {
-            Some((r, g, b)) => format!("{};2;{r};{g};{b}", base + 8),
-            None => format!("{}", base + 9),
-        },
-    };
-    format!("\x1b[{code}m").into_bytes()
-}
-
-/// `#rrggbb` or `#rgb`.
-fn rgb(spec: &[u8]) -> Option<(u8, u8, u8)> {
-    let hex = std::str::from_utf8(spec.strip_prefix(b"#")?).ok()?;
-    if !hex.bytes().all(|c| c.is_ascii_hexdigit()) {
-        return None;
-    }
-    let v = |s: &str| u8::from_str_radix(s, 16).ok();
-    match hex.len() {
-        6 => Some((v(&hex[0..2])?, v(&hex[2..4])?, v(&hex[4..6])?)),
-        3 => Some((v(&hex[0..1])? * 17, v(&hex[1..2])? * 17, v(&hex[2..3])? * 17)),
-        _ => None,
-    }
+    let mut code = String::from("\x1b[");
+    crate::style::Color::parse(spec)
+        .unwrap_or(crate::style::Color::Default)
+        .sgr(bg, &mut code);
+    code.push('m');
+    code.into_bytes()
 }
 
 #[cfg(test)]
@@ -758,6 +732,7 @@ mod tests {
         assert_eq!(color(b"#f08", false), b"\x1b[38;2;255;0;136m");
         assert_eq!(color(b"bogus", false), b"\x1b[39m");
         assert_eq!(color(b"256", true), b"\x1b[49m");
+        assert_eq!(color(b"bright-red", false), b"\x1b[91m");
     }
 
     #[test]

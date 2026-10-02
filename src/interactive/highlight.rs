@@ -10,10 +10,9 @@
 //! `$NAME` and `${NAME}` are marked when `NAME` is not set, unless an earlier
 //! part of the text assigns it (`NAME=`, also as an argument, or `for NAME`).
 //!
-//! The colours come from `$LUISH_HIGHLIGHT`, a colon-separated list of
-//! `class=SGR` entries (as in `GREP_COLORS`) that override the defaults; an
-//! empty SGR leaves that class uncoloured. Highlighting is off if the
-//! variable is `none` or if `$NO_COLOR` is set and not empty.
+//! The colours are the styles (`crate::style`) of the roles that each class
+//! stands for ([`ROLE`]). Highlighting is off with `setopt
+//! editor.no_highlight`, or if `$NO_COLOR` is set and not empty.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -51,52 +50,54 @@ pub enum Class {
 
 const CLASSES: usize = Class::Suggest as usize + 1;
 
-/// Class names in `$LUISH_HIGHLIGHT`, with their default SGR parameters.
-const DEFAULTS: &[(&str, Class, &str)] = &[
-    ("keyword", Class::Keyword, "1;34"),
-    ("command", Class::Command, "32"),
-    ("unknown", Class::Unknown, "1;31"),
-    ("string", Class::String, "33"),
-    ("var", Class::Var, "36"),
-    ("unset", Class::Unset, "2;36"),
-    ("subst", Class::Subst, "35"),
-    ("op", Class::Op, "1"),
-    ("redir", Class::Redir, "1"),
-    ("comment", Class::Comment, "90"),
-    ("assign", Class::Assign, "34"),
-    ("select", Class::Select, "7"),
-    ("desc", Class::Desc, "90"),
-    ("suggest", Class::Suggest, "90"),
+/// The style of each class, by its role (`crate::style::ROLES`).
+const ROLE: [(Class, &str); CLASSES - 1] = [
+    (Class::Keyword, "keyword"),
+    (Class::Command, "command"),
+    (Class::Unknown, "command.unknown"),
+    (Class::String, "string"),
+    (Class::Var, "var"),
+    (Class::Unset, "var.unset"),
+    (Class::Subst, "subst"),
+    (Class::Op, "op"),
+    (Class::Redir, "redir"),
+    (Class::Comment, "comment"),
+    (Class::Assign, "assign"),
+    (Class::Select, "menu.selected"),
+    (Class::Desc, "menu.description"),
+    (Class::Suggest, "suggestion"),
 ];
 
 /// The SGR parameters (without `ESC [` and `m`) of each class.
 #[derive(Debug, PartialEq)]
 pub struct Colors([Vec<u8>; CLASSES]);
 
+/// The built-in colours for a dark background.
+impl Default for Colors {
+    fn default() -> Colors {
+        let styles = crate::style::Styles::default();
+        let r = styles.resolver(Some("default-dark"));
+        Colors::new(|n| r.get(n))
+    }
+}
+
 impl Colors {
-    /// Parses `$LUISH_HIGHLIGHT` over the defaults. Returns None if
-    /// highlighting is off. Unknown classes and SGR parameters with anything
-    /// but digits and `;` are ignored.
-    pub fn parse(spec: &[u8]) -> Option<Colors> {
-        if spec == b"none" {
-            return None;
-        }
+    /// The colours of the styles that `style` gives.
+    pub fn new(style: impl Fn(&str) -> crate::style::Style) -> Colors {
         let mut c = Colors(Default::default());
-        for &(_, class, sgr) in DEFAULTS {
-            c.0[class as usize] = sgr.as_bytes().to_vec();
+        for (class, role) in ROLE {
+            c.0[class as usize] = style(role).sgr().into_bytes();
         }
-        for entry in spec.split(|&b| b == b':') {
-            let Some(eq) = entry.iter().position(|&b| b == b'=') else {
-                continue;
-            };
-            let (name, sgr) = (&entry[..eq], &entry[eq + 1..]);
-            if let Some(&(_, class, _)) = DEFAULTS.iter().find(|d| d.0.as_bytes() == name)
-                && sgr.iter().all(|&b| b.is_ascii_digit() || b == b';')
-            {
-                c.0[class as usize] = sgr.to_vec();
-            }
-        }
-        Some(c)
+        c
+    }
+
+    /// The colours of the completion menu and suggestions with `$NO_COLOR`
+    /// set: the selection in reverse video, and suggestions in grey.
+    pub fn no_color() -> Colors {
+        let mut c = Colors(Default::default());
+        c.0[Class::Select as usize] = b"7".to_vec();
+        c.0[Class::Suggest as usize] = b"90".to_vec();
+        c
     }
 
     /// The SGR parameters of `class`.
@@ -108,7 +109,10 @@ impl Colors {
 /// What the highlighter needs besides `Names`, refreshed before each prompt.
 #[derive(Default)]
 pub struct State {
-    pub colors: Option<Colors>,
+    pub colors: std::rc::Rc<Colors>,
+    /// Whether the line is highlighted (the colours are also those of the
+    /// completion menu and suggestions).
+    pub on: bool,
     /// The earlier lines of an incomplete command.
     pub context: Vec<u8>,
     /// Whether each command name looked up since the prompt was found.
@@ -823,15 +827,16 @@ impl Highlighter for ShellHelper {
         if kind != CmdKind::Other {
             self.right.hint.set(0);
         }
-        self.highlight.colors.is_some() || self.right.is_set()
+        self.highlight.on || self.right.is_set()
     }
 }
 
 impl ShellHelper {
     fn colored<'l>(&self, line: &'l str, pos: usize) -> Cow<'l, str> {
-        let Some(colors) = &self.highlight.colors else {
+        if !self.highlight.on {
             return Cow::Borrowed(line);
-        };
+        }
+        let colors = &self.highlight.colors;
         let context = &self.highlight.context;
         let text = [&context[..], line.as_bytes()].concat();
         let is_set = |name: &[u8]| self.names.vars.iter().any(|v| v == name);
@@ -985,11 +990,16 @@ mod tests {
 
     #[test]
     fn colors() {
-        let c = Colors::parse(b"keyword=4:command=:bogus=1:string=1m").unwrap();
+        let mut st = crate::style::Styles::default();
+        st.set_user("keyword", crate::style::Style::parse(&["underline"]).unwrap());
+        st.set_user("command", crate::style::Style::parse(&["plain"]).unwrap());
+        let r = st.resolver(Some("default-dark"));
+        let c = Colors::new(|n| r.get(n));
         assert_eq!(c.0[Class::Keyword as usize], b"4");
         assert_eq!(c.0[Class::Command as usize], b"");
+        assert_eq!(c.0[Class::Unknown as usize], b"1;31");
         assert_eq!(c.0[Class::String as usize], b"33");
-        assert_eq!(Colors::parse(b"none"), None);
+        assert_eq!(c.0[Class::Select as usize], b"7");
         let cls = classify(b"if ls", None, &|_| true, &|_| true);
         assert_eq!(render(b"if ls", &cls, &c), b"\x1b[4mif\x1b[0m ls");
     }

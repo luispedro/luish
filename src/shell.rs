@@ -109,6 +109,8 @@ pub struct Shell {
     pub dirstack: Vec<Vec<u8>>,
     /// The line editor's key bindings that `bindkey` changed.
     pub keymap: crate::interactive::keys::Keymap,
+    /// The styles of the line editor (`style`, `config.toml`).
+    pub styles: crate::style::Styles,
     /// `getopts`'s position (dash's `shellparam.optind` and `optoff`).
     pub optind: usize,
     pub optoff: Option<usize>,
@@ -200,6 +202,7 @@ impl Shell {
             curdir,
             dirstack: Vec::new(),
             keymap: Default::default(),
+            styles: Default::default(),
             in_ps4: false,
             out_failed: std::cell::Cell::new(false),
             in_exit_trap: false,

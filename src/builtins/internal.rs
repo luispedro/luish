@@ -18,6 +18,7 @@ const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
     (b"print-git-rev", print_git_rev),
     (b"print-git-rev-short", print_git_rev_short),
     (b"savestate", savestate),
+    (b"style", style),
 ];
 
 /// The git revision luish was built from (see `build.rs`): the commit's
@@ -50,6 +51,12 @@ pub fn internal(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 /// shells that aren't interactive.
 fn bindkey(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     crate::interactive::keys::run(sh, b"__luish_internal bindkey", &argv[1..])
+}
+
+/// `style`: the `style` built-in, which is also available here in shells
+/// that aren't interactive.
+fn style(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    super::style::run(sh, b"__luish_internal style", &argv[1..])
 }
 
 /// `complete LINE`: prints the matches that Tab offers for the word at the

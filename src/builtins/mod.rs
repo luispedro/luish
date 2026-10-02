@@ -11,6 +11,7 @@ pub(crate) mod misc;
 mod print;
 mod printf;
 mod read;
+pub(crate) mod style;
 pub(crate) mod test;
 mod trap;
 mod vars;
@@ -113,6 +114,7 @@ const INTERACTIVE: &[(&[u8], BuiltinFn)] = &[
     (b"help", help::help),
     (b"plugin", crate::plugins::plugin),
     (b"print", print::print),
+    (b"style", style::style),
 ];
 
 /// The names of all built-ins, including the interactive-only ones (for

@@ -1,0 +1,95 @@
+--- a name, with where it comes from
+keyword bold blue
+  keyword: bold blue (scheme default-dark)
+command.alias green
+  command: green (scheme default-dark)
+--- setting one, over the scheme
+command.alias bold green
+  command.alias: bold (set by the user)
+  command: green (scheme default-dark)
+comment italic no-dim bright-black bg:#102030
+  comment: italic no-dim bright-black bg:#102030 (set by the user)
+git.branch.dirty sgr:1;38;5;208
+  git.branch: sgr:1;38;5;208 (set by the user)
+--- plain stops the fallback
+command.function plain
+  command.function: plain (set by the user)
+--- errors
+status 1: unknown style: command.unknwn; did you mean command.unknown?
+status 1: unknown style: comand; did you mean command?
+status 1: keyword: bad style: bolt
+status 1: keyword: two colours: blue
+status 1: bad style name: colorscheme
+status 2: bad option: -x
+--- schemes
+(inherits blue)
+keyword              bold green
+keyword bold green
+string (not set)
+status 1: blue: inherits from itself (through green)
+  default-dark
+  default-light
+  blue
+* green
+command.alias bold blue
+  command.alias: bold (set by the user)
+  command: blue (scheme blue)
+command.unknown bold red
+  command.unknown: bold red (scheme blue)
+  command: blue (scheme blue)
+status 1: no such colour scheme: nosuch
+--- a pair, by the background
+  default-dark
+  default-light
+  blue
+* green (background unknown)
+  default-dark
+  default-light
+* blue (light background, from $COLORFGBG)
+  green
+  default-dark
+  default-light
+  blue
+* green (dark background, from $LUISH_BACKGROUND)
+* default-dark (background unknown)
+  default-light
+  blue
+  green
+--- the built-in pair
+string 136
+  string: 136 (scheme default-light)
+keyword bold blue
+  keyword: bold blue (scheme default-dark)
+--- -p, and the saved state
+__luish_internal style -s blue -i ''
+__luish_internal style -s blue command blue
+__luish_internal style -s blue command.unknown 'bold red'
+__luish_internal style -s blue keyword 'bold blue'
+__luish_internal style -s green -i blue
+__luish_internal style -s green keyword 'bold green'
+__luish_internal style command.function plain
+__luish_internal style git.branch 'sgr:1;38;5;208'
+8
+same
+--- removing, and deleting a scheme
+(inherits blue)
+status 1: no such colour scheme: green
+keyword italic
+  keyword: italic (scheme default-dark)
+keyword bold blue
+  keyword: bold blue (scheme default-dark)
+--- --clear: nothing
+keyword plain
+  default-dark
+  default-light
+  blue
+__luish_internal style -s blue -i ''
+__luish_internal style -s blue command blue
+__luish_internal style -s blue command.unknown 'bold red'
+__luish_internal style -s blue keyword 'bold blue'
+__luish_internal style --clear
+--- the list
+command              green
+command.builtin      green
+command.function     green
+48

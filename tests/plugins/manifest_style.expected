@@ -1,0 +1,31 @@
+--- builds the cache
+luish: ~/.config/luish/plugins/theme/plugin.toml: line 9: style.colorscheme: a plugin can't choose the colour scheme
+  default-dark
+  default-light
+* solar
+keyword #268bd2
+  keyword: #268bd2 (scheme solar)
+string #b58900
+  string: #b58900 (scheme solar)
+command.unknown bold italic red
+  command.unknown: bold red (scheme default-dark)
+  command: italic (set by the user)
+git.branch magenta
+  git.branch: magenta (plugin default)
+command italic
+  command: italic (set by the user)
+--- uses it
+  default-dark
+  default-light
+* solar
+keyword #268bd2
+  keyword: #268bd2 (scheme solar)
+string #b58900
+  string: #b58900 (scheme solar)
+command.unknown bold italic red
+  command.unknown: bold red (scheme default-dark)
+  command: italic (set by the user)
+git.branch magenta
+  git.branch: magenta (plugin default)
+command italic
+  command: italic (set by the user)

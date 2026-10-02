@@ -1,0 +1,57 @@
+--- an interactive shell reads it
+  default-dark
+  default-light
+  blue
+* green
+keyword bold green
+  keyword: bold green (scheme green)
+command.unknown bold red
+  command.unknown: bold red (scheme blue)
+  command: blue (scheme blue)
+var.unset dim cyan
+  var.unset: dim cyan (scheme green)
+menu.selected reverse
+  menu.selected: reverse (scheme green)
+command.function bold blue
+  command.function: bold (set by the user)
+  command: blue (scheme blue)
+--- and then from the cache
+  default-dark
+  default-light
+  blue
+* green
+keyword bold green
+  keyword: bold green (scheme green)
+command.unknown bold red
+  command.unknown: bold red (scheme blue)
+  command: blue (scheme blue)
+var.unset dim cyan
+  var.unset: dim cyan (scheme green)
+menu.selected reverse
+  menu.selected: reverse (scheme green)
+command.function bold blue
+  command.function: bold (set by the user)
+  command: blue (scheme blue)
+--- a pair, with a default
+  default-dark
+  default-light
+* light (background unknown)
+* default-dark (dark background, from $LUISH_BACKGROUND)
+  default-light
+  light
+--- a scheme replaces an earlier one of the same name
+keyword italic
+  keyword: italic (scheme default-dark)
+command plain
+--- errors
+luish: ~/.config/luish/config.toml: line 2: colorscheme.x: not a table
+luish: ~/.config/luish/config.toml: line 4: colorscheme.a: inherits from itself
+luish: ~/.config/luish/config.toml: line 5: colorscheme.a.keyword: bad style: bolt
+luish: ~/.config/luish/config.toml: line 6: colorscheme.a: unknown style: command.nope
+luish: ~/.config/luish/config.toml: line 7: colorscheme.a: unknown style: comand; did you mean command?
+luish: ~/.config/luish/config.toml: line 8: colorscheme.a.x: expected a string, found integer
+luish: ~/.config/luish/config.toml: line 9: colorscheme: bad colour scheme name: b c
+luish: ~/.config/luish/config.toml: line 11: style.colorscheme: a table needs both dark and light
+luish: ~/.config/luish/config.toml: line 12: style.keyword: two colours: blue
+__luish_internal style -s a -i ''
+luish: ~/.config/luish/config.toml: line 2: style.colorscheme: unknown key: other (expected dark, light or default)

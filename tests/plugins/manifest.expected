@@ -7,6 +7,7 @@ luish: ~/.config/luish/plugins/p/plugin.toml: line 17: bindkey.Up: no such widge
 p rc.lsh: ll='echo ll' setopt glob.star
 q
 setopt editor.autosuggest
+unsetopt editor.no_highlight
 alias -g U='| tr a-z A-Z'
 alias ll='echo ll'
 alias qq='echo qq'
@@ -18,6 +19,7 @@ qq
 --- uses it
 p extension
 setopt editor.autosuggest
+unsetopt editor.no_highlight
 alias -g U='| tr a-z A-Z'
 alias ll='echo ll'
 alias qq='echo qq'
