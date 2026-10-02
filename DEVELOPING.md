@@ -736,6 +736,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion),
   (`Vars::changes_since`) and put back after the prompt is built; no snapshot is taken if nothing has a
   `prompt-vars` hook or file. `prompt-rewrite` hooks that take a parameter are found by looking up the function in
   the extension's AST when it is registered.
+- **`precmd`, `preexec` and `exit` hooks**: `run_incremental` runs `precmd` next to `notify_jobs` (so before each
+  prompt but `PS2`, also after an empty line or Ctrl-C) and `preexec` after `add_history`, both only in interactive
+  shells; `Shell::exit` runs `exit` after the `EXIT` trap, unless `in_subshell`. Like the trap, `exit` hooks keep the
+  shell from exec'ing its last command (`plugins::exit_hooks`, next to `has_traps`). `exit` in a hook exits the shell
+  (from `exit`, with its status). Without a host, each costs one `Option` check. luish doesn't call shell functions
+  with zsh's hook names, by design (PLAN, Phase 13). Tests: `tests/plugins/hooks.sh`.
 - **Extension built-ins** (`sh::builtin`): `Host::builtins`, by name, looked up in `Shell::lookup_command` after
   functions and before `PATH` (`CommandKind::Extension`), so the only cost without them is the `Shell::plugins`
   check for external commands. `builtin`, `command`, `type` (`is a shell builtin from plugin NAME`, `Host::builtin_plugin`) and `hash` (skips them) know them;

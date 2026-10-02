@@ -322,9 +322,9 @@ impl Shell {
     }
 
     fn run_external(&mut self, cmd: &SimpleCommand, argv: &[Vec<u8>], no_fork: bool) -> ExecResult {
-        // Replace the shell process only if no trap needs it, and no
-        // `<(...)` or `>(...)` is left to close and wait for.
-        let exec_now = no_fork && !self.has_traps() && self.procsubs.is_empty();
+        // Replace the shell process only if no trap or `exit` hook needs it,
+        // and no `<(...)` or `>(...)` is left to close and wait for.
+        let exec_now = no_fork && !self.has_traps() && self.procsubs.is_empty() && !crate::plugins::exit_hooks(self);
         if !exec_now && self.can_spawn() {
             // Like dash's `vforkexec`.
             return Ok(match self.spawn_argv(argv, None) {

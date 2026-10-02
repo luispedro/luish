@@ -46,7 +46,11 @@ impl Host {
         match *self {}
     }
 
-    fn run_hooks(&self, _: &mut Shell, _: HookKind, _: &[&[u8]]) -> Result<(), Flow> {
+    fn run_hooks(&self, _: &mut Shell, _: HookKind, _: &[HookArg]) -> Result<(), Flow> {
+        match *self {}
+    }
+
+    fn has_hooks(&self, _: HookKind) -> bool {
         match *self {}
     }
 
@@ -97,13 +101,68 @@ pub enum HookKind {
     /// for a plugin loaded later, right after it is loaded).
     #[cfg_attr(not(feature = "plugins"), allow(dead_code))]
     PostRc,
+    /// In interactive shells, before each prompt (not `PS2`); called with
+    /// the exit status of the last command.
+    Precmd,
+    /// In interactive shells, after a command is read and before it runs;
+    /// called with its text.
+    Preexec,
+    /// When the main shell exits (not a subshell), after the `EXIT` trap;
+    /// called with the exit status.
+    Exit,
+}
+
+/// An argument given to the hooks.
+#[cfg_attr(not(feature = "plugins"), allow(dead_code))]
+pub enum HookArg<'a> {
+    Text(&'a [u8]),
+    Int(i32),
 }
 
 /// Runs the `chpwd` hooks after `cd` changed the directory.
 pub fn chpwd(sh: &mut Shell, old: &[u8], new: &[u8]) -> Result<(), Flow> {
     match sh.plugins.clone() {
         None => Ok(()),
-        Some(host) => host.run_hooks(sh, HookKind::Chpwd, &[old, new]),
+        Some(host) => host.run_hooks(sh, HookKind::Chpwd, &[HookArg::Text(old), HookArg::Text(new)]),
+    }
+}
+
+/// Runs the `precmd` hooks before a prompt.
+pub fn precmd(sh: &mut Shell) -> Result<(), Flow> {
+    match sh.plugins.clone() {
+        None => Ok(()),
+        Some(host) => host.run_hooks(sh, HookKind::Precmd, &[HookArg::Int(sh.last_status)]),
+    }
+}
+
+/// Runs the `preexec` hooks before a command read at the prompt runs, with
+/// its text (without the final newline).
+pub fn preexec(sh: &mut Shell, text: &[u8]) -> Result<(), Flow> {
+    match sh.plugins.clone() {
+        None => Ok(()),
+        Some(host) => {
+            let text = text.strip_suffix(b"\n").unwrap_or(text);
+            host.run_hooks(sh, HookKind::Preexec, &[HookArg::Text(text)])
+        }
+    }
+}
+
+/// Whether the main shell has `exit` hooks to run, so that it must not
+/// replace itself with its last command.
+pub fn exit_hooks(sh: &Shell) -> bool {
+    !sh.in_subshell && sh.plugins.as_ref().is_some_and(|host| host.has_hooks(HookKind::Exit))
+}
+
+/// Runs the `exit` hooks as the main shell exits with `status`, which `$?`
+/// also is. Returns the status to exit with, which `exit` in a hook changes.
+pub fn exit(sh: &mut Shell, status: i32) -> i32 {
+    let Some(host) = sh.plugins.clone() else {
+        return status;
+    };
+    sh.last_status = status;
+    match host.run_hooks(sh, HookKind::Exit, &[HookArg::Int(status)]) {
+        Err(Flow::Exit(n)) => n,
+        _ => status,
     }
 }
 

@@ -43,8 +43,10 @@ extensions. If you need very flexible code, use a shell file instead.
 
 ## Hooks
 
-`sh::hook(kind, fn)` registers a function to be called on an event: `chpwd`, `post-rc`, `prompt-vars` or
-`prompt-rewrite`.
+`sh::hook(kind, fn)` registers a function to be called on an event: `chpwd`, `precmd`, `preexec`, `exit`, `post-rc`,
+`prompt-vars` or `prompt-rewrite`. These hooks are luish's way of running code on such events: unlike zsh, luish
+doesn't call shell functions with special names (`chpwd`, `precmd`, `zshexit` ...). A hook can call a shell function
+with `sh::run`.
 
 ### Running code when the directory changes: `chpwd`
 
@@ -67,6 +69,47 @@ sh::hook("chpwd", |from, to| {
 `chpwd` hooks are called after each successful `cd`, `pushd` or `popd`, with the old and the new directory. `$?` is the same after
 the hooks as before them. If a hook fails, the error is printed and the other hooks still run. A `chpwd` hook that
 itself runs `cd` does not trigger `chpwd` again.
+
+### Before each prompt and each command: `precmd` and `preexec`
+
+```rhai
+// ~/.config/luish/plugins/timing.rhai
+
+// Report the commands that took more than 10 seconds.
+let started = ();
+sh::hook("preexec", |line| { started = timestamp(); });
+sh::hook("precmd", |status| {
+    if started != () && started.elapsed > 10.0 {
+        sh::write(2, "took " + started.elapsed.to_int() + "s (status " + status + ")\n");
+    }
+    started = ();
+});
+```
+
+In interactive shells, `precmd` hooks run before each prompt (but not before `PS2`), before the prompt is built (so
+before `prompt-vars`), with the exit status of the last command as an integer. `preexec` hooks run after a command
+is read and added to the history, before it runs, with its text as typed (before alias expansion, without the final
+newline, and with all the lines of a command that spans several). A line with several commands (`a; b`) gives one
+`preexec` call, with the whole line.
+
+`$?` is the same after the hooks as before them. A hook that fails is reported, and the other hooks still run. A hook
+that runs `exit` (through `sh::run`) exits the shell. Neither hook runs in scripts or in `-c` commands, even with
+`-i`.
+
+### When the shell exits: `exit`
+
+```rhai
+// Remove this shell's scratch directory, made when the extension was loaded.
+let scratch = sh::capture(["mktemp", "-d"]).out;
+sh::setvar("SCRATCH", scratch);
+sh::hook("exit", |status| { sh::capture(["rm", "-rf", scratch]); });
+```
+
+`exit` hooks run when the shell exits, with `exit` or at the end of its input, after the `EXIT` trap, with the exit
+status as an integer (also `$?`). They run in scripts too (check `sh::interactive()` if that isn't wanted), but not
+when a subshell exits, nor when the shell is replaced by `exec` or killed by a signal. A shell with `exit` hooks
+doesn't replace itself with the last command of a script or of `-c`, as it otherwise does. A hook that runs `exit N`
+changes the status the shell exits with, and the hooks after it don't run.
 
 ### After the startup files: `post-rc`
 
@@ -311,7 +354,7 @@ Extensions reach the shell through the `sh` module:
 
 | Function | Description |
 |---|---|
-| `sh::hook(kind, fn)` | Register a hook: `"chpwd"`, `"post-rc"`, `"prompt-vars"` or `"prompt-rewrite"` |
+| `sh::hook(kind, fn)` | Register a hook: `"chpwd"`, `"precmd"`, `"preexec"`, `"exit"`, `"post-rc"`, `"prompt-vars"` or `"prompt-rewrite"` |
 | `sh::completer(command, fn)` | Register a completer for a command's arguments (`-default-` for the others) |
 | `sh::builtin(name, fn)` | Register a command, called with its words (the name first); see [Commands written in Rhai](#commands-written-in-rhai-shbuiltin) |
 | `sh::read_line()` | A line of standard input without its newline, or `()` at the end |

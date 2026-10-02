@@ -273,7 +273,7 @@ impl Shell {
         match cc {
             CompoundCommand::BraceGroup(list) => self.run_list_exit(list, exit),
             CompoundCommand::Subshell(list) => {
-                if exit && !self.has_traps() {
+                if exit && !self.has_traps() && !crate::plugins::exit_hooks(self) {
                     return self.run_list_exit(list, true);
                 }
                 let pid = self.fork_child(ForkKind::Foreground(0))?;

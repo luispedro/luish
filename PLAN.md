@@ -29,7 +29,7 @@ second (nvm) are otherwise a daily cost.
 ### Next steps, in priority order
 
 1. **Phase 13, in its order**: the rest of the generic completion bridge (needs a design note first) and typing to
-   narrow the menu; shell-function `chpwd`/`precmd`/`preexec`; lazy function parsing of the startup cache.
+   narrow the menu; lazy function parsing of the startup cache.
 2. **Startup cost** (deferred by the user for now; see Performance in `DEVELOPING.md`): the dynamic loader's share,
    and parsing large files (the rc cache, `nvm.sh`) about three times as slowly as dash.
 3. **More conformance**: larger `configure` scripts (coreutils), other Oils files that don't list dash, the smoosh
@@ -38,16 +38,17 @@ second (nvm) are otherwise a daily cost.
    `Candidate`, also for plugins), `LS_COLORS` for files, fuzzy matching.
 5. **Fuzz targets** for the lexer, parser, arithmetic and pattern matcher, with a round-trip property: unparsing then
    re-parsing an AST gives the same AST.
-6. **Plugins (Phase 11)**: `precmd`/`preexec` hooks (Phase 13 item 2 needs them), `plugin remove`.
+6. **Plugins (Phase 11)**: time budgets for hooks, `plugin remove`, the example plugins of M5.
 
 ## Phase 11 — Plugin system (Stage 2)
 
 Done: the `plugin` built-in (`load`, `list-loaded`, `list-available`, `unload`, `add`, `sync`, `update`, `check`, and
 `restore` for the startup cache), directory plugins, plugin packages (below), the byte conversion, the Rhai engine
 with its limits and interrupts (and without `eval`), `import` relative to the importing file and of another plugin's
-modules (`@SOURCE/PLUGIN/MODULE`), the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks, completers,
-extension built-ins (`sh::builtin`, with `sh::read_line`), most of the `sh` module (with `sh::capture` taking an argv,
-`sh::capture_sh`, `sh::which` and `sh::commands`), and the `fs` and `vcs` modules. Still to do:
+modules (`@SOURCE/PLUGIN/MODULE`), the `chpwd`, `precmd`, `preexec`, `exit`, `post-rc`, `prompt-vars` and
+`prompt-rewrite` hooks, completers, extension built-ins (`sh::builtin`, with `sh::read_line`), most of the `sh` module
+(with `sh::capture` taking an argv, `sh::capture_sh`, `sh::which` and `sh::commands`), and the `fs` and `vcs` modules.
+Still to do:
 
 1. A plugin-agnostic `Builtin` trait, with the Rust built-ins moved onto it, so that extension and native built-ins
    go through the same code path (extension built-ins are now a separate `CommandKind::Extension`, looked up after
@@ -71,22 +72,9 @@ extension built-ins (`sh::builtin`, with `sh::read_line`), most of the `sh` modu
    | `chdir(path)` | Change the directory as `cd` would, updating `PWD` and running `chpwd` hooks |
    | `parse_json(text)` | Parse JSON into Rhai maps and arrays |
 
-3. The other hooks, and time budgets (checked in `on_progress`) for every hook that runs while the user waits, not
-   only completers. A hook over its budget is reported and skipped.
-
-   | Hook | Arguments | Result |
-   |---|---|---|
-   | `precmd` | Last exit status | Ignored |
-   | `preexec` | Command line | Ignored |
-   | `exit` | Exit status | Ignored |
-
-   ```rhai
-   let started = timestamp();
-   sh::hook("preexec", |cmdline| { started = timestamp(); });
-   sh::hook("precmd", |status| {
-       if started.elapsed > 10.0 { sh::write(2, `took ${started.elapsed}s\n`); }
-   });
-   ```
+3. Time budgets (checked in `on_progress`) for every hook that runs while the user waits (`precmd`, `preexec`,
+   `prompt-vars`, `prompt-rewrite`, `chpwd`), not only completers. A hook over its budget is reported and skipped.
+   (The `precmd`, `preexec` and `exit` hooks are done.)
 
 4. Example plugins: a git-aware prompt, a `json` query built-in, and a command-timing `preexec`/`precmd` pair (M5).
 5. Plugin packages: `plugin remove`/`gc` and `login.lsh` (below; the table, the lock, `add`, `sync`, `update` and
@@ -160,11 +148,13 @@ Still to build, in this order:
      options only (as fish does). This needs a design note before building.
    - **Typing to narrow the menu** (zsh's `menu select interactive`): while the menu is open, printable keys filter
      the matches instead of closing the menu.
-2. **Shell-function hooks**: functions named `chpwd`, `precmd` and `preexec` run at the same points as the Rhai hooks
-   of the same names (the setup sets the terminal title in `chpwd`). Only interactive shells look them up, and only
-   when a function with that name exists. `precmd` and `preexec` need the Rhai hooks of Phase 11. (zsh's `print -P`,
-   which such functions use, is done: `print` is a built-in in interactive shells.)
-3. **Lazy function parsing for the startup cache**, below.
+2. **Lazy function parsing for the startup cache**, below.
+
+Hooks are the extensions' `chpwd`, `precmd`, `preexec` and `exit` (done): luish doesn't call shell functions with
+zsh's hook names, nor the `*_functions` arrays (decided 2026-10-02). They wouldn't make the zsh hook snippets of
+tools such as direnv, zoxide or mise work, as those use other zsh syntax too, and a hook can call a shell function
+with `sh::run`. The setup's terminal title in `chpwd` becomes a small extension. If compatibility is ever wanted, a
+std plugin can map the zsh names onto the hooks.
 
 Not planned, because the history shows they aren't used or they are easy to rewrite in POSIX sh: the `:h`/`:t`
 modifiers, zsh's two-argument `cd old new`, `vared`, `zmv`, `mmv`, `zed`, `zcalc`,

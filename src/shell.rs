@@ -713,6 +713,7 @@ impl Shell {
             }
         }
         if !self.in_subshell {
+            status = crate::plugins::exit(self, status);
             crate::interactive::save_history(self);
             // Give the terminal back to whoever had it before us.
             self.set_jobctl(false);
@@ -800,6 +801,11 @@ impl Shell {
                         sys::write_all(2, &text);
                     }
                     input.add_history(self, &text);
+                    if self.interactive
+                        && let Err(Flow::Exit(n)) = crate::plugins::preexec(self, &text)
+                    {
+                        self.exit(n);
+                    }
                     if !self.opt(Opt::Noexec) || self.interactive {
                         let r = self.run_list(&list);
                         self.top_level_result(r);
@@ -815,6 +821,11 @@ impl Shell {
                     }
                     if !continuation {
                         self.notify_jobs();
+                        if self.interactive
+                            && let Err(Flow::Exit(n)) = crate::plugins::precmd(self)
+                        {
+                            self.exit(n);
+                        }
                     }
                     match input.read_line(self, continuation, &buf) {
                         Line::Text(line) => {

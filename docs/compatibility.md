@@ -136,9 +136,10 @@ Interactive use:
   reads with `.`, and a `__luish_cache` block's only on what it lists. What else they read (other variables, files
   that commands read) isn't seen, other than by `check-cache`; see
   [Cached startup files](usage.md#cached-startup-files).
-- Extensions have only the `chpwd`, `post-rc`, `prompt-vars` and `prompt-rewrite` hooks, completers and commands:
-  no `precmd`, `preexec` or `exit` hooks, and no time limit except for completers, so a slow prompt
-  hook or `prompt-vars.lsh` delays the prompt. Completers can't be interrupted with Ctrl-C, only by their time limit.
+- Shell functions named `chpwd`, `precmd`, `preexec`, `periodic` or `zshexit` are not hooks, nor are the
+  `*_functions` arrays: extensions register hooks instead (see [](extensions.md)).
+- Extensions' hooks have no time limit (only completers do), so a slow `precmd` or prompt hook, or
+  `prompt-vars.lsh`, delays the prompt. Completers can't be interrupted with Ctrl-C, only by their time limit.
 
 The static musl build (see [](installation.md)) differs from the usual build, which uses glibc as dash does:
 

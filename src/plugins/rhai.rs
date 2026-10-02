@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, Position, Scope, Shared};
 
 use super::bytes::{to_bytes, to_str};
-use super::{HookKind, Loading};
+use super::{HookArg, HookKind, Loading};
 use crate::expand::{pattern::Pattern, split::XChar};
 use crate::interactive::{Candidate, Completion, DEFAULT_COMPLETER, Suffix};
 use crate::prompt::Prompt;
@@ -273,6 +273,9 @@ fn hook_kind(name: &str) -> Option<HookKind> {
         "prompt-vars" => Some(HookKind::PromptVars),
         "prompt-rewrite" => Some(HookKind::PromptRewrite),
         "post-rc" => Some(HookKind::PostRc),
+        "precmd" => Some(HookKind::Precmd),
+        "preexec" => Some(HookKind::Preexec),
+        "exit" => Some(HookKind::Exit),
         _ => None,
     }
 }
@@ -908,7 +911,7 @@ impl Host {
 
     /// Runs the hooks of one kind. A failing hook is reported and the
     /// others still run. `$?` is kept.
-    pub fn run_hooks(&self, sh: &mut Shell, kind: HookKind, args: &[&[u8]]) -> Result<(), Flow> {
+    pub fn run_hooks(&self, sh: &mut Shell, kind: HookKind, args: &[HookArg]) -> Result<(), Flow> {
         self.run_hooks_of(sh, kind, args, None)
     }
 
@@ -922,7 +925,7 @@ impl Host {
     }
 
     /// Runs the hooks of one kind, of all plugins or of the plugin `only`.
-    fn run_hooks_of(&self, sh: &mut Shell, kind: HookKind, args: &[&[u8]], only: Option<u32>) -> Result<(), Flow> {
+    fn run_hooks_of(&self, sh: &mut Shell, kind: HookKind, args: &[HookArg], only: Option<u32>) -> Result<(), Flow> {
         if self.running.borrow().contains(&kind) {
             return Ok(());
         }
@@ -936,7 +939,12 @@ impl Host {
         if hooks.is_empty() {
             return Ok(());
         }
-        let args: Vec<Dynamic> = args.iter().map(|a| to_str(a).into()).collect();
+        let args: Vec<Dynamic> = (args.iter())
+            .map(|a| match *a {
+                HookArg::Text(t) => to_str(t).into(),
+                HookArg::Int(n) => (n as rhai::INT).into(),
+            })
+            .collect();
         self.running.borrow_mut().push(kind);
         let saved = sh.last_status;
         let mut result = Ok(());
@@ -960,6 +968,11 @@ impl Host {
         sh.last_status = saved;
         self.running.borrow_mut().retain(|&k| k != kind);
         result
+    }
+
+    /// Whether an extension registered a hook of this kind.
+    pub fn has_hooks(&self, kind: HookKind) -> bool {
+        self.hooks.borrow().iter().any(|h| h.0 == kind)
     }
 
     /// The hooks of one kind, in the order they were registered.

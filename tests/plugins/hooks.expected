@@ -1,0 +1,43 @@
+--- interactive
+precmd 0, $?=0
+preexec [false]
+precmd 1, $?=1
+precmd 1, $?=1
+preexec [echo "\$? kept: $?"]
+$? kept: 1
+precmd 0, $?=0
+preexec [alias say='echo said']
+precmd 0, $?=0
+preexec [say it]
+said it
+precmd 0, $?=0
+preexec [echo two \
+lines]
+two lines
+precmd 0, $?=0
+preexec [(exit 3)]
+precmd 3, $?=3
+preexec [trap 'echo "EXIT trap, $?"' EXIT]
+precmd 0, $?=0
+preexec [exit 5]
+EXIT trap, 5
+exit 5
+status 5
+--- end of input
+precmd 0, $?=0
+preexec [echo last; (exit 2)]
+last
+precmd 2, $?=2
+exit 2
+status 2
+--- a script
+subshell
+cmdsub
+exit 4
+status 4
+--- exit in a hook
+exit 7
+second exit hook 7
+status 7
+exit 1
+status 8

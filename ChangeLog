@@ -10,6 +10,7 @@ Unreleased
     * Array slices, `${a[i..j]}`, as in Python
     * `plugin add` refuses a source without plugins, and directories
       without a plugin's files are no longer taken for plugins
+    * Extensions' precmd, preexec and exit hooks
 
 Version 0.3.0 2026-10-01 by luispedro
     * LUISH_VERSION and LUISH_PATCHLEVEL (as zsh's ZSH_VERSION and
