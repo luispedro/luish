@@ -107,8 +107,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 
 - Line continuation works inside `$` expansions (`$\<newline>?`), as in dash. Backquotes are unescaped, then parsed
   separately. `$((` falls back to `$( (...) )` (a deviation). As the `$((` inside are then read again, while one is
-  read `arith_memo` keeps what each one inside read as, or reading took time exponential in their nesting. Tests:
-  `parse/*`, `parse/arith_fallback.sh`.
+  read (or a subscript, below) `subst_memo` keeps what each `$((` and `$(` read as, or reading took time exponential
+  in their nesting. Tests: `parse/*`, `parse/arith_fallback.sh`.
 - Here-docs: several on one line, inside `$(...)`; bodies over 64 KiB go through an unlinked temporary file. One in
   `$(...)` with no body before the `)` is empty, as in dash (`read_subst_list` gives it the tree of an empty body,
   for `unparse`). Test: `parse/heredoc_in_cmdsubst.sh`.
@@ -135,9 +135,10 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   differently: else whether it is a subscript would depend on the text after the `}`), so
   `read_index` is followed by that second reading of the text. For nested ones (`${a[${a[...`) that took time
   exponential in the depth, so while a subscript is read, `param_memo` records where each `${...}` read ends, and
-  the second reading (`skim`) skips them. A `$(...)` that doesn't parse leaves the parser as it was (the
+  the second reading (`skim`) skips them, and `subst_memo` has what each `$(` read as (as one with a here-document
+  with no end reads to the end of the input). A `$(...)` that doesn't parse leaves the parser as it was (the
   here-documents waiting for their bodies), as reading goes on. Tests: `parse/bad_subscript.sh`,
-  `parse/bad_subscript_cmdsubst.sh`.
+  `parse/bad_subscript_cmdsubst.sh`, `parse/bad_subscript_heredoc.sh`.
 - Arrays: `split_assignment_with` also takes `NAME+=` and `NAME[index]=` (the index up to the matching unquoted `]`,
   across parts), and `parse_simple` reads `(...)` right after an assignment's `=` (`array_follows` compares the
   token positions, so `a= (x)` stays an error) into a lone `WordPart::Array`. After `local`, `export`, `readonly`,
