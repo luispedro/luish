@@ -674,8 +674,12 @@ impl Parser {
         match c {
             b'\\' => match self.at(1) {
                 None if !self.source_eof => return self.incomplete(),
+                // A backslash at the end is itself, as if escaped (which
+                // is how `unparse` writes it, as before a `)` it would
+                // escape that).
                 None => {
-                    lit.push(b'\\');
+                    flush(parts, lit);
+                    parts.push(WordPart::Escaped(b'\\'));
                     self.pos += 1;
                 }
                 Some(b'\n') => {

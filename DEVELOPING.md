@@ -526,7 +526,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - `savestate` (`state.rs`): not `PPID`, `LINENO`, `SHLVL`, or the options `-i -s -m -n`. Functions are printed by
   `unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`), and escapes a `$` before backquotes, which it writes as
   `$(...)` (`unparse::tests::dollar_before_backquotes`); `${x/pat}` is written without the last `/` (`${x//}` would be `//`,
-  `unparse::tests::words`), and a command named like a reserved word keeps its redirections first (`>f for`); words in function bodies that would be expanded as
+  `unparse::tests::words`), and a command named like a reserved word keeps its redirections first (`>f for`); a
+  backslash at the end of the input is read as `\\` (so it stays itself in `$(...)`); words in function bodies that would be expanded as
   aliases (command names that are aliases of any kind, other words that are global aliases) are quoted, and a
   function named like an alias is preceded by `unalias`. Loaded plugins are printed as
   `__luish_internal plugin restore NAME PATH`, after aliases and before options. When there are aliases, the commands

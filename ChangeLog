@@ -1,7 +1,7 @@
 Unreleased
     * ${x:A} and !$:A no longer take quadratic time on long paths
-    * Fixed: typeset -f and savestate printing ${x/}, ${`cmd`} and
-      >file for
+    * Fixed: typeset -f and savestate printing ${x/}, ${`cmd`},
+      >file for and `cmd \\`
     * Fixed: ${a['"'} is a bad substitution (as in dash), not a syntax
       error, and a subscript ends where it ends read unquoted (as in
       zsh); deeply nested ${a[${a[...}} no longer take exponential time

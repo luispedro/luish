@@ -944,6 +944,8 @@ mod tests {
 
     #[test]
     fn dollar_before_backquotes() {
+        // A backslash at the end of the backquoted text, before the `)`.
+        assert_eq!(round_trip("f() { echo `a \\\\`; }"), "f() {\n    echo $(a \\\\)\n}\n");
         // `$` then `$(...)` would read as `$$`.
         assert_eq!(
             round_trip("f() { echo a$`b` \"$`c`\"; }"),
