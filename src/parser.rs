@@ -865,11 +865,16 @@ fn parts_fork(parts: &[WordPart]) -> bool {
                     | ParamOp::RemoveSmallestSuffix(w)
                     | ParamOp::RemoveLargestSuffix(w)
                     | ParamOp::RemoveSmallestPrefix(w)
-                    | ParamOp::RemoveLargestPrefix(w)
-                    | ParamOp::Bad(w) => forks(w),
+                    | ParamOp::RemoveLargestPrefix(w) => forks(w),
                     ParamOp::Substring(a, b) => forks(a) || b.as_ref().is_some_and(forks),
                     ParamOp::Replace(_, a, b) => forks(a) || forks(b),
-                    ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names | ParamOp::Modify(_) => false,
+                    // An error before its text is expanded.
+                    ParamOp::Plain
+                    | ParamOp::Length
+                    | ParamOp::Keys
+                    | ParamOp::Names
+                    | ParamOp::Modify(_)
+                    | ParamOp::Bad(_) => false,
                 }
         }
         _ => false,

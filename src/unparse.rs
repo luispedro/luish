@@ -533,27 +533,14 @@ impl<'a> Printer<'a> {
             ParamOp::RemoveLargestSuffix(w) => (b"%%", w),
             ParamOp::RemoveSmallestPrefix(w) => (b"#", w),
             ParamOp::RemoveLargestPrefix(w) => (b"##", w),
-            // Backquotes right after `${` stay backquotes: `${$(...)}` would
-            // read as `$` and an operator. The word is never expanded.
-            ParamOp::Bad(w) if pe.name == ParamName::Var(Vec::new()) && !pe.colon => match w.0.split_first() {
-                Some((WordPart::CmdSubst(list), rest)) => {
-                    let mut p = Printer::new(self.indent + 1, self.aliases, self.globqual);
-                    p.seq(list, false);
-                    self.w(b"`");
-                    for c in p.finish_with(false) {
-                        if matches!(c, b'\\' | b'`' | b'$') {
-                            self.out.push(b'\\');
-                        }
-                        self.out.push(c);
-                    }
-                    self.w(b"`");
-                    self.parts(rest);
-                    self.w(b"}");
-                    return;
+            ParamOp::Bad(text) => {
+                if pe.colon {
+                    self.w(b":");
                 }
-                _ => (b"", w),
-            },
-            ParamOp::Bad(w) => (b"", w),
+                self.w(text);
+                self.w(b"}");
+                return;
+            }
             ParamOp::Substring(offset, len) => {
                 // The text of a negative offset starts with a space or `(`.
                 self.w(b":");
@@ -768,7 +755,7 @@ fn part<V: LineVisitor>(p: &mut WordPart, v: &mut V) {
 
 fn param_op<V: LineVisitor>(op: &mut ParamOp, v: &mut V) {
     match op {
-        ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names | ParamOp::Modify(_) => {}
+        ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names | ParamOp::Modify(_) | ParamOp::Bad(_) => {}
         ParamOp::Default(w)
         | ParamOp::Assign(w)
         | ParamOp::Error(w)
@@ -776,8 +763,7 @@ fn param_op<V: LineVisitor>(op: &mut ParamOp, v: &mut V) {
         | ParamOp::RemoveSmallestSuffix(w)
         | ParamOp::RemoveLargestSuffix(w)
         | ParamOp::RemoveSmallestPrefix(w)
-        | ParamOp::RemoveLargestPrefix(w)
-        | ParamOp::Bad(w) => word(w, v),
+        | ParamOp::RemoveLargestPrefix(w) => word(w, v),
         ParamOp::Substring(offset, len) => {
             word(offset, v);
             len.iter_mut().for_each(|w| word(w, v));

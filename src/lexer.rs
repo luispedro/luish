@@ -230,7 +230,7 @@ struct PendingHereDoc {
 }
 
 /// Quoting context for `$...` expansions and nested words.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Ctx {
     Unquoted,
     DQuote,
@@ -269,7 +269,20 @@ pub struct Parser {
     /// Where the last error was found, in bytes of the original input (see
     /// [`Parser::error_span`]).
     error_at: Cell<(usize, usize)>,
+    /// Where the `${...}` read from each position and context ends, kept
+    /// while one with a subscript is read (`read_index`): when there is no
+    /// `]`, the text is read again as a bad substitution, which skips them
+    /// (`skim`). Without this, reading took time exponential in the
+    /// nesting of `${a[${a[...`.
+    param_memo: Option<Box<ParamMemo>>,
+    /// Reading the text of a bad substitution, which is kept as it is: what
+    /// is read is thrown away, so a `${...}` in `param_memo` is skipped.
+    skim: bool,
 }
+
+/// Whether `read_braced_param` read a `${...}`, and the position, line and
+/// error span after it.
+type ParamMemo = HashMap<(usize, Ctx), (PResult<()>, usize, u32, (usize, usize))>;
 
 /// Whether the word after an alias with this value is checked for aliases.
 pub fn ends_in_blank(value: &[u8]) -> bool {
@@ -295,6 +308,16 @@ fn is_array_start(lit: &[u8]) -> bool {
 
 pub fn is_valid_name(s: &[u8]) -> bool {
     !s.is_empty() && is_name_start(s[0]) && s.iter().all(|&c| is_name_char(c))
+}
+
+fn bad_param(name: ParamName, text: Vec<u8>, colon: bool) -> WordPart {
+    WordPart::Param(Box::new(ParamExp {
+        name,
+        index: None,
+        op: ParamOp::Bad(text),
+        colon,
+        flags: None,
+    }))
 }
 
 fn is_special_param(c: u8) -> bool {
@@ -330,6 +353,8 @@ impl Parser {
             started: false,
             bareglobqual: false,
             error_at: Cell::new((0, 0)),
+            param_memo: None,
+            skim: false,
         }
     }
 
@@ -397,6 +422,13 @@ impl Parser {
         })
     }
 
+    /// The text moved: what `param_memo` has is at other positions now.
+    fn src_changed(&mut self) {
+        if let Some(memo) = &mut self.param_memo {
+            memo.clear();
+        }
+    }
+
     fn at(&self, off: usize) -> Option<u8> {
         self.src.get(self.pos + off).copied()
     }
@@ -408,6 +440,7 @@ impl Parser {
         let mut ate = false;
         while self.src.get(i) == Some(&b'\\') && self.src.get(i + 1) == Some(&b'\n') {
             self.src.drain(i..i + 2);
+            self.src_changed();
             self.splice_delta -= 2;
             self.lineno += 1;
             ate = true;
@@ -852,18 +885,43 @@ impl Parser {
 
     /// After `${`.
     fn read_braced_param(&mut self, ctx: Ctx) -> PResult<WordPart> {
-        // As in dash, a bad substitution is an error only when expanded:
-        // the rest up to `}` is read as its word.
-        let bad = |p: &mut Parser, name, colon| {
-            let word = p.read_param_word(ctx)?;
-            Ok(WordPart::Param(Box::new(ParamExp {
-                name,
-                index: None,
-                op: ParamOp::Bad(word),
-                colon,
-                flags: None,
-            })))
+        let Some(memo) = &self.param_memo else {
+            let r = self.read_braced_param_uncached(ctx);
+            // A subscript inside started the memo: the outermost `${` ends it.
+            self.param_memo = None;
+            return r;
         };
+        let key = (self.pos, ctx);
+        if self.skim
+            && let Some((r, pos, lineno, error_at)) = memo.get(&key)
+        {
+            (self.pos, self.lineno) = (*pos, *lineno);
+            self.error_at.set(*error_at);
+            // Thrown away: any parameter will do.
+            return r
+                .clone()
+                .map(|()| bad_param(ParamName::Var(Vec::new()), Vec::new(), false));
+        }
+        let r = self.read_braced_param_uncached(ctx);
+        if let Some(memo) = &mut self.param_memo {
+            let done = r.as_ref().map(|_| ()).map_err(Clone::clone);
+            memo.insert(key, (done, self.pos, self.lineno, self.error_at.get()));
+        }
+        r
+    }
+
+    /// A bad substitution: as in dash, an error only when expanded. The
+    /// rest of the text up to `}` is read in `ctx`, and kept as it is.
+    fn read_bad_param(&mut self, name: ParamName, colon: bool, ctx: Ctx) -> PResult<WordPart> {
+        let start = self.pos;
+        let skim = std::mem::replace(&mut self.skim, true);
+        let r = self.read_param_word(ctx);
+        self.skim = skim;
+        r?;
+        Ok(bad_param(name, self.src[start..self.pos - 1].to_vec(), colon))
+    }
+
+    fn read_braced_param_uncached(&mut self, ctx: Ctx) -> PResult<WordPart> {
         let mk = |name, op, colon| {
             WordPart::Param(Box::new(ParamExp {
                 name,
@@ -887,7 +945,7 @@ impl Parser {
                 None => {
                     // Read as a whole, from the `(`.
                     (self.pos, self.lineno) = start;
-                    bad(self, ParamName::Var(Vec::new()), false)
+                    self.read_bad_param(ParamName::Var(Vec::new()), false, ctx)
                 }
             };
         }
@@ -956,7 +1014,7 @@ impl Parser {
                         }
                         _ => {
                             (self.pos, self.lineno) = save;
-                            return bad(self, ParamName::Special(b'!'), false);
+                            return self.read_bad_param(ParamName::Special(b'!'), false, ctx);
                         }
                     },
                     _ => {}
@@ -968,7 +1026,7 @@ impl Parser {
             return if self.at(0).is_none() {
                 self.eof_err("Syntax error: Missing '}'")
             } else {
-                bad(self, ParamName::Var(Vec::new()), false)
+                self.read_bad_param(ParamName::Var(Vec::new()), false, ctx)
             };
         };
         if matches!(name, ParamName::Var(_)) && self.at(0) == Some(b'[') {
@@ -983,7 +1041,7 @@ impl Parser {
                 }
                 None => {
                     self.pos = save;
-                    return bad(self, name, false);
+                    return self.read_bad_param(name, false, ctx);
                 }
             }
         }
@@ -1077,8 +1135,13 @@ impl Parser {
     }
 
     /// Reads `[index]` of `${name[index]}`, from the `[`. Returns `None`,
-    /// leaving the position anywhere, if there is no `]` before the `}`.
+    /// back at the `[`, if there is no `]` before the `}`, or the subscript
+    /// doesn't parse (`${a['"'}` is a bad substitution, as in dash).
     fn read_index(&mut self) -> PResult<Option<Index>> {
+        if self.param_memo.is_none() {
+            self.param_memo = Some(Box::default());
+        }
+        let start = (self.pos, self.lineno);
         self.pos += 1;
         match (self.at(0), self.at(1)) {
             (Some(b'@'), Some(b']')) => {
@@ -1091,22 +1154,17 @@ impl Parser {
             }
             _ => {}
         }
-        let (w, closed) = self.read_param_word_to(Ctx::DQuote, Some(b']'))?;
-        Ok(closed.then(|| slice_index(w)))
+        match self.read_param_word_to(Ctx::DQuote, Some(b']')) {
+            Ok((w, true)) => Ok(Some(slice_index(w))),
+            _ => {
+                (self.pos, self.lineno) = start;
+                Ok(None)
+            }
+        }
     }
 
     /// The rest of `${name...}`, after the name (and the index).
     fn read_param_op(&mut self, name: ParamName, ctx: Ctx) -> PResult<WordPart> {
-        let bad = |p: &mut Parser, name, colon| {
-            let word = p.read_param_word(ctx)?;
-            Ok(WordPart::Param(Box::new(ParamExp {
-                name,
-                index: None,
-                op: ParamOp::Bad(word),
-                colon,
-                flags: None,
-            })))
-        };
         let mk = |name, op, colon| {
             WordPart::Param(Box::new(ParamExp {
                 name,
@@ -1183,7 +1241,7 @@ impl Parser {
                 None
             };
             if len.as_ref().is_some_and(|w| w.0.is_empty()) {
-                return Ok(mk(name, ParamOp::Bad(Word::default()), true));
+                return Ok(bad_param(name, Vec::new(), true));
             }
             return Ok(mk(name, ParamOp::Substring(offset, len), true));
         }
@@ -1209,7 +1267,7 @@ impl Parser {
             }
             _ => {
                 self.pos -= 1;
-                return bad(self, name, colon);
+                return self.read_bad_param(name, colon, ctx);
             }
         };
         // Inside double quotes, the pattern of `%`/`#` starts a fresh quoting
@@ -1554,6 +1612,7 @@ impl Parser {
             }
         }
         self.src.splice(tok.start..tok.end, value.iter().copied());
+        self.src_changed();
         self.splice_delta += delta;
         self.pos = tok.start;
         self.lineno = tok.lineno;

@@ -326,7 +326,14 @@ fn push_param(out: &mut Vec<u8>, pe: &ParamExp) {
         ParamOp::RemoveLargestSuffix(w) => (b"%%", Some(w)),
         ParamOp::RemoveSmallestPrefix(w) => (b"#", Some(w)),
         ParamOp::RemoveLargestPrefix(w) => (b"##", Some(w)),
-        ParamOp::Bad(w) => (b"", Some(w)),
+        ParamOp::Bad(text) => {
+            if pe.colon {
+                out.push(b':');
+            }
+            out.extend_from_slice(text);
+            out.push(b'}');
+            return;
+        }
         ParamOp::Substring(offset, len) => {
             out.push(b':');
             push_word(out, offset);

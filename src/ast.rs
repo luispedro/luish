@@ -420,9 +420,9 @@ pub enum ParamOp {
     /// zsh's modifiers, `${x:h}`, `${x:A:h}`.
     Modify(Vec<crate::expand::modify::Modifier>),
     /// Not a valid substitution (such as bash's `${x^^}`). As in dash,
-    /// this is an error only when it is expanded; the word is the rest of
-    /// the text up to `}`.
-    Bad(Word),
+    /// this is an error only when it is expanded; this is the rest of the
+    /// text up to `}`, as it was (it is read as a word, to find the `}`).
+    Bad(Vec<u8>),
 }
 
 /// Which matches of the pattern `${x/pattern/replacement}` replaces.

@@ -124,7 +124,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `[[ x =~ ... ]]` (`regex_word`). The list is parsed as for `$(` (`read_subst_list`). Tests: `expand/procsubst*.sh`,
   unit tests in `unparse.rs`.
 - As in dash, a bad `${...}` (such as `${x^^}`) is an error only when expanded, and `$(` in a here-doc delimiter
-  is a syntax error. Test: `parse/dash_lenient.sh`.
+  is a syntax error. Test: `parse/dash_lenient.sh`. `ParamOp::Bad` keeps the text up to the `}` as it was
+  (`read_bad_param`): it is read as a word only to find the `}`. A subscript with no `]` before the `}`, or one
+  that doesn't parse (`${a['"'}`, where the subscript is read as in double quotes), makes a bad substitution, so
+  `read_index` is followed by that second reading of the text. For nested ones (`${a[${a[...`) that took time
+  exponential in the depth, so while a subscript is read, `param_memo` records where each `${...}` read ends, and
+  the second reading (`skim`) skips them. Test: `parse/bad_subscript.sh`.
 - Arrays: `split_assignment_with` also takes `NAME+=` and `NAME[index]=` (the index up to the matching unquoted `]`,
   across parts), and `parse_simple` reads `(...)` right after an assignment's `=` (`array_follows` compares the
   token positions, so `a= (x)` stays an error) into a lone `WordPart::Array`. After `local`, `export`, `readonly`,
@@ -512,8 +517,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `tests/plugins/complete.sh`.
 - `savestate` (`state.rs`): not `PPID`, `LINENO`, `SHLVL`, or the options `-i -s -m -n`. Functions are printed by
   `unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`), and escapes a `$` before backquotes, which it writes as
-  `$(...)` (`unparse::tests::dollar_before_backquotes`), except at the start of a bad substitution (`${`...`}`, where
-  `${$(...)}` would read as `$` and an operator); `${x/pat}` is written without the last `/` (`${x//}` would be `//`,
+  `$(...)` (`unparse::tests::dollar_before_backquotes`); `${x/pat}` is written without the last `/` (`${x//}` would be `//`,
   `unparse::tests::words`), and a command named like a reserved word keeps its redirections first (`>f for`); words in function bodies that would be expanded as
   aliases (command names that are aliases of any kind, other words that are global aliases) are quoted, and a
   function named like an alias is preceded by `unalias`. Loaded plugins are printed as
