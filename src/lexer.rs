@@ -1183,19 +1183,22 @@ impl Parser {
                 return Ok(None);
             }
         };
-        // Only quotes and backslashes are read differently.
-        let end = (self.pos, self.lineno, self.splice_delta);
-        if ctx != Ctx::DQuote && self.src[start.0..end.0].iter().any(|&c| c == b'\'' || c == b'\\') {
+        // Only quotes and backslashes are read differently. Where it ends
+        // is compared in the original input, as a reading removes the line
+        // continuations after `$` (`$\<newline>`), which the other then
+        // doesn't see: its line is the first's.
+        let end = (self.consumed(), self.lineno);
+        if ctx != Ctx::DQuote && self.src[start.0..self.pos].iter().any(|&c| c == b'\'' || c == b'\\') {
             (self.pos, self.lineno) = (start.0 + 1, start.1);
             let skim = std::mem::replace(&mut self.skim, true);
             let same = self.read_param_word_to(ctx, Some(b']'));
             self.skim = skim;
-            let same = matches!(same, Ok((_, true))) && (self.pos, self.lineno, self.splice_delta) == end;
-            if !same {
+            if !matches!(same, Ok((_, true))) || self.consumed() != end.0 {
                 self.peeked = None;
                 (self.pos, self.lineno) = start;
                 return Ok(None);
             }
+            self.lineno = end.1;
         }
         Ok(Some(slice_index(index)))
     }
