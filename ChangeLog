@@ -4,6 +4,8 @@ Unreleased
       >file for
     * Fixed: ${a['"'} is a bad substitution (as in dash), not a syntax
       error; deeply nested ${a[${a[...}} no longer take exponential time
+    * Deeply nested $(( that isn't arithmetic no longer takes exponential
+      time
     * std/completion: luish's built-ins (options; style's names, values
       and colour schemes)
     * Here-strings: cmd <<< word, as in bash and zsh

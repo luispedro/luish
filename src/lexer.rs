@@ -278,11 +278,19 @@ pub struct Parser {
     /// Reading the text of a bad substitution, which is kept as it is: what
     /// is read is thrown away, so a `${...}` in `param_memo` is skipped.
     skim: bool,
+    /// What each `$((` inside one being read was read as (`Some` while one
+    /// is read). When it isn't arithmetic it is read again as `$( (`, and
+    /// the ones inside it with it: without this, reading took time
+    /// exponential in their nesting.
+    arith_memo: Option<ArithMemo>,
 }
 
 /// Whether `read_braced_param` read a `${...}`, and the position, line and
 /// error span after it.
 type ParamMemo = HashMap<(usize, Ctx), (PResult<()>, usize, u32, (usize, usize))>;
+
+/// What a `$((` read as, and the position, line and error span after it.
+type ArithMemo = HashMap<usize, (PResult<WordPart>, usize, u32, (usize, usize))>;
 
 /// Whether the word after an alias with this value is checked for aliases.
 pub fn ends_in_blank(value: &[u8]) -> bool {
@@ -355,6 +363,7 @@ impl Parser {
             error_at: Cell::new((0, 0)),
             param_memo: None,
             skim: false,
+            arith_memo: None,
         }
     }
 
@@ -425,6 +434,9 @@ impl Parser {
     /// The text moved: what `param_memo` has is at other positions now.
     fn src_changed(&mut self) {
         if let Some(memo) = &mut self.param_memo {
+            memo.clear();
+        }
+        if let Some(memo) = &mut self.arith_memo {
             memo.clear();
         }
     }
@@ -813,16 +825,23 @@ impl Parser {
                 self.at(2) == Some(b'(')
             } =>
             {
-                let save = (self.pos, self.lineno);
-                self.pos += 3;
-                match self.try_read_arith()? {
-                    Some(w) => Ok(Some(WordPart::Arith(w))),
-                    None => {
-                        (self.pos, self.lineno) = save;
-                        self.pos += 2;
-                        self.read_cmdsubst().map(Some)
-                    }
+                let start = self.pos;
+                let Some(memo) = &self.arith_memo else {
+                    self.arith_memo = Some(ArithMemo::default());
+                    let r = self.read_arith_or_cmdsubst();
+                    self.arith_memo = None;
+                    return r.map(Some);
+                };
+                if let Some((r, pos, lineno, error_at)) = memo.get(&start) {
+                    (self.pos, self.lineno) = (*pos, *lineno);
+                    self.error_at.set(*error_at);
+                    return r.clone().map(Some);
                 }
+                let r = self.read_arith_or_cmdsubst();
+                if let Some(memo) = &mut self.arith_memo {
+                    memo.insert(start, (r.clone(), self.pos, self.lineno, self.error_at.get()));
+                }
+                r.map(Some)
             }
             b'(' => {
                 self.pos += 2;
@@ -1309,6 +1328,20 @@ impl Parser {
             mark_leading_tilde(&mut parts);
         }
         Ok((Word(parts), at_stop))
+    }
+
+    /// At `$((`: `$((...))`, or else `$( (...) )`.
+    fn read_arith_or_cmdsubst(&mut self) -> PResult<WordPart> {
+        let save = (self.pos, self.lineno);
+        self.pos += 3;
+        match self.try_read_arith()? {
+            Some(w) => Ok(WordPart::Arith(w)),
+            None => {
+                (self.pos, self.lineno) = save;
+                self.pos += 2;
+                self.read_cmdsubst()
+            }
+        }
     }
 
     /// After `$((`. Returns `None` if this turns out to be `$( (...) )`.

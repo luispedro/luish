@@ -106,7 +106,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 ### Parsing (`lexer.rs`, `parser.rs`)
 
 - Line continuation works inside `$` expansions (`$\<newline>?`), as in dash. Backquotes are unescaped, then parsed
-  separately. `$((` falls back to `$( (...) )` (a deviation). Tests: `parse/*`, `parse/arith_fallback.sh`.
+  separately. `$((` falls back to `$( (...) )` (a deviation). As the `$((` inside are then read again, while one is
+  read `arith_memo` keeps what each one inside read as, or reading took time exponential in their nesting. Tests:
+  `parse/*`, `parse/arith_fallback.sh`.
 - Here-docs: several on one line, inside `$(...)`; bodies over 64 KiB go through an unlinked temporary file. One in
   `$(...)` with no body before the `)` is empty, as in dash (`read_subst_list` gives it the tree of an empty body,
   for `unparse`). Test: `parse/heredoc_in_cmdsubst.sh`.

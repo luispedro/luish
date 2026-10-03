@@ -8,3 +8,5 @@ echo $(( echo 1
 echo 2
 ) )
 echo bye
+# Nested ones take linear time (this took minutes).
+echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo $((echo deep) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )) )
