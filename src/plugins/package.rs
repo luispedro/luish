@@ -28,6 +28,7 @@
 //! writes `plugins.lock`, which pins each git source to a commit; startup and
 //! `plugin load` resolve with the pins, without the network.
 
+use super::ui::{Kind as Paint, Ui};
 use super::{Found, Kind, fetch};
 pub(super) use crate::config::toml_str;
 use crate::config::{in_order, line_of, report, tilde};
@@ -823,6 +824,8 @@ struct Resolver<'a> {
     /// Whether to say what is fetched (`plugin sync` and `plugin update`
     /// without `-q`).
     verbose: bool,
+    /// The colours for what it says.
+    ui: Ui,
 }
 
 impl<'a> Resolver<'a> {
@@ -843,13 +846,18 @@ impl<'a> Resolver<'a> {
             manifests: Vec::new(),
             interrupted: false,
             verbose: false,
+            ui: Ui::plain(),
         }
     }
 
-    /// Prints a progress message, if verbose.
-    fn say(&self, msg: String) {
+    /// Says what is being done to the source `label` (`Fetching`,
+    /// `Installing`), if verbose.
+    fn say(&self, verb: &str, label: &str, detail: &str) {
         if self.verbose {
-            self.sh.out(msg.as_bytes());
+            let line = self
+                .ui
+                .line(&[(Paint::Dim, verb), (Paint::Name, label), (Paint::Dim, detail)]);
+            self.sh.out(line.as_bytes());
         }
     }
 
@@ -893,7 +901,7 @@ impl<'a> Resolver<'a> {
                     }
                     None if self.interrupted => return Err(()),
                     None => {
-                        self.say(format!("Fetching {}\n", source.label));
+                        self.say("Fetching", &source.label, "");
                         match fetch::resolve(self.sh, url, at) {
                             Ok(c) => {
                                 fetched = true;
@@ -925,7 +933,7 @@ impl<'a> Resolver<'a> {
                         return Err(());
                     }
                     if !fetched {
-                        self.say(format!("Installing {} at {}\n", source.label, short(&commit)));
+                        self.say("Installing", &source.label, &format!("at {}", short(&commit)));
                     }
                     if let Err(e) = fetch::extract(self.sh, &data, url, at, &commit) {
                         self.interrupted |= e == "interrupted";
@@ -1309,10 +1317,20 @@ fn load_resolved(cmd: &[u8], mut r: Resolver, ok: bool) -> ExecResult {
     let loaded = super::loaded_names(sh);
     let mut status = 0;
     let last = done.len().saturating_sub(1);
+    let ui = super::confirms(sh).then(|| Ui::new(sh));
     for (i, p) in done.into_iter().enumerate() {
         let name = p.name.into_bytes();
         if i == last || !loaded.contains(&name) {
-            status = super::load_found(sh, cmd, &p.found, Some(name), true)?.max(status);
+            let st = super::load_found(sh, cmd, &p.found, Some(name.clone()), true)?;
+            status = st.max(status);
+            if let (0, Some(ui)) = (st, &ui) {
+                let again = loaded.contains(&name);
+                let verb = if again { "Reloaded" } else { "Loaded" };
+                let why = if i == last { "" } else { "(a dependency)" };
+                let name = String::from_utf8_lossy(&name);
+                let line = ui.line(&[(Paint::Ok, verb), (Paint::Name, &name), (Paint::Dim, why)]);
+                sh.out(line.as_bytes());
+            }
         }
     }
     Ok(status)
@@ -1444,11 +1462,38 @@ fn resolve_all(r: &mut Resolver, config: &Config) -> (Vec<Resolved>, bool) {
     (enabled, failed)
 }
 
+/// The commits' comparison on GitHub, for a source there.
+fn compare_url(url: &str, old: &str, new: &str) -> Option<String> {
+    let repo = url
+        .strip_prefix("https://github.com/")
+        .or_else(|| url.strip_prefix("git@github.com:"))?;
+    let repo = repo.trim_end_matches('/');
+    let repo = repo.strip_suffix(".git").unwrap_or(repo);
+    Some(format!(
+        "https://github.com/{repo}/compare/{}...{}",
+        short(old),
+        short(new)
+    ))
+}
+
+/// ` (a, b)` for the plugins of `enabled` that come from the source `label`.
+fn provides(enabled: &[Resolved], label: &str) -> String {
+    let names: Vec<&str> = (enabled.iter())
+        .filter(|p| p.source == label)
+        .map(|p| p.name.as_str())
+        .collect();
+    match names.is_empty() {
+        true => String::new(),
+        false => format!("({})", names.join(", ")),
+    }
+}
+
 /// `plugin sync` (`update` is `None`) and `plugin update [NAME...]`: resolves
 /// the enabled plugins and the plugins of the available sources, fetching
 /// what is missing (and, for `update`, the newest commits), and writes
 /// `plugins.lock`. Unless `quiet`, says what it fetches, the sources whose
-/// commits changed, and what the lock holds.
+/// commits changed (with a link to see the changes, for GitHub's), and what
+/// the lock holds.
 pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>, quiet: bool) -> ExecResult {
     let (config, lock, old) = match read_state(sh, cmd) {
         Ok(state) => state,
@@ -1458,8 +1503,10 @@ pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>, quiet: bool)
         None => Fetching::Missing,
         Some(names) => Fetching::Update(names.iter().map(|n| String::from_utf8_lossy(n).into_owned()).collect()),
     };
+    let ui = if quiet { Ui::plain() } else { Ui::new(sh) };
     let mut r = Resolver::new(sh, &config, old.clone(), fetching);
     r.verbose = !quiet;
+    r.ui = ui;
     let (enabled, mut failed) = resolve_all(&mut r, &config);
     if let Fetching::Update(names) = &r.fetching {
         for n in names {
@@ -1473,35 +1520,58 @@ pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>, quiet: bool)
         }
     }
     failed |= r.interrupted;
-    let (used, problems) = (r.used, r.problems);
+    let (used, problems, ui) = (r.used, r.problems, r.ui);
     print_problems(sh, Some(cmd), &problems);
     if failed {
         return Ok(1);
     }
     let mut out = String::new();
-    let mut moved = false;
+    let mut moved = 0;
     for (pin, label) in &used {
+        let what = provides(&enabled, label);
         match old.iter().find(|p| p.url == pin.url && p.at == pin.at) {
-            None => out.push_str(&format!("Locking {label} at {}\n", short(&pin.commit))),
+            None => {
+                let at = format!("at {}", short(&pin.commit));
+                out.push_str(&ui.line(&[
+                    (Paint::Ok, "Locking"),
+                    (Paint::Name, label),
+                    (Paint::Dim, &at),
+                    (Paint::Dim, &what),
+                ]));
+            }
             Some(p) if p.commit != pin.commit => {
-                moved = true;
-                out.push_str(&format!(
-                    "Updating {label} {}..{}\n",
-                    short(&p.commit),
-                    short(&pin.commit)
-                ));
+                moved += 1;
+                let range = format!("{}..{}", short(&p.commit), short(&pin.commit));
+                out.push_str(&ui.line(&[
+                    (Paint::Update, "Updating"),
+                    (Paint::Name, label),
+                    (Paint::Dim, &range),
+                    (Paint::Dim, &what),
+                ]));
+                if let Some(link) = compare_url(&pin.url, &p.commit, &pin.commit) {
+                    out.push_str(&format!("   {}\n", ui.paint(Paint::Dim, &link)));
+                }
+            }
+            Some(_) if update.is_some() => {
+                let at = format!("at {}", short(&pin.commit));
+                out.push_str(&ui.line(&[
+                    (Paint::Ok, "Up to date"),
+                    (Paint::Name, label),
+                    (Paint::Dim, &at),
+                    (Paint::Dim, &what),
+                ]));
             }
             Some(_) => {}
         }
-    }
-    if update.is_some() && !moved {
-        out.push_str("No updates\n");
     }
     let pins: Vec<Pin> = used.into_iter().map(|(p, _)| p).collect();
     let empty = pins.is_empty() && enabled.is_empty();
     if empty && crate::sys::stat(&lock).is_none() {
         if !quiet {
-            sh.out(b"No plugins enabled and no git sources\n");
+            sh.out(
+                ui.line(&[(Paint::Dim, "No plugins enabled and no git sources")])
+                    .as_bytes(),
+            );
         }
         return Ok(0);
     }
@@ -1512,49 +1582,93 @@ pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>, quiet: bool)
     let status = match quiet {
         true => 0,
         false => {
-            let names: Vec<&str> = enabled.iter().map(|p| p.name.as_str()).collect();
-            out.push_str(&format!("{} locked", count(pins.len(), "git source")));
-            match names.is_empty() {
-                true => out.push_str(", no plugins enabled\n"),
-                false => out.push_str(&format!(
-                    ", {} enabled: {}\n",
-                    count(names.len(), "plugin"),
-                    names.join(", ")
-                )),
+            let mut summary = format!("{} locked", count(pins.len(), "git source"));
+            if update.is_some() {
+                match moved {
+                    0 => summary.push_str(" (none updated)"),
+                    n => summary.push_str(&format!(" ({n} updated)")),
+                }
             }
+            let line = match enabled.is_empty() {
+                true => format!("{summary}, no plugins enabled\n"),
+                false => {
+                    let names: Vec<String> = enabled.iter().map(|p| ui.paint(Paint::Name, &p.name)).collect();
+                    format!(
+                        "{summary}, {} enabled: {}\n",
+                        count(names.len(), "plugin"),
+                        names.join(", ")
+                    )
+                }
+            };
+            out.push_str(&line);
             sh.out_status(out.as_bytes())
         }
     };
     Ok(status.max(if problems.is_empty() { 0 } else { 1 }))
 }
 
-/// `plugin check`: says which git sources have newer commits than those in
-/// `plugins.lock` (asking with `git ls-remote`), and which aren't installed,
-/// without fetching or changing anything. The status is 0 unless something
-/// couldn't be checked.
-pub fn check(sh: &mut Shell, cmd: &[u8]) -> ExecResult {
+/// `plugin check [-q]`: says, for each git source, whether it has a newer
+/// commit than the one in `plugins.lock` (asking with `git ls-remote`), and
+/// which aren't installed, without fetching or changing anything. With
+/// `quiet` only the sources that can be updated or aren't installed are
+/// listed. The status is 0 unless something couldn't be checked.
+pub fn check(sh: &mut Shell, cmd: &[u8], quiet: bool) -> ExecResult {
     let (config, _, pins) = match read_state(sh, cmd) {
         Ok(state) => state,
         Err(status) => return Ok(status),
     };
+    let ui = Ui::new(sh);
     let mut r = Resolver::new(sh, &config, pins, Fetching::No);
-    let _ = resolve_all(&mut r, &config);
+    let (enabled, _) = resolve_all(&mut r, &config);
     let (used, problems, mut missing) = (r.used, r.problems, r.missing);
     print_problems(sh, Some(cmd), &problems);
     let mut status = if problems.is_empty() { 0 } else { 1 };
-    let (mut checked, mut newer) = (0, 0);
+    let (mut checked, mut newer, mut fixed) = (0, 0, 0);
     for (pin, label) in &used {
+        let what = provides(&enabled, label);
+        let at = format!("at {}", short(&pin.commit));
         // A commit given with `rev` has nothing newer.
         if matches!(pin.at, GitRef::Rev(_)) {
             checked += 1;
+            fixed += 1;
+            if !quiet {
+                let line = ui.line(&[
+                    (Paint::Ok, "Pinned:"),
+                    (Paint::Name, label),
+                    (Paint::Dim, &at),
+                    (Paint::Dim, &what),
+                ]);
+                sh.out(line.as_bytes());
+            }
             continue;
         }
         match fetch::remote_commit(sh, &pin.url, &pin.at) {
-            Ok(c) if c == pin.commit => checked += 1,
+            Ok(c) if c == pin.commit => {
+                checked += 1;
+                if !quiet {
+                    let line = ui.line(&[
+                        (Paint::Ok, "Up to date:"),
+                        (Paint::Name, label),
+                        (Paint::Dim, &at),
+                        (Paint::Dim, &what),
+                    ]);
+                    sh.out(line.as_bytes());
+                }
+            }
             Ok(c) => {
                 checked += 1;
                 newer += 1;
-                sh.out(format!("Update available: {label} {}..{}\n", short(&pin.commit), short(&c)).as_bytes());
+                let range = format!("{}..{}", short(&pin.commit), short(&c));
+                let mut line = ui.line(&[
+                    (Paint::Update, "Update available:"),
+                    (Paint::Name, label),
+                    (Paint::Dim, &range),
+                    (Paint::Dim, &what),
+                ]);
+                if let Some(link) = compare_url(&pin.url, &pin.commit, &c) {
+                    line.push_str(&format!("   {}\n", ui.paint(Paint::Dim, &link)));
+                }
+                sh.out(line.as_bytes());
             }
             Err(e) => {
                 sh.berr(cmd, format!("{label}: {e}"));
@@ -1568,17 +1682,29 @@ pub fn check(sh: &mut Shell, cmd: &[u8]) -> ExecResult {
     missing.sort();
     missing.dedup();
     if !missing.is_empty() {
-        let msg = format!("Not installed: {} (run plugin sync)\n", missing.join(", "));
-        sh.out(msg.as_bytes());
+        let list: Vec<String> = missing.iter().map(|m| ui.paint(Paint::Name, m)).collect();
+        let line = ui.line(&[
+            (Paint::Warn, "Not installed:"),
+            (Paint::Dim, &list.join(", ")),
+            (Paint::Dim, "(run plugin sync)"),
+        ]);
+        sh.out(line.as_bytes());
     }
+    if quiet {
+        return Ok(status);
+    }
+    let sources = count(checked, "git source");
+    let pinned = match fixed {
+        0 => String::new(),
+        n => format!(", {n} pinned to a commit"),
+    };
     let msg = match newer {
-        0 if checked == 0 => "No git sources to check\n".to_string(),
-        0 => format!("{} up to date\n", count(checked, "git source")),
-        _ => format!(
-            "{} of {} can be updated (run plugin update)\n",
-            newer,
-            count(checked, "git source")
-        ),
+        0 if checked == 0 => ui.line(&[(Paint::Dim, "No git sources to check")]),
+        0 => ui.line(&[(Paint::Ok, &format!("{sources} up to date{pinned}"))]),
+        _ => ui.line(&[(
+            Paint::Update,
+            &format!("{newer} of {sources} can be updated{pinned} (run plugin update)"),
+        )]),
     };
     sh.out(msg.as_bytes());
     Ok(status)
@@ -1633,7 +1759,7 @@ pub fn available(sh: &mut Shell) -> Vec<(Vec<u8>, Vec<u8>)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, GitRef, Origin, Pin, lock_text, parent, toml_str};
+    use super::{Config, GitRef, Origin, Pin, compare_url, lock_text, parent, toml_str};
 
     #[test]
     fn parent_of_odd_paths() {
@@ -1642,6 +1768,21 @@ mod tests {
         assert_eq!(parent(b"/"), b"/");
         assert_eq!(parent(b"/a"), b"/");
         assert_eq!(parent(b"/a/b"), b"/a");
+    }
+
+    #[test]
+    fn compare_links() {
+        let (a, b) = ("0123456789abcdef", "fedcba9876543210");
+        let link = Some("https://github.com/o/r/compare/0123456...fedcba9".to_string());
+        for url in [
+            "https://github.com/o/r",
+            "https://github.com/o/r.git",
+            "git@github.com:o/r.git",
+        ] {
+            assert_eq!(compare_url(url, a, b), link, "{url}");
+        }
+        assert_eq!(compare_url("file:///x/r", a, b), None);
+        assert_eq!(compare_url("https://example.org/o/r", a, b), None);
     }
 
     #[test]

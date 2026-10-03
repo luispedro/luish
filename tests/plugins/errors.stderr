@@ -16,9 +16,9 @@ errors.sh: 31: ./hooks.rhai: Runtime error: bad-name: bad variable name
     cd d
 errors.sh: 31: ./hooks.rhai: Runtime error: RO: is read only
     cd d
-errors.sh: 33: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+errors.sh: 33: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check [-q]
     __luish_internal plugin
-errors.sh: 35: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check
+errors.sh: 35: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check [-q]
     __luish_internal plugin frobnicate
 errors.sh: 37: __luish_internal plugin: nosuch: not loaded
     __luish_internal plugin unload nosuch

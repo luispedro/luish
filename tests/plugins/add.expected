@@ -20,15 +20,17 @@ same
 Fetching file://~/single
 Adding to [plugins.enabled] in ~/.config/luish/config.toml:
     single = { git = "file://~/single" }
-and running plugin sync. Continue? [y/N] Fetching file://~/single
+and running plugin sync. Continue? [y/N] Added single to [plugins.enabled] in ~/.config/luish/config.toml
+Fetching file://~/single
 Fetching std
-Locking file://~/single at 8f1244e
+Locking file://~/single at 8f1244e (single)
 Locking std at 8894f95
 2 git sources locked, 1 plugin enabled: single
 single loaded
 status 0
 --- a git collection goes to plugins.available
 Fetching file://~/gcoll
+Added gcoll to [plugins.available] in ~/.config/luish/config.toml
 Fetching gcoll
 Locking gcoll at 29d0fa1
 3 git sources locked, 1 plugin enabled: single
@@ -57,25 +59,31 @@ status 1
 0
 --- one plugin and other directories: the plugin
 Fetching file://~/mixed
+Added mixed to [plugins.enabled] in ~/.config/luish/config.toml
 Fetching file://~/mixed
-Locking file://~/mixed at 4b05bff
+Locking file://~/mixed at 4b05bff (mixed)
 4 git sources locked, 2 plugins enabled: single, mixed
 mixed one loaded
 status 0
 --- a plugin of a named source, and one of the plugin directory
+Added std/hello to [plugins.enabled] in ~/.config/luish/config.toml
 4 git sources locked, 3 plugins enabled: single, mixed, std/hello
 hello from std
 status 0
+Added mine to [plugins.enabled] in ~/.config/luish/config.toml
 4 git sources locked, 4 plugins enabled: single, mixed, std/hello, mine
 mine loaded
 status 0
 --- a local path, with a name; a local collection
+Added first to [plugins.enabled] in ~/.config/luish/config.toml
 4 git sources locked, 5 plugins enabled: single, mixed, std/hello, mine, first
 a
 status 0
+Added coll to [plugins.available] in ~/.config/luish/config.toml
 4 git sources locked, 5 plugins enabled: single, mixed, std/hello, mine, first
 coll has 2 plugins: a, b. Load one with plugin load coll/a, or enable it with plugin add coll/a
 status 0
+Added b to [plugins.enabled] in ~/.config/luish/config.toml
 4 git sources locked, 6 plugins enabled: single, mixed, std/hello, mine, first, b
 b
 status 0

@@ -520,6 +520,16 @@ pub fn add(sh: &mut Shell, cmd: &[u8], args: &[Vec<u8>]) -> ExecResult {
     if let Err(e) = package::write_file(&file, &new) {
         return fail(sh, e);
     }
+    let ui = super::ui::Ui::new(sh);
+    let line = ui.line(&[
+        (super::ui::Kind::Ok, "Added"),
+        (super::ui::Kind::Name, &a.name),
+        (
+            super::ui::Kind::Dim,
+            &format!("to [{}] in {}", a.table, String::from_utf8_lossy(&file)),
+        ),
+    ]);
+    sh.out(line.as_bytes());
     let status = super::sync(sh, cmd, None, false)?;
     match a.collection_note() {
         _ if status != 0 => Ok(status),

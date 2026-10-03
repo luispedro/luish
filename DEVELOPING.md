@@ -1096,10 +1096,21 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `sync`/`update`) `fetch::resolve`. `plugin sync` also resolves every plugin of each `plugins.available` source (each
   separately, so unrelated name clashes don't matter, `resolve_all`), so their pins are locked too; problems there
   are reported but don't stop the lock being written, while problems with enabled plugins do. Unless `-q`, the
-  resolver prints `Fetching`/`Installing` as it goes (`Resolver::verbose`), and `sync` a summary after the lock is
+  resolver prints `Fetching`/`Installing` as it goes (`Resolver::verbose`), and `sync` a line for each source that is
+  new or moved (all of them for `update`), with the enabled plugins from it, and a summary after the lock is
   written. `plugin check` resolves the same way without fetching (`Fetching::No`), then asks for each pin's ref with
   `git ls-remote` (`fetch::remote_commit`, preferring the peeled `^{}` line of an annotated tag, since pins hold
-  commits), so it touches neither the cache nor the data directory. The lock is written only if its text
+  commits), so it touches neither the cache nor the data directory, and prints a line for each source (`-q`: only
+  those with updates, and those not installed). A GitHub source that moved also gets a `compare` link
+  (`compare_url`).
+- **`plugin` output** (`plugins/ui.rs`). `Ui::new` resolves the `plugin.*` styles (roles in `style::ROLES`, defaults in
+  `default-dark`) to SGR once per command, only when stdout is a terminal and `$NO_COLOR` is empty (so the startup path
+  and pipes pay nothing, and scripts read plain text); `Ui::plain` otherwise. Errors still go through `Shell::berr`,
+  uncoloured. `load`, `unload` and `load -c` confirm (`Loaded`, `Reloaded`, `Unloaded`) only when `confirms`: an
+  interactive shell, no frames (not in a function or a startup file) and a terminal on stdout; `plugin list-loaded`
+  and `list-available` colour names and say when there are none only on a terminal. `plugin add` always says what it
+  added to `config.toml` (it was silent with `-y`). Tests: `plugins/git_packages.sh`, `add.sh` (plain text),
+  `plugin_feedback` in `tests/interactive.rs` (colours, `$NO_COLOR`, silent in functions), `ui::tests`. The lock is written only if its text
   changed (so the rc cache, which fingerprints it, stays valid). Messages about manifests of git plugins show
   `SOURCE:PATH/plugin.toml` rather than the data directory.
 - **Names.** A plugin of a named collection is loaded as `SOURCE/PATH` (`std/completion`, `extra/complete/all`), the

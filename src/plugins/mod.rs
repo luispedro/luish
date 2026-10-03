@@ -17,6 +17,8 @@ mod package;
 #[cfg(feature = "plugins")]
 mod rhai;
 #[cfg(feature = "plugins")]
+mod ui;
+#[cfg(feature = "plugins")]
 mod vcs;
 
 #[cfg(feature = "plugins")]
@@ -214,7 +216,7 @@ pub fn complete(sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Compl
 }
 
 const USAGE: &str = "usage: plugin load NAME|PATH..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., \
-                     plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check";
+                     plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check [-q]";
 
 /// The `plugin` built-in (interactive shells only, like `help`).
 pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
@@ -224,7 +226,7 @@ pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 /// `plugin load NAME|PATH...`, `plugin load -c CODE NAME`, `plugin list-loaded`, `plugin list-available
 /// [-a]`, `plugin unload NAME...`, `plugin run FILE|-c CODE [ARG...]`,
 /// `plugin add [-y] PLUGIN [NAME]`, `plugin
-/// sync [-q]`, `plugin update [-q] [SOURCE...]` and `plugin check`, also available as `__luish_internal
+/// sync [-q]`, `plugin update [-q] [SOURCE...]` and `plugin check [-q]`, also available as `__luish_internal
 /// plugin`. `name` is the command, for error messages.
 ///
 /// `plugin restore NAME PATH`, which `savestate` prints, loads a plugin
@@ -275,10 +277,7 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
                 }
             };
             let mut out = Vec::new();
-            for name in names {
-                out.extend_from_slice(&name);
-                out.push(b'\n');
-            }
+            list_names(sh, sub == b"list-loaded", &names, &mut out);
             Ok(sh.out_status(&out))
         }
         Some(sub @ (b"sync" | b"update")) => {
@@ -296,7 +295,9 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
             }
         }
         Some(b"run") if !args.is_empty() => run_rhai(sh, name, args),
-        Some(b"check") if args.is_empty() => check(sh, name),
+        Some(b"check") if args.iter().all(|a| matches!(a.as_slice(), b"-q" | b"--quiet")) => {
+            check(sh, name, !args.is_empty())
+        }
         Some(b"add") => add(sh, name, args),
         Some(b"unload") if !args.is_empty() => {
             let mut status = 0;
@@ -304,6 +305,8 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
                 if !unload(sh, a) {
                     sh.berr(name, format!("{}: not loaded", String::from_utf8_lossy(a)));
                     status = 1;
+                } else {
+                    confirm(sh, "Unloaded", a);
                 }
             }
             Ok(status)
@@ -312,6 +315,56 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
             sh.berr(name, USAGE);
             Ok(2)
         }
+    }
+}
+
+/// Whether to confirm what `plugin` did: at the prompt of an interactive
+/// shell (not in its startup files, a function or `$(...)`), on a terminal.
+#[cfg(feature = "plugins")]
+fn confirms(sh: &Shell) -> bool {
+    sh.opt(Opt::Interactive) && sh.frames.is_empty() && crate::sys::isatty(1)
+}
+
+/// Says what `plugin` did to the plugin `name`, if it confirms.
+#[cfg(feature = "plugins")]
+fn confirm(sh: &Shell, verb: &str, name: &[u8]) {
+    if confirms(sh) {
+        use ui::Kind;
+        let name = String::from_utf8_lossy(name);
+        let line = ui::Ui::new(sh).line(&[(Kind::Ok, verb), (Kind::Name, &name)]);
+        sh.out(line.as_bytes());
+    }
+}
+
+#[cfg(not(feature = "plugins"))]
+fn confirm(_: &Shell, _: &str, _: &[u8]) {}
+
+/// The output of `plugin list-loaded` and `plugin list-available`: the
+/// names, one per line. On a terminal they are coloured, and an empty list
+/// is said so (`loaded` for which list).
+#[cfg(feature = "plugins")]
+fn list_names(sh: &Shell, loaded: bool, names: &[Vec<u8>], out: &mut Vec<u8>) {
+    use ui::Kind;
+    let ui = ui::Ui::new(sh);
+    if names.is_empty() && crate::sys::isatty(1) {
+        let msg = if loaded {
+            "No plugins loaded"
+        } else {
+            "No plugins to load"
+        };
+        out.extend_from_slice(ui.line(&[(Kind::Dim, msg)]).as_bytes());
+    }
+    for name in names {
+        out.extend_from_slice(ui.paint(Kind::Name, &String::from_utf8_lossy(name)).as_bytes());
+        out.push(b'\n');
+    }
+}
+
+#[cfg(not(feature = "plugins"))]
+fn list_names(_: &Shell, _: bool, names: &[Vec<u8>], out: &mut Vec<u8>) {
+    for name in names {
+        out.extend_from_slice(name);
+        out.push(b'\n');
     }
 }
 
@@ -753,7 +806,11 @@ fn load_code(sh: &mut Shell, cmd: &[u8], name: &[u8], code: &[u8]) -> ExecResult
     let host = sh.plugins.get_or_insert_with(|| std::rc::Rc::new(Host::new())).clone();
     let dir = sh.curdir.clone().or_else(crate::sys::getcwd).unwrap_or_default();
     let vars_dir = dir.clone();
-    with_plugin_vars(sh, &vars_dir, name, |sh| host.load_code(sh, cmd, name, code, dir))
+    let r = with_plugin_vars(sh, &vars_dir, name, |sh| host.load_code(sh, cmd, name, code, dir));
+    if matches!(r, Ok(0)) {
+        confirm(sh, "Loaded", name);
+    }
+    r
 }
 
 #[cfg(not(feature = "plugins"))]
@@ -1094,15 +1151,15 @@ pub fn sync_config(sh: &mut Shell) -> i32 {
 
 /// `plugin check`.
 #[cfg(feature = "plugins")]
-fn check(sh: &mut Shell, cmd: &[u8]) -> ExecResult {
+fn check(sh: &mut Shell, cmd: &[u8], quiet: bool) -> ExecResult {
     if sh.no_plugins {
         return Ok(0);
     }
-    package::check(sh, cmd)
+    package::check(sh, cmd, quiet)
 }
 
 #[cfg(not(feature = "plugins"))]
-fn check(sh: &mut Shell, cmd: &[u8]) -> ExecResult {
+fn check(sh: &mut Shell, cmd: &[u8], _: bool) -> ExecResult {
     sh.berr(cmd, "luish was built without plugin support");
     Ok(1)
 }

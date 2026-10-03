@@ -93,7 +93,7 @@ __luish_internal style --clear
 command              green
 command.builtin      green
 command.function     bold green
-48
+54
 --- the terminal colours of a scheme
 terminal.background  #282828
 terminal.palette     #000000 #cc241d #98971a

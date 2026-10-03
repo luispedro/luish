@@ -82,6 +82,12 @@ pub const ROLES: &[&str] = &[
     "menu.selected",
     "menu.description",
     "suggestion",
+    "plugin.name",
+    "plugin.ok",
+    "plugin.update",
+    "plugin.warn",
+    "plugin.error",
+    "plugin.dim",
 ];
 
 const _: () = assert!(ROLES.len() < u8::MAX as usize);
@@ -159,6 +165,12 @@ const BUILTIN: &[Builtin] = &[
             ("menu.selected", "reverse"),
             ("menu.description", "bright-black"),
             ("suggestion", "bright-black"),
+            ("plugin.name", "bold"),
+            ("plugin.ok", "green"),
+            ("plugin.update", "yellow"),
+            ("plugin.warn", "yellow"),
+            ("plugin.error", "bold red"),
+            ("plugin.dim", "bright-black"),
         ],
     ),
     // Yellow is hard to read on a light background.

@@ -987,6 +987,46 @@ fn completion_menu() {
     assert_eq!(sh.exit_status(), 0);
 }
 
+/// `plugin` confirms what it did at the prompt, in the colours of the
+/// scheme (`plugin.*` styles), and is silent in functions and with
+/// `$NO_COLOR` plain.
+#[cfg(feature = "plugins")]
+#[test]
+fn plugin_feedback() {
+    let mut sh = Pty::spawn("plugin-feedback");
+    std::fs::write(sh.path("a.rhai"), "let x = 1;\n").unwrap();
+    sh.expect("$ ");
+    sh.send("plugin list-loaded\n");
+    sh.expect("\x1b[90mNo plugins loaded\x1b[m\n");
+    sh.expect("$ ");
+    sh.send("plugin load ./a.rhai\n");
+    sh.expect("\x1b[32mLoaded\x1b[m \x1b[1ma\x1b[m\n");
+    sh.expect("$ ");
+    sh.send("plugin load ./a.rhai\n");
+    sh.expect("\x1b[32mReloaded\x1b[m \x1b[1ma\x1b[m\n");
+    sh.expect("$ ");
+    sh.send("plugin list-loaded\n");
+    sh.expect("\x1b[1ma\x1b[m\n");
+    sh.expect("$ ");
+    // Not in a function, nor in a command substitution.
+    sh.send("f() { plugin load ./a.rhai; }; f; echo \"[$(plugin load ./a.rhai)]\"\n");
+    sh.expect("[]\n");
+    sh.expect("$ ");
+    sh.send("plugin unload a\n");
+    sh.expect("\x1b[32mUnloaded\x1b[m \x1b[1ma\x1b[m\n");
+    sh.expect("$ ");
+    sh.send("NO_COLOR=1\n");
+    sh.expect("$ ");
+    sh.send("plugin load ./a.rhai\n");
+    sh.expect("Loaded a\n");
+    sh.expect("$ ");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+    let transcript = sh.transcript();
+    let after = &transcript[transcript.rfind("NO_COLOR=1").unwrap()..];
+    assert!(!after.contains("\x1b[32m"), "{after}");
+}
+
 #[cfg(feature = "plugins")]
 #[test]
 fn plugin_completer() {

@@ -10,7 +10,7 @@ plugin run file|-c code [arg...]
 plugin add [-y] plugin [name]
 plugin sync [-q]
 plugin update [-q] [source...]
-plugin check
+plugin check [-q]
 ```
 
 Load, unload and fetch plugins.
@@ -29,7 +29,10 @@ shells) its
 `post-rc.lsh` waits for their end. The dependencies that a plugin's
 `plugin.toml` lists are loaded first, unless they are already loaded.
 Loading a plugin again reloads it. The exit status is 1 if a plugin can't
-be loaded.
+be loaded. At the prompt of an interactive shell with a terminal for
+output, `plugin load` and `plugin unload` say what they did (`Loaded NAME`,
+`Reloaded NAME`, `Unloaded NAME`, marking dependencies); they are silent in
+startup files, functions and command substitutions.
 
 `plugin load -c` loads the Rhai code `code` as the plugin `name` (which
 can't contain a `/`), with the current directory as its directory. It
@@ -38,7 +41,8 @@ a file or directory, which must be unloaded first (the exit status is
 then 1); loading a plugin of that name from a file replaces it, with a
 warning.
 
-`plugin list-loaded` prints the names of the loaded plugins, and
+`plugin list-loaded` prints the names of the loaded plugins (on a terminal,
+`No plugins loaded` if there are none), and
 `plugin list-available` the names of the plugins that `plugin load` can
 load by name and that aren't loaded: those in the plugin directory, and
 those of the sources in `config.toml` that are installed, except the
@@ -75,9 +79,9 @@ its plugins with `plugin load source/path`), keeping the file's comments.
 The name is the repository's, file's or directory's, unless `name` is
 given. It prints the line it adds and asks before changing the file
 (reading the answer from standard input), unless `-y` (or `--yes`) is
-given; then it runs `plugin sync` and loads the plugin. The exit status is
-1 if it was declined, if the name is already used, or if the source can't
-be fetched (then `config.toml` isn't changed).
+given; then it says what it added, runs `plugin sync` and loads the plugin.
+The exit status is 1 if it was declined, if the name is already used, or
+if the source can't be fetched (then `config.toml` isn't changed).
 
 `plugin sync` fetches, with git, the sources of the plugins in
 `config.toml`'s `plugins.enabled` (and of their dependencies) and of its
@@ -85,17 +89,28 @@ be fetched (then `config.toml` isn't changed).
 to `config.toml`. A source that is already in `plugins.lock` stays at its
 commit. `plugin update` fetches the newest commit of each git source, or of
 the sources named, and updates `plugins.lock`. Both print the sources they
-fetch, those whose commits changed, and the number of git sources locked
-and the plugins enabled; with `-q` (or `--quiet`) they print only errors.
-`plugin check` asks each git source (with `git ls-remote`) for its newest
-commit and prints those newer than the locked one, and the sources that
-aren't installed, without fetching or changing anything; its exit status is
-0 unless a source couldn't be checked. Interactive shells load the plugins
-in `plugins.enabled` at startup, from the commits in `plugins.lock`, without
+fetch, those whose commits changed (`Updating SOURCE OLD..NEW`, with a link
+to the changes for a GitHub source), with `plugin update` also those that
+didn't, each with the enabled plugins that come from it, and the number of
+git sources locked and the plugins enabled; with `-q` (or `--quiet`) they
+print only errors. `plugin check` asks each git source (with `git
+ls-remote`) for its newest commit and says, for each, whether it is up to
+date, pinned to a commit (`rev`, which has nothing newer) or has a newer
+commit than the locked one, and which sources aren't installed, without
+fetching or changing anything; with `-q` it prints only the sources that can
+be updated and those that aren't installed. Its exit status is 0 unless a
+source couldn't be checked. Interactive shells load the plugins in
+`plugins.enabled` at startup, from the commits in `plugins.lock`, without
 running git. With `--no-plugins`, `plugin load`, `plugin add`, `plugin
 sync`, `plugin update` and `plugin check` do nothing.
 
 `plugin` is a built-in only in interactive shells (and their subshells).
-Anywhere, `__luish_internal plugin` does the same. See the plugins page of
-the documentation for how to write plugins and list them in `config.toml`,
-and the extensions page for their Rhai code.
+Anywhere, `__luish_internal plugin` does the same.
+
+On a terminal (unless `$NO_COLOR` is set), what these commands print is
+coloured with the styles `plugin.name`, `plugin.ok`, `plugin.update`,
+`plugin.warn`, `plugin.error` and `plugin.dim` of the colour scheme in use
+(`style`).
+
+See the plugins page of the documentation for how to write plugins and list
+them in `config.toml`, and the extensions page for their Rhai code.

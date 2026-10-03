@@ -110,8 +110,8 @@ You need to fetch the plugins once:
 ```console
 $ plugin sync
 Fetching std
-Locking std at 6a893bc
-1 git source locked, 1 plugin enabled: completion
+Locking std at 6a893bc (std/completion)
+1 git source locked, 1 plugin enabled: std/completion
 ```
 
 

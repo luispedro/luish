@@ -41,6 +41,7 @@ luish: 1: __luish_internal plugin: cannot open nest/a//b: No such file
     __luish_internal plugin load nest/a//b; echo "status $?"
 status 1
 --- plugin add SOURCE/PATH
+Added nest/complete/gui to [plugins.enabled] in ~/.config/luish/config.toml
 0 git sources locked, 1 plugin enabled: nest/complete/gui
 gui
 [plugins.available]

@@ -1,4 +1,7 @@
 Unreleased
+    * plugin: coloured output (plugin.* styles) and more feedback: load,
+      unload and add say what they did; sync, update and check list each
+      source, with its plugins and a compare link; check takes -q
     * ${x:A} and !$:A no longer take quadratic time on long paths
     * Fixed: typeset -f and savestate printing ${x/}, ${`cmd`},
       >file for and `cmd \\`

@@ -95,9 +95,9 @@ Plugins need to be fetch explicitly, by running `plugin sync`.
 $ plugin sync
 Fetching std
 Fetching smarty-prompt
-Locking std at 15e39bb
-Locking smarty-prompt at 8a1c0de
-2 git sources locked, 2 plugins enabled: completion, smarty-prompt
+Locking std at 15e39bb (std/completion)
+Locking smarty-prompt at 8a1c0de (smarty-prompt)
+2 git sources locked, 2 plugins enabled: std/completion, smarty-prompt
 ```
 
 The first time `plugin sync` runs, it will create a `plugins.lock` file, which
@@ -108,16 +108,33 @@ and updates `plugins.lock`. Specify a plugin name to update only that one:
 ```console
 $ plugin update smarty-prompt
 Fetching smarty-prompt
-Updating smarty-prompt 8a1c0de..3f00c2d
-2 git sources locked, 2 plugins enabled: completion, smarty-prompt
+Up to date std at 15e39bb (std/completion)
+Updating smarty-prompt 8a1c0de..3f00c2d (smarty-prompt)
+   https://github.com/luispedro/smarty-prompt/compare/8a1c0de...3f00c2d
+2 git sources locked (1 updated), 2 plugins enabled: std/completion, smarty-prompt
 ```
 
 `plugin check` asks each git source (with `git ls-remote`) for its newest
-commit and reports whether there are newer commits, but it does not change
-anything.
+commit and reports, for each, whether it is up to date or has newer commits
+(and which of your plugins come from it), but it does not change anything.
+
+```console
+$ plugin check
+Up to date: std at 15e39bb (std/completion)
+Update available: smarty-prompt 8a1c0de..3f00c2d (smarty-prompt)
+   https://github.com/luispedro/smarty-prompt/compare/8a1c0de...3f00c2d
+1 of 2 git sources can be updated (run plugin update)
+```
 
 A source pinned with `rev` never has anything newer. The exit status is 0
-unless a source couldn't be checked.
+unless a source couldn't be checked. All three commands take `-q` (or
+`--quiet`): `plugin sync` and `plugin update` then print only errors, and
+`plugin check` only the sources that can be updated or aren't installed.
+
+On a terminal, the output is coloured with the colour scheme in use: the
+styles `plugin.name` (plugin and source names), `plugin.ok`, `plugin.update`,
+`plugin.warn`, `plugin.error` and `plugin.dim` (see [](colour-schemes.md)).
+`$NO_COLOR` turns the colours off.
 
 luish runs `git` to fetch, so git's own settings apply (credentials, SSH keys, proxies).
 

@@ -452,6 +452,7 @@ far:
 | `menu.selected` | the selection in the completion menu |
 | `menu.description` | descriptions in the completion menu |
 | `suggestion` | autosuggestions |
+| `plugin.name`, `plugin.ok`, `plugin.update`, `plugin.warn`, `plugin.error`, `plugin.dim` | the output of `plugin`, on a terminal |
 
 So `command` sets all the kinds of command at once, `string` all the strings, and so on. `error` is added to the
 style of the text with a syntax error, and `path` and `path.prefix` to that of a word that names a file (see

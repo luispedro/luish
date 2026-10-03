@@ -60,6 +60,7 @@ Some names aren't parts of the line, and need setting in any scheme that doesn't
 | `menu.selected` | the selection in the completion menu | `reverse` |
 | `menu.description` | descriptions in the completion menu | `bright-black` |
 | `suggestion` | autosuggestions | `bright-black` |
+| `plugin.name`, `plugin.ok`, `plugin.update`, `plugin.warn`, `plugin.error`, `plugin.dim` | the output of `plugin` (names, what worked, what changed or can, warnings, errors, detail), on a terminal | `bold`, `green`, `yellow`, `yellow`, `bold red`, `bright-black` |
 
 `error`, `path` and `path.prefix` are added on top of the text's own style. An attribute such as `underline` keeps
 the text's colour; a colour replaces it.
