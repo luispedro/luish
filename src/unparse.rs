@@ -1034,6 +1034,8 @@ mod tests {
 
     #[test]
     fn heredocs() {
+        // No body before the `)`: an empty one.
+        round_trip("f() {\n x=$(cat <<E) y=$(<<'E')\n}");
         let p = round_trip("f() {\n cat <<A; cat <<-'B' | cat <<\"C\"\nx $y \\$ `z`\nA\n\tq $r\n\tB\n'c'\nC\n}");
         assert_eq!(
             p,

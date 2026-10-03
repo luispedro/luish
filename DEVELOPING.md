@@ -107,7 +107,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 
 - Line continuation works inside `$` expansions (`$\<newline>?`), as in dash. Backquotes are unescaped, then parsed
   separately. `$((` falls back to `$( (...) )` (a deviation). Tests: `parse/*`, `parse/arith_fallback.sh`.
-- Here-docs: several on one line, inside `$(...)`; bodies over 64 KiB go through an unlinked temporary file.
+- Here-docs: several on one line, inside `$(...)`; bodies over 64 KiB go through an unlinked temporary file. One in
+  `$(...)` with no body before the `)` is empty, as in dash (`read_subst_list` gives it the tree of an empty body,
+  for `unparse`). Test: `parse/heredoc_in_cmdsubst.sh`.
 - Aliases: a value ending in a blank makes the next word eligible wherever it is (also a `for` variable, `in`, or a
   `case` word, as in dash). Test: `parse/alias_blank_compound.sh`.
 - `AliasMap` holds regular and global aliases in one table (a name is one or the other, as in zsh) and suffix aliases

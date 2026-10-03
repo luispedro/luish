@@ -1364,7 +1364,18 @@ impl Parser {
         if t.tok != Tok::Op(Op::RParen) {
             return self.unexpected(&t, Some(")"));
         }
-        self.pending_heredocs = outer_heredocs;
+        // As in dash, a here-document with no body before the `)` is empty
+        // (and the lines after it are commands): as an empty body reads.
+        for hd in std::mem::replace(&mut self.pending_heredocs, outer_heredocs) {
+            *hd.body.borrow_mut() = HereDocBody {
+                body: Word(vec![if hd.quoted {
+                    WordPart::Literal(Vec::new())
+                } else {
+                    WordPart::DoubleQuoted(Vec::new())
+                }]),
+                quoted: hd.quoted,
+            };
+        }
         self.alias_blank_end = outer_alias_blank_end;
         Ok(Rc::new(list))
     }
