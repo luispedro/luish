@@ -24,6 +24,12 @@ let modules = #{
         "sftp", "pkill", "pgrep", "killall",
     ],
     shells: ["luish", "sh", "dash", "bash", "zsh"],
+    // luish's built-ins (style and __luish_internal have completers below)
+    builtins: [
+        "alias", "unalias", "bindkey", "cd", "chdir", "pushd", "popd", "dirs", "echo", "fc", "hash", "jobs", "pwd",
+        "read", "umask", "unset", "export", "readonly", "local", "typeset", "declare", "print", "ulimit", "test",
+        "[", "set",
+    ],
     tools: [
         "find", "fd", "fdfind", "locate", "plocate", "mlocate", "sed", "awk", "nawk", "mawk", "gawk", "jq",
         "rg", "less", "more", "file", "ldd", "patch", "tree", "gzip", "gunzip", "zcat", "xz", "lzma", "unxz",
@@ -129,6 +135,14 @@ sh::builtin("complete-click", |argv| {
 sh::completer("nix", |words, i| {
     import "bridges" as bridges;
     bridges::nix(words, i)
+});
+sh::completer("style", |words, i| {
+    import "builtins" as builtins;
+    builtins::style(words, i)
+});
+sh::completer("__luish_internal", |words, i| {
+    import "builtins" as builtins;
+    builtins::internal(words, i)
 });
 sh::completer("git", |words, i| {
     import "git" as git;

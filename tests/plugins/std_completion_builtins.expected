@@ -1,0 +1,194 @@
+=== style
+--- style -
+--clear 	remove all styles, and choose no scheme
+--detect 	ask the terminal for its background again
+--terminal-colors 	whether schemes set the terminal's colours
+-c 	choose a colour scheme (or list them)
+-d 	set or remove a default, under the scheme
+-p 	print commands that recreate the styles
+-r 	remove the styles of the names
+-s 	define or change a colour scheme
+status 0
+--- style -c 
+default-dark 	in use
+default-light 
+status 0
+--- style -c default-dark default-l
+default-light 
+status 0
+--- style -c a b c 
+status 1
+--- style --terminal-colors 
+off 
+on 
+status 0
+--- style command.a
+command.alias 	italic green
+status 0
+--- style comment it
+italic 
+status 0
+--- style comment no-b
+no-blink 
+no-bold 
+status 0
+--- style comment bold bg:bright-r
+bg:bright-red 
+status 0
+--- style comment 'bold ul:re
+'bold ul:red' 
+status 0
+--- style -r comm
+command 	green
+command.alias 	italic green
+command.builtin 	green
+command.directory 	green
+command.external 	green
+command.function 	bold green
+command.history 	green
+command.precommand 	green
+command.unknown 	bold red
+comment 	bright-black
+status 0
+--- style -d -
+-r 	remove the defaults of the names
+status 0
+--- style -d -r command.u
+command.unknown 	bold red
+status 0
+--- style -s default-dark -
+--delete 	remove the scheme
+-i 	set the scheme it inherits from
+-r 	remove styles from the scheme
+status 0
+--- style -s default-dark -i 
+default-dark 	in use
+default-light 
+status 0
+--- style -s default-dark command.f
+command.function 	bold green
+status 0
+--- style -s default-dark terminal.b
+terminal.background 	the terminal's colour
+status 0
+--- style -s default-dark terminal.background 
+status 1
+--- style --clear 
+status 1
+=== __luish_internal
+--- __luish_internal st
+style 	show or change the styles
+status 0
+--- __luish_internal style -c default-d
+default-dark 	in use
+status 0
+--- __luish_internal check-cache 
+login 
+rc 
+startup 
+status 0
+--- __luish_internal print -N
+-N 	separate and end the arguments with NUL bytes
+status 0
+=== options, and luish's own arguments
+--- cd -
+-L 	follow the path as given (logical)
+-P 	resolve symbolic links (physical)
+-e 	with -P, fail if the new directory's name can't be found
+status 0
+--- cd s
+scripts/
+src/
+status 0
+--- unset -
+-f 	remove functions
+-v 	remove variables
+status 0
+--- unset -f 
+c 
+f 
+status 0
+--- typeset -
+-A 	make the variables associative arrays
+-U 	keep only the first of equal elements in arrays
+-a 	make the variables arrays
+-f 	print the definitions of the functions
+-g 	in a function, change the variables outside it
+-i 	give the variables the integer attribute
+-l 	convert the values assigned to lower case
+-p 	print the variables, with their attributes
+-r 	make the variables read-only
+-u 	convert the values assigned to upper case
+-x 	export the variables
+status 0
+--- set -o pipe
+pipefail 
+status 0
+--- ulimit -
+-H 	only the hard limit
+-S 	only the soft limit
+-a 	show all the limits
+-c 	core file size, in blocks of 512 bytes
+-d 	data segment, in KiB
+-f 	file size, in blocks of 512 bytes
+-l 	locked memory, in KiB
+-m 	resident memory, in KiB
+-n 	open files
+-p 	processes
+-r 	real-time priority
+-s 	stack, in KiB
+-t 	CPU time, in seconds
+-v 	address space, in KiB
+-w 	file locks
+status 0
+--- ulimit -n 
+unlimited 
+status 0
+--- [ -n
+-n 	STRING is not empty
+-ne 	not equal (numbers)
+-nt 	newer than (files)
+status 0
+--- [ -f n
+notes.txt 
+status 0
+--- test -e
+-e 	FILE exists
+-ef 	the same file
+-eq 	equal (numbers)
+status 0
+--- print -
+-C 	write the arguments in COLS columns
+-D 	replace $HOME at the start of an argument with ~
+-N 	separate and end the arguments with NUL bytes
+-O 	sort the arguments in descending order
+-P 	expand % sequences as in prompts
+-R 	emulate BSD echo
+-X 	expand all tabs
+-a 	with -c or -C, fill the rows across
+-b 	recognise bindkey's escapes
+-c 	write the arguments in columns
+-f 	format the arguments as printf does
+-i 	sort without regard to case (with -o or -O)
+-l 	separate the arguments by newlines
+-m 	keep only the arguments that match PATTERN
+-n 	don't write the newline at the end
+-o 	sort the arguments in ascending order
+-r 	don't expand backslash escapes
+-s 	add the arguments to the history
+-u 	write to file descriptor FD
+-v 	set the variable NAME to the output
+-x 	expand the tabs at the start of each line
+-z 	push the arguments onto the editing buffer stack
+status 0
+--- echo -
+-n 	don't write the newline at the end
+status 0
+--- pwd 
+status 1
+--- dirs -
+-c 	clear the stack
+-l 	print full names, without ~
+-p 	print one directory per line
+-v 	print one directory per line, with its number
+status 0

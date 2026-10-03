@@ -22,6 +22,10 @@ so they follow the installed version of git. Options that start with `--no-` are
 - coreutils (`ls`, `cp`, `mv`, `rm`, `mkdir`, `ln`, `chmod`, `chown`, `head`, `tail`, `sort`, `date`, `dd`, `install`,
   ...), grep, diffutils, tar, make, rsync, man, ssh, scp, sftp, pkill, pgrep and killall (`specs.rhai`);
 - shells: luish itself, sh (dash), bash and zsh (`shells.rhai`);
+- luish's own built-ins (`builtins.rhai`): their options, with descriptions (`typeset`, `print`, `ulimit`, `test`
+  and `[`, `set -o` ...), and `style`'s arguments: the names of styles (with their values), the words of values
+  (colours, attributes, `bg:COLOUR` ...) and the colour schemes (`style -c`, `style -s`). luish itself still
+  completes their other arguments (directories for `cd`, variables for `unset`, jobs for `fg` ...);
 - files and text: find, fd, locate, sed, awk, jq, rg, less, more, file, ldd, patch, tree, gzip, xz, zstd, bzip2, zip
   and unzip (`tools.rhai`);
 - the system: systemctl, journalctl, loginctl, ps, top, htop, lsof, strace, mount, umount, lsblk, dmesg, free and tmux
@@ -80,6 +84,7 @@ luish-std-plugins/
     ├── kinds.rhai             # what arguments complete to (dirs, users, hosts ...)
     ├── specs.rhai             # the specs of one group of commands each, imported on the first Tab
     ├── shells.rhai            #   for one of their commands
+    ├── builtins.rhai          # luish's own built-ins, and style's completer
     ├── tools.rhai
     ├── system.rhai
     ├── net.rhai

@@ -1058,6 +1058,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `lib.rhai` calls it. The spec format is public (`docs/extensions.md`), so changes to it must stay backward-compatible.
   Test: `tests/plugins/std_completion_extern.sh`.
   `src/options.rs` checks that `shells.rhai` lists all the options `luish -o` takes.
+- `luish-std-plugins/completion/builtins.rhai`: specs for luish's built-ins, with the options only where luish
+  completes the other arguments itself (`ARGS` in `complete.rs`): a completer's `()` (the kind `files`) falls back to
+  luish's completion, so `cd s` still gets `CDPATH` and `unset -f` functions. `style` and `__luish_internal` have
+  completers of their own: names, values and schemes come from `__luish_internal style` (which, unlike `style`,
+  exists in non-interactive shells too) run with `sh::capture_sh`, so a subshell has the shell's styles and
+  schemes. `print` is a Rhai keyword, so it can't name a function. Test:
+  `tests/plugins/std_completion_builtins.sh`.
 - **Packages** (`package.rs`, `fetch.rs`): `read_config` turns `[plugins]` into owned `Config` (sources in
   `plugins.available`, plus the built-in `std`, at the tag `vVERSION` of the running luish (`std_ref`); entries in
   `plugins.enabled`), and `manifest` a directory plugin's `plugin.toml` into entries of the same kind. `Resolver` resolves entries depth-first, dependencies before

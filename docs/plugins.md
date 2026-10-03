@@ -147,6 +147,9 @@ The `std` library is tied to the version of luish, so it is not affected by
     `~/.ssh/config`, with the files it includes, and of `/etc/hosts`, also after
     `USER@`), and pkill, pgrep and killall (the running processes);
   - shells: luish itself (`luish -o` offers its options), sh, bash and zsh;
+  - luish's own built-ins: their options (`typeset -`, `print -`, `ulimit -`,
+    `[ -`, `set -o` ...), and for `style`, the names of styles, the words of
+    their values and the colour schemes (`style -c <Tab>`);
   - find, fd, sed, awk, jq, rg (its file types), less, file, patch, tree, and
     compressors and archivers (`gunzip` offers `.gz` files, `unzip ARCHIVE` the
     files in the archive);
