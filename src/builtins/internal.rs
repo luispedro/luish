@@ -10,6 +10,7 @@ type Subcommand = fn(&mut Shell, &[Vec<u8>]) -> ExecResult;
 const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
     (b"bindkey", bindkey),
     (b"check-cache", crate::startcache::check),
+    (b"clipcopy", super::clipcopy::clipcopy),
     (b"complete", complete),
     (b"function-file", function_file),
     (b"help", help),

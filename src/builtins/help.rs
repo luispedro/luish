@@ -28,6 +28,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"caller", page!("caller")),
     (b"cd", page!("cd")),
     (b"chdir", page!("cd")),
+    (b"clipcopy", page!("clipcopy")),
     (b"command", page!("command")),
     (b"continue", page!("continue")),
     (b"declare", page!("typeset")),

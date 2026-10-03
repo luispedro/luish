@@ -43,6 +43,10 @@ and `help NAME` shows the same text as here in the terminal.
 :heading-offset: 1
 ```
 
+```{include} builtins/clipcopy.md
+:heading-offset: 1
+```
+
 ```{include} builtins/command.md
 :heading-offset: 1
 ```

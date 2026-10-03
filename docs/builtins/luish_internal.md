@@ -3,6 +3,7 @@
 ```text
 __luish_internal bindkey [arg...]
 __luish_internal check-cache [-q] [rc|login|startup]...
+__luish_internal clipcopy [file]
 __luish_internal complete line
 __luish_internal function-file name file [lines [dir]]
 __luish_internal help [name...]
@@ -31,6 +32,9 @@ take names that scripts might use for something else.
   rebuilt. With `-q` (`--quiet`), show only the caches that were rebuilt.
   The status is 0 if all were up to date, 1 if any was rebuilt, 2 on
   errors.
+
+`clipcopy`
+: Put text on the clipboard through the terminal (see `help clipcopy`).
 
 `complete`
 : Print what Tab offers for the last word of `line`, as the line editor

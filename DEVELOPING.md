@@ -520,6 +520,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   summary (the first paragraph after the synopsis) is at most 60 characters and rendered lines at most 79; the page
   must not contain relative links (Sphinx rejects them). After a failing `pixi run docs`, `rm -rf docs/_build`
   before rebuilding, or the cached build hides the warnings.
+- `clipcopy` (`clipcopy.rs`), a built-in only in shells started with `-i` (and `__luish_internal clipcopy`), opens
+  `/dev/tty` first (so nothing is read without a terminal), reads its file or stdin to the end, and writes
+  `ESC ]52;c;BASE64 BEL` there in one write. Its own base64 encoder (no crate for 20 lines). Tests:
+  `builtins/internal_clipcopy.sh` (errors: the cases have no terminal), `clipcopy` in `tests/interactive.rs`, unit
+  tests in `clipcopy.rs`.
 - `print` (`print.rs`) is zsh's, a built-in only in shells started with `-i`, as `help` is, and
   `__luish_internal print` anywhere. Its options are parsed as zsh parses them (`options`), not with
   `builtins::options`: an option's argument is the rest of its word or the next word, a word such as `-1` ends the
@@ -1186,6 +1191,7 @@ truncates when it relocates the package.
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
 | `print` | `builtins/print.sh` (zsh), `builtins/print_luish.sh`, `print_builtin` in `tests/interactive.rs` |
+| `clipcopy` | `builtins/internal_clipcopy.sh`, `clipcopy` in `tests/interactive.rs` |
 | `plugin` | `builtins/internal_plugin.sh`, `builtins/plugin.sh` (same as dash), `plugin_builtin` in `tests/interactive.rs` |
 | Hints for commands not found | `exec/not_found_hint.sh` |
 

@@ -1,6 +1,7 @@
 //! Built-in commands.
 
 pub mod cd;
+mod clipcopy;
 mod dirstack;
 mod echo;
 mod fc;
@@ -111,6 +112,7 @@ builtins! {
 /// their subshells), so that scripts find the same commands as in dash.
 const INTERACTIVE: &[(&[u8], BuiltinFn)] = &[
     (b"bindkey", crate::interactive::keys::bindkey),
+    (b"clipcopy", clipcopy::clipcopy),
     (b"help", help::help),
     (b"plugin", crate::plugins::plugin),
     (b"print", print::print),

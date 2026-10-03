@@ -731,6 +731,21 @@ fn notify_plugin() {
     assert_eq!(sh.exit_status(), 0);
 }
 
+/// `clipcopy` sends its input or a file to the terminal's clipboard (OSC
+/// 52, base64), through `/dev/tty`, so also from a pipeline whose output
+/// goes elsewhere.
+#[test]
+fn clipcopy() {
+    let mut sh = Pty::spawn("clipcopy");
+    sh.expect("$ ");
+    sh.send("printf 'hi\\n' | clipcopy >/dev/null; echo \"status $?\"\n");
+    sh.expect("\x1b]52;c;aGkK\x07status 0\n");
+    sh.send("printf foob > f; clipcopy f\n");
+    sh.expect("\x1b]52;c;Zm9vYg==\x07");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
 #[test]
 fn right_prompt() {
     let mut sh = Pty::spawn_term("rprompt", "vt100");

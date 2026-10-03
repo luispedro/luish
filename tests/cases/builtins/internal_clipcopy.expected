@@ -1,0 +1,9 @@
+clipcopy: cannot open /dev/tty: No such device or address
+kept
+status 1
+clipcopy: too many arguments
+status 2
+clipcopy: Illegal option -x
+status 2
+status 127
+clipcopy

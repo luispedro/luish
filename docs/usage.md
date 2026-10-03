@@ -573,6 +573,9 @@ focused: `notify_on_cmd_finish unfocused` in `kitty.conf`, or `notify-on-command
 `notify-on-command-finish-action = notify`) in Ghostty's configuration (version 1.3 or later). For other terminals that
 show notifications, the plugin [`std/notify`](plugins.md) asks for one itself.
 
+`clipcopy` puts its input (or a file) on the clipboard through the terminal (OSC 52), which also works over ssh:
+`git rev-parse HEAD | clipcopy`. See `help clipcopy`.
+
 ## History
 
 An interactive shell keeps the last `HISTSIZE` commands (1000 by default) in
