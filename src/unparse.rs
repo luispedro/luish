@@ -225,6 +225,17 @@ impl<'a> Printer<'a> {
             self.w(if a.append { b"+=" } else { b"=" });
             self.word(&a.value);
         }
+        // A command named like a reserved word (`>f for`) keeps its
+        // redirections first, where they make it a command.
+        let reserved = sc.assigns.is_empty()
+            && !sc.redirs.is_empty()
+            && sc.words.first().and_then(|w| w.as_literal()).is_some_and(is_reserved);
+        if reserved {
+            for r in &sc.redirs {
+                sep(self);
+                self.redir(r);
+            }
+        }
         for (i, w) in sc.words.iter().enumerate() {
             sep(self);
             if i == 0 {
@@ -236,9 +247,11 @@ impl<'a> Printer<'a> {
                 self.word(w);
             }
         }
-        for r in &sc.redirs {
-            sep(self);
-            self.redir(r);
+        if !reserved {
+            for r in &sc.redirs {
+                sep(self);
+                self.redir(r);
+            }
         }
     }
 
@@ -1027,6 +1040,10 @@ mod tests {
         round_trip("f() { echo $(if a; then b; fi) \"$(for i in 1; do :; done)\"; }");
         round_trip("f() { ! a | b && c || { d; } & }");
         round_trip("f() { g() { echo in g; }; exec 3<>f 4<&3 5>&- >|c >>d <e; }");
+        assert_eq!(
+            round_trip("f() { >s for x; <a } 2>&1; x=1 if >b; }"),
+            "f() {\n    >s for x\n    <a 2>&1 }\n    x=1 if >b\n}\n"
+        );
     }
 
     #[test]
