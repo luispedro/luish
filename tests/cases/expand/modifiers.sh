@@ -33,7 +33,7 @@ ln -s nowhere dangling
 ln -s .. real/sub/up
 here=$(pwd -P)
 for p in lnk/f.txt lnk/../x real/sub/up/f.txt real/./sub/../f.txt real//sub/ dangling dangling/x nonexist/x/../y \
-  lnk/nonexist/../f.txt; do
+  lnk/nonexist/../f.txt real/f.txt/x lnk/sub/up/sub/nonexist/y real/sub/up/lnk/f.txt; do
   a=${p:a} A=${p:A}
   echo "$p: [${a#"$here"}] [${A#"$here"}] ${p:A:t}"
 done

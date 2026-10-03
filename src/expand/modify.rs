@@ -202,23 +202,27 @@ fn resolve(p: &[u8]) -> Vec<u8> {
     if p.first() != Some(&b'/') {
         return p;
     }
-    let mut end = p.len();
-    loop {
-        let prefix = if end == 0 { &b"/"[..] } else { &p[..end] };
-        if let Some(mut r) = sys::realpath(prefix) {
-            if end < p.len() {
-                if r != b"/" {
-                    r.push(b'/');
-                }
-                r.extend_from_slice(&p[end + 1..]);
-            }
-            return r;
-        }
-        if end == 0 {
-            return p;
-        }
-        end = p[..end].iter().rposition(|&c| c == b'/').unwrap_or(0);
+    // Where the parts can end (`0` is `/`). `realpath` follows the path a
+    // part at a time, so the parts that resolve are the first few: a binary
+    // search finds the last, as trying each from the end would take time
+    // quadratic in a long path.
+    let prefix = |end: usize| if end == 0 { &b"/"[..] } else { &p[..end] };
+    let ends: Vec<usize> = (0..p.len()).filter(|&i| p[i] == b'/').chain([p.len()]).collect();
+    let n = ends.partition_point(|&end| sys::realpath(prefix(end)).is_some());
+    if n == 0 {
+        return p;
     }
+    let end = ends[n - 1];
+    let Some(mut r) = sys::realpath(prefix(end)) else {
+        return p;
+    };
+    if end < p.len() {
+        if r != b"/" {
+            r.push(b'/');
+        }
+        r.extend_from_slice(&p[end + 1..]);
+    }
+    r
 }
 
 #[cfg(test)]
