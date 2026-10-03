@@ -242,7 +242,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   applies it, with zsh's results (`remtpath`, `remlpath`, `chabspath`, `chrealpath` in zsh's `hist.c`): `h` and `t`
   ignore trailing slashes and count runs of slashes as one, `h` keeps a leading `//` (but not `///`), `a` is relative
   to `getcwd` (not `PWD`, as in zsh) and canonicalized from the text (`cd::canonicalize`, so `/..` is `/` where zsh
-  gives `//`), and `A` is `a`, then `realpath` of the longest prefix that exists, with the rest appended. The lexer
+  gives `//`), and `A` is `a`, then `realpath` of the longest prefix that exists, with the rest appended (found by a
+  binary search: the prefixes that resolve are the first few, and trying each from the end took quadratic time). The lexer
   reads `${name:X...}` with a letter `X` as `ParamOp::Modify` if every `:` is followed by a modifier up to the `}`
   (anything else is a bad substitution, as before, so `${x:h-y}` is too); `expand_slice_op` and `array_op` apply it
   as they apply `Replace` (to each element, or to the joined string in `"${*:t}"` and `"${a[*]:t}"`). Glob qualifiers
@@ -511,7 +512,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `tests/plugins/complete.sh`.
 - `savestate` (`state.rs`): not `PPID`, `LINENO`, `SHLVL`, or the options `-i -s -m -n`. Functions are printed by
   `unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`), and escapes a `$` before backquotes, which it writes as
-  `$(...)` (`unparse::tests::dollar_before_backquotes`); words in function bodies that would be expanded as
+  `$(...)` (`unparse::tests::dollar_before_backquotes`), except at the start of a bad substitution (`${`...`}`, where
+  `${$(...)}` would read as `$` and an operator); `${x/pat}` is written without the last `/` (`${x//}` would be `//`,
+  `unparse::tests::words`); words in function bodies that would be expanded as
   aliases (command names that are aliases of any kind, other words that are global aliases) are quoted, and a
   function named like an alias is preceded by `unalias`. Loaded plugins are printed as
   `__luish_internal plugin restore NAME PATH`, after aliases and before options. When there are aliases, the commands

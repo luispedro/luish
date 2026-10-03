@@ -520,6 +520,26 @@ impl<'a> Printer<'a> {
             ParamOp::RemoveLargestSuffix(w) => (b"%%", w),
             ParamOp::RemoveSmallestPrefix(w) => (b"#", w),
             ParamOp::RemoveLargestPrefix(w) => (b"##", w),
+            // Backquotes right after `${` stay backquotes: `${$(...)}` would
+            // read as `$` and an operator. The word is never expanded.
+            ParamOp::Bad(w) if pe.name == ParamName::Var(Vec::new()) && !pe.colon => match w.0.split_first() {
+                Some((WordPart::CmdSubst(list), rest)) => {
+                    let mut p = Printer::new(self.indent + 1, self.aliases, self.globqual);
+                    p.seq(list, false);
+                    self.w(b"`");
+                    for c in p.finish_with(false) {
+                        if matches!(c, b'\\' | b'`' | b'$') {
+                            self.out.push(b'\\');
+                        }
+                        self.out.push(c);
+                    }
+                    self.w(b"`");
+                    self.parts(rest);
+                    self.w(b"}");
+                    return;
+                }
+                _ => (b"", w),
+            },
             ParamOp::Bad(w) => (b"", w),
             ParamOp::Substring(offset, len) => {
                 // The text of a negative offset starts with a space or `(`.
@@ -535,8 +555,12 @@ impl<'a> Printer<'a> {
             ParamOp::Replace(how, pat, rep) => {
                 self.w(how.text());
                 self.word(pat);
-                self.w(b"/");
-                self.word(rep);
+                // Without a replacement, no `/`: `${x//}` would be `//`
+                // with an empty pattern.
+                if !rep.0.is_empty() {
+                    self.w(b"/");
+                    self.word(rep);
+                }
                 self.w(b"}");
                 return;
             }
@@ -991,8 +1015,9 @@ mod tests {
             r#"f() { echo ${x-a b} ${x:-"q"} ${x=~} ${x?err} ${x:+$y} ${x%.*} ${x%%/*} ${x#"$p"} ${x##*/} "${x-a\}b}"; }"#,
         );
         round_trip(r#"f() { echo ${x:foo} ${}; }"#);
+        round_trip(r#"f() { echo ${``} "${`echo \`a\` \$b \\c`x}" ${:``}; }"#);
         round_trip(
-            r#"f() { echo ${x:1} ${x: -1:$n} ${x:(-2)} "${@:2:1}" ${x/a/b} ${x//\//"*"} ${x/#a} "${x/%$p/~}"; }"#,
+            r#"f() { echo ${x:1} ${x: -1:$n} ${x:(-2)} "${@:2:1}" ${x/a/b} ${x//\//"*"} ${x/#a} "${x/%$p/~}" ${x/} ${x//}; }"#,
         );
         round_trip(r#"f() { echo $((1 + $x * (2 - y))) $(( $(echo 1) )) `echo a` "`echo \"b\"`"; }"#);
         round_trip(
