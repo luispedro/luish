@@ -173,16 +173,23 @@ plugin list-loaded        # the plugins
 
 ## Coming from bash or zsh
 
-luish doesn't read `~/.bashrc` or `~/.zshrc`. Aliases, functions and exported variables from them usually work in
-luish as they are, and can be copied into `rc.d`.
+luish doesn't read `~/.bashrc` or `~/.zshrc`. Aliases, functions and exported
+variables from them usually work in luish as they are, and can be copied into
+`luishrc`.
 
-zsh's names for options work too, so `setopt share_history hist_ignore_space` needs no change.
+For backwards compatibility, luish supports many of bash's and zsh's options,
+with the same names. For example, `setopt share_history hist_ignore_space`
+needs no change from zsh, even though the luish names are `history.share` and
+`history.ignore_space`.
 
-Much of bash's and zsh's extensions to the shell language work too: arrays and associative arrays, `[[ ... ]]`,
-`function`, `let`, `typeset`, `${x/pattern/replacement}`, `${!name}` and zsh's `${(j:,:)a[@]}` flags (see
-[](usage.md#shell-language-extensions)). Code that uses `shopt` (luish suggests the matching `setopt`), `zstyle` or
-zsh's other modules doesn't work yet. Arrays are indexed from 0, as in bash and in zsh's `sh` mode, not from 1 as in
-native zsh.
+Much of bash's and zsh's extensions to the shell language work too: arrays and
+associative arrays, `[[ ... ]]`, `function`, `let`, `typeset`,
+`${x/pattern/replacement}`, `${!name}` and zsh's `${(j:,:)a[@]}` flags (see
+[](usage.md#shell-language-extensions)).
+
+Code that uses `shopt` (luish suggests the matching `setopt`), `zstyle` or
+zsh's other modules doesn't work yet. Arrays are indexed from 0, as in bash and
+in zsh's `sh` mode, not from 1 as in native zsh.
 
 If you have [bash-completion](https://github.com/scop/bash-completion)
 installed, as most distributions do, the `std.bash-completion` plugin can use
@@ -199,8 +206,9 @@ std.bash-completion = "*"
 Compared to luish-native completion, this is slower (each completion takes
 about 50 ms, as it runs bash), and gives no descriptions.
 
-For about 270 more commands with luish-native completion, in bioinformatics (samtools, bwa, kraken2, ...), science
-(snakemake, nextflow, pandoc, jupyter, ...), desktop programs and Python tooling (pytest, ruff, ...), add
+For about 270 more commands with luish-native completion, in bioinformatics
+(samtools, bwa, kraken2, ...), science (snakemake, nextflow, pandoc, jupyter,
+...), desktop programs and Python tooling (pytest, ruff, ...), add
 [luish-extra](plugins.md#more-completion-luish-extra):
 
 ```console
@@ -211,8 +219,8 @@ $ plugin add extra/complete/all
 
 ## Next steps
 
-- [](usage.md): the command line, the prompt, line editing, history, Tab completion and the startup files in detail.
 - [](personal-plugin.md): keep your configuration in a plugin of your own, to use the same one on every machine.
+- [](usage.md): the command line, the prompt, line editing, history, Tab completion and the startup files in detail.
 - [](plugins.md): other plugins, and writing your own.
 - [](extensions.md): code in Rhai for your plugins: hooks, Tab completion and commands.
 - [](globbing.md): `**/` and zsh's glob qualifiers, such as `vi *(.om[0])` to edit the newest file.

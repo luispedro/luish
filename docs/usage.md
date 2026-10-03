@@ -1,5 +1,19 @@
 # Usage
 
+If you have used bash or zsh, luish should feel familiar:
+
+```bash
+$ pwd
+/home/luispedro
+$ echo "hello world"
+hello world
+$ cd work/myproject
+$ git status
+On branch main
+```
+
+## Calling luish
+
 luish accepts the usual `sh` invocations:
 
 ```sh

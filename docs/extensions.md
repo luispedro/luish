@@ -1,18 +1,14 @@
 # Extensions
 
-An extension is code written in [Rhai](https://rhai.rs), a small embedded language, that runs inside the shell. It
-registers hooks (run when the directory changes, or before each prompt), Tab completion for commands, and commands of
-its own. As it runs in the shell's own process, it can do work, such as reading files or computing the prompt,
-without starting a process.
-
-An extension is always part of a [plugin](plugins.md): it is the plugin's `extension.rhai`, or the plugin itself when
-the plugin is a single file, `NAME.rhai`. The plugin is what you install, list in `config.toml` and load with
-`plugin load`, and it can also have options, dependencies and shell files; [](plugins.md) describes those. This page
-is about the Rhai code.
+An extension is code written in [Rhai](https://rhai.rs) that runs inside the
+shell. It can register hooks (e.g., run when the directory changes, or before
+each prompt), Tab completion for commands, and commands of its own. As it runs
+in the shell's own process, it can reading files and other data without
+starting a process.
 
 ## Writing an extension
 
-The simplest extension is a file in the plugin directory, loaded by its name:
+Here is a simple extension that adds a builtin called `hello`:
 
 ```rhai
 // ~/.config/luish/plugins/hello.rhai
@@ -143,11 +139,13 @@ sh::setvar("SCRATCH", scratch);
 sh::hook("exit", |status| { sh::capture(["rm", "-rf", scratch]); });
 ```
 
-`exit` hooks run when the shell exits, with `exit` or at the end of its input, after the `EXIT` trap, with the exit
-status as an integer (also `$?`). They run in scripts too (check `sh::interactive()` if that isn't wanted), but not
-when a subshell exits, nor when the shell is replaced by `exec` or killed by a signal. A shell with `exit` hooks
-doesn't replace itself with the last command of a script or of `-c`, as it otherwise does. A hook that runs `exit N`
-changes the status the shell exits with, and the hooks after it don't run.
+`exit` hooks run when the shell exits, with `exit` or at the end of its input,
+after the `EXIT` trap, with the exit status as an integer (also `$?`). They run
+in scripts too (check `sh::interactive()` if that isn't wanted), but not when a
+subshell exits, nor when the shell is replaced by `exec` or killed by a signal.
+A shell with `exit` hooks doesn't replace itself with the last command of a
+script or of `-c`, as it otherwise does. A hook that runs `exit N` changes the
+status the shell exits with, and the hooks after it don't run.
 
 ### After the startup files: `post-rc`
 
@@ -188,8 +186,9 @@ plugin load branch
 PS1='$PWD$git_branch\$ '
 ```
 
-Before each prompt, the `prompt-vars` hooks run with the `prompt-vars.lsh` files of the plugins, plugin by plugin in
-the order they were loaded, and `PS1` is expanded with their variables, which are then put back as they were (see
+Before each prompt, the `prompt-vars` hooks run with the `prompt-vars.lsh`
+files of the plugins, plugin by plugin in the order they were loaded, and `PS1`
+is expanded with their variables, which are then put back as they were (see
 [Customizing the prompt](plugins.md#customizing-the-prompt)).
 
 A hook's map gives each variable a string, a number or a boolean (which become
@@ -321,9 +320,10 @@ sh::completer("git", |words, i| {
 
 ## Commands written in Rhai: `sh::builtin`
 
-`sh::builtin(name, fn)` adds a command. It is called with the command's words as an array of strings, its name first
-(so the arguments are `argv[1]` on), and it can be used as any built-in: with arguments, redirections, in pipelines,
-in `$(...)`, with `NAME=value` before it for the length of the call.
+`sh::builtin(name, fn)` adds a command that functions like a new shell builtin.
+
+It is called with the command's words as an array of strings, its name first
+(as `argv[0]`, so the arguments are `argv[1]`, `argv[2]`, ...)
 
 ```rhai
 // ~/.config/luish/plugins/urlencode.rhai
@@ -346,32 +346,37 @@ sh::builtin("urlencode", |argv| {
 });
 ```
 
-- **Exit status**: what the function returns: `()` (nothing) is 0, `true` 0 and `false` 1, and an integer is taken
-  modulo 256, as `return` does. An error gives 1: a string thrown with `throw` is printed as the command's error
-  message (`urlencode: usage: urlencode TEXT...`), and other errors with the extension's file and position.
-- **Output** goes to standard output with `print`, or `sh::write`. To give a result to shell code without the cost of
-  `$(...)`, which forks, set a variable, such as `REPLY`, with `sh::setvar`.
-- **Input**: `sh::read_line()` reads a line of standard input, without its newline, or gives `()` at the end. Like
-  the `read` built-in, it reads a byte at a time, so the rest is left for the commands after it. To read a whole
-  file, `fs::read_file` is much faster.
-- **Lookup**: it ranks as a regular built-in, so a shell function with the same name comes first, and `builtin NAME`
-  or `command NAME` still run it. `type` shows it as a shell builtin from its plugin. The names of luish's own built-ins can't be
-  taken. Registering a name again replaces the command, and it goes away when its plugin is unloaded.
+- **Exit status**: what the function returns: `()` (nothing) is 0, `true` 0 and
+  `false` 1, and an integer is taken modulo 256, as `return` does. An error
+  gives 1: a string thrown with `throw` is printed as the command's error
+  message (`urlencode: usage: urlencode TEXT...`), and other errors with the
+  extension's file and position.
+- **Output** goes to standard output with `print`, or `sh::write`.
+- **Input**: `sh::read_line()` reads a line of standard input, without its
+  newline, or gives `()` at the end. Like the `read` built-in, it reads a byte
+  at a time, so the rest is left for the commands after it. To read a whole
+  file, `fs::read_file` is faster.
+- **Lookup**: it ranks as a regular built-in, so a shell function with the same
+  name comes first, and `builtin NAME` or `command NAME` still run it. `type`
+  shows it as a shell builtin from its plugin. The names of luish's own
+  built-ins can't be taken. Registering a name again replaces the command, and
+  it goes away when its plugin is unloaded.
 - **Ctrl-C** stops it with status 130, as it stops any extension code.
 
-A command in Rhai is worth it for work done inside the command: loops, arithmetic and string processing run two to
-three times as fast as in shell code (see [Performance](performance.md#commands-in-rhai)). A command that does very
-little, such as adding two numbers, is faster as a shell function, since each Rhai operation costs more than the
-equivalent shell expansion.
+Loops, arithmetic and string processing run two to three times as fast in rhai as in
+shell code (see [Performance](performance.md#commands-in-rhai)).
 
 ## Splitting an extension into modules: `import`
 
-An extension can use Rhai modules, other `.rhai` files of the plugin: `import "NAME" as m;` reads `NAME.rhai`,
-runs its top level once, and makes its functions available as `m::f()`. `NAME` is relative to the directory of
-the file that has the `import`, so `extension.rhai` finds its modules in the plugin's directory, and a module in a
-subdirectory (`import "hts/samtools"`) finds its own neighbours there (`import "common"` in `hts/samtools.rhai`
-reads `hts/common.rhai`). This holds wherever the code runs: in a function or closure of the module, even when an
-extension calls it. `NAME` can also be an absolute path, without `.rhai`.
+An extension can use Rhai modules, other `.rhai` files of the plugin: `import
+"NAME" as m;` reads `NAME.rhai`, runs its top level once, and makes its
+functions available as `m::f()`. `NAME` is relative to the directory of the
+file that has the `import`, so `extension.rhai` finds its modules in the
+plugin's directory, and a module in a
+subdirectory (`import "hts/samtools"`) finds its own neighbours there (`import
+"common"` in `hts/samtools.rhai` reads `hts/common.rhai`). This holds wherever
+the code runs: in a function or closure of the module, even when an extension
+calls it. `NAME` can also be an absolute path, without `.rhai`.
 
 A plugin can use the modules of another plugin: `import "@SOURCE/PLUGIN/MODULE"` reads `MODULE.rhai` in the
 directory of the plugin `SOURCE/PLUGIN`, such as `import "@std/completion/lib"` for std's completion engine (see
@@ -521,13 +526,15 @@ round trip through an extension. A string containing a NUL character can't be st
 
 ## Reusing std's completion engine
 
-`std.completion` completes its commands from **specs**, maps that describe a command's options, their values, its
-subcommands and its arguments, with an engine that other plugins can use for their own commands:
-`lib::complete(spec, words, i)`, from `import "@std/completion/lib"`, completes the word `words[i]` of the command
-`words`, as a completer does.
+`std.completion` completes its commands from **specs**, maps that describe a
+command's options, their values, its subcommands and its arguments, with an
+engine that other plugins can use for their own commands: `lib::complete(spec,
+words, i)`, from `import "@std/completion/lib"`, completes the word `words[i]`
+of the command `words`, as a completer does.
 
-The spec format, the kinds and `lib::complete` are part of luish's interface: std is tied to the version of luish,
-and later versions keep accepting the specs of earlier ones.
+The spec format, the kinds and `lib::complete` are part of luish's interface:
+std is tied to the version of luish, and later versions keep accepting the
+specs of earlier ones.
 
 ### Specs
 
