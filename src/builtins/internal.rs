@@ -12,6 +12,7 @@ const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
     (b"check-cache", crate::startcache::check),
     (b"clipcopy", super::clipcopy::clipcopy),
     (b"complete", complete),
+    (b"default-config", default_config),
     (b"function-file", function_file),
     (b"help", help),
     (b"plugin", plugin),
@@ -158,6 +159,23 @@ fn function_file(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         }
         None => Ok(1),
     }
+}
+
+/// `default-config [--extra]`: prints the recommended `config.toml`, as
+/// the first run writes it; with `--extra`, also luish-extra's completion
+/// and themes (for `install.sh`).
+fn default_config(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    let extra = match argv.get(1).map(Vec::as_slice) {
+        None => false,
+        Some(b"--extra") if argv.len() == 2 => true,
+        Some(_) => {
+            let a = String::from_utf8_lossy(&argv[argv.len() - 1]);
+            sh.berr(b"__luish_internal default-config", format!("unexpected argument: {a}"));
+            return Ok(2);
+        }
+    };
+    let text = crate::interactive::firstrun::default_config(sh, extra);
+    Ok(sh.out_status(text.as_bytes()))
 }
 
 /// `print-git-rev`: prints the git revision luish was built from.

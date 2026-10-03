@@ -9,6 +9,12 @@ Releases have binaries for Linux on x86_64 and aarch64. The install script picks
 curl -fsSL https://raw.githubusercontent.com/luispedro/luish/main/install.sh | sh
 ```
 
+If you have no configuration yet (`~/.config/luish` is missing or empty), the script then asks whether to write the
+recommended one, and fetches its plugins (which needs `git`). It is the configuration that luish's
+[first run](getting-started.md#the-first-run) offers, plus [luish-extra](plugins.md#more-completion-luish-extra):
+completion for about 270 more commands, and colour schemes (`style -c` lists them). Without a terminal to ask on, it
+writes nothing, and luish's first run offers a configuration instead.
+
 ### Advanced options for the install script
 
 Options go after `sh -s --`, such as `curl -fsSL .../install.sh | sh -s --
@@ -19,8 +25,11 @@ Options go after `sh -s --`, such as `curl -fsSL .../install.sh | sh -s --
 | `--dir DIR` | `LUISH_INSTALL_DIR` | Where to put `luish` (default: `~/.local/bin`) |
 | `--version TAG` | | A release tag such as `v0.1.0` (default: the latest release) |
 | `--gnu`, `--musl` | `LUISH_LIBC` (`gnu` or `musl`) | Which build (see below) |
+| `--config` | | Write the recommended configuration (with luish-extra) without asking, if there is none |
+| `--no-config` | | Don't offer to write a configuration |
 
-The script checks the download's SHA-256 checksum, and replaces an existing
+The script uses colours when its output is a terminal, unless `NO_COLOR` is set. It checks the download's SHA-256
+checksum, and replaces an existing
 `luish` by renaming, so shells that are running keep working. Running it again
 updates luish. To uninstall, remove the file.
 

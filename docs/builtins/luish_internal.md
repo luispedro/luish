@@ -5,6 +5,7 @@ __luish_internal bindkey [arg...]
 __luish_internal check-cache [-q] [rc|login|startup]...
 __luish_internal clipcopy [file]
 __luish_internal complete line
+__luish_internal default-config [--extra]
 __luish_internal function-file name file [lines [dir]]
 __luish_internal help [name...]
 __luish_internal plugin subcommand [arg...]
@@ -43,6 +44,12 @@ take names that scripts might use for something else.
   single match, then a tab and the match's description, if it has one. The
   status is 1 if there are no matches, or if a completer failed. It works
   in any shell, for example to test a completer from a script.
+
+`default-config`
+: Print the recommended `config.toml`, as luish offers to write it the
+  first time it runs. With `--extra`, also add the luish-extra plugins
+  (completion for more commands, and colour schemes), as the install
+  script writes it.
 
 `function-file`
 : Record that the function `name` was defined in `file`, which is then

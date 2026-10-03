@@ -12,9 +12,12 @@ x86_64 | amd64) arch=x86_64 ;;
 aarch64 | arm64) arch=aarch64 ;;
 esac
 dist=file://$top/target/dist
-unset LUISH_INSTALL_DIR LUISH_LIBC
+unset LUISH_INSTALL_DIR LUISH_LIBC XDG_CONFIG_HOME
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
+# The configuration is written to $HOME/.config/luish.
+export HOME="$tmp/home"
+mkdir "$HOME"
 failed=0
 
 fail() {
@@ -106,5 +109,28 @@ case $builds in *gnu*musl*)
     check "no fallback with --gnu" 1 sh --gnu
     ;;
 esac
+
+# The configuration. With stderr not a terminal, nothing is asked or written.
+conf=$HOME/.config/luish
+url=$dist
+check "no configuration without a terminal" 0 sh "--$libc"
+[ ! -e "$conf" ] || fail "no configuration without a terminal: wrote $conf"
+grep -q 'first time it runs' "$tmp/out" || fail "no configuration without a terminal: $(cat "$tmp/out")"
+# --config writes it; the plugins are fetched with a git that fails here, so that nothing is downloaded.
+mkdir "$tmp/fakegit"
+printf '#!/bin/sh\nexit 1\n' >"$tmp/fakegit/git"
+chmod +x "$tmp/fakegit/git"
+PATH=$tmp/fakegit:$PATH check "--config" 0 sh "--$libc" --config
+grep -qx 'extra.complete.all = "\*".*' "$conf/config.toml" && grep -qx 'extra.themes = "\*".*' "$conf/config.toml" ||
+    fail "--config: $(cat "$conf/config.toml" 2>&1)"
+grep -q 'run plugin sync' "$tmp/out" || fail "--config: no warning that plugin sync failed: $(cat "$tmp/out")"
+# An existing configuration is left alone.
+mkdir -p "$conf"
+echo '# mine' >"$conf/config.toml"
+check "--config with a configuration" 0 sh "--$libc" --config
+[ "$(cat "$conf/config.toml")" = '# mine' ] || fail "--config with a configuration: replaced it"
+rm -r "$conf"
+check "--no-config" 0 sh "--$libc" --no-config
+[ ! -e "$conf" ] || fail "--no-config: wrote $conf"
 
 exit $failed

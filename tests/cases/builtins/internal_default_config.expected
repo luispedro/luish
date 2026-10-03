@@ -1,0 +1,10 @@
+status 0
+status 0
+0
+autosuggest = true
+complete
+themes
+extra = { gh = "luispedro/luish-extra" }
+std
+status 2
+status 2

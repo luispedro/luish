@@ -10,6 +10,11 @@
 #   --version TAG                       a release tag such as v0.1.0 (default: the latest release)
 #   --gnu, --musl    LUISH_LIBC         which build: gnu (dynamically linked against glibc 2.17 or later) or musl
 #                                       (static, runs anywhere but is slower); by default gnu where it can run
+#   --config         write the recommended configuration (with luish-extra) without asking, if there is none
+#   --no-config      don't offer to write a configuration
+#
+# Without a configuration (~/.config/luish missing or empty), it asks on the terminal whether to write the recommended
+# one, and fetches its plugins; with no terminal to ask on, it leaves that to luish's first run.
 #
 # LUISH_DOWNLOAD_URL replaces the release's download URL (for testing, e.g. file:///path/to/target/dist).
 
@@ -17,23 +22,46 @@ set -eu
 
 repo=luispedro/luish
 
+# Colours, when stderr is a terminal and NO_COLOR (https://no-color.org) isn't set.
+if [ -t 2 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != dumb ]; then
+    esc=$(printf '\033')
+    bold="$esc[1m" red="$esc[31m" green="$esc[32m" yellow="$esc[33m" cyan="$esc[36m" off="$esc[m"
+else
+    bold= red= green= yellow= cyan= off=
+fi
+
 say() {
-    echo "install.sh: $*" >&2
+    printf '%s\n' "${bold}install.sh:${off} $*" >&2
+}
+
+ok() {
+    say "$green$*$off"
+}
+
+warn() {
+    say "${yellow}warning:$off $*"
 }
 
 die() {
-    say "$*"
+    say "${red}error:$off $*"
     exit 1
+}
+
+# A command for the user to type, in a message.
+cmd() {
+    printf '%s' "$cyan$*$off"
 }
 
 usage() {
     cat <<'END'
-usage: install.sh [--dir DIR] [--version TAG] [--gnu | --musl]
+usage: install.sh [--dir DIR] [--version TAG] [--gnu | --musl] [--config | --no-config]
 
   --dir DIR      where to put luish (default: ~/.local/bin; or LUISH_INSTALL_DIR)
   --version TAG  a release tag such as v0.1.0 (default: the latest)
   --gnu          the build linked against glibc 2.17 or later (the default where it runs)
   --musl         the static build, which runs anywhere but is slower (or LUISH_LIBC=gnu/musl)
+  --config       write the recommended configuration, with luish-extra, if there is none (asked by default)
+  --no-config    don't offer to write a configuration
 END
 }
 
@@ -79,15 +107,73 @@ fetch() {
     elif command -v shasum >/dev/null; then
         (cd "$tmp" && shasum -a 256 -c "$name.tar.gz.sha256" >/dev/null 2>&1) || die "checksum mismatch for $name.tar.gz"
     else
-        say "warning: no sha256sum or shasum, so the download is not verified"
+        warn "no sha256sum or shasum, so the download is not verified"
     fi
     tar -xzf "$tmp/$name.tar.gz" -C "$tmp"
+}
+
+# Whether the user can be asked a question: on the terminal, as stdin is the script with curl | sh.
+can_ask() {
+    [ -t 2 ] && { true </dev/tty; } 2>/dev/null
+}
+
+# Offers to write the recommended configuration, with luish-extra (its completion and themes), where luish
+# looks for it, unless there is one (the directory isn't empty, as for luish's first run). $config is yes to
+# write it without asking, no to do nothing, or empty to ask.
+setup_config() {
+    luish=$1
+    [ "$config" != no ] || return 0
+    case ${XDG_CONFIG_HOME:-} in
+    /*) confdir=$XDG_CONFIG_HOME/luish ;;
+    *) confdir=$HOME/.config/luish ;;
+    esac
+    shown=$confdir
+    case $confdir in "$HOME"/*) shown="~${confdir#"$HOME"}" ;; esac
+    if [ -n "$(ls -A "$confdir" 2>/dev/null)" ]; then
+        [ "$config" != yes ] || say "$shown already has a configuration, so not writing one"
+        return 0
+    fi
+    # Older releases can't write it (and luish-extra needs a luish newer than 0.3.0).
+    if ! "$luish" -c '__luish_internal default-config --extra' >"$tmp/config.toml" 2>/dev/null; then
+        say "this luish can't write a configuration from here; it offers one the first time it runs"
+        return 0
+    fi
+    if [ -z "$config" ]; then
+        if ! can_ask; then
+            say "there is no configuration in $shown: luish offers one the first time it runs"
+            return 0
+        fi
+        say "there is no configuration in $shown yet. The recommended one has:"
+        say "  - Tab completion for about 500 commands, with luish-extra's (science, bioinformatics, ...)"
+        say "  - colour schemes for the command line ($(cmd style -c) lists them)"
+        say "  - suggestions from the history as you type (Right accepts them)"
+        say "  - zsh's % sequences in prompts, and history expansion ($(cmd '!!'), $(cmd '!$'))"
+        printf '%s' "${bold}install.sh:${off} write it, and fetch its plugins? [Y/n] " >&2
+        answer=
+        read -r answer </dev/tty || { echo >&2; answer=n; }
+        case $answer in
+        '' | [Yy]*) ;;
+        *)
+            say "not writing it: luish offers it again the first time it runs"
+            return 0
+            ;;
+        esac
+    fi
+    mkdir -p "$confdir"
+    cp "$tmp/config.toml" "$confdir/config.toml"
+    ok "wrote $shown/config.toml"
+    if ! command -v git >/dev/null; then
+        warn "fetching the plugins needs git: install it, then run $(cmd plugin sync) in luish"
+    elif ! "$luish" -c '__luish_internal plugin sync' >&2; then
+        warn "the plugins couldn't be fetched: run $(cmd plugin sync) in luish to try again"
+    fi
 }
 
 main() {
     dir=${LUISH_INSTALL_DIR:-${HOME:?}/.local/bin}
     version=latest
     libc=${LUISH_LIBC:-}
+    config=
     while [ $# -gt 0 ]; do
         case $1 in
         --dir) [ $# -ge 2 ] || die "--dir needs a directory"; dir=$2; shift ;;
@@ -96,6 +182,8 @@ main() {
         --version=*) version=${1#*=} ;;
         --gnu | --glibc) libc=gnu ;;
         --musl) libc=musl ;;
+        --config) config=yes ;;
+        --no-config) config=no ;;
         -h | --help) usage; exit 0 ;;
         *) die "unknown option: $1 (see --help)" ;;
         esac
@@ -146,15 +234,17 @@ main() {
     cp "$tmp/$name/luish" "$dir/.luish.new.$$"
     chmod 755 "$dir/.luish.new.$$"
     mv -f "$dir/.luish.new.$$" "$dir/luish"
-    say "installed $("$dir/luish" --version) ($libc build) as $dir/luish"
+    ok "installed $("$dir/luish" --version) ($libc build) as $dir/luish"
+
+    setup_config "$dir/luish"
 
     case :$PATH: in
     *:"$dir":*) ;;
-    *) say "$dir is not in your PATH; add it in your shell's startup file: export PATH=\"$dir:\$PATH\"" ;;
+    *) warn "$dir is not in your PATH; add it in your shell's startup file: $(cmd "export PATH=\"$dir:\$PATH\"")" ;;
     esac
     if ! grep -qx "$dir/luish" /etc/shells 2>/dev/null; then
         say "to make luish your login shell:"
-        say "  echo $dir/luish | sudo tee -a /etc/shells && chsh -s $dir/luish"
+        say "  $(cmd "echo $dir/luish | sudo tee -a /etc/shells && chsh -s $dir/luish")"
     fi
 }
 

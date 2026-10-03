@@ -12,6 +12,10 @@ If you've used a shell before, you should feel at home, luish should feel much l
 
 ## The first run
 
+If you installed luish with the [install script](installation.md#from-a-release) and let it write the configuration,
+there is nothing to do here: it wrote the recommended configuration below, with
+[luish-extra](plugins.md#more-completion-luish-extra) for more completion and colour schemes.
+
 The first time luish starts in a terminal (when `~/.config/luish/` is missing or empty), it shows a menu (Up and
 Down choose, Enter confirms; or press an item's number):
 

@@ -9,6 +9,8 @@ Unreleased
       time
     * std/completion: luish's built-ins (options; style's names, values
       and colour schemes)
+    * install.sh offers to write the recommended configuration, with
+      luish-extra (--config, --no-config), and uses colours
     * Here-strings: cmd <<< word, as in bash and zsh
     * Terminal integration: prompt marks (OSC 133) and the current
       directory (OSC 7); setopt terminal.no_integration turns it off

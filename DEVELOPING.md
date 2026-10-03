@@ -803,6 +803,10 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   once, and `plugin sync` runs unless it is all commented out; the normal startup then loads the plugins.
   The pty tests' `Pty::spawn_term` puts an empty `luishrc` in the configuration directory so that no other test sees
   the menu. Test: `first_run` in `tests/interactive.rs` (vt100 and dumb), and `config` in `firstrun.rs`.
+  `__luish_internal default-config [--extra]` prints the recommended text (`firstrun::default_config`); `--extra` adds
+  luish-extra as the source `extra`, with `extra.complete.all` and `extra.themes`, and a commented-out `[style]`
+  colour scheme. `install.sh` writes that (it can't take the text from the first run, which needs a terminal).
+  Test: `builtins/internal_default_config.sh`.
 - Order: `config.toml`, `rc.d`, then the login files (`login.d`, or else `/etc/profile` and `~/.profile`), `$ENV`,
   `luishrc`. Login files run for login shells whether interactive or not, as in dash.
 - A cache (`startcache.rs`) is a list of entries, each what one file or one `__luish_cache` block changed for one
@@ -1229,7 +1233,7 @@ truncates when it relocates the package.
 | Command cache | `path_cache` in `tests/interactive.rs` |
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |
-| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `builtins/internal_complete_expand.sh`, `builtins/internal_complete_subscript.sh`, `tests/plugins/complete.sh` |
+| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `builtins/internal_default_config.sh`, `builtins/internal_complete_expand.sh`, `builtins/internal_complete_subscript.sh`, `tests/plugins/complete.sh` |
 | Startup files | `misc/startup_cache.sh`, `misc/startup_cache_assigned.sh`, `misc/startup_cache_blocks.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `misc/config_toml_env.sh`, `tests/plugins/startup_cache_check.sh`, `tests/plugins/startup_cache_blocks.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
@@ -1409,8 +1413,14 @@ Releases are built by `.github/workflows/release.yml`, on GitHub's x86_64 and ar
 `pixi run dist` (`scripts/dist.sh`), which builds and checks two binaries and packages them in `target/dist/` as
 `luish-ARCH-linux-LIBC.tar.gz` with a `.sha256` file each, then `scripts/test-install.sh`, which runs `install.sh`
 against those packages (with `LUISH_DOWNLOAD_URL=file://...`) under dash, bash and the packaged luish: each
-build, a reinstall over the running binary, a corrupt or missing download, and the fallback to musl when the gnu
-build doesn't run. The workflow also runs on pull requests that change any of these, without publishing. To make a
+build, a reinstall over the running binary, a corrupt or missing download, the fallback to musl when the gnu
+build doesn't run, and the configuration (none without a terminal, `--config` with a `git` that fails so nothing is
+fetched, an existing one left alone, `--no-config`), in a `HOME` of its own. Where there is no configuration
+(`$XDG_CONFIG_HOME/luish` or `~/.config/luish` missing or empty, as for the first run), `install.sh` asks on
+`/dev/tty` (stdin is the script under `curl | sh`) if stderr is a terminal, writes the output of
+`__luish_internal default-config --extra` (a release without it gets nothing, and its first run asks), and runs
+`__luish_internal plugin sync`, whose failure is only a warning. It uses colours when stderr is a terminal, `TERM`
+isn't `dumb` and `NO_COLOR` is empty. The workflow also runs on pull requests that change any of these, without publishing. To make a
 release, set the version in `Cargo.toml` and push a tag `vVERSION`: the workflow checks that the two agree and
 publishes the packages and `install.sh` as a GitHub release. The tag is also where every luish of that version
 takes the `std` plugins from (`package::std_ref`), so they can't change after the release, and a build whose
