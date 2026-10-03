@@ -225,14 +225,14 @@ shell tracks the current file as well as the line, for provenance and for error 
   collation for `(o)`. Not to be done (decided 2026-09-29): zsh's `integer` built-in and base argument
   (`typeset -i 16 x`), `typeset -F`, highlighting subscripts beyond what the highlighter already does, completing
   keys that contain `'`, and `0` rather than `''` for the holes filled in integer arrays.
-- **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) are done
-  (`interactive/integration.rs`), and notifications through them (kitty, Ghostty) or `std/notify` (OSC 777), and `clipcopy`
-  (OSC 52), the cursor's shape by vi mode (DECSCUSR), curly and coloured underlines in styles, and links for the names of files in
-  interactive error messages (OSC 8). Still to do, roughly by value: kitty's `click_events=1` (it
-  moves the cursor with arrow keys, so Up and Down must not search the history then), and the kitty keyboard
-  protocol (needs rustyline support). Capabilities can be asked (XTVERSION, `CSI ? u`) with the DA1 query that
-  `tty.rs` already sends. Unicode width handling belongs to the line editor; bracketed paste and synchronized output
-  come from rustyline.
+- **Terminal features**: done: semantic prompt marks (OSC 133) and the working directory (OSC 7)
+  (`interactive/integration.rs`), notifications through the marks (kitty, Ghostty) or `std/notify` (OSC 777),
+  `clipcopy` (OSC 52), the cursor's shape by vi mode (DECSCUSR), curly and coloured underlines in styles, and links
+  for the names of files in interactive error messages (OSC 8). Still to do: kitty's `click_events=1` (it moves the
+  cursor with arrow keys, so Up and Down must not search the history then), and the kitty keyboard protocol (needs
+  rustyline support). Capabilities can be asked (XTVERSION, `CSI ? u`) with the DA1 query that `tty.rs` already
+  sends. Unicode width handling belongs to the line editor; bracketed paste and synchronized output come from
+  rustyline.
 - **Scripting**: a predictable strict mode, and a debugger or step-trace mode (error messages with the call stack
   are done, `frames.rs`, with the text of the failing line and of the call sites, also in functions restored from
   the startup cache).
