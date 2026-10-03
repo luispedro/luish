@@ -1,5 +1,83 @@
 # What's new
 
+## Version 0.4.0 (4 October 2026)
+
+This release is about the terminal: colour schemes and styles for the line
+editor, richer highlighting, integration with the terminal emulator, and error
+messages that show where they came from.
+
+**Colours and highlighting.**
+
+- Styles and colour schemes: highlighting, the completion menu and
+  suggestions take their colours from named styles, set with the `style`
+  built-in or in `[style]` and `[colorscheme.NAME]` tables in `config.toml` or
+  a plugin's `plugin.toml`. A scheme can be a dark/light pair, chosen by the
+  terminal's background colour (detected, or from `$LUISH_BACKGROUND` or
+  `$COLORFGBG`), and can set the terminal's own colours (see
+  [](usage.md#styles) and [](colour-schemes.md)).
+- Highlighting tells kinds of command apart (built-in, function, alias,
+  external, precommand), marks options, escapes, special parameters, tildes,
+  braces and globs, shows exported, array and read-only variables, and marks
+  syntax errors. `setopt highlight.paths` marks words that name files, and
+  `setopt editor.no_highlight` turns highlighting off.
+- Prompts can use the same styles, with `%[style:NAME]` and `%[style_off]`,
+  and more colour names in `%F{...}` (`bright-red` and the like). Styles can
+  be curly, double, dotted or dashed underlines, in a colour of their own.
+
+**The terminal.** Prompt marks (OSC 133) and the current directory (OSC 7),
+so that terminals can jump between prompts and open new tabs in the same
+directory (`setopt terminal.no_integration` turns them off; see
+[](usage.md#terminal-integration)). `clipcopy` copies to the clipboard through
+the terminal, the new `std/notify` plugin sends a desktop notification when a
+long command ends, file names in interactive error messages are links, and in
+vi mode the cursor's shape shows the input mode.
+
+**Error messages** name the file of the code that failed (not `$0`), and show
+the failing line and the call stack (see [](usage.md#error-messages)).
+
+**The language.**
+
+- Here-strings, `cmd <<< word`, as in bash and zsh.
+- Brace expansion, `a{b,c}` and `{1..10}`, with `setopt expand.braces`.
+- zsh's modifiers in parameter expansion: `${x:h}`, `${x:t}`, `${x:r}`,
+  `${x:e}`, `${x:a}`, `${x:A}`, `${x:u}`, `${x:l}`, and `:a` and `:A` in glob
+  qualifiers and history expansion.
+- Array slices, `${a[i..j]}`, as in Python.
+- bash's `BASH_SOURCE` (so `${BASH_SOURCE:A:h}` is the script's directory),
+  `FUNCNAME`, `BASH_LINENO` and `caller`.
+
+**Configuration.** `config.toml` can set variables (`[env]`,
+`[env.interactive]` and `[vars]`) and add directories to `PATH` (`[path]`; see
+[](usage.md#settings-in-configtoml)). `install.sh` offers to write the
+recommended configuration, with [luish-extra](plugins.md#more-completion-luish-extra)'s
+completion for about 270 more commands.
+
+**Plugins.**
+
+- Plugins of a collection have full names, such as `std/completion`, so that
+  short names don't clash, and collections can have sub-collections
+  (`SOURCE/SUB/NAME`, or `SOURCE.SUB.NAME` in TOML).
+- `plugin` uses colours and says more: `load`, `unload` and `add` say what
+  they did, and `sync`, `update` and `check` list each source, with its
+  plugins and a link to compare versions.
+- `plugin run` runs Rhai code once, from a file or with `-c`, and `plugin load
+  -c CODE NAME` loads a plugin without a file.
+- Extensions can have `precmd`, `preexec` and `exit` hooks (see
+  [](extensions.md#hooks)).
+- `std/completion` completes luish's own built-ins (options, styles and colour
+  schemes).
+
+**Incompatible changes.** `$LUISH_HIGHLIGHT` is gone: use styles (`[style]` in
+`config.toml`, or the `style` built-in) instead. Plugins of a collection are
+loaded under their full name (`std/completion`, not `completion`), which
+`plugin list-loaded` shows and `plugin unload` takes.
+
+**Fixes.** `typeset -f` and the saved state now print back `${x/}`,
+`` ${`cmd`} ``, a `$` before backquotes and a few other constructs correctly.
+Some inputs that made luish slow or crash are now errors: an array index of
+64 Mi or more, `!{}` and history expansions of more than 1 MiB, `%NG` with a
+huge N, and deeply nested `${a[${a[...}}` or `$((` that isn't arithmetic.
+
 ## Version 0.3.0 (1 October 2026)
 
 This release is about daily use: more of zsh's interactive features, completion

@@ -4,7 +4,7 @@ This page compares what the shell language of dash, bash, zsh and luish can do b
 quoting, parameter expansion, arrays, arithmetic, conditionals, globbing, redirections, control flow and the
 variables the shell sets. [](builtin-commands.md) compares the built-in commands.
 
-Each feature was tried in dash 0.5.12, bash 5.2, zsh 5.9 (started with `-f`) and luish 0.3.0. The zsh column is
+Each feature was tried in dash 0.5.12, bash 5.2, zsh 5.9 (started with `-f`) and luish 0.4.0. The zsh column is
 native zsh. Where luish takes a feature from zsh, it usually follows zsh's `sh` emulation (`zsh --emulate sh`), which
 turns some of zsh's features off and counts array indices from 0; the notes say where that matters.
 

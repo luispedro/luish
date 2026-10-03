@@ -264,7 +264,7 @@ extra.complete.all = "*"        # or only some: extra.complete.bio = "*", ...
 
 The plugins depend on `std.completion`, whose engine they use, so luish loads it too.
 
-Adding the whole repository needs a luish newer than 0.3.0, which has sub-collections; with luish 0.3.0, add its
+Adding the whole repository needs luish 0.4.0 or newer, which has sub-collections; with luish 0.3.0, add its
 `complete` directory instead (see its README). Unlike `std`, it is not tied to the version of luish, so `plugin update`
 updates it. Its [README](https://github.com/luispedro/luish-extra#readme) lists every command it completes.
 

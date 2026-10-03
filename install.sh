@@ -133,7 +133,7 @@ setup_config() {
         [ "$config" != yes ] || say "$shown already has a configuration, so not writing one"
         return 0
     fi
-    # Older releases can't write it (and luish-extra needs a luish newer than 0.3.0).
+    # Older releases can't write it (and luish-extra needs luish 0.4.0 or newer).
     if ! "$luish" -c '__luish_internal default-config --extra' >"$tmp/config.toml" 2>/dev/null; then
         say "this luish can't write a configuration from here; it offers one the first time it runs"
         return 0

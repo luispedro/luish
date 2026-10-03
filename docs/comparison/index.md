@@ -1,7 +1,7 @@
 # luish, dash, bash and zsh
 
 This page compares luish with the three shells people most often choose between on Linux: dash (the usual `/bin/sh`
-on Debian and Ubuntu), bash and zsh. It describes luish 0.3.0 (October 2026), a young project that already
+on Debian and Ubuntu), bash and zsh. It describes luish 0.4.0 (October 2026), a young project that already
 replaces dash for scripts, and is meant to replace zsh as an interactive shell; [](../compatibility.md) has the details
 behind each claim here. Two further pages go into detail:
 [](language.md), on arrays, expansions, arithmetic, globbing and the rest of the language, and
@@ -149,9 +149,8 @@ improvement on it.
 ## Where luish is going
 
 The current work is finishing the replacement of zsh: more completion (a generic bridge to programs' own completion
-and to `--help`), typing to narrow the menu, and `precmd`/`preexec` hooks. After that come terminal features (OSC 7
-and OSC 133), a history with the directory, exit status and duration of each command,
-and a mode for SSH in which the line editor runs on the local machine.
+and to `--help`) and typing to narrow the menu. After that come a history with the directory, exit status and
+duration of each command, and a mode for SSH in which the line editor runs on the local machine.
 
 ```{toctree}
 :hidden:
