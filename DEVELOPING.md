@@ -743,7 +743,14 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   editor (after `preexec`) and `command_done` (`ESC ]133;D;STATUS BEL`, only if C was sent: `RUNNING`) after it, and
   does the same around a syntax error (status 2), so lines with several lists give one C/D pair each. All are written
   to fd 1, where rustyline writes. Other pty tests drop the marks from the transcript (`Pty::strip_marks`, unless
-  `Pty::marks`). Tests: unit tests in `integration.rs`, `terminal_integration` in `tests/interactive.rs`.
+  `Pty::marks`). In vi mode, the cursor's shape (DECSCUSR, `ESC [N q`: 6 bar, 2 block, 4 underline, 0 the terminal's
+  default) follows the input mode. rustyline tells the mode only to key handlers, as it was before the key, so
+  `keys::Dispatch` (for the keys luish binds) and `keys::ViCursor` (bound to `Event::Any`, rustyline's fallback for
+  the other keys; it returns `None`, so rustyline does what it would) call `integration::vi_key`, which predicts the
+  mode after the key from rustyline's vi keys (`next_mode`); a wrong guess is corrected at the next key.
+  `line_starts` (a bar: rustyline starts each line inserting) and `line_done` (back to 0, only if changed: `SHAPE`)
+  are around `readline`. Tests: unit tests in `integration.rs`, `terminal_integration` and `vi_cursor_shape` in
+  `tests/interactive.rs`.
 - **Autosuggestions**: the hint while the cursor is at the end of a non-blank, non-continuation line and the menu
   isn't open; accepted with rustyline's `CompleteHint`. The search goes from the newest entry and stops at the first
   match. Test: `autosuggestions` in `tests/interactive.rs`.

@@ -617,10 +617,12 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
             .as_deref()
             .or(initial.as_ref().map(|(_, t)| t.as_str()))
             .unwrap_or("");
+        integration::line_starts(marks && vi);
         let r = match &plain {
             Some(plain) => ed.readline_with_initial(&(plain, &text), (start, "")),
             None => ed.readline_with_initial(&text, (start, "")),
         };
+        integration::line_done();
         let down = keys.lock().ok().and_then(|mut k| k.down.take());
         if let (Ok(_), Some(i)) = (&r, down)
             && i + 1 < ed.history().len()

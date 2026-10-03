@@ -697,6 +697,38 @@ fn terminal_integration() {
     assert_eq!(sh.exit_status(), 0);
 }
 
+/// In vi mode, the cursor's shape follows the input mode: a bar to insert,
+/// a block for commands, an underline to replace; the terminal's own is put
+/// back for the commands that run.
+#[test]
+fn vi_cursor_shape() {
+    let mut sh = Pty::spawn_term("vicursor", "vt100");
+    sh.expect("$ ");
+    sh.send("set -o vi\n");
+    sh.expect("\x1b[6 q");
+    sh.expect("$ ");
+    sh.send("echo hi\x1b");
+    sh.expect("\x1b[2 q");
+    sh.send("R");
+    sh.expect("\x1b[4 q");
+    sh.send("\x1b");
+    sh.expect("\x1b[2 q");
+    sh.send("A");
+    sh.expect("\x1b[6 q");
+    sh.send("!\n");
+    sh.expect("\x1b[0 q");
+    sh.expect("hi!\n");
+    sh.expect("\x1b[6 q");
+    sh.send("setopt terminal.no_integration\n");
+    sh.expect("\x1b[0 q");
+    sh.send("echo x\x1bA\n");
+    let got = sh.expect("\nx\n");
+    let got = got + &sh.expect("$ ");
+    assert!(!got.contains(" q"), "{got:?}");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
 /// std's notify plugin: a notification (OSC 777) when a command that took
 /// at least `$LUISH_NOTIFY_AFTER` seconds ends.
 #[cfg(feature = "plugins")]

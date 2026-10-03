@@ -566,7 +566,9 @@ exit status of each command (the semantic prompt marks, OSC 133), and the curren
 (OSC 7). Terminals that know them use them: kitty, WezTerm, Ghostty, foot, iTerm2, Windows Terminal, VS Code's
 terminal and tmux (3.4 or later) can jump from prompt to prompt, select or copy a command's output, mark the
 commands that failed, or open a new window or tab in the same directory (GNOME Terminal and other VTE ones need only
-OSC 7 for that). Other terminals ignore them. `setopt terminal.no_integration` turns them off.
+OSC 7 for that). Other terminals ignore them. In vi mode (`set -o vi`), the cursor is a bar while inserting, a block
+in command mode and an underline while replacing, and the terminal's own cursor is put back while commands run.
+`setopt terminal.no_integration` turns all of this off.
 
 With the marks, kitty and Ghostty can send a desktop notification when a long command ends while their window isn't
 focused: `notify_on_cmd_finish unfocused` in `kitty.conf`, or `notify-on-command-finish = unfocused` (with

@@ -971,6 +971,11 @@ struct Dispatch {
 impl ConditionalEventHandler for Dispatch {
     fn handle(&self, evt: &Event, n: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
         let Event::KeySeq(keys) = evt else { return None };
+        if ctx.mode() == EditMode::Vi
+            && let Some(key) = keys.last()
+        {
+            super::integration::vi_key(*key, ctx.input_mode());
+        }
         if let [key] = keys.as_slice()
             && let Some(cmd) = menu::key(&self.menu, *key, ctx)
         {
@@ -985,8 +990,25 @@ impl ConditionalEventHandler for Dispatch {
     }
 }
 
+/// The keys that nothing else binds, which do what rustyline does: in vi
+/// mode, the cursor's shape follows the input mode they lead to.
+struct ViCursor;
+
+impl ConditionalEventHandler for ViCursor {
+    fn handle(&self, evt: &Event, _: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
+        if ctx.mode() == EditMode::Vi
+            && let Event::KeySeq(keys) = evt
+            && let Some(key) = keys.last()
+        {
+            super::integration::vi_key(*key, ctx.input_mode());
+        }
+        None
+    }
+}
+
 /// Binds the keys of the menu and the default keymap.
 pub fn bind<H: Helper, I: History>(ed: &mut Editor<H, I>, menu: &Arc<Mutex<Menu>>, state: &Arc<Mutex<State>>) {
+    ed.bind_sequence(Event::Any, EventHandler::Conditional(Box::new(ViCursor)));
     let Ok(mut st) = state.lock() else { return };
     let keys = (menu::keys().into_iter().map(|k| vec![k])).chain(defaults().map(|(k, _)| k));
     for k in keys {

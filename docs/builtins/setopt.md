@@ -98,8 +98,9 @@ luish's own options, all off by default:
 
 `terminal.no_integration`
 : Don't tell the terminal where the prompts, command lines and command
-  outputs are (OSC 133), nor the current directory (OSC 7). See the user
-  documentation on terminal integration.
+  outputs are (OSC 133), nor the current directory (OSC 7), and leave the
+  cursor's shape alone in vi mode. See the user documentation on terminal
+  integration.
 
 The history options (see the user documentation on history):
 
