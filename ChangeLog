@@ -3,7 +3,8 @@ Unreleased
     * Fixed: typeset -f and savestate printing ${x/}, ${`cmd`} and
       >file for
     * Fixed: ${a['"'} is a bad substitution (as in dash), not a syntax
-      error; deeply nested ${a[${a[...}} no longer take exponential time
+      error, and a subscript ends where it ends read unquoted (as in
+      zsh); deeply nested ${a[${a[...}} no longer take exponential time
     * Deeply nested $(( that isn't arithmetic no longer takes exponential
       time
     * std/completion: luish's built-ins (options; style's names, values

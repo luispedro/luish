@@ -978,7 +978,7 @@ impl Parser {
             self.pos += 1;
             if let Some(name) = self.read_param_name() {
                 let index = match self.at(0) {
-                    Some(b'[') if matches!(name, ParamName::Var(_)) => self.read_index()?,
+                    Some(b'[') if matches!(name, ParamName::Var(_)) => self.read_index(ctx)?,
                     _ => None,
                 };
                 if self.at(0) == Some(b'}') {
@@ -1019,7 +1019,7 @@ impl Parser {
                         let index = if c == b'@' { Index::At } else { Index::Star };
                         return list(name, index, ParamOp::Names);
                     }
-                    (Some(b'['), _) => match self.read_index()? {
+                    (Some(b'['), _) => match self.read_index(ctx)? {
                         Some(index @ (Index::At | Index::Star)) if self.at(0) == Some(b'}') => {
                             self.pos += 1;
                             return list(name, index, ParamOp::Keys);
@@ -1050,7 +1050,7 @@ impl Parser {
         };
         if matches!(name, ParamName::Var(_)) && self.at(0) == Some(b'[') {
             let save = self.pos;
-            match self.read_index()? {
+            match self.read_index(ctx)? {
                 Some(index) => {
                     let mut part = self.read_param_op(name, ctx)?;
                     if let WordPart::Param(pe) = &mut part {
@@ -1139,7 +1139,7 @@ impl Parser {
             return Ok(None);
         };
         let index = match self.at(0) {
-            Some(b'[') if matches!(name, ParamName::Var(_)) => match self.read_index()? {
+            Some(b'[') if matches!(name, ParamName::Var(_)) => match self.read_index(ctx)? {
                 Some(index) => Some(index),
                 None => return Ok(None),
             },
@@ -1155,8 +1155,11 @@ impl Parser {
 
     /// Reads `[index]` of `${name[index]}`, from the `[`. Returns `None`,
     /// back at the `[`, if there is no `]` before the `}`, or the subscript
-    /// doesn't parse (`${a['"'}` is a bad substitution, as in dash).
-    fn read_index(&mut self) -> PResult<Option<Index>> {
+    /// doesn't parse (`${a['"'}` is a bad substitution, as in dash). The
+    /// subscript is read as in double quotes, but where it ends is where it
+    /// ends read in `ctx`, as in zsh (`${a['}']}` is bad): else that would
+    /// depend on the text after the `}`.
+    fn read_index(&mut self, ctx: Ctx) -> PResult<Option<Index>> {
         if self.param_memo.is_none() {
             self.param_memo = Some(Box::default());
         }
@@ -1173,13 +1176,28 @@ impl Parser {
             }
             _ => {}
         }
-        match self.read_param_word_to(Ctx::DQuote, Some(b']')) {
-            Ok((w, true)) => Ok(Some(slice_index(w))),
+        let index = match self.read_param_word_to(Ctx::DQuote, Some(b']')) {
+            Ok((w, true)) => w,
             _ => {
                 (self.pos, self.lineno) = start;
-                Ok(None)
+                return Ok(None);
+            }
+        };
+        // Only quotes and backslashes are read differently.
+        let end = (self.pos, self.lineno, self.splice_delta);
+        if ctx != Ctx::DQuote && self.src[start.0..end.0].iter().any(|&c| c == b'\'' || c == b'\\') {
+            (self.pos, self.lineno) = (start.0 + 1, start.1);
+            let skim = std::mem::replace(&mut self.skim, true);
+            let same = self.read_param_word_to(ctx, Some(b']'));
+            self.skim = skim;
+            let same = matches!(same, Ok((_, true))) && (self.pos, self.lineno, self.splice_delta) == end;
+            if !same {
+                self.peeked = None;
+                (self.pos, self.lineno) = start;
+                return Ok(None);
             }
         }
+        Ok(Some(slice_index(index)))
     }
 
     /// The rest of `${name...}`, after the name (and the index).

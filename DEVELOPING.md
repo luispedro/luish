@@ -130,7 +130,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - As in dash, a bad `${...}` (such as `${x^^}`) is an error only when expanded, and `$(` in a here-doc delimiter
   is a syntax error. Test: `parse/dash_lenient.sh`. `ParamOp::Bad` keeps the text up to the `}` as it was
   (`read_bad_param`): it is read as a word only to find the `}`. A subscript with no `]` before the `}`, or one
-  that doesn't parse (`${a['"'}`, where the subscript is read as in double quotes), makes a bad substitution, so
+  that doesn't parse (`${a['"'}`, where the subscript is read as in double quotes), makes a bad substitution, as
+  does one that doesn't end where it ends read in the context of the `${` (as in zsh, `'` and `\` are read
+  differently: else whether it is a subscript would depend on the text after the `}`), so
   `read_index` is followed by that second reading of the text. For nested ones (`${a[${a[...`) that took time
   exponential in the depth, so while a subscript is read, `param_memo` records where each `${...}` read ends, and
   the second reading (`skim`) skips them. A `$(...)` that doesn't parse leaves the parser as it was (the

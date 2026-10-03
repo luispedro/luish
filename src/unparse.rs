@@ -1015,6 +1015,8 @@ mod tests {
         );
         round_trip(r#"f() { echo ${x:foo} ${}; }"#);
         round_trip(r#"f() { echo ${``} "${`echo \`a\` \$b \\c`x}" ${:``}; }"#);
+        // The comment would make `"'}\n#"` quoted in the subscript.
+        round_trip("f() {\n${a['\"'}\n#\"\n\"]\"\n}");
         round_trip(
             r#"f() { echo ${x:1} ${x: -1:$n} ${x:(-2)} "${@:2:1}" ${x/a/b} ${x//\//"*"} ${x/#a} "${x/%$p/~}" ${x/} ${x//}; }"#,
         );
