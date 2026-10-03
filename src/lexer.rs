@@ -162,6 +162,7 @@ pub enum Op {
     Clobber,
     DLess,
     DLessDash,
+    TLess,
 }
 
 impl Op {
@@ -184,6 +185,7 @@ impl Op {
             Op::Clobber => ">|",
             Op::DLess => "<<",
             Op::DLessDash => "<<-",
+            Op::TLess => "<<<",
         }
     }
 
@@ -197,6 +199,7 @@ impl Op {
             Op::LessGreat => RedirKind::ReadWrite,
             Op::Clobber => RedirKind::Clobber,
             Op::DLess | Op::DLessDash => RedirKind::HereDoc,
+            Op::TLess => RedirKind::HereString,
             _ => return None,
         })
     }
@@ -514,6 +517,7 @@ impl Parser {
             b'<' | b'>' if self.at(1) == Some(b'(') && !self.regex_word => self.lex_word(start, lineno),
             b'<' => match (self.at(1), self.at(2)) {
                 (Some(b'<'), Some(b'-')) => op(self, Op::DLessDash, 3),
+                (Some(b'<'), Some(b'<')) => op(self, Op::TLess, 3),
                 (Some(b'<'), _) => op(self, Op::DLess, 2),
                 (Some(b'&'), _) => op(self, Op::LessAnd, 2),
                 (Some(b'>'), _) => op(self, Op::LessGreat, 2),

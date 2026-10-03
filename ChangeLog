@@ -1,4 +1,5 @@
 Unreleased
+    * Here-strings: cmd <<< word, as in bash and zsh
     * Terminal integration: prompt marks (OSC 133) and the current
       directory (OSC 7); setopt terminal.no_integration turns it off
     * std/notify: a desktop notification when a long command ends

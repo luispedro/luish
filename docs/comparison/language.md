@@ -128,7 +128,7 @@ All four have POSIX's `*`, `?` and `[...]`. luish sorts matches by bytes, where 
 |---|:-:|:-:|:-:|:-:|---|
 | POSIX's, including `>\|` and here-documents | ✓ | ✓ | ✓ | ✓ | |
 | File descriptors above 9, `exec 20>f` | – | ✓ | – | ✓ | dash and zsh read `20` as a word |
-| Here-strings, `<<< word` | – | ✓ | ✓ | – | luish: `printf '%s\n' word \|` |
+| Here-strings, `<<< word` | – | ✓ | ✓ | ✓ | |
 | `&>`, `&>>` (stdout and stderr) | – | ✓ | ✓ | – | luish, as dash and POSIX, reads `cmd &> f` as `cmd &` then `> f`; write `> f 2>&1` |
 | `\|&` (pipe stdout and stderr) | – | ✓ | ✓ | – | `2>&1 \|` |
 | Process substitution, `<(cmd)`, `>(cmd)` | – | ✓ | ✓ | ✓ | |

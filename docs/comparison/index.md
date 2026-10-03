@@ -28,7 +28,8 @@ behind each claim here. Two further pages go into detail:
 | Process substitution `<(...)` | No | Yes | Yes | Yes |
 | `set -o pipefail` | No | Yes | Yes | Yes |
 | Brace expansion | No | Yes | Yes | Yes, opt-in |
-| `$'...'`, `<<<` | No | Yes | Yes | Not yet |
+| `<<<` | No | Yes | Yes | Yes |
+| `$'...'` | No | Yes | Yes | Not yet |
 | Line editing | None (Debian's) | readline | zle | emacs keys as zsh's, with `bindkey`; vi mode |
 | Syntax highlighting, autosuggestions | No | No | With plugins | Built in |
 | Tab completion | No | With bash-completion | compsys, thousands of commands | About 230 commands, git, a menu, and bash-completion as a fallback |
@@ -89,7 +90,7 @@ unchanged, about five times faster. luish has:
 - Process substitution, `pipefail`, and zsh's special variables (`RANDOM`, `SECONDS`, `EPOCHREALTIME`,
   `pipestatus`/`PIPESTATUS`, `path` ...).
 
-Brace expansion (`{a,b}`, `{1..10}`) needs `setopt expand.braces`. Not yet: `$'...'` strings, here-strings (`<<<`), `select`, `coproc`, `shopt`
+Brace expansion (`{a,b}`, `{1..10}`) needs `setopt expand.braces`. Not yet: `$'...'` strings, `select`, `coproc`, `shopt`
 and `extglob`, `mapfile`, `printf -v`, `local -n`, `${x^^}`, `wait -n`, the `ERR` trap, the `time` keyword, and
 arithmetic beyond dash's (`((...))`, `**`, `++`, floating point). Where bash and zsh disagree, luish documents which it follows (usually zsh's `sh`
 emulation, sometimes bash).

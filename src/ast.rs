@@ -466,12 +466,14 @@ pub enum RedirKind {
     DupIn,
     DupOut,
     HereDoc,
+    /// `<<< word`, a here-string (bash, zsh).
+    HereString,
 }
 
 impl RedirKind {
     pub fn default_fd(self) -> u32 {
         match self {
-            RedirKind::In | RedirKind::ReadWrite | RedirKind::DupIn | RedirKind::HereDoc => 0,
+            RedirKind::In | RedirKind::ReadWrite | RedirKind::DupIn | RedirKind::HereDoc | RedirKind::HereString => 0,
             _ => 1,
         }
     }

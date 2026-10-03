@@ -262,6 +262,7 @@ impl<'a> Printer<'a> {
             RedirKind::DupIn => b"<&",
             RedirKind::DupOut => b">&",
             RedirKind::HereDoc => b"<<",
+            RedirKind::HereString => b"<<<",
         });
         match &r.target {
             RedirTarget::Word(w) => {

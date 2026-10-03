@@ -263,6 +263,18 @@ impl Shell {
         Ok(fields.first().map(|f| bytes(f)).unwrap_or_default())
     }
 
+    /// Expansion of a here-string's word: no splitting or globbing, and
+    /// the fields of `"$@"` are joined with spaces, as in bash and zsh.
+    pub fn expand_here_string(&mut self, w: &Word) -> EResult<Vec<u8>> {
+        if let Some(lit) = w.as_literal() {
+            return Ok(lit.to_vec());
+        }
+        let mut f = Fields::new(None);
+        self.expand_parts(&w.0, false, false, &mut f)?;
+        let fields: Vec<Vec<u8>> = f.into_fields().iter().map(|f| bytes(f)).collect();
+        Ok(fields.join(&b' '))
+    }
+
     /// Expansion into a pattern: no splitting, and quoting is kept so that
     /// quoted metacharacters match literally.
     pub fn expand_pattern(&mut self, w: &Word) -> EResult<XField> {

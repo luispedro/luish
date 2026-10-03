@@ -129,6 +129,11 @@ impl Shell {
                 };
                 Action::Owned(self.heredoc_fd(&text)?)
             }
+            RedirTarget::Word(w) if r.kind == RedirKind::HereString => {
+                let mut text = self.expand_here_string(w)?;
+                text.push(b'\n');
+                Action::Owned(self.heredoc_fd(&text)?)
+            }
             RedirTarget::Word(w) => {
                 let target = self.redirect_target(w)?;
                 self.redirect_action(r.kind, &target, fd)?
@@ -211,7 +216,7 @@ impl Shell {
                     }
                 }
             }
-            RedirKind::HereDoc => unreachable!(),
+            RedirKind::HereDoc | RedirKind::HereString => unreachable!(),
         }
     }
 

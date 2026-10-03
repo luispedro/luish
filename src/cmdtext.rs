@@ -192,6 +192,7 @@ fn push_redirs(out: &mut Vec<u8>, redirs: &[Redirect]) {
             RedirKind::ReadWrite => b"<>",
             RedirKind::DupIn => b"<&",
             RedirKind::DupOut => b">&",
+            RedirKind::HereString => b"<<<",
             RedirKind::HereDoc => unreachable!(),
         });
         if let RedirTarget::Word(w) = &r.target {

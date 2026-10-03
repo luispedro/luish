@@ -1071,7 +1071,12 @@ impl Scan<'_> {
         let mut k = op + 1;
         let mut heredoc = None;
         let mut dup = false;
+        let mut here_string = false;
         match (s[op], s.get(k)) {
+            (b'<', Some(b'<')) if s.get(k + 1) == Some(&b'<') => {
+                k += 2;
+                here_string = true;
+            }
             (b'<', Some(b'<')) => {
                 k += 1;
                 heredoc = Some(s.get(k) == Some(&b'-'));
@@ -1099,6 +1104,8 @@ impl Scan<'_> {
             self.paint_plain(k, w.end, role::FD);
         } else if let Some(strip) = heredoc {
             self.heredocs.push((w.text, strip));
+        } else if here_string {
+            self.tildes(k, w.end, false);
         } else {
             self.tildes(k, w.end, false);
             self.path(k, &w);
@@ -1617,6 +1624,7 @@ mod tests {
         assert_eq!(classes(">x ls"), "r..cc");
         assert_eq!(classes("cat <<EOF\nif\nEOF\nls"), "ccc.rr....sssrrr.cc");
         assert_eq!(classes("cat <<-E; ls\n\tE\n"), "ccc.rrr.o.cc.rr.");
+        assert_eq!(classes("cat <<< x; ls"), "ccc.rrr..o.cc");
     }
 
     #[test]

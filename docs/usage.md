@@ -47,6 +47,7 @@ typeset -i count=0                         # variable attributes, also with decl
 builtin cd /tmp                            # run the built-in even if a function has its name
 set -o pipefail                            # a pipeline fails if any of its commands does
 diff <(sort a) <(sort b)                   # process substitution: a file to read the output of a command
+read -r first rest <<< "$line"             # a here-string: the word and a newline on stdin
 ```
 
 - `[[ ... ]]` has `test`'s operators, `&&`, `||`, `!` and parentheses, patterns on the right of `==` and `!=`, `=~`

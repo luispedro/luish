@@ -323,6 +323,10 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   inherits them), then expand the assignments, so `x=$(cat) <<EOF` reads the here-doc. The `set -x` trace goes to the
   stderr from before the redirections. `RedirError::Open` (status 2; exits for a special built-in) vs
   `RedirError::Flow` (fatal expansion error). Test: `exec/assign_redirect_order.sh`.
+- Here-strings (`<<< word`): the lexer's `Op::TLess` (`<<<`, a syntax error in dash, so always on), a
+  `RedirKind::HereString` with an ordinary word target. `expand_here_string` expands it without splitting or globbing
+  and joins the fields of `"$@"` with spaces (bash, zsh); with a newline added, it goes through `heredoc_fd` like a
+  here-document's body. Tests: `exec/here_string.sh` (zsh), `parse/here_string_error.sh`.
 - Assignments before regular built-ins, functions and external commands are made in the shell (as in dash), so a
   read-only variable is an error of the shell. Tests: `exec/readonly_assign.sh`.
 - Command cache: (file, index in `PATH`), trusted without a stat; `with_command_path` retries later `PATH` entries on
@@ -1153,6 +1157,7 @@ truncates when it relocates the package.
 | `setopt`, `unsetopt` | `options/setopt.sh` (zsh), `options/setopt_list.sh` |
 | `%` sequences in prompts | `misc/prompt_percent.sh`, `misc/prompt_percent_long.sh`, `misc/prompt_style.sh` |
 | The right prompt | `right_prompt` in `tests/interactive.rs` |
+| `<<< word` | `exec/here_string.sh` (zsh), `parse/here_string_error.sh` |
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |
 | `**/` | `expand/globstar.sh` (zsh), `expand/globstar_off.sh` (dash), `expand/globstar_loop.sh` |
