@@ -133,7 +133,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   that doesn't parse (`${a['"'}`, where the subscript is read as in double quotes), makes a bad substitution, so
   `read_index` is followed by that second reading of the text. For nested ones (`${a[${a[...`) that took time
   exponential in the depth, so while a subscript is read, `param_memo` records where each `${...}` read ends, and
-  the second reading (`skim`) skips them. Test: `parse/bad_subscript.sh`.
+  the second reading (`skim`) skips them. A `$(...)` that doesn't parse leaves the parser as it was (the
+  here-documents waiting for their bodies), as reading goes on. Tests: `parse/bad_subscript.sh`,
+  `parse/bad_subscript_cmdsubst.sh`.
 - Arrays: `split_assignment_with` also takes `NAME+=` and `NAME[index]=` (the index up to the matching unquoted `]`,
   across parts), and `parse_simple` reads `(...)` right after an assignment's `=` (`array_follows` compares the
   token positions, so `a= (x)` stays an error) into a lone `WordPart::Array`. After `local`, `export`, `readonly`,

@@ -1392,11 +1392,23 @@ impl Parser {
         debug_assert!(self.peeked.is_none());
         let outer_heredocs = std::mem::take(&mut self.pending_heredocs);
         let outer_alias_blank_end = self.alias_blank_end.take();
-        let list = self.parse_compound_list()?;
-        let t = self.next()?;
-        if t.tok != Tok::Op(Op::RParen) {
-            return self.unexpected(&t, Some(")"));
-        }
+        let list = self.parse_compound_list().and_then(|list| {
+            let t = self.next()?;
+            if t.tok != Tok::Op(Op::RParen) {
+                return self.unexpected(&t, Some(")"));
+            }
+            Ok(list)
+        });
+        let list = match list {
+            Ok(list) => list,
+            Err(e) => {
+                // Back as it was, for `read_index`, which reads on.
+                self.peeked = None;
+                self.pending_heredocs = outer_heredocs;
+                self.alias_blank_end = outer_alias_blank_end;
+                return Err(e);
+            }
+        };
         // As in dash, a here-document with no body before the `)` is empty
         // (and the lines after it are commands): as an empty body reads.
         for hd in std::mem::replace(&mut self.pending_heredocs, outer_heredocs) {
