@@ -4,8 +4,9 @@
 //!
 //! A style's value is words separated by spaces: a foreground colour, a
 //! background colour (`bg:COLOUR`), attributes (`bold`, and `no-bold` to
-//! turn one off), `plain` (the terminal's defaults: inherit nothing) and
-//! `sgr:PARAMS` (raw SGR parameters). Colours are spelt as in prompts'
+//! turn one off), the kind of underline (`undercurl` and the like, which
+//! underline too) and its colour (`ul:COLOUR`), `plain` (the terminal's
+//! defaults: inherit nothing) and `sgr:PARAMS` (raw SGR parameters). Colours are spelt as in prompts'
 //! `%F{...}`: a name, `bright-NAME`, `default`, 0 to 255 or `#rrggbb`.
 //!
 //! Names are dotted, and a name falls back to its parent field by field
@@ -185,6 +186,15 @@ const ATTRS: [(&str, u8); 7] = [
     ("strike", 9),
 ];
 
+/// The kinds of underline other than the straight one, as vim names them:
+/// (name, the SGR subparameter of `4`).
+const UNDERLINES: [(&str, u8); 4] = [
+    ("underdouble", 2),
+    ("undercurl", 3),
+    ("underdotted", 4),
+    ("underdashed", 5),
+];
+
 /// The bit of an attribute (by name, as in [`ATTRS`]) in [`Style::on`] and
 /// [`Style::off`].
 pub fn attr_bit(name: &str) -> u8 {
@@ -232,6 +242,17 @@ impl Color {
             Color::Index(n @ 8..16) => format!("{}", base + 60 + n as u32 - 8),
             Color::Index(n) => format!("{};5;{n}", base + 8),
             Color::Rgb(r, g, b) => format!("{};2;{r};{g};{b}", base + 8),
+        };
+        out.push_str(&s);
+    }
+
+    /// Appends the SGR parameters for the colour as the underline's (58,
+    /// which has no short form for the first 16).
+    fn sgr_underline(self, out: &mut String) {
+        let s = match self {
+            Color::Default => "59".to_owned(),
+            Color::Index(n) => format!("58;5;{n}"),
+            Color::Rgb(r, g, b) => format!("58;2;{r};{g};{b}"),
         };
         out.push_str(&s);
     }
@@ -327,6 +348,11 @@ pub struct Style {
     /// Attributes turned on, and off, as bits by their index in `ATTRS`.
     pub on: u8,
     pub off: u8,
+    /// The kind of underline (a subparameter of SGR 4, as in
+    /// [`UNDERLINES`]), with `underline` on.
+    pub under: Option<u8>,
+    /// The underline's colour.
+    pub ul: Option<Color>,
     /// `plain`: nothing comes from the parent.
     pub plain: bool,
     /// `sgr:PARAMS`, written after the rest.
@@ -349,6 +375,15 @@ impl Style {
             } else if let Some(i) = w.strip_prefix(b"no-").and_then(attr) {
                 s.off |= 1 << i;
                 s.on &= !(1 << i);
+            } else if let Some(&(_, kind)) = UNDERLINES.iter().find(|u| u.0.as_bytes() == w) {
+                s.under = Some(kind);
+                s.on |= attr_bit("underline");
+                s.off &= !attr_bit("underline");
+            } else if let Some(c) = w.strip_prefix(b"ul:") {
+                let c = Color::parse(c).ok_or_else(|| format!("bad colour: {}", shown()))?;
+                if s.ul.replace(c).is_some() {
+                    return Err(format!("two underline colours: {}", shown()));
+                }
             } else if let Some(c) = w.strip_prefix(b"bg:") {
                 let c = Color::parse(c).ok_or_else(|| format!("bad colour: {}", shown()))?;
                 if s.bg.replace(c).is_some() {
@@ -378,7 +413,9 @@ impl Style {
         }
         for (i, (name, _)) in ATTRS.iter().enumerate() {
             if self.on & (1 << i) != 0 {
-                words.push((*name).to_owned());
+                let under = self.under.filter(|_| *name == "underline");
+                let under = under.and_then(|k| UNDERLINES.iter().find(|u| u.1 == k));
+                words.push(under.map_or(*name, |u| u.0).to_owned());
             }
         }
         for (i, (name, _)) in ATTRS.iter().enumerate() {
@@ -391,6 +428,9 @@ impl Style {
         }
         if let Some(c) = self.bg {
             words.push(format!("bg:{}", c.text()));
+        }
+        if let Some(c) = self.ul {
+            words.push(format!("ul:{}", c.text()));
         }
         if let Some(r) = &self.raw {
             words.push(format!("sgr:{r}"));
@@ -409,6 +449,12 @@ impl Style {
         }
         self.fg = self.fg.or(parent.fg);
         self.bg = self.bg.or(parent.bg);
+        self.ul = self.ul.or(parent.ul);
+        // The kind goes with the parent's underline, unless this style
+        // sets its own underline.
+        if self.on & attr_bit("underline") == 0 {
+            self.under = self.under.or(parent.under);
+        }
         self.on |= parent.on & !self.off;
         self.off |= parent.off & !self.on;
         if self.raw.is_none() {
@@ -434,10 +480,13 @@ impl Style {
                 out.push(';');
             }
         };
-        for (i, (_, code)) in ATTRS.iter().enumerate() {
+        for (i, (name, code)) in ATTRS.iter().enumerate() {
             if self.on & (1 << i) != 0 {
                 sep(&mut out);
                 out.push_str(&code.to_string());
+                if let Some(k) = self.under.filter(|_| *name == "underline") {
+                    out.push_str(&format!(":{k}"));
+                }
             }
         }
         if let Some(c) = self.fg {
@@ -447,6 +496,10 @@ impl Style {
         if let Some(c) = self.bg {
             sep(&mut out);
             c.sgr(true, &mut out);
+        }
+        if let Some(c) = self.ul {
+            sep(&mut out);
+            c.sgr_underline(&mut out);
         }
         if let Some(r) = &self.raw {
             sep(&mut out);
@@ -990,6 +1043,24 @@ mod tests {
         assert_eq!(parse("bolt"), Err("bad style: bolt".into()));
         assert_eq!(parse("bg:nope"), Err("bad colour: bg:nope".into()));
         assert_eq!(parse("sgr:1m"), Err("bad SGR parameters: sgr:1m".into()));
+    }
+
+    #[test]
+    fn underlines() {
+        let s = parse("red undercurl ul:#ff0000").unwrap();
+        assert_eq!(s.text(), "undercurl red ul:#ff0000");
+        assert_eq!(s.sgr(), "4:3;31;58;2;255;0;0");
+        assert_eq!(parse("underdashed ul:blue").unwrap().sgr(), "4:5;58;5;4");
+        assert_eq!(parse("underline ul:default").unwrap().sgr(), "4;59");
+        assert_eq!(parse("ul:red ul:blue"), Err("two underline colours: ul:blue".into()));
+        assert_eq!(parse("ul:x"), Err("bad colour: ul:x".into()));
+        // A child takes the parent's kind of underline with its underline,
+        // not when it underlines itself, nor when it turns it off.
+        let parent = parse("underdotted ul:red").unwrap();
+        assert_eq!(parent.add(&parse("bold").unwrap()).sgr(), "1;4:4;58;5;1");
+        assert_eq!(parent.add(&parse("underline").unwrap()).sgr(), "4;58;5;1");
+        assert_eq!(parent.add(&parse("no-underline").unwrap()).sgr(), "58;5;1");
+        assert_eq!(parent.add(&parse("ul:green").unwrap()).text(), "underdotted ul:green");
     }
 
     #[test]

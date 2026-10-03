@@ -715,6 +715,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   nothing. It is asked once per shell (`BACKGROUND`); `style --detect` asks again. The pty tests set
   `LUISH_BACKGROUND` (`Pty::spawn_at`) except `background_detection`, which answers itself. Tests: unit tests in
   `tty.rs`, `background_detection` in `tests/interactive.rs`.
+- **Underlines** (`style.rs`): `undercurl` and the other kinds (`UNDERLINES`) set the `underline` bit and
+  `Style::under`, the subparameter of SGR 4 (`4:3`); `ul:COLOUR` is `Style::ul`, SGR 58 (`58;5;N` or `58;2;R;G;B`, as
+  58 has no short form; 59 for `default`). A child inherits `under` only if it doesn't turn `underline` on itself, so
+  `underline` under an `undercurl` parent is straight. Tests: unit tests in `style.rs` (`underlines`),
+  `builtins/internal_style.sh`.
 - **Terminal colours** (`interactive/termcolors.rs`): a `Scheme`'s `terminal` map (keys `style::TERMINAL_KEYS`:
   `foreground`, `background`, `cursor`, `palette`, values lists of RGB, one each but up to 16 for the palette) is
   resolved key by key through the chain (`Styles::terminal`); `style -s S terminal.KEY ...` sets one, `-r` removes

@@ -460,6 +460,10 @@ A style's value is words separated by spaces:
 - `bg:` and a colour for the background;
 - attributes: `bold`, `dim`, `italic`, `underline`, `blink`, `reverse`, `strike`, and the same with `no-` to turn
   one off that the parent has;
+- other kinds of underline, as in vim: `undercurl`, `underdouble`, `underdotted` and `underdashed` (each underlines,
+  so `no-underline` turns it off), and `ul:` and a colour for the underline's colour, as in `undercurl ul:red`. kitty,
+  WezTerm, Ghostty, foot, iTerm2, Alacritty and VTE terminals show them; others show a straight underline in the
+  text's colour, or nothing;
 - `plain`: the terminal's defaults, taking nothing from the parent;
 - `sgr:` and the parameters of a terminal escape sequence, such as `sgr:1;38;5;208`.
 

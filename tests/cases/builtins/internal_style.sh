@@ -95,3 +95,8 @@ e --terminal-colors maybe
 s -p | grep terminal
 s --terminal-colors on
 s -p | grep terminal-colors || echo "no terminal-colors in the state"
+# Other kinds of underline, and the underline's colour, in the saved state.
+s error undercurl red ul:#ff8800
+s error
+s -p | grep 'style error'
+e arg ul:x

@@ -112,3 +112,7 @@ status 1: --terminal-colors: expected on or off
 __luish_internal style -s t terminal.background '#282828'
 __luish_internal style --terminal-colors off
 no terminal-colors in the state
+error undercurl red ul:#ff8800
+  error: undercurl red ul:#ff8800 (set by the user)
+__luish_internal style error 'undercurl red ul:#ff8800'
+status 1: arg: bad colour: ul:x

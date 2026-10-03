@@ -4,6 +4,7 @@ Unreleased
     * std/notify: a desktop notification when a long command ends
     * clipcopy: copies to the clipboard through the terminal (OSC 52)
     * In vi mode, the cursor's shape shows the input mode
+    * Styles: undercurl, underdouble, underdotted, underdashed and ul:COLOUR
     * A colour scheme can set the terminal's own colours (background,
       text, cursor, palette), put back when it no longer applies or the
       shell exits; [style] terminal-colors = false keeps them

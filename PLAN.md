@@ -227,8 +227,8 @@ shell tracks the current file as well as the line, for provenance and for error 
   keys that contain `'`, and `0` rather than `''` for the holes filled in integer arrays.
 - **Terminal features**: semantic prompt markers (OSC 133) and working directory reporting (OSC 7) are done
   (`interactive/integration.rs`), and notifications through them (kitty, Ghostty) or `std/notify` (OSC 777), and `clipcopy`
-  (OSC 52), and the cursor's shape by vi mode (DECSCUSR). Still to do, roughly by value: curly and coloured underlines in
-  styles (`4:3`, `58;2;R;G;B`), hyperlinks for file names in error messages (OSC 8), kitty's `click_events=1` (it
+  (OSC 52), the cursor's shape by vi mode (DECSCUSR), and curly and coloured underlines in styles. Still to do, roughly by
+  value: hyperlinks for file names in error messages (OSC 8), kitty's `click_events=1` (it
   moves the cursor with arrow keys, so Up and Down must not search the history then), and the kitty keyboard
   protocol (needs rustyline support). Capabilities can be asked (XTVERSION, `CSI ? u`) with the DA1 query that
   `tty.rs` already sends. Unicode width handling belongs to the line editor; bracketed paste and synchronized output
