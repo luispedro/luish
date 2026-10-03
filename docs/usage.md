@@ -98,7 +98,7 @@ Besides POSIX's (`$?`, `$$`, `$!`, `$-`, `$#`, `$0`, `$@`, `$*`, `LINENO`, `PPID
 | `FUNCNAME` | An array of the names of the functions being run, innermost first, as in bash, with `source` for a file read with `.` and `main` for the script. It is set only while a function runs |
 | `BASH_LINENO` | An array of the lines each entry of `FUNCNAME` (and of `BASH_SOURCE`) was called from, as in bash: `${BASH_LINENO[0]}` is the line that called the current function, in the file `${BASH_SOURCE[1]}`. It is 0 for the script |
 | `dirstack` | An array of the directory stack of `pushd` and `popd`, without the current directory (`dirs` shows it first): `${dirstack[0]}` is where `popd` goes. An array assignment (`dirstack=(~/src /tmp)`) replaces the stack; as for `path`, `dirstack=x`, `unset dirstack` and `local dirstack` make it an ordinary variable |
-| `LUISH_VERSION` | luish's version (`0.3.0`), as zsh's `ZSH_VERSION` and bash's `BASH_VERSION` |
+| `LUISH_VERSION` | luish's version (`0.4.0`), as zsh's `ZSH_VERSION` and bash's `BASH_VERSION` |
 | `LUISH_PATCHLEVEL` | The git commit luish was built from, with `-dirty` if the sources had changes (`unknown` outside a git checkout), as zsh's `ZSH_PATCHLEVEL` |
 | `MACHTYPE`, `HOSTTYPE` | The processor (`x86_64` or `aarch64`), as zsh's `MACHTYPE` and bash's `HOSTTYPE` |
 | `OSTYPE` | The operating system: `linux-gnu`, or `linux-musl` for the musl build |
