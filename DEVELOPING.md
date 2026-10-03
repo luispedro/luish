@@ -806,7 +806,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `__luish_internal default-config [--extra]` prints the recommended text (`firstrun::default_config`); `--extra` adds
   luish-extra as the source `extra`, with `extra.complete.all` and `extra.themes`, and a commented-out `[style]`
   colour scheme. `install.sh` writes that (it can't take the text from the first run, which needs a terminal).
-  Test: `builtins/internal_default_config.sh`.
+  Test: `tests/plugins/default_config.sh` (a plugin case, as without plugins the text has none).
 - Order: `config.toml`, `rc.d`, then the login files (`login.d`, or else `/etc/profile` and `~/.profile`), `$ENV`,
   `luishrc`. Login files run for login shells whether interactive or not, as in dash.
 - A cache (`startcache.rs`) is a list of entries, each what one file or one `__luish_cache` block changed for one
@@ -1244,7 +1244,7 @@ truncates when it relocates the package.
 | Command cache | `path_cache` in `tests/interactive.rs` |
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |
-| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `builtins/internal_default_config.sh`, `builtins/internal_complete_expand.sh`, `builtins/internal_complete_subscript.sh`, `tests/plugins/complete.sh` |
+| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `tests/plugins/default_config.sh`, `builtins/internal_complete_expand.sh`, `builtins/internal_complete_subscript.sh`, `tests/plugins/complete.sh` |
 | Startup files | `misc/startup_cache.sh`, `misc/startup_cache_assigned.sh`, `misc/startup_cache_blocks.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `misc/config_toml_env.sh`, `tests/plugins/startup_cache_check.sh`, `tests/plugins/startup_cache_blocks.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
