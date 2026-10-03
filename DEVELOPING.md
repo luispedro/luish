@@ -285,8 +285,10 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   so no text is shown for a line there, nor for a call made there, and a function defined there has `lines_in_file`
   false. All of this is only computed for an error. The lines that
   luish adds start with two spaces, so cases compared with dash that capture stderr drop them (`sed '/^  /d'`, as in
-  `builtins/test_parse.sh`, `expand/arith_quotes.sh` and `exec/recursion_limit.sh`). Tests: `exec/error_stack.sh`,
-  `exec/stack_guard.sh`.
+  `builtins/test_parse.sh`, `expand/arith_quotes.sh` and `exec/recursion_limit.sh`). With `interactive::links` (an
+  interactive shell, stderr a terminal the editor supports, not `terminal.no_integration`), the names of files are
+  OSC 8 links to them (`SourceFile::shown`, `file://HOST/PATH` as for OSC 7; none if the path isn't absolute). Tests:
+  `exec/error_stack.sh`, `exec/stack_guard.sh`, `error_links` in `tests/interactive.rs`.
 - zsh's special parameters (`RANDOM`, `SECONDS`, `EPOCH*`, `UID`/`EUID`/`GID`/`EGID`, `HISTCMD`, `pipestatus`
   and bash's `PIPESTATUS`, and the constants `LUISH_VERSION`, `LUISH_PATCHLEVEL` (`GIT_REV` from `build.rs`),
   `MACHTYPE`, `HOSTTYPE` and `OSTYPE`, in `vars.rs`) are not in the variable map, so plain lookups and assignments of other names cost only a check of the

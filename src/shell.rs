@@ -655,8 +655,9 @@ impl Shell {
     /// the code running (or `$0`), then the text of that line and the call
     /// stack (`frames.rs`).
     pub fn error(&self, msg: impl AsRef<[u8]>) {
-        let (file, line) = self.error_location();
-        let mut s = file.to_vec();
+        let links = crate::interactive::links(self);
+        let (file, line) = self.error_location(links);
+        let mut s = file;
         s.extend_from_slice(b": ");
         if let Some(line) = line {
             s.extend_from_slice(line.to_string().as_bytes());
@@ -669,7 +670,7 @@ impl Shell {
             s.extend(text);
             s.push(b'\n');
         }
-        s.extend(self.stack_trace());
+        s.extend(self.stack_trace(links));
         sys::write_all(2, &s);
     }
 

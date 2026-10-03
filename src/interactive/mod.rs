@@ -645,6 +645,23 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
     line
 }
 
+/// Whether error messages make the names of files links to them (OSC 8):
+/// in interactive shells whose stderr is a terminal the line editor
+/// supports, unless `terminal.no_integration` is set.
+pub fn links(sh: &Shell) -> bool {
+    sh.interactive && !sh.opt(Opt::NoTermIntegration) && can_ask(sh)
+}
+
+/// `name`, as a link to the file at the absolute `path` (OSC 8).
+pub fn file_link(name: &[u8], path: &[u8]) -> Vec<u8> {
+    let mut s = b"\x1b]8;;".to_vec();
+    s.extend(integration::file_url(&sys::hostname(), path));
+    s.extend_from_slice(b"\x1b\\");
+    s.extend_from_slice(name);
+    s.extend_from_slice(b"\x1b]8;;\x1b\\");
+    s
+}
+
 /// Marks the start of a command's output for the terminal (OSC 133), as
 /// the command read at the prompt runs.
 pub fn command_starts(sh: &Shell) {

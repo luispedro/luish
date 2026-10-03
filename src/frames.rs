@@ -38,6 +38,19 @@ impl SourceFile {
             None => self.name.to_vec(),
         }
     }
+
+    /// Its name, as a link to it if `links` and its path is known.
+    fn shown(&self, links: bool) -> Vec<u8> {
+        let path = match &self.dir {
+            Some(dir) => [&dir[..], b"/", self.name.strip_prefix(b"./").unwrap_or(&self.name)].concat(),
+            None => self.name.to_vec(),
+        };
+        if links && path.first() == Some(&b'/') {
+            crate::interactive::file_link(&self.name, &path)
+        } else {
+            self.name.to_vec()
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -158,14 +171,15 @@ impl Shell {
     /// Where an error happened, for the start of its message: the file of
     /// the code running (the script, a file read with `.`, or the file a
     /// function was defined in), else `$0`, and the line, if it is known.
-    pub fn error_location(&self) -> (&[u8], Option<u32>) {
+    /// With `links`, the file's name is a link to it (OSC 8).
+    pub fn error_location(&self, links: bool) -> (Vec<u8>, Option<u32>) {
         let line = (!self.interactive || self.lineno > 0).then_some(self.lineno);
         match self.frames.last() {
             Some(f) => (
-                f.file.as_ref().map_or(&self.arg0[..], |f| &f.name),
+                f.file.as_ref().map_or(self.arg0.to_vec(), |f| f.shown(links)),
                 line.filter(|_| f.lines_in_file),
             ),
-            None => (&self.arg0, line),
+            None => (self.arg0.to_vec(), line),
         }
     }
 
@@ -233,7 +247,7 @@ impl Shell {
     /// and each file read with `.` that led to the code running, innermost
     /// first, with where it was called and the text of that line. Empty at
     /// the top level of a script.
-    pub fn stack_trace(&self) -> Vec<u8> {
+    pub fn stack_trace(&self, links: bool) -> Vec<u8> {
         let mut lines: Vec<(Vec<u8>, Option<Vec<u8>>, usize)> = Vec::new();
         let mut cache = TextCache::new();
         for (i, f) in self.frames.iter().enumerate().rev() {
@@ -242,7 +256,10 @@ impl Shell {
                 FrameKind::Script => continue,
                 // A startup file.
                 FrameKind::Source if below.is_none() && f.call_line == 0 => continue,
-                FrameKind::Source => ([b"  in ", f.file_name()].concat(), "sourced"),
+                FrameKind::Source => {
+                    let name = f.file.as_ref().map_or(Vec::new(), |f| f.shown(links));
+                    ([&b"  in "[..], &name].concat(), "sourced")
+                }
                 FrameKind::Function(name) => ([b"  in function ", &name[..]].concat(), "called"),
             };
             let at = match below {
@@ -251,7 +268,7 @@ impl Shell {
                     lines_in_file,
                     ..
                 }) => {
-                    let mut at = file.name.to_vec();
+                    let mut at = file.shown(links);
                     if *lines_in_file {
                         at.extend_from_slice(format!(":{}", f.call_line).as_bytes());
                     }

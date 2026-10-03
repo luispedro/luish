@@ -134,7 +134,7 @@ fn next_mode(mode: InputMode, key: KeyEvent) -> InputMode {
 
 /// The `file:` URL of `path` on `host`, with the bytes that aren't
 /// unreserved in a URL path percent-encoded.
-fn file_url(host: &[u8], path: &[u8]) -> Vec<u8> {
+pub fn file_url(host: &[u8], path: &[u8]) -> Vec<u8> {
     let mut url = b"file://".to_vec();
     url.extend_from_slice(host);
     for &c in path {

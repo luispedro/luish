@@ -697,6 +697,30 @@ fn terminal_integration() {
     assert_eq!(sh.exit_status(), 0);
 }
 
+/// In error messages, the names of files are links to them (OSC 8); not
+/// with `terminal.no_integration`.
+#[test]
+fn error_links() {
+    let mut sh = Pty::spawn_term("links", "vt100");
+    let host = {
+        let mut buf = [0u8; 256];
+        // SAFETY: gethostname into a buffer of the given size.
+        unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len() - 1) };
+        String::from_utf8_lossy(&buf[..buf.iter().position(|&c| c == 0).unwrap()]).into_owned()
+    };
+    let dir = sh.dir.display().to_string();
+    std::fs::write(sh.path("lib.sh"), "f() { nosuchcmd_x; }\n").unwrap();
+    let link = format!("\x1b]8;;file://{host}{dir}/lib.sh\x1b\\./lib.sh\x1b]8;;\x1b\\");
+    sh.expect("$ ");
+    sh.send(". ./lib.sh; f\n");
+    sh.expect(&format!("{link}: 1: nosuchcmd_x: not found"));
+    sh.expect("$ ");
+    sh.send("setopt terminal.no_integration; f\n");
+    sh.expect("\n./lib.sh: 1: nosuchcmd_x: not found");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
 /// In vi mode, the cursor's shape follows the input mode: a bar to insert,
 /// a block for commands, an underline to replace; the terminal's own is put
 /// back for the commands that run.

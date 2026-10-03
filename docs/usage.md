@@ -233,6 +233,10 @@ more than 20 lines loses its middle. In `-c`, calls are at lines of the command 
 prompt of an interactive shell the stack has no lines. A function that the startup cache or a saved state restored
 keeps the lines of its file.
 
+In an interactive shell whose standard error is a terminal, the names of files are links to them (OSC 8), which
+terminals that know them (kitty, WezTerm, Ghostty, foot, iTerm2, GNOME Terminal and other VTE ones, Windows Terminal)
+open when clicked (with Ctrl or a modifier in some); `setopt terminal.no_integration` turns them off.
+
 `caller` prints a frame of the stack from a script, as in bash (see `help caller`), and `BASH_SOURCE`, `FUNCNAME`
 and `BASH_LINENO` hold all of it ([Special variables](#special-variables)).
 
@@ -572,6 +576,7 @@ terminal and tmux (3.4 or later) can jump from prompt to prompt, select or copy 
 commands that failed, or open a new window or tab in the same directory (GNOME Terminal and other VTE ones need only
 OSC 7 for that). Other terminals ignore them. In vi mode (`set -o vi`), the cursor is a bar while inserting, a block
 in command mode and an underline while replacing, and the terminal's own cursor is put back while commands run.
+Error messages make the names of files links to them (see [Error messages](#error-messages)).
 `setopt terminal.no_integration` turns all of this off.
 
 With the marks, kitty and Ghostty can send a desktop notification when a long command ends while their window isn't
