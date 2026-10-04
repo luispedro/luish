@@ -306,6 +306,10 @@ impl Shell {
                 t.extend(single_quote(&name));
                 t.push(b' ');
                 t.extend(single_quote(&path));
+                for o in host.option_args(&name) {
+                    t.push(b' ');
+                    t.extend(single_quote(&o));
+                }
                 t.push(b'\n');
                 add(Kind::Plugin, &name, t);
             }

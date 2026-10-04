@@ -1,7 +1,7 @@
 # `plugin`
 
 ```text
-plugin load name|source/path|path...
+plugin load name|source/path|path [option=value...]...
 plugin load -c code name
 plugin list-loaded
 plugin list-available [-a]
@@ -28,6 +28,10 @@ shells) its
 `rc.lsh` and `post-rc.lsh`; during the startup files of `rc.d`,
 `post-rc.lsh` waits for their end. The dependencies that a plugin's
 `plugin.toml` lists are loaded first, unless they are already loaded.
+The `option=value` arguments after a plugin are its options, which its
+`plugin.toml` declares (see the plugins page of the documentation); a
+plugin that is already loaded, as a dependency or otherwise, must be given
+the same options, or unloaded first.
 Loading a plugin again reloads it. The exit status is 1 if a plugin can't
 be loaded. At the prompt of an interactive shell with a terminal for
 output, `plugin load` and `plugin unload` say what they did (`Loaded NAME`,

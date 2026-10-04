@@ -1,3 +1,8 @@
+Unreleased
+    * Plugin options: declared in plugin.toml's [plugin-options], given
+      in plugins.enabled, dependencies or plugin load NAME OPTION=VALUE;
+      seen as LUISH_PLUGIN_OPTIONS and sh::plugin_options()
+
 Version 0.4.0 2026-10-04 by luispedro
     * plugin: coloured output (plugin.* styles) and more feedback: load,
       unload and add say what they did; sync, update and check list each

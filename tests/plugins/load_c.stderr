@@ -8,5 +8,5 @@ load_c.sh: 43: __luish_internal plugin: a/b: bad plugin name
     __luish_internal plugin load -c 'x' a/b; echo "slash: $?"
 load_c.sh: 44: __luish_internal plugin: : bad plugin name
     __luish_internal plugin load -c 'x' ''; echo "empty: $?"
-load_c.sh: 45: __luish_internal plugin: usage: plugin load NAME|PATH..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check [-q]
+load_c.sh: 45: __luish_internal plugin: usage: plugin load NAME|PATH [OPTION=VALUE...]..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check [-q]
     __luish_internal plugin load -c 'x'; echo "usage: $?"

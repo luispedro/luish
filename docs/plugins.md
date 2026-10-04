@@ -40,6 +40,16 @@ z = { gh = "bob/luish-z" }     # a source of its own
 | `subdir = "DIR"` | Where in the repository (or `path`) the plugin or collection is |
 | `plugin = "NAME"` | In `plugins.enabled`: which plugin of a collection (`SUB/NAME` in a sub-collection). By default the one with the entry's name, or the only one |
 
+An entry can also be a table, to give the plugin options (see [Plugin options](#plugin-options-plugin-options)),
+with `version = "*"` (which can be left out) and `options`, also beside `gh`, `git` or `path`:
+
+```toml
+[plugins.enabled]
+my-plugin = { version = "*", options = { greeting = "hi", level = 2, verbose = true } }
+work.proxy = { options = { host = "proxy.example.com" } }
+z = { gh = "bob/luish-z", options = { max = 500 } }
+```
+
 ### Names
 
 A source is either one plugin or a collection of plugins: its `.rhai` and `.lsh` files and its directories that are
@@ -296,10 +306,11 @@ A plugin directory can have multiple files which luish uses the following ways:
 A directory needs at least one of them. Other directories (such as a repository's `docs` or `src`) are not plugins:
 in a collection, they are sub-collections if they hold plugins, and are ignored otherwise.
 
-While `init.lsh`, `extension.rhai`, `rc.lsh` and `prompt-vars.lsh` run,
-`LUISH_PLUGIN_DIR` is the plugin's directory (an absolute path) and
-`LUISH_PLUGIN_NAME` its name. Afterwards they get back the values they had
-before.
+While `init.lsh`, `extension.rhai`, `rc.lsh`, `post-rc.lsh` and `prompt-vars.lsh` run,
+`LUISH_PLUGIN_DIR` is the plugin's directory (an absolute path),
+`LUISH_PLUGIN_NAME` its name, and `LUISH_PLUGIN_OPTIONS` an associative array of
+its options (see [below](#plugin-options-plugin-options)). Afterwards they get
+back the values they had before.
 
 `plugin unload` removes what the extension registered (hooks, completers and commands), but it can't undo what the
 shell files did (aliases, functions, variables).
@@ -343,6 +354,69 @@ pdf = "evince"
 [bindkey]
 "Ctrl-X Ctrl-G" = "undo"
 ```
+
+### Plugin options: `[plugin-options]`
+
+A plugin can take options, which it declares in the `[plugin-options]` table of its `plugin.toml`, each with its
+type (`str`, `int` or `boolean`) and either a default or `required = true`:
+
+```toml
+[plugin-options]
+greeting = { type = "str", default = "hello" }
+level = { type = "int", default = 0 }
+verbose = { type = "boolean", default = false }
+host = { type = "str", required = true }
+user = { type = "str" }                   # neither: unset unless given
+```
+
+(The table `[options]` is for the shell's settings, above.) The options are given in `plugins.enabled` (see
+[above](#installing-plugins-with-configtoml)), in the `dependencies` of another plugin, in the same way, or to
+`plugin load` after the plugin, as `OPTION=VALUE`:
+
+```toml
+[dependencies]
+proxy = { options = { host = "proxy.example.com", level = 2 } }
+```
+
+```console
+$ plugin load work/proxy host=proxy.example.com level=2 verbose=true
+```
+
+An option the plugin doesn't declare, a value of the wrong type (in `plugin load`, an integer, or `true` or `false`
+for a boolean) and a required option that isn't given are errors, and the plugin isn't loaded. The plugin's shell
+files see its options in the associative array `LUISH_PLUGIN_OPTIONS`, with those not given set to their default (a
+boolean is `true` or `false`, so it can be run as a command), and its extension through `sh::plugin_options()` (see
+[](extensions.md)), which gives a map of strings, integers and booleans:
+
+```sh
+# init.lsh
+greeting=${LUISH_PLUGIN_OPTIONS[greeting]}
+if ${LUISH_PLUGIN_OPTIONS[verbose]}; then echo "proxy: ${LUISH_PLUGIN_OPTIONS[host]}"; fi
+```
+
+```rhai
+// extension.rhai
+let level = sh::plugin_options().level;
+```
+
+`LUISH_PLUGIN_OPTIONS` is set only while the plugin's files run (`init.lsh`, `rc.lsh`, `post-rc.lsh` and
+`prompt-vars.lsh`), as `LUISH_PLUGIN_DIR` is. A function that the plugin defines and that runs later, at the
+prompt, doesn't see it, nor does a command it runs (an associative array can't be exported). A plugin that needs its
+options later copies them, in `init.lsh`, into a variable of its own:
+
+```sh
+# init.lsh
+typeset -A _proxy_opts
+for k in "${!LUISH_PLUGIN_OPTIONS[@]}"; do _proxy_opts[$k]=${LUISH_PLUGIN_OPTIONS[$k]}; done
+proxy_on() { export http_proxy=http://${_proxy_opts[host]}; }
+```
+
+Its extension doesn't need to: `sh::plugin_options()` works at any time, also in hooks and commands.
+
+A plugin is loaded once, so when several plugins depend on it (or `plugins.enabled` lists it too), they must give it
+the same options, once the defaults are filled in: giving none is the same as giving every option its default. If
+they don't, the plugin that asks for different ones fails to load, with an error that says how they differ. This also
+holds for a plugin that is already loaded: to load it with other options, unload it first.
 
 ### Themes
 

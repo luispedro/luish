@@ -87,6 +87,8 @@ Done (see `DEVELOPING.md` and the plugins page of the user docs): the `[plugins]
 `plugins.enabled` (`NAME`, `SOURCE.NAME` or `"SOURCE/NAME"`, and inline sources, all `= "*"`; collections with
 sub-collections, `SOURCE/SUB/NAME`, which is also the loaded plugin's name); dependencies in a
 directory plugin's `plugin.toml`, resolved recursively, and its `[options]`, `[alias]` and `[bindkey]` tables;
+plugin options (declared in `[plugin-options]`, given in `plugins.enabled`, dependencies or `plugin load
+NAME OPTION=VALUE`, the same for every dependent; `LUISH_PLUGIN_OPTIONS` and `sh::plugin_options()`);
 `plugins.lock` (pins and the resolved plugins); `plugin sync` and `plugin update`, which run git into
 `$XDG_DATA_HOME/luish/plugins/`, and `plugin check`, which asks the git sources for newer commits;
 `plugin load SOURCE/NAME` with dependencies; enabled plugins loaded at startup before
@@ -101,9 +103,8 @@ directory plugin's `plugin.toml`, resolved recursively, and its `[options]`, `[a
 5. Version requirements other than `"*"`, once plugins have versions (a `version` in `plugin.toml`, or tags).
 6. More in `plugin.toml`: `description` (shown by `list-available -l`), the oldest luish a plugin needs.
 
-**Later**: a plugin's `bin/` on `PATH` and `completions/`; per-plugin settings (`[plugins.NAME.config]`, or a settings
-group of the plugin's own, such as `bashcomp.*`, with a type and a default), given to Rhai as `sh::config()`;
-archives for systems without git.
+**Later**: a plugin's `bin/` on `PATH` and `completions/`; Tab after `plugin load NAME` offering its options (and
+`plugin list-loaded -l` showing them); archives for systems without git.
 
 ## Phase 12 — Conformance and performance
 

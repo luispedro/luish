@@ -32,7 +32,8 @@ until the plugin is unloaded (`plugin unload`) or loaded again. Loading the firs
 once (see [](performance.md#commands-in-rhai)).
 
 `sh::plugin_dir()` gives the plugin's directory at any time, also in hooks. For a single-file plugin it is the
-directory of the file.
+directory of the file. `sh::plugin_options()` gives the options the plugin was loaded with (see [Plugin
+options](plugins.md#plugin-options-plugin-options)); a plugin loaded with `-c` has none.
 
 ## Code without a file: `plugin load -c`
 
@@ -68,7 +69,8 @@ $ plugin run ./count.rhai a b; echo $?
 The code has the [`sh`](#the-sh-module), [`fs`](#the-fs-module) and [`vcs`](#the-vcs-module) modules, as an extension
 does, and `argv`: the file (or `-c`) and the arguments. Its last value (or `return`'s) is the exit status if it is an
 integer or a boolean, as for [a command](#commands-written-in-rhai-shbuiltin). As it isn't part of a plugin, it can't
-register hooks, completers or commands (use `plugin load -c` for that), and `sh::plugin_dir()` is an error; it leaves
+register hooks, completers or commands (use `plugin load -c` for that), and `sh::plugin_dir()` and
+`sh::plugin_options()` are errors; it leaves
 the loaded plugins alone, even one with the same name as the file. `import` is relative to the file, or with `-c`, to
 the current directory, and its modules are read again on each run.
 
@@ -408,6 +410,7 @@ Extensions reach the shell through the `sh` module:
 | `sh::export(name)`, `sh::unsetvar(name)` | Export or unset a variable |
 | `sh::cwd()` | The current directory (as `$PWD`) |
 | `sh::plugin_dir()` | The plugin's directory |
+| `sh::plugin_options()` | The plugin's options, as a map of strings, integers and booleans (see [Plugin options](plugins.md#plugin-options-plugin-options)) |
 | `sh::last_status()` | `$?` |
 | `sh::interactive()` | Whether the shell is interactive |
 | `sh::which(name)` | The file that running `name` executes, found as the shell finds it (in `PATH`, or `name` itself if it has a `/`), but never a function or a built-in; `()` if there is no such executable |

@@ -48,6 +48,10 @@ impl Host {
         match *self {}
     }
 
+    pub fn option_args(&self, _: &[u8]) -> Vec<Vec<u8>> {
+        match *self {}
+    }
+
     fn unload(&self, _: &[u8]) -> bool {
         match *self {}
     }
@@ -215,7 +219,7 @@ pub fn complete(sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Compl
     }
 }
 
-const USAGE: &str = "usage: plugin load NAME|PATH..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., \
+const USAGE: &str = "usage: plugin load NAME|PATH [OPTION=VALUE...]..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., \
                      plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check [-q]";
 
 /// The `plugin` built-in (interactive shells only, like `help`).
@@ -223,15 +227,15 @@ pub fn plugin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     run(sh, &argv[0], &argv[1..])
 }
 
-/// `plugin load NAME|PATH...`, `plugin load -c CODE NAME`, `plugin list-loaded`, `plugin list-available
+/// `plugin load NAME|PATH [OPTION=VALUE...]...`, `plugin load -c CODE NAME`, `plugin list-loaded`, `plugin list-available
 /// [-a]`, `plugin unload NAME...`, `plugin run FILE|-c CODE [ARG...]`,
 /// `plugin add [-y] PLUGIN [NAME]`, `plugin
 /// sync [-q]`, `plugin update [-q] [SOURCE...]` and `plugin check [-q]`, also available as `__luish_internal
 /// plugin`. `name` is the command, for error messages.
 ///
-/// `plugin restore NAME PATH`, which `savestate` prints, loads a plugin
-/// under a name without running its shell files (`init.lsh`, `rc.lsh`),
-/// whose effects are in the saved state.
+/// `plugin restore NAME PATH [OPTION=VALUE...]`, which `savestate` prints,
+/// loads a plugin under a name, with its options, without running its shell
+/// files (`init.lsh`, `rc.lsh`), whose effects are in the saved state.
 pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
     let args = argv.get(1..).unwrap_or_default();
     match argv.first().map(|a| a.as_slice()) {
@@ -252,19 +256,35 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
             }
         },
         Some(b"load") if !args.is_empty() => {
-            let mut status = 0;
+            // Each plugin, with the options after it.
+            let mut plugins: Vec<(&[u8], OptionArgs)> = Vec::new();
             for a in args {
+                match (option_arg(a), plugins.last_mut()) {
+                    (Some(o), Some((_, opts))) => opts.push(o),
+                    (Some(_), None) => {
+                        sh.berr(name, USAGE);
+                        return Ok(2);
+                    }
+                    (None, _) => plugins.push((a, Vec::new())),
+                }
+            }
+            let mut status = 0;
+            for (a, opts) in plugins {
                 if !sh.no_plugins {
-                    status = load(sh, name, a, None)?.max(status);
+                    status = load(sh, name, a, opts, None)?.max(status);
                 }
             }
             Ok(status)
         }
-        Some(b"restore") if args.len() == 2 => {
+        Some(b"restore") if args.len() >= 2 => {
             if sh.no_plugins {
                 return Ok(0);
             }
-            load(sh, name, &args[1], Some(args[0].clone()))
+            let Some(opts) = args[2..].iter().map(|a| option_arg(a)).collect() else {
+                sh.berr(name, USAGE);
+                return Ok(2);
+            };
+            load(sh, name, &args[1], opts, Some(args[0].clone()))
         }
         Some(sub @ (b"list-loaded" | b"list-available")) => {
             let names = match (sub, args) {
@@ -316,6 +336,21 @@ pub fn run(sh: &mut Shell, name: &[u8], argv: &[Vec<u8>]) -> ExecResult {
             Ok(2)
         }
     }
+}
+
+/// The arguments `OPTION=VALUE` of `plugin load` (and `plugin restore`).
+type OptionArgs = Vec<(String, String)>;
+
+/// An argument `OPTION=VALUE` of `plugin load`, or `None` for a plugin.
+fn option_arg(arg: &[u8]) -> Option<(String, String)> {
+    let i = arg.iter().position(|&c| c == b'=')?;
+    let key = std::str::from_utf8(&arg[..i]).ok().filter(|k| valid_option_name(k))?;
+    Some((key.to_string(), String::from_utf8_lossy(&arg[i + 1..]).into_owned()))
+}
+
+/// The name of a plugin's option: letters, digits, `-` and `_`.
+fn valid_option_name(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
 }
 
 /// Whether to confirm what `plugin` did: at the prompt of an interactive
@@ -639,20 +674,65 @@ pub struct Loading {
     pub rhai: Option<(Vec<u8>, Vec<u8>)>,
     /// The plugin's `prompt-vars.lsh` (absolute), if it has one.
     pub prompt_vars: Option<Vec<u8>>,
+    pub options: PluginOptions,
+}
+
+/// The value of a plugin's option (`[plugin-options]` in its
+/// `plugin.toml`).
+#[cfg(feature = "plugins")]
+#[derive(Clone, PartialEq, Debug)]
+pub enum OptValue {
+    Str(String),
+    Int(i64),
+    Bool(bool),
 }
 
 #[cfg(feature = "plugins")]
+impl OptValue {
+    /// As the shell sees it: `true` or `false` for a boolean.
+    fn text(&self) -> String {
+        match self {
+            OptValue::Str(s) => s.clone(),
+            OptValue::Int(n) => n.to_string(),
+            OptValue::Bool(b) => b.to_string(),
+        }
+    }
+}
+
+/// A plugin's options, in the order its `plugin.toml` declares them: those
+/// given, and the defaults of the others.
+#[cfg(feature = "plugins")]
+pub type PluginOptions = Vec<(String, OptValue)>;
+
+#[cfg(feature = "plugins")]
 /// The variables set while a plugin's entry points run.
-const PLUGIN_VARS: [&[u8]; 2] = [b"LUISH_PLUGIN_DIR", b"LUISH_PLUGIN_NAME"];
+const PLUGIN_VARS: [&[u8]; 3] = [b"LUISH_PLUGIN_DIR", b"LUISH_PLUGIN_NAME", b"LUISH_PLUGIN_OPTIONS"];
 
 #[cfg(feature = "plugins")]
 /// Runs `f` with `LUISH_PLUGIN_DIR` and `LUISH_PLUGIN_NAME` set to `dir`
-/// and `name`, and puts them back afterwards.
-pub(super) fn with_plugin_vars<R>(sh: &mut Shell, dir: &[u8], name: &[u8], f: impl FnOnce(&mut Shell) -> R) -> R {
+/// and `name`, and the associative array `LUISH_PLUGIN_OPTIONS` to
+/// `options`, and puts them back afterwards.
+pub(super) fn with_plugin_vars<R>(
+    sh: &mut Shell,
+    dir: &[u8],
+    name: &[u8],
+    options: &PluginOptions,
+    f: impl FnOnce(&mut Shell) -> R,
+) -> R {
+    use crate::vars::Value;
     let saved = PLUGIN_VARS.map(|v| sh.vars.take(v));
-    for (v, value) in PLUGIN_VARS.iter().zip([dir, name]) {
+    let mut h = crate::vars::Assoc::default();
+    for (k, v) in options {
+        h.insert(k.as_bytes(), v.text().into_bytes());
+    }
+    let values = [
+        Value::Str(dir.to_vec()),
+        Value::Str(name.to_vec()),
+        Value::Assoc(Box::new(h)),
+    ];
+    for (v, value) in PLUGIN_VARS.iter().zip(values) {
         let var = crate::vars::Var {
-            value: Some(crate::vars::Value::Str(value.to_vec())),
+            value: Some(value),
             ..Default::default()
         };
         sh.vars.restore(v.to_vec(), Some(var));
@@ -665,17 +745,25 @@ pub(super) fn with_plugin_vars<R>(sh: &mut Shell, dir: &[u8], name: &[u8], f: im
 }
 
 #[cfg(feature = "plugins")]
-/// `plugin load ARG`, or `plugin restore NAME ARG` (with `restore`, the
-/// name).
-fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], restore: Option<Vec<u8>>) -> ExecResult {
+/// `plugin load ARG OPTION=VALUE...`, or `plugin restore NAME ARG
+/// OPTION=VALUE...` (with `restore`, the name).
+fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], opts: OptionArgs, restore: Option<Vec<u8>>) -> ExecResult {
     if restore.is_none() {
-        return package::load(sh, cmd, arg);
+        return package::load(sh, cmd, arg, opts);
     }
     let Some(found) = find(sh, arg) else {
         sh.berr(cmd, "no plugin directory (HOME is not set)");
         return Ok(1);
     };
-    load_found(sh, cmd, &found, restore, false)
+    let name = restore.unwrap_or_default();
+    let options = match package::given_options(sh, &found, &String::from_utf8_lossy(&name), opts) {
+        Ok(o) => o,
+        Err(msg) => {
+            sh.berr(cmd, msg);
+            return Ok(1);
+        }
+    };
+    load_found(sh, cmd, &found, Some(name), options, false)
 }
 
 #[cfg(feature = "plugins")]
@@ -690,9 +778,16 @@ fn absolute(sh: &Shell, path: &[u8]) -> Vec<u8> {
 
 #[cfg(feature = "plugins")]
 /// Loads the plugin `found`, under the name `name` (by default, from its
-/// path). `fresh` is false when restoring a saved state, which already has
-/// what the plugin's shell files did.
-fn load_found(sh: &mut Shell, cmd: &[u8], found: &Found, name: Option<Vec<u8>>, fresh: bool) -> ExecResult {
+/// path), with its options. `fresh` is false when restoring a saved state,
+/// which already has what the plugin's shell files did.
+fn load_found(
+    sh: &mut Shell,
+    cmd: &[u8],
+    found: &Found,
+    name: Option<Vec<u8>>,
+    options: PluginOptions,
+    fresh: bool,
+) -> ExecResult {
     let path = found.path.strip_suffix(b"/").unwrap_or(&found.path).to_vec();
     let abs = absolute(sh, &path);
     let name = name.unwrap_or_else(|| plugin_name(&path, found.kind));
@@ -722,6 +817,7 @@ fn load_found(sh: &mut Shell, cmd: &[u8], found: &Found, name: Option<Vec<u8>>, 
             dir,
             rhai,
             prompt_vars,
+            options,
         };
         (loading, init.map(|(_, abs)| abs), rc.map(|(_, abs)| abs))
     } else {
@@ -743,6 +839,7 @@ fn load_found(sh: &mut Shell, cmd: &[u8], found: &Found, name: Option<Vec<u8>>, 
             dir,
             rhai,
             prompt_vars: None,
+            options,
         };
         (loading, init, None)
     };
@@ -752,7 +849,7 @@ fn load_found(sh: &mut Shell, cmd: &[u8], found: &Found, name: Option<Vec<u8>>, 
         rec.push(abs.clone());
     }
     let host = sh.plugins.get_or_insert_with(|| std::rc::Rc::new(Host::new())).clone();
-    let (dir, name) = (loading.dir.clone(), loading.name.clone());
+    let (dir, name, options) = (loading.dir.clone(), loading.name.clone(), loading.options.clone());
     if host.loaded_inline(&name) == Some(true) {
         let name = String::from_utf8_lossy(&name);
         sh.berr(cmd, format!("warning: {name}: replacing the plugin loaded with -c"));
@@ -774,7 +871,7 @@ fn load_found(sh: &mut Shell, cmd: &[u8], found: &Found, name: Option<Vec<u8>>, 
         rec.push(file.clone());
     }
     let manifest = manifest.filter(|_| interactive);
-    with_plugin_vars(sh, &dir, &name, |sh| {
+    with_plugin_vars(sh, &dir, &name, &options, |sh| {
         if let Some(init) = init.filter(|_| fresh) {
             dot(sh, init)?;
         }
@@ -806,7 +903,9 @@ fn load_code(sh: &mut Shell, cmd: &[u8], name: &[u8], code: &[u8]) -> ExecResult
     let host = sh.plugins.get_or_insert_with(|| std::rc::Rc::new(Host::new())).clone();
     let dir = sh.curdir.clone().or_else(crate::sys::getcwd).unwrap_or_default();
     let vars_dir = dir.clone();
-    let r = with_plugin_vars(sh, &vars_dir, name, |sh| host.load_code(sh, cmd, name, code, dir));
+    let r = with_plugin_vars(sh, &vars_dir, name, &Vec::new(), |sh| {
+        host.load_code(sh, cmd, name, code, dir)
+    });
     if matches!(r, Ok(0)) {
         confirm(sh, "Loaded", name);
     }
@@ -836,7 +935,8 @@ pub fn post_rc_files(sh: &mut Shell) {
         if !is_dir(&abs) || crate::sys::stat(&file).is_none() {
             continue;
         }
-        let r = with_plugin_vars(sh, &abs, &name, |sh| dot(sh, file));
+        let options = host.options(&name).unwrap_or_default();
+        let r = with_plugin_vars(sh, &abs, &name, &options, |sh| dot(sh, file));
         if let Err(Flow::Exit(n)) = r {
             sh.exit(n);
         }
@@ -1178,7 +1278,7 @@ pub fn load_enabled(_: &mut Shell) -> bool {
 }
 
 #[cfg(not(feature = "plugins"))]
-fn load(sh: &mut Shell, name: &[u8], arg: &[u8], _: Option<Vec<u8>>) -> ExecResult {
+fn load(sh: &mut Shell, name: &[u8], arg: &[u8], _: OptionArgs, _: Option<Vec<u8>>) -> ExecResult {
     sh.berr(
         name,
         format!(

@@ -24,12 +24,18 @@
 //! dependencies in the same way, where a plain `NAME` is a plugin of the same
 //! collection, and `/PATH` one of the same source.
 //!
+//! An entry can also be a table with the version requirement and the
+//! plugin's options (`NAME = { version = "*", options = { level = 2 } }`),
+//! which the plugin declares in its `plugin.toml`, under `[plugin-options]`
+//! (a type, and a default or `required = true`). A plugin loaded twice (as
+//! the dependency of two plugins, say) must be given the same options.
+//!
 //! `plugin sync` resolves all of these (fetching with git, `fetch.rs`) and
 //! writes `plugins.lock`, which pins each git source to a commit; startup and
 //! `plugin load` resolve with the pins, without the network.
 
 use super::ui::{Kind as Paint, Ui};
-use super::{Found, Kind, fetch};
+use super::{Found, Kind, OptValue, PluginOptions, fetch};
 pub(super) use crate::config::toml_str;
 use crate::config::{in_order, line_of, report, tilde};
 use crate::interactive::to_path;
@@ -119,7 +125,129 @@ struct Entry {
     /// (`SOURCE/PATH`) or the leading `/`.
     name: String,
     target: Target,
+    /// The options it gives the plugin.
+    options: Vec<(String, Given)>,
     loc: Option<Loc>,
+}
+
+/// The value of an option given to a plugin: in a TOML file, with its type,
+/// or as `OPTION=VALUE` to `plugin load` (or `plugin restore`), as text.
+#[derive(Clone, Debug)]
+enum Given {
+    Toml(OptValue),
+    Text(String),
+}
+
+/// The type of a plugin's option.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum OptType {
+    Str,
+    Int,
+    Bool,
+}
+
+impl OptType {
+    fn of(v: &OptValue) -> OptType {
+        match v {
+            OptValue::Str(_) => OptType::Str,
+            OptValue::Int(_) => OptType::Int,
+            OptValue::Bool(_) => OptType::Bool,
+        }
+    }
+
+    fn what(self) -> &'static str {
+        match self {
+            OptType::Str => "a string",
+            OptType::Int => "an integer",
+            OptType::Bool => "a boolean",
+        }
+    }
+}
+
+/// An option that a plugin declares in the `[plugin-options]` of its
+/// `plugin.toml`.
+#[derive(Clone, Debug)]
+struct Decl {
+    name: String,
+    ty: OptType,
+    default: Option<OptValue>,
+    required: bool,
+}
+
+/// An option's value as TOML writes it, for messages.
+fn shown(v: &OptValue) -> String {
+    match v {
+        OptValue::Str(s) => toml_str(s),
+        v => v.text(),
+    }
+}
+
+/// The options of the plugin `name`, which declares `decls`, given `given`:
+/// those given, converted to their types, and the defaults of the others.
+fn apply(name: &str, decls: &[Decl], given: &[(String, Given)]) -> Result<PluginOptions, String> {
+    for (i, (k, _)) in given.iter().enumerate() {
+        if !decls.iter().any(|d| d.name == *k) {
+            return Err(match decls.is_empty() {
+                true => format!("{name}: takes no options"),
+                false => {
+                    let names: Vec<_> = decls.iter().map(|d| d.name.as_str()).collect();
+                    format!("{name}: no option {k} (it has {})", names.join(", "))
+                }
+            });
+        }
+        if given[..i].iter().any(|(k2, _)| k2 == k) {
+            return Err(format!("{name}: option {k} given twice"));
+        }
+    }
+    let mut out = Vec::new();
+    for d in decls {
+        let value = match given.iter().find(|(k, _)| *k == d.name).map(|(_, v)| v) {
+            Some(Given::Toml(v)) if OptType::of(v) == d.ty => v.clone(),
+            Some(Given::Toml(v)) => {
+                let (want, found) = (d.ty.what(), OptType::of(v).what());
+                return Err(format!("{name}: option {}: expected {want}, found {found}", d.name));
+            }
+            Some(Given::Text(t)) => match (d.ty, t.as_str()) {
+                (OptType::Str, _) => OptValue::Str(t.clone()),
+                (OptType::Bool, "true") => OptValue::Bool(true),
+                (OptType::Bool, "false") => OptValue::Bool(false),
+                (OptType::Int, _) if t.parse::<i64>().is_ok() => OptValue::Int(t.parse().unwrap_or_default()),
+                (ty, _) => {
+                    let want = match ty {
+                        OptType::Bool => "true or false",
+                        _ => ty.what(),
+                    };
+                    return Err(format!("{name}: option {}: expected {want}, found {t:?}", d.name));
+                }
+            },
+            None => match &d.default {
+                Some(v) => v.clone(),
+                None if d.required => return Err(format!("{name}: option {} is required", d.name)),
+                None => continue,
+            },
+        };
+        out.push((d.name.clone(), value));
+    }
+    Ok(out)
+}
+
+/// Where the options `a` and `b` of a plugin that declares `decls` differ,
+/// as `OPTION = VALUE, ...` for each.
+fn differences(decls: &[Decl], a: &PluginOptions, b: &PluginOptions) -> (String, String) {
+    let get = |o: &PluginOptions, k: &str| o.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone());
+    let side = |v: Option<OptValue>, k: &str| match v {
+        Some(v) => format!("{k} = {}", shown(&v)),
+        None => format!("{k} unset"),
+    };
+    let (mut x, mut y) = (Vec::new(), Vec::new());
+    for d in decls {
+        let (va, vb) = (get(a, &d.name), get(b, &d.name));
+        if va != vb {
+            x.push(side(va, &d.name));
+            y.push(side(vb, &d.name));
+        }
+    }
+    (x.join(", "), y.join(", "))
 }
 
 /// The `[plugins]` table.
@@ -258,34 +386,28 @@ impl Reader<'_> {
             let key = &*key.name;
             match value.as_ref() {
                 ValueInner::String(req) => {
-                    if !self.requirement(start, key, req) {
-                        continue;
+                    if self.requirement(start, key, req) {
+                        self.named_entry(start, key, Vec::new(), out);
                     }
-                    let (target, name) = match (key.strip_prefix('/'), key.split_once('/')) {
-                        (Some(path), _) => (Target::InSource, path),
-                        (None, Some((s, n))) if valid_name(s) => (Target::Named(Some(s.into())), n),
-                        (None, Some(_)) => (Target::Named(None), ""),
-                        (None, None) => (Target::Named(None), key),
-                    };
-                    if !valid_path(name) {
-                        self.err(start, format!("{key}: bad plugin name (NAME or SOURCE/PATH)"));
-                        continue;
-                    }
-                    out.push(Entry {
-                        name: name.into(),
-                        target,
-                        loc: Some(self.loc(start)),
-                    });
                 }
                 ValueInner::Table(t) if is_source(t) => {
+                    let Some(options) = self.entry_table(key, t, true) else {
+                        continue;
+                    };
                     if !valid_name(key) {
                         self.err(start, format!("{key}: bad plugin name"));
                     } else if let Some((source, plugin)) = self.source(key, &value, true) {
                         out.push(Entry {
                             name: key.into(),
                             target: Target::Inline(source, plugin),
+                            options,
                             loc: Some(self.loc(start)),
                         });
+                    }
+                }
+                ValueInner::Table(t) if is_entry(t) => {
+                    if let Some(options) = self.entry_table(key, t, false) {
+                        self.named_entry(start, key, options, out);
                     }
                 }
                 // `SOURCE.PATH = "*"`, which TOML reads as tables.
@@ -302,6 +424,156 @@ impl Reader<'_> {
                 ),
             }
         }
+    }
+
+    /// The entry `key = "*"` (or a table with `version` or `options`): `NAME`,
+    /// `SOURCE/PATH` or `/PATH`.
+    fn named_entry(&mut self, start: usize, key: &str, options: Vec<(String, Given)>, out: &mut Vec<Entry>) {
+        let (target, name) = match (key.strip_prefix('/'), key.split_once('/')) {
+            (Some(path), _) => (Target::InSource, path),
+            (None, Some((s, n))) if valid_name(s) => (Target::Named(Some(s.into())), n),
+            (None, Some(_)) => (Target::Named(None), ""),
+            (None, None) => (Target::Named(None), key),
+        };
+        if !valid_path(name) {
+            self.err(start, format!("{key}: bad plugin name (NAME or SOURCE/PATH)"));
+            return;
+        }
+        out.push(Entry {
+            name: name.into(),
+            target,
+            options,
+            loc: Some(self.loc(start)),
+        });
+    }
+
+    /// The `version` and `options` of an entry's table `t`: its options, or
+    /// `None` if they are wrong. Other keys are an error, but for a `source`
+    /// (whose keys [`Reader::source`] reads).
+    fn entry_table(&mut self, key: &str, t: &Table<'_>, source: bool) -> Option<Vec<(String, Given)>> {
+        let mut options = Vec::new();
+        let mut ok = true;
+        let mut fields: Vec<_> = t.iter().collect();
+        fields.sort_by_key(|(k, _)| k.span.start);
+        for (k, v) in fields {
+            match (&*k.name, v.as_ref()) {
+                ("version", ValueInner::String(req)) => ok &= self.requirement(k.span.start, key, req),
+                ("version", _) => {
+                    self.err(k.span.start, format!("{key}.version: expected a string"));
+                    ok = false;
+                }
+                ("options", ValueInner::Table(o)) => {
+                    let mut o: Vec<_> = o.iter().collect();
+                    o.sort_by_key(|(k, _)| k.span.start);
+                    for (name, value) in o {
+                        let value = match value.as_ref() {
+                            ValueInner::String(s) => OptValue::Str(s.to_string()),
+                            ValueInner::Integer(n) => OptValue::Int(*n),
+                            ValueInner::Boolean(b) => OptValue::Bool(*b),
+                            _ => {
+                                let msg = format!(
+                                    "{key}.options.{}: expected a string, an integer or a boolean",
+                                    name.name
+                                );
+                                self.err(name.span.start, msg);
+                                ok = false;
+                                continue;
+                            }
+                        };
+                        options.push((name.name.to_string(), Given::Toml(value)));
+                    }
+                }
+                ("options", _) => {
+                    self.err(k.span.start, format!("{key}.options: not a table"));
+                    ok = false;
+                }
+                _ if source => {}
+                (other, _) => {
+                    self.err(k.span.start, format!("{key}: unknown key: {other}"));
+                    ok = false;
+                }
+            }
+        }
+        ok.then_some(options)
+    }
+
+    /// The options that a manifest declares in `[plugin-options]`.
+    fn declarations(&mut self, mut value: Value<'_>) -> Vec<Decl> {
+        let mut out = Vec::new();
+        let ValueInner::Table(t) = value.take() else {
+            self.err(value.span.start, "plugin-options: not a table");
+            return out;
+        };
+        for (key, value) in in_order(t) {
+            let (start, name) = (key.span.start, &*key.name);
+            if !super::valid_option_name(name) {
+                self.err(
+                    start,
+                    format!("plugin-options.{name}: bad option name (letters, digits, - and _)"),
+                );
+                continue;
+            }
+            let Some(t) = value.as_table() else {
+                self.err(
+                    start,
+                    format!("plugin-options.{name}: expected a table ({{ type = \"str\" }})"),
+                );
+                continue;
+            };
+            let mut fields: Vec<_> = t.iter().collect();
+            fields.sort_by_key(|(k, _)| k.span.start);
+            let (mut ty, mut default, mut required, mut ok) = (None, None, false, true);
+            for (k, v) in fields {
+                let mut bad = |r: &mut Self, msg: &str| {
+                    r.err(k.span.start, format!("plugin-options.{name}.{}: {msg}", k.name));
+                    ok = false;
+                };
+                match (&*k.name, v.as_ref()) {
+                    ("type", ValueInner::String(t)) => match &**t {
+                        "str" => ty = Some(OptType::Str),
+                        "int" => ty = Some(OptType::Int),
+                        "boolean" => ty = Some(OptType::Bool),
+                        _ => bad(self, "expected \"str\", \"int\" or \"boolean\""),
+                    },
+                    ("default", ValueInner::String(s)) => default = Some(OptValue::Str(s.to_string())),
+                    ("default", ValueInner::Integer(n)) => default = Some(OptValue::Int(*n)),
+                    ("default", ValueInner::Boolean(b)) => default = Some(OptValue::Bool(*b)),
+                    ("required", ValueInner::Boolean(b)) => required = *b,
+                    ("type", _) => bad(self, "expected \"str\", \"int\" or \"boolean\""),
+                    ("default", _) => bad(self, "expected a string, an integer or a boolean"),
+                    ("required", _) => bad(self, "not a boolean"),
+                    _ => bad(self, "unknown key"),
+                }
+            }
+            let Some(ty) = ty else {
+                if ok {
+                    self.err(start, format!("plugin-options.{name}: no type"));
+                }
+                continue;
+            };
+            if let Some(d) = default.as_ref().filter(|d| OptType::of(d) != ty) {
+                let msg = format!(
+                    "plugin-options.{name}: the default is {}, not {}",
+                    OptType::of(d).what(),
+                    ty.what()
+                );
+                self.err(start, msg);
+                continue;
+            }
+            if required && default.is_some() {
+                self.err(start, format!("plugin-options.{name}: both required and a default"));
+                continue;
+            }
+            if ok {
+                out.push(Decl {
+                    name: name.to_string(),
+                    ty,
+                    default,
+                    required,
+                });
+            }
+        }
+        out
     }
 
     /// The entries of `SOURCE.PATH = "*"`: those of the table `t`, at `path`
@@ -324,9 +596,20 @@ impl Reader<'_> {
                 ValueInner::String(req) if self.requirement(k.span.start, &full, req) => out.push(Entry {
                     name: path,
                     target: Target::Named(Some(src.into())),
+                    options: Vec::new(),
                     loc: Some(self.loc(k.span.start)),
                 }),
                 ValueInner::String(_) => {}
+                ValueInner::Table(t) if is_entry(t) => {
+                    if let Some(options) = self.entry_table(&full, t, false) {
+                        out.push(Entry {
+                            name: path,
+                            target: Target::Named(Some(src.into())),
+                            options,
+                            loc: Some(self.loc(k.span.start)),
+                        });
+                    }
+                }
                 ValueInner::Table(t) => self.nested(src, &path, &full, t, out),
                 _ => self.err(k.span.start, format!("{full}: expected \"*\"")),
             }
@@ -360,6 +643,10 @@ impl Reader<'_> {
         let mut entries: Vec<_> = t.iter().collect();
         entries.sort_by_key(|(k, _)| k.span.start);
         for (k, v) in entries {
+            // (Read by `entry_table`.)
+            if plugin && ["version", "options"].contains(&&*k.name) {
+                continue;
+            }
             let known = ["gh", "git", "path", "branch", "tag", "rev", "subdir"].contains(&&*k.name)
                 || (plugin && k.name == "plugin");
             match v.as_str() {
@@ -491,6 +778,12 @@ fn is_source(t: &Table<'_>) -> bool {
     t.keys().any(|k| ["gh", "git", "path"].contains(&&*k.name))
 }
 
+/// Whether a table in `plugins.enabled` or `dependencies` is an entry with
+/// a version or options (and not `SOURCE.PATH = "*"`).
+fn is_entry(t: &Table<'_>) -> bool {
+    t.keys().any(|k| ["version", "options"].contains(&&*k.name))
+}
+
 /// Parses the TOML file `file` and gives its top-level table to `f`.
 /// `Ok(None)` if the file doesn't exist. Messages call it `shown`.
 fn with_toml<R>(file: &[u8], shown: &[u8], f: impl FnOnce(&str, Table<'_>) -> R) -> Result<Option<R>, Problem> {
@@ -559,13 +852,14 @@ fn parse_config(sh: &Shell, file: &[u8], bytes: &[u8], problems: &mut Vec<Proble
 }
 
 /// The dependencies in `plugin.toml`, the manifest of the directory plugin
-/// `dir`, which messages call `shown`. `library` must be a boolean (it is
-/// read by `is_library`); the manifest's other keys (such as `description`)
-/// are ignored.
-fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -> Vec<Entry> {
+/// `dir`, which messages call `shown`, and the options it declares.
+/// `library` must be a boolean (it is read by `is_library`); the manifest's
+/// other keys (such as `description`) are ignored.
+fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -> (Vec<Entry>, Vec<Decl>) {
     let file = [dir, b"/plugin.toml"].concat();
     let r = with_toml(&file, shown, |text, mut root| {
         let mut out = Vec::new();
+        let mut decls = Vec::new();
         let mut r = Reader {
             sh,
             file: shown,
@@ -581,13 +875,16 @@ fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -
         if let Some(value) = root.remove("dependencies") {
             r.entries(value, "dependencies", &mut out);
         }
-        out
+        if let Some(value) = root.remove("plugin-options") {
+            decls = r.declarations(value);
+        }
+        (out, decls)
     });
     match r {
         Ok(entries) => entries.unwrap_or_default(),
         Err(p) => {
             problems.push(p);
-            Vec::new()
+            Default::default()
         }
     }
 }
@@ -729,6 +1026,12 @@ struct Resolved {
     /// Where it is in its source (`.` for the whole source).
     rel: String,
     deps: Vec<String>,
+    /// The options it declares, and those it is given.
+    decls: Vec<Decl>,
+    options: PluginOptions,
+    /// Who gave it the options, for messages: `for NAME` (a plugin that
+    /// depends on it), `in plugins.enabled` or `in plugin load`.
+    by: String,
 }
 
 /// Where a plain `NAME` in a manifest's `dependencies` is looked for.
@@ -824,6 +1127,9 @@ struct Resolver<'a> {
     /// Whether to say what is fetched (`plugin sync` and `plugin update`
     /// without `-q`).
     verbose: bool,
+    /// Whether to check the plugins' options (not for the plugins that
+    /// `plugin sync` installs without their being enabled).
+    check_options: bool,
     /// The colours for what it says.
     ui: Ui,
 }
@@ -846,6 +1152,7 @@ impl<'a> Resolver<'a> {
             manifests: Vec::new(),
             interrupted: false,
             verbose: false,
+            check_options: true,
             ui: Ui::plain(),
         }
     }
@@ -1013,8 +1320,9 @@ impl<'a> Resolver<'a> {
         Err(())
     }
 
-    /// Resolves an entry and its dependencies, from `scope`.
-    fn resolve(&mut self, e: &Entry, scope: &Scope) -> Result<(), ()> {
+    /// Resolves an entry and its dependencies, from `scope`. `by` says who
+    /// asks for it (see [`Resolved`]).
+    fn resolve(&mut self, e: &Entry, scope: &Scope, by: &str) -> Result<(), ()> {
         let loc = e.loc.as_ref();
         let name = e.name.as_str();
         let (found, label, root, coll, full) = match (&e.target, scope) {
@@ -1087,12 +1395,13 @@ impl<'a> Resolver<'a> {
                 (found, source.label.clone(), root, coll, name.to_string())
             }
         };
-        self.add(&full, found, &label, &root, coll, loc)
+        self.add(&full, found, &label, &root, coll, &e.options, by, loc)
     }
 
     /// Adds a plugin found in the files `root` of its source, after its
-    /// dependencies. `coll` is the collection it is in, if any, where plain
-    /// names in its manifest are.
+    /// dependencies, with the options `given` by `by`. `coll` is the
+    /// collection it is in, if any, where plain names in its manifest are.
+    #[allow(clippy::too_many_arguments)]
     fn add(
         &mut self,
         name: &str,
@@ -1100,14 +1409,28 @@ impl<'a> Resolver<'a> {
         label: &str,
         root: &[u8],
         coll: Option<Coll>,
+        given: &[(String, Given)],
+        by: &str,
         loc: Option<&Loc>,
     ) -> Result<(), ()> {
         let abs = super::absolute(self.sh, &found.path);
         if let Some(p) = self.done.iter().find(|p| p.abs == abs) {
-            if p.name == name {
+            if p.name != name {
+                let msg = format!("{name}: the same plugin as {}", p.name);
+                self.problem(loc, msg);
+                return Err(());
+            }
+            if !self.check_options {
                 return Ok(());
             }
-            let msg = format!("{name}: the same plugin as {}", p.name);
+            let msg = match apply(name, &p.decls, given) {
+                Ok(o) if o == p.options => return Ok(()),
+                Ok(o) => {
+                    let (here, there) = differences(&p.decls, &o, &p.options);
+                    format!("{name}: inconsistent options: {here} here, but {there} {}", p.by)
+                }
+                Err(msg) => msg,
+            };
             self.problem(loc, msg);
             return Err(());
         }
@@ -1134,6 +1457,7 @@ impl<'a> Resolver<'a> {
         };
         let mut deps = Vec::new();
         let mut ok = true;
+        let mut decls = Vec::new();
         if found.kind == Kind::Dir {
             self.stack.push((name.to_string(), abs.clone()));
             let file = [abs.as_slice(), b"/plugin.toml"].concat();
@@ -1147,16 +1471,29 @@ impl<'a> Resolver<'a> {
             if !git {
                 self.manifests.push(file);
             }
-            let entries = manifest(self.sh, &abs, &shown, &mut self.problems);
+            let entries;
+            (entries, decls) = manifest(self.sh, &abs, &shown, &mut self.problems);
             let scope = coll.map_or(Scope::None, Scope::Collection);
+            let dependent = format!("for {name}");
             for d in &entries {
-                match self.resolve(d, &scope) {
+                match self.resolve(d, &scope, &dependent) {
                     Ok(()) => deps.push(d.name.clone()),
                     Err(()) => ok = false,
                 }
             }
             self.stack.pop();
         }
+        let options = match self.check_options {
+            true => apply(name, &decls, given),
+            false => Ok(Vec::new()),
+        };
+        let options = match options {
+            Ok(o) => o,
+            Err(msg) => {
+                self.problem(loc, msg);
+                return Err(());
+            }
+        };
         if !ok {
             return Err(());
         }
@@ -1167,6 +1504,9 @@ impl<'a> Resolver<'a> {
             source: label.to_string(),
             rel,
             deps,
+            decls,
+            options,
+            by: by.to_string(),
         });
         Ok(())
     }
@@ -1234,7 +1574,7 @@ pub fn load_enabled(sh: &mut Shell) -> bool {
     let mut r = Resolver::new(sh, &config, pins, Fetching::No);
     r.problems = problems;
     for e in &config.enabled {
-        let _ = r.resolve(e, &Scope::Config);
+        let _ = r.resolve(e, &Scope::Config, ENABLED);
     }
     r.report_missing();
     let (done, problems, manifests) = (r.done, r.problems, r.manifests);
@@ -1244,15 +1584,38 @@ pub fn load_enabled(sh: &mut Shell) -> bool {
     print_problems(sh, None, &problems);
     ok &= problems.is_empty();
     for p in done {
-        let _ = super::load_found(sh, b"plugin", &p.found, Some(p.name.into_bytes()), true);
+        let _ = super::load_found(sh, b"plugin", &p.found, Some(p.name.into_bytes()), p.options, true);
     }
     ok
 }
 
-/// `plugin load ARG`: a plugin of a named source (`SOURCE/PATH`, or
-/// `NAME`), else a plugin in the plugin directory or a path, after its
-/// dependencies that aren't loaded yet.
-pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8]) -> ExecResult {
+/// Who gives the options of an entry of `plugins.enabled`, and of `plugin
+/// load` (see [`Resolved`]).
+const ENABLED: &str = "in plugins.enabled";
+const LOADED: &str = "in plugin load";
+
+/// The options of the plugin `found`, loaded as `name`, given `opts`
+/// (`OPTION=VALUE` for `plugin restore`), with the defaults of the others.
+pub(super) fn given_options(
+    sh: &Shell,
+    found: &Found,
+    name: &str,
+    opts: super::OptionArgs,
+) -> Result<PluginOptions, String> {
+    let decls = match found.kind {
+        Kind::Dir => manifest(sh, &found.path, &found.path, &mut Vec::new()).1,
+        _ => Vec::new(),
+    };
+    let given: Vec<_> = opts.into_iter().map(|(k, v)| (k, Given::Text(v))).collect();
+    apply(name, &decls, &given)
+}
+
+/// `plugin load ARG OPTION=VALUE...`: a plugin of a named source
+/// (`SOURCE/PATH`, or `NAME`), else a plugin in the plugin directory or a
+/// path, with the options `opts`, after its dependencies that aren't loaded
+/// yet.
+pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], opts: super::OptionArgs) -> ExecResult {
+    let given: Vec<_> = opts.into_iter().map(|(k, v)| (k, Given::Text(v))).collect();
     // Errors in the table are for `plugin sync` and startup to report.
     let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
     let text = String::from_utf8_lossy(arg);
@@ -1271,9 +1634,10 @@ pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8]) -> ExecResult {
         let e = Entry {
             name,
             target: Target::Named(source),
+            options: given,
             loc: None,
         };
-        r.resolve(&e, &Scope::Config).is_ok()
+        r.resolve(&e, &Scope::Config, LOADED).is_ok()
     } else {
         let Some(found) = super::find(r.sh, arg) else {
             r.sh.berr(cmd, "no plugin directory (HOME is not set)");
@@ -1281,7 +1645,7 @@ pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8]) -> ExecResult {
         };
         if crate::sys::stat(&found.path).is_none() {
             // For its error.
-            return super::load_found(r.sh, cmd, &found, None, true);
+            return super::load_found(r.sh, cmd, &found, None, Vec::new(), true);
         }
         let name = String::from_utf8_lossy(&super::plugin_name(&found.path, found.kind)).into_owned();
         let abs = super::absolute(r.sh, &found.path);
@@ -1300,7 +1664,8 @@ pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8]) -> ExecResult {
             label: label.clone(),
             src: None,
         };
-        r.add(&name, found, &label, &dir, Some(coll), None).is_ok()
+        r.add(&name, found, &label, &dir, Some(coll), &given, LOADED, None)
+            .is_ok()
     };
     load_resolved(cmd, r, ok)
 }
@@ -1315,13 +1680,27 @@ fn load_resolved(cmd: &[u8], mut r: Resolver, ok: bool) -> ExecResult {
         return Ok(1);
     }
     let loaded = super::loaded_names(sh);
+    // A plugin loaded already must have been given the same options.
+    if let Some(host) = sh.plugins.clone() {
+        for p in &done {
+            if let Some(old) = host.options(p.name.as_bytes()).filter(|o| *o != p.options) {
+                let (here, there) = differences(&p.decls, &p.options, &old);
+                let name = &p.name;
+                let msg = format!(
+                    "{name}: inconsistent options: {here} here, but loaded with {there} (plugin unload {name} first)"
+                );
+                sh.berr(cmd, msg);
+                return Ok(1);
+            }
+        }
+    }
     let mut status = 0;
     let last = done.len().saturating_sub(1);
     let ui = super::confirms(sh).then(|| Ui::new(sh));
     for (i, p) in done.into_iter().enumerate() {
         let name = p.name.into_bytes();
         if i == last || !loaded.contains(&name) {
-            let st = super::load_found(sh, cmd, &p.found, Some(name.clone()), true)?;
+            let st = super::load_found(sh, cmd, &p.found, Some(name.clone()), p.options, true)?;
             status = st.max(status);
             if let (0, Some(ui)) = (st, &ui) {
                 let again = loaded.contains(&name);
@@ -1344,7 +1723,7 @@ pub(super) fn load_added(sh: &mut Shell, cmd: &[u8], name: &str) -> ExecResult {
     };
     let pins = read_lock(&lock_path(sh).unwrap_or_default()).unwrap_or_default();
     let mut r = Resolver::new(sh, &config, pins, Fetching::No);
-    let ok = r.resolve(e, &Scope::Config).is_ok();
+    let ok = r.resolve(e, &Scope::Config, ENABLED).is_ok();
     load_resolved(cmd, r, ok)
 }
 
@@ -1431,10 +1810,12 @@ fn read_state(sh: &mut Shell, cmd: &[u8]) -> Result<(Config, Vec<u8>, Vec<Pin>),
 /// enabled plugins, and whether resolving them had problems.
 fn resolve_all(r: &mut Resolver, config: &Config) -> (Vec<Resolved>, bool) {
     for e in &config.enabled {
-        let _ = r.resolve(e, &Scope::Config);
+        let _ = r.resolve(e, &Scope::Config, ENABLED);
     }
     let enabled = std::mem::take(&mut r.done);
     let failed = !r.problems.is_empty();
+    // The others are installed, but not loaded: options are for loading.
+    r.check_options = false;
     for (name, source) in &config.available {
         if r.interrupted {
             break;
@@ -1453,9 +1834,10 @@ fn resolve_all(r: &mut Resolver, config: &Config) -> (Vec<Resolved>, bool) {
             let e = Entry {
                 name: plugin,
                 target: Target::Named(source),
+                options: Vec::new(),
                 loc: None,
             };
-            let _ = r.resolve(&e, &Scope::Config);
+            let _ = r.resolve(&e, &Scope::Config, ENABLED);
             r.done.clear();
         }
     }

@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, Position, Scope, Shared};
 
 use super::bytes::{to_bytes, to_str};
-use super::{HookArg, HookKind, Loading};
+use super::{HookArg, HookKind, Loading, OptValue, PluginOptions};
 use crate::expand::{pattern::Pattern, split::XChar};
 use crate::interactive::{Candidate, Completion, DEFAULT_COMPLETER, Suffix};
 use crate::prompt::Prompt;
@@ -45,6 +45,8 @@ struct Plugin {
     /// The code of a plugin loaded with `plugin load -c`, which has no
     /// file (its `abs` is empty).
     code: Option<Rc<str>>,
+    /// Its options (`sh::plugin_options()`).
+    options: PluginOptions,
 }
 
 /// A function registered by an extension.
@@ -164,6 +166,28 @@ fn current_dir() -> RhaiResult<Vec<u8>> {
             Some(p) => Ok(p.dir.clone()),
             None => error("no plugin is running"),
         }
+    })
+}
+
+/// `sh::plugin_options()`: the options of the running plugin, as a map.
+fn current_options() -> RhaiResult<rhai::Map> {
+    with_shell(|sh| {
+        let host = host(sh)?;
+        let plugins = host.plugins.borrow();
+        let Some(p) = plugins.iter().find(|p| p.id == CURRENT.get()) else {
+            return error("no plugin is running");
+        };
+        Ok(p.options
+            .iter()
+            .map(|(k, v)| {
+                let v = match v {
+                    OptValue::Str(s) => Dynamic::from(s.clone()),
+                    OptValue::Int(n) => Dynamic::from(*n),
+                    OptValue::Bool(b) => Dynamic::from(*b),
+                };
+                (k.into(), v)
+            })
+            .collect())
     })
 }
 
@@ -660,6 +684,7 @@ fn sh_module() -> Module {
         })
     });
     m.set_native_fn("plugin_dir", || current_dir().map(|d| to_str(&d)));
+    m.set_native_fn("plugin_options", current_options);
     m.set_native_fn("last_status", || with_shell(|sh| Ok(sh.last_status as i64)));
     m.set_native_fn("interactive", || with_shell(|sh| Ok(sh.interactive)));
     m.set_native_fn("run", |script: &str| {
@@ -818,6 +843,22 @@ impl Host {
             .collect()
     }
 
+    /// The options of the plugin loaded as `name`, if it is loaded.
+    pub fn options(&self, name: &[u8]) -> Option<PluginOptions> {
+        let plugins = self.plugins.borrow();
+        plugins.iter().find(|p| p.name == name).map(|p| p.options.clone())
+    }
+
+    /// The options of the plugin loaded as `name`, as the arguments
+    /// `OPTION=VALUE` of `plugin restore`.
+    pub fn option_args(&self, name: &[u8]) -> Vec<Vec<u8>> {
+        let options = self.options(name).unwrap_or_default();
+        options
+            .iter()
+            .map(|(k, v)| format!("{k}={}", v.text()).into_bytes())
+            .collect()
+    }
+
     /// Whether `name` is loaded, and whether with `plugin load -c`.
     pub fn loaded_inline(&self, name: &[u8]) -> Option<bool> {
         let plugins = self.plugins.borrow();
@@ -853,6 +894,7 @@ impl Host {
             dir,
             rhai,
             prompt_vars,
+            options,
         } = plugin;
         let Some((path, rhai_abs)) = rhai else {
             self.unload(&name);
@@ -867,6 +909,7 @@ impl Host {
                 ast: None,
                 prompt_vars,
                 code: None,
+                options,
             });
             return Ok(0);
         };
@@ -886,6 +929,7 @@ impl Host {
                 ast: Some(Rc::new(ast)),
                 prompt_vars,
                 code: None,
+                options,
             },
         )
     }
@@ -925,6 +969,7 @@ impl Host {
                 ast: Some(Rc::new(ast)),
                 prompt_vars: None,
                 code: Some(code.into()),
+                options: Vec::new(),
             },
         )
     }
@@ -1206,10 +1251,18 @@ impl Host {
     /// run. `saved` is `$?`, which each sees.
     fn prompt_vars(&self, sh: &mut Shell, saved: i32) -> Result<(), Flow> {
         let plugins: Vec<_> = (self.plugins.borrow().iter())
-            .map(|p| (p.id, p.dir.clone(), p.name.clone(), p.prompt_vars.clone()))
+            .map(|p| {
+                (
+                    p.id,
+                    p.dir.clone(),
+                    p.name.clone(),
+                    p.prompt_vars.clone(),
+                    p.options.clone(),
+                )
+            })
             .collect();
         let hooks = self.hooks_of(HookKind::PromptVars);
-        for (id, dir, name, file) in plugins {
+        for (id, dir, name, file, options) in plugins {
             for h in hooks.iter().filter(|h| h.plugin == id) {
                 sh.last_status = saved;
                 let r = enter(sh, h.plugin, || h.f.call::<Dynamic>(self.engine(), &h.ast, ()))?;
@@ -1224,7 +1277,7 @@ impl Host {
             }
             if let Some(file) = file {
                 sh.last_status = saved;
-                let r = super::with_plugin_vars(sh, &dir, &name, |sh| {
+                let r = super::with_plugin_vars(sh, &dir, &name, &options, |sh| {
                     crate::builtins::misc::dot(sh, &[b".".to_vec(), file])
                 });
                 match r {

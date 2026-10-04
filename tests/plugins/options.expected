@@ -1,0 +1,100 @@
+--- startup: options, defaults, and the same options for b twice
+init: who=luish
+init: times=1
+init: loud=true
+HELLO, luish
+rhai: luish i64 2 bool true false
+b: level 2
+a
+c
+post-rc: luish
+after: unset
+hi, luish
+--- the startup cache restores the options
+rhai: luish i64 2 bool true false
+after: unset
+hi, luish
+--- savestate records them
+__luish_internal plugin restore 'greet' '~/.config/luish/plugins/greet' 'who=world' 'times=3' 'loud=false'
+--- plugin load: OPTION=VALUE after each plugin, as the types declared
+init: who=sh
+init: times=-2
+init: loud=true
+HELLO, sh
+rhai: sh i64 -1 bool true false
+plain: 0 options
+b: level 7
+--- inconsistent options for a dependency
+luish: ~/src/coll/c/plugin.toml: line 2: coll/b: inconsistent options: level = 3 here, but level = 2 for coll/a
+init: who=luish
+init: times=1
+init: loud=true
+HELLO, luish
+rhai: luish i64 2 bool true false
+b: level 2
+a
+post-rc: luish
+--- the defaults count: no options is level = 0
+luish: ~/src/coll/c/plugin.toml: line 2: coll/b: inconsistent options: level = 0 here, but level = 2 for coll/a
+init: who=luish
+init: times=1
+init: loud=true
+HELLO, luish
+rhai: luish i64 2 bool true false
+b: level 2
+a
+--- a plugin loaded already, with other options
+luish: 2: __luish_internal plugin: coll/b: inconsistent options: level = 2 here, but loaded with level = 1 (plugin unload coll/b first)
+    __luish_internal plugin load coll/a; echo "status $?"
+status 1
+same
+after unload
+--- errors in the options given
+luish: 1: __luish_internal plugin: greet: option loud is required
+    __luish_internal plugin load greet; echo "status $?"
+status 1
+luish: 1: __luish_internal plugin: greet: option loud: expected true or false, found "yes"
+    __luish_internal plugin load greet loud=yes; echo "status $?"
+status 1
+luish: 1: __luish_internal plugin: greet: option times: expected an integer, found "x"
+    __luish_internal plugin load greet loud=true times=x; echo "status $?"
+status 1
+luish: 1: __luish_internal plugin: greet: no option nosuch (it has who, times, loud, extra)
+    __luish_internal plugin load greet loud=true nosuch=1; echo "status $?"
+status 1
+luish: 1: __luish_internal plugin: greet: option loud given twice
+    __luish_internal plugin load greet loud=true loud=false; echo "status $?"
+status 1
+luish: 1: __luish_internal plugin: coll/plain: takes no options
+    __luish_internal plugin load coll/plain x=1; echo "status $?"
+status 1
+luish: 1: __luish_internal plugin: coll/needy: option key is required
+    __luish_internal plugin load coll/needy; echo "status $?"
+status 1
+needy: 
+status 0
+luish: 1: __luish_internal plugin: usage: plugin load NAME|PATH [OPTION=VALUE...]..., plugin load -c CODE NAME, plugin list-loaded, plugin list-available [-a], plugin unload NAME..., plugin run FILE|-c CODE [ARG...], plugin add [-y] PLUGIN [NAME], plugin sync [-q], plugin update [-q] [SOURCE...], plugin check [-q]
+    __luish_internal plugin load x=1 greet; echo "status $?"
+status 2
+--- errors in plugin.toml and config.toml
+luish: ~/.config/luish/config.toml: line 5: coll.b: unsupported version requirement "1" (only "*")
+luish: ~/.config/luish/config.toml: line 6: coll/needy: unknown key: option
+luish: ~/.config/luish/config.toml: line 7: coll/a.options.who: expected a string, an integer or a boolean
+luish: ~/.config/luish/config.toml: line 8: coll/c.options: not a table
+luish: ~/.config/luish/config.toml: line 4: greet: option loud: expected a boolean, found a string
+luish: ~/src/coll/b/plugin.toml: line 2: plugin-options.a.type: expected "str", "int" or "boolean"
+luish: ~/src/coll/b/plugin.toml: line 3: plugin-options.b: the default is a string, not an integer
+luish: ~/src/coll/b/plugin.toml: line 4: plugin-options.c: both required and a default
+luish: ~/src/coll/b/plugin.toml: line 5: plugin-options.d: no type
+luish: ~/src/coll/b/plugin.toml: line 6: plugin-options.e f: bad option name (letters, digits, - and _)
+luish: ~/src/coll/b/plugin.toml: line 7: plugin-options.g.help: unknown key
+luish: ~/src/coll/b/plugin.toml: line 8: plugin-options.h: expected a table ({ type = "str" })
+b: level 
+status 0
+--- an inline source with options, and a nested entry
+b: level 4
+needy: k
+--- plugin sync checks the options of the enabled plugins only
+status 0
+luish: ~/.config/luish/config.toml: line 4: coll/needy: option key is required
+status 1

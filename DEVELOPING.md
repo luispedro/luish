@@ -1140,6 +1140,24 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   (a plugin can package a set of options). The file is parsed again there (the resolver only keeps the
   dependencies), and syntax errors are left to the resolver, so they are reported once. `load_found` records the
   file for the rc cache, also for plugins that `rc.d` loads with `plugin load`. Test: `tests/plugins/manifest.sh`.
+- **Plugin options.** A manifest declares them in `[plugin-options]` (`Reader::declarations`, into `Decl`s: a type,
+  and a default or `required`; not `[options]`, which is the shell's settings, shared with `config.toml`). An entry
+  of `plugins.enabled` or `dependencies` gives them as `{ version = "*", options = { ... } }` (`is_entry`,
+  `entry_table`; beside `gh`/`git`/`path` too, where `source` skips the two keys), and `plugin load` as `OPTION=VALUE`
+  after each plugin (`option_arg`; an argument is an option if what precedes its `=` is a valid option name), kept as
+  text (`Given::Text`) until the declarations convert it. `Resolver::add` checks them (`apply`: undeclared, wrong
+  type, missing required, and the defaults filled in) after reading the manifest, and keeps the declarations, the
+  options and who gave them in `Resolved`; meeting the same plugin again (by absolute path) compares the options
+  after `apply`, so giving none equals giving the defaults, and reports the difference (`differences`) at the second
+  entry. `load_resolved` also compares with the options of plugins already loaded (`Host::options`), before loading
+  anything. `plugin sync`'s pass over every plugin of the available sources skips the checks
+  (`Resolver::check_options`): options are for loading. The options travel in `Loading` to the host's `Plugin`, for
+  `sh::plugin_options()` (that of the running plugin, `CURRENT`, so also in hooks), and `with_plugin_vars` sets
+  `LUISH_PLUGIN_OPTIONS` (an associative array of their text: `true`/`false` for booleans) beside
+  `LUISH_PLUGIN_DIR`, for every shell file of the plugin. `savestate` writes them as `plugin restore NAME PATH
+  OPTION=VALUE...` (`Host::option_args`), which converts them again with the manifest (`given_options`); the rc cache
+  is keyed on `config.toml` and the manifests, so changed options or declarations invalidate it. Test:
+  `tests/plugins/options.sh`.
 - `fetch.rs` runs git through the shell (`command git`, in a forked child, with `GIT_TERMINAL_PROMPT=0`), with
   `-C` a bare repository per URL in `$XDG_CACHE_HOME/luish/plugins/git/REPO-HASH` (FNV-1a of the URL). A ref is
   fetched with `--depth 1` and read from `FETCH_HEAD^{commit}`; a locked commit that is missing is fetched by hash,
