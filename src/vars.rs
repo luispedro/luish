@@ -740,6 +740,23 @@ impl Vars {
         }
     }
 
+    /// The variables assigned since [`Vars::clear_assigned`], to mark them
+    /// again with [`Vars::mark_assigned`] after another use of it.
+    pub fn assigned_names(&self) -> Vec<Vec<u8>> {
+        (self.map.iter())
+            .filter(|(_, v)| v.assigned)
+            .map(|(k, _)| k.clone())
+            .collect()
+    }
+
+    pub fn mark_assigned(&mut self, names: &[Vec<u8>]) {
+        for name in names {
+            if let Some(v) = self.map.get_mut(name) {
+                v.assigned = true;
+            }
+        }
+    }
+
     /// Replaces a variable wholesale (used to restore saved variables).
     pub fn restore(&mut self, name: Vec<u8>, var: Option<Var>) {
         match var {

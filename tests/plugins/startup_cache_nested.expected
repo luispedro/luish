@@ -1,0 +1,36 @@
+--- enabled in config.toml: built, then restored
+p: init.lsh runs
+p: block built for a
+P_VAR=a-lib1 SAME=1
+P_VAR=a-lib1 SAME=1
+--- its variable, its file and what it read with . rebuild the entry
+p: init.lsh runs
+p: block built for b
+P_VAR=b-lib1 SAME=1
+p: init.lsh runs
+p: block built for b
+P_VAR=b1-lib1 SAME=1
+p: init.lsh runs
+p: block built for b
+P_VAR=b1-lib2 SAME=1
+P_VAR=b1-lib2 SAME=1
+--- config.toml changes: the entry is rebuilt, the block restored
+p: init.lsh runs
+P_VAR=b1-lib2 SAME=1
+--- a block that returns is not saved, nor is the entry
+p: init.lsh runs
+p: block built for c
+P_VAR=c1-lib2 SAME=1
+p: init.lsh runs
+p: block built for c
+P_VAR=c1-lib2 SAME=1
+--- check-cache
+  up to date
+--- loaded by a file of rc.d
+p: init.lsh runs
+p: block built for d
+P_VAR=d1-lib2 SAME=1
+P_VAR=d1-lib2 SAME=1
+p: init.lsh runs
+p: block built for e
+P_VAR=e1-lib2 SAME=1

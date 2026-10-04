@@ -833,8 +833,21 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   cache. A file is read and parsed only when no entry has its fingerprint. A block's id is the hash of its unparsed
   text (`unparse::cache_block`, so comments and layout don't count) and the startup file that runs it; its key is
   the values of `env=(...)` and the fingerprints of the expanded `files=(...)`, without the chain. Its status is
-  saved (`R`) and returned when it is replayed; one that ends with `return`, `break` or an error isn't saved. While
-  an entry is built or replayed, `Shell::startcache` is `None`, so a block inside it just runs. `_uncached.lsh` runs
+  saved (`R`) and returned when it is replayed; one that ends with `return`, `break` or an error isn't saved. The
+  file in a block's id is that of the code running it (`Shell::current_file`: a plugin's file), or else the startup
+  file. While an entry is replayed, or a block built, `Shell::startcache` is `None`, so a block inside just runs.
+- While an entry is built (`cached`: `config`, a file's, `post-rc`), its `Run` is in `Shell::startcache` with
+  `Run::nested` set, so that the blocks of the plugins it loads are entries of their own: looked up and stored as
+  above, but not linked into the chain (the entry is, with what they changed among its changes). What they depend
+  on is added to the entry's: the names of their `env=(...)` (`Nested::names`) become `v`/`u` items after the
+  entry's key, with the values those variables had when the entry started (a snapshot of the variables, taken only
+  when the entry is built), and `Cache::find_nested` accepts such items after the key if the variables still have
+  those values; their `files=(...)` and the files they read with `.` (also when replayed) go to
+  `Shell::sourced_files`, so become the entry's dependencies. A block that isn't saved (`return`, an error) keeps
+  the entry from being saved (`Nested::unsaved`). `build` restores the `Var::assigned` marks of the enclosing entry
+  after building a block (`Vars::assigned_names`, `Vars::mark_assigned`), so that the entry still saves what it
+  assigned before the block. Test: `tests/plugins/startup_cache_nested.sh`.
+- `_uncached.lsh` runs
   as a mixed file, after the cache is written (in case it exits); the cache is written again if its blocks built
   entries, or if unused entries were dropped, which is done last.
 - Replay renders the changes (`render`, removals first, aliases and what follows grouped in braces by
@@ -871,7 +884,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   their own, `startup-HOST` (`startcache::begin_startup`, `finish_startup`): no file-level entries or chain, since
   neither file is cached as a whole, and no `_uncached.lsh`. `interactive::startup` wraps each file with
   `startcache::run_mixed` (shared with the "mixed" files of `rc.d` and `login.d`), so a plugin's `rc.lsh` dot-sourced
-  while one runs sees `Shell::startcache` too, and its blocks are cached under the enclosing file's id. `check-cache`
+  while one runs sees `Shell::startcache` too, and its blocks are cached there (with the plugin's file in their id). `check-cache`
   takes `startup` as a third name, built the same way as `rc` and `login` (`Cache::built_by`'s `-i` branch, since
   neither file runs outside an interactive shell). Tests: `misc/startup_cache_blocks.sh`,
   `tests/plugins/startup_cache_blocks.sh`.
@@ -1263,7 +1276,7 @@ truncates when it relocates the package.
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |
 | `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `tests/plugins/default_config.sh`, `builtins/internal_complete_expand.sh`, `builtins/internal_complete_subscript.sh`, `tests/plugins/complete.sh` |
-| Startup files | `misc/startup_cache.sh`, `misc/startup_cache_assigned.sh`, `misc/startup_cache_blocks.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `misc/config_toml_env.sh`, `tests/plugins/startup_cache_check.sh`, `tests/plugins/startup_cache_blocks.sh` |
+| Startup files | `misc/startup_cache.sh`, `misc/startup_cache_assigned.sh`, `misc/startup_cache_blocks.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `misc/config_toml_env.sh`, `tests/plugins/startup_cache_check.sh`, `tests/plugins/startup_cache_blocks.sh`, `tests/plugins/startup_cache_nested.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
 | `print` | `builtins/print.sh` (zsh), `builtins/print_luish.sh`, `print_builtin` in `tests/interactive.rs` |

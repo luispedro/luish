@@ -32,7 +32,8 @@ impl SourceFile {
         self.dir.as_deref()
     }
 
-    fn path(&self) -> Vec<u8> {
+    /// Its path: `name`, in the directory it was relative to.
+    pub fn path(&self) -> Vec<u8> {
         match &self.dir {
             Some(dir) => [&dir[..], b"/", &self.name].concat(),
             None => self.name.to_vec(),

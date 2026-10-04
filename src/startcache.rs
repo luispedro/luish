@@ -24,7 +24,12 @@
 //! - A block is keyed on the values of the variables of its `env=(...)` and
 //!   the fingerprints of the paths of its `files=(...)`; its id has the hash
 //!   of its text (unparsed, so comments don't count) and its file. A block
-//!   inside another, or inside a cached file, runs as part of it.
+//!   inside another runs as part of it.
+//! - A block that runs while an entry is built (in a plugin that
+//!   `config.toml` enables, or that a file of `rc.d` loads) is an entry of
+//!   its own, outside the chain ([`Nested`]), and adds what it is keyed on
+//!   to the entry's key: the values its variables had when the entry
+//!   started, and its files and those it read with `.` as the entry's.
 //! - `rc.d`'s first entry is `config.toml` (see `config.rs`) and the plugins
 //!   it enables (`plugins/package.rs`), with `plugins.lock` and the
 //!   manifests of local plugins among its files; its last is the plugins'
@@ -336,6 +341,18 @@ impl Cache {
     fn find(&self, id: &[u8], key: &[u8]) -> Option<usize> {
         (self.entries.iter()).position(|e| e.id == id && e.key == key && e.deps.iter().all(Dep::current))
     }
+
+    /// As [`Cache::find`], but the entry's key can go on after `key` with
+    /// the variables of the blocks that ran while it was built ([`Nested`]),
+    /// which must have the same values now.
+    fn find_nested(&self, sh: &Shell, id: &[u8], key: &[u8]) -> Option<usize> {
+        (self.entries.iter()).position(|e| {
+            e.id == id
+                && e.key.starts_with(key)
+                && vars_current(sh, &e.key[key.len()..])
+                && e.deps.iter().all(Dep::current)
+        })
+    }
 }
 
 /// The fingerprint of the file of a file's entry (whole or mixed).
@@ -361,11 +378,41 @@ fn items(mut key: &[u8]) -> impl Iterator<Item = (u8, &[u8])> {
 /// The values of variables, for a key: `v NAME=VALUE`, or `u NAME` if unset.
 fn env_items(sh: &Shell, key: &mut Vec<u8>, names: &[&[u8]]) {
     for name in names {
-        match sh.get_var(name) {
-            Some(v) => item(key, b'v', &[name, &b"="[..], &v].concat()),
-            None => item(key, b'u', name),
-        }
+        var_item(key, name, sh.get_var(name).as_deref());
     }
+}
+
+fn var_item(key: &mut Vec<u8>, name: &[u8], value: Option<&[u8]>) {
+    match value {
+        Some(v) => item(key, b'v', &[name, b"=", v].concat()),
+        None => item(key, b'u', name),
+    }
+}
+
+/// Whether the variables of `items` (only `v` and `u` items) have the
+/// values they say.
+fn vars_current(sh: &Shell, items_text: &[u8]) -> bool {
+    items(items_text).all(|(tag, value)| match tag {
+        b'v' => {
+            let eq = value.iter().position(|&c| c == b'=').unwrap_or(value.len());
+            sh.get_var(&value[..eq]).as_deref() == value.get(eq + 1..)
+        }
+        b'u' => sh.get_var(value).is_none(),
+        _ => false,
+    })
+}
+
+/// What the blocks that ran while an entry was built (a plugin's, in the
+/// entry of `config.toml`, of a file of `rc.d` or of the `post-rc.lsh`
+/// files) add to the entry's key: the variables of their `env=(...)`, whose
+/// values when the entry started are added to its key. Their files and
+/// those they read with `.` are recorded as the entry's (`sourced_files`).
+#[derive(Default)]
+struct Nested {
+    names: Vec<Vec<u8>>,
+    /// A block returned or failed, so that it wasn't saved: neither is the
+    /// entry, or later shells would get what it did from it.
+    unsaved: bool,
 }
 
 /// A startup cache being used: by [`run`], and by [`run_block`] while a
@@ -386,6 +433,8 @@ pub struct Run {
     /// A plugin that `config.toml` enables isn't installed: the entry for
     /// `config.toml` isn't saved.
     incomplete: bool,
+    /// While an entry is built ([`cached`]): what its blocks add to it.
+    nested: Option<Nested>,
 }
 
 impl Run {
@@ -398,6 +447,7 @@ impl Run {
             file: Vec::new(),
             check,
             incomplete: false,
+            nested: None,
         }
     }
 
@@ -411,8 +461,8 @@ impl Run {
     }
 
     /// The entry to use for this id and key, if any (none when checking).
-    fn lookup(&mut self, id: &[u8], key: &[u8]) -> Option<usize> {
-        let i = self.cache.find(id, key).filter(|_| !self.check)?;
+    fn lookup(&mut self, sh: &Shell, id: &[u8], key: &[u8]) -> Option<usize> {
+        let i = self.cache.find_nested(sh, id, key).filter(|_| !self.check)?;
         self.cache.entries[i].seen = true;
         Some(i)
     }
@@ -437,6 +487,11 @@ fn link(chain: &mut FastHasher, id: &[u8], key: &[u8], changes: &[u8]) {
 fn replay(sh: &mut Shell, run: &mut Run, i: usize) {
     let e = &run.cache.entries[i];
     link(&mut run.chain, &e.id, &e.key, &e.changes);
+    apply(sh, e);
+}
+
+/// Makes the changes of an entry.
+fn apply(sh: &mut Shell, e: &Entry) {
     crate::interactive::run_text(sh, &render(&e.changes), false);
 }
 
@@ -548,6 +603,8 @@ fn has_block(sh: &Shell, text: &[u8]) -> bool {
 /// Runs `f` and returns what it changed in the state, and the files it read
 /// with `.`.
 fn build<R>(sh: &mut Shell, f: impl FnOnce(&mut Shell) -> R) -> (R, Vec<Dep>, Vec<u8>) {
+    // A block built while an entry is: the entry's assignments count too.
+    let assigned = sh.vars.assigned_names();
     sh.vars.clear_assigned();
     let before = sh.state_entries();
     let outer = sh.sourced_files.replace(Vec::new());
@@ -563,6 +620,7 @@ fn build<R>(sh: &mut Shell, f: impl FnOnce(&mut Shell) -> R) -> (R, Vec<Dep>, Ve
         }
     }
     let changes = encode_changes(&state::changes(&before, &sh.state_entries()));
+    sh.vars.mark_assigned(&assigned);
     (r, deps, changes)
 }
 
@@ -589,15 +647,31 @@ fn cached(sh: &mut Shell, run: &mut Run, id: &[u8], stamp: Option<&str>, f: impl
     }
     env_items(sh, &mut key, DEFAULT_ENV);
     item(&mut key, b'c', run.chain_value().as_bytes());
-    match run.lookup(id, &key) {
-        Some(i) => replay(sh, run, i),
-        None => {
-            let (complete, deps, changes) = build(sh, f);
-            run.link(id, &key, &changes);
-            if complete {
-                run.store(new_entry(id.to_vec(), key, deps, changes));
-            }
-        }
+    if let Some(i) = run.lookup(sh, id, &key) {
+        replay(sh, run, i);
+        return;
+    }
+    // The blocks that run meanwhile (in plugins) are cached as entries of
+    // their own, and what they are keyed on is added to this one, with
+    // the values their variables have now.
+    let start: std::collections::HashMap<Vec<u8>, Option<Vec<u8>>> = (sh.vars.sorted().into_iter())
+        .map(|(name, _)| (name.clone(), sh.get_var(name)))
+        .collect();
+    let placeholder = Run::new(Cache::new(b""), None, false);
+    let mut nested = std::mem::replace(run, placeholder);
+    nested.nested = Some(Nested::default());
+    sh.startcache = Some(Box::new(nested));
+    let (complete, deps, changes) = build(sh, f);
+    if let Some(r) = sh.startcache.take() {
+        *run = *r;
+    }
+    let nested = run.nested.take().unwrap_or_default();
+    for name in nested.names.iter().filter(|n| !DEFAULT_ENV.contains(&&n[..])) {
+        var_item(&mut key, name, start.get(name).cloned().flatten().as_deref());
+    }
+    run.link(id, &key, &changes);
+    if complete && !nested.unsaved {
+        run.store(new_entry(id.to_vec(), key, deps, changes));
     }
 }
 
@@ -775,31 +849,62 @@ fn block_in(sh: &mut Shell, run: &mut Run, block: &CacheBlock) -> ExecResult {
     let text = crate::unparse::cache_block(block);
     h.write_usize(text.len());
     h.write(&text);
-    let id = [format!("block {:016x} ", h.finish()).as_bytes(), &run.file].concat();
+    // The file it is in (a plugin's, for one that a startup file loads), or
+    // the startup file.
+    let file = sh.current_file().0.map_or_else(|| run.file.clone(), |f| f.path());
+    let id = [format!("block {:016x} ", h.finish()).as_bytes(), &file].concat();
     let mut key = Vec::new();
     let names: Vec<&[u8]> = block.env.iter().map(|n| &n[..]).collect();
     env_items(sh, &mut key, &names);
-    for p in sh.expand_words(&block.files)? {
-        item(
-            &mut key,
-            b'p',
-            &[format_stamp(&stamp(&p)).as_bytes(), b" ", &p].concat(),
-        );
+    let files = sh.expand_words(&block.files)?;
+    for p in &files {
+        item(&mut key, b'p', &[format_stamp(&stamp(p)).as_bytes(), b" ", p].concat());
     }
-    if let Some(i) = run.lookup(&id, &key) {
-        let status = run.cache.entries[i].status;
-        replay(sh, run, i);
+    // Inside an entry being built ([`cached`]), which then depends on what
+    // the block lists too: the block isn't in the chain, the entry is.
+    let nested = run.nested.is_some();
+    if let Some(n) = &mut run.nested {
+        for name in &block.env {
+            if !n.names.contains(name) {
+                n.names.push(name.clone());
+            }
+        }
+        record(sh, files);
+    }
+    if let Some(i) = run.lookup(sh, &id, &key) {
+        let e = &run.cache.entries[i];
+        let status = e.status;
+        if nested {
+            record(sh, e.deps.iter().map(|d| d.path.clone()).collect());
+            let e = e.clone();
+            apply(sh, &e);
+        } else {
+            replay(sh, run, i);
+        }
         return Ok(status);
     }
     let (r, deps, changes) = build(sh, |sh| sh.run_list(&block.body));
+    if let Some(n) = &mut run.nested {
+        record(sh, deps.iter().map(|d| d.path.clone()).collect());
+        n.unsaved |= r.is_err();
+    }
     // `return`, `break` or an error: not saved.
     let status = r?;
-    run.link(&id, &key, &changes);
+    if !nested {
+        run.link(&id, &key, &changes);
+    }
     let mut e = new_entry(id, key, deps, changes);
     e.line = block.lineno;
     e.status = status;
     run.store(e);
     Ok(status)
+}
+
+/// Adds files to those that the entry being built depends on.
+fn record(sh: &mut Shell, files: Vec<Vec<u8>>) {
+    if let Some(rec) = &mut sh.sourced_files {
+        rec.extend(files);
+    }
 }
 
 /// The environment the shell started with (the shell never changes its

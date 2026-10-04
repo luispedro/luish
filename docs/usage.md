@@ -939,6 +939,14 @@ plugins they load with `plugin load`), each in a cache of its own since
 neither file is cached as a whole; elsewhere (in a script), and inside
 another block, the body just runs.
 
+A plugin can have blocks too. In a plugin that `config.toml` enables, or that
+a file of `rc.d` loads with `plugin load`, a block is cached on its own, and
+the entry that loads the plugin (that of `config.toml`, or of the file) also
+depends on what the block lists: when it changes, the entry runs again, but
+the plugin's block only if its own key changed. A block that ends with
+`return` (or fails) isn't saved, nor is the entry it ran in, so the next shell
+tries again.
+
 For code that should never be cached, use `_uncached.lsh`, which runs every
 time, after the other files of its directory:
 
