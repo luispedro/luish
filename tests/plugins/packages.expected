@@ -77,6 +77,15 @@ tool (lib: yes, one: yes)
 one
 lib
 t
+--- an empty table is an entry, the same as "*" (and not an empty SOURCE.SUB)
+helper
+lib
+one
+tool (lib: yes, one: yes)
+helper
+coll/lib
+one
+coll/tool
 --- errors
 luish: ~/.config/luish/config.toml: line 2: unknown key: plugins.bogus
 luish: ~/.config/luish/config.toml: line 4: std: expected a table ({ gh = "OWNER/REPO" })

@@ -41,10 +41,12 @@ z = { gh = "bob/luish-z" }     # a source of its own
 | `plugin = "NAME"` | In `plugins.enabled`: which plugin of a collection (`SUB/NAME` in a sub-collection). By default the one with the entry's name, or the only one |
 
 An entry can also be a table, to give the plugin options (see [Plugin options](#plugin-options-plugin-options)),
-with `version = "*"` (which can be left out) and `options`, also beside `gh`, `git` or `path`:
+with `version = "*"` (which can be left out) and `options`, also beside `gh`, `git` or `path`. An empty table is the
+same as `"*"`:
 
 ```toml
 [plugins.enabled]
+std.completion = { }
 my-plugin = { version = "*", options = { greeting = "hi", level = 2, verbose = true } }
 work.proxy = { options = { host = "proxy.example.com" } }
 z = { gh = "bob/luish-z", options = { max = 500 } }

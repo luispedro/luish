@@ -75,6 +75,16 @@ one = "*"
 t = { path = "~/src/coll", plugin = "tool" }
 X
 run '__luish_internal plugin list-loaded'
+echo '--- an empty table is an entry, the same as "*" (and not an empty SOURCE.SUB)'
+cat > "$C/config.toml" <<'X'
+[plugins.available]
+coll = { path = "~/src/coll" }
+[plugins.enabled]
+helper = { }
+coll.lib = { }
+"coll/tool" = {}
+X
+run '__luish_internal plugin list-loaded'
 echo '--- errors'
 cat > "$C/config.toml" <<'X'
 [plugins]

@@ -4,6 +4,8 @@ Unreleased
       seen as LUISH_PLUGIN_OPTIONS and sh::plugin_options()
     * __luish_cache blocks of plugins that config.toml enables (or that
       an rc.d file loads) are cached with their own keys
+    * Fixed: an empty table in plugins.enabled (std.completion = { })
+      enables the plugin, as "*" does, instead of nothing
 
 Version 0.4.0 2026-10-04 by luispedro
     * plugin: coloured output (plugin.* styles) and more feedback: load,

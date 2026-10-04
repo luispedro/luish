@@ -1155,8 +1155,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   file for the rc cache, also for plugins that `rc.d` loads with `plugin load`. Test: `tests/plugins/manifest.sh`.
 - **Plugin options.** A manifest declares them in `[plugin-options]` (`Reader::declarations`, into `Decl`s: a type,
   and a default or `required`; not `[options]`, which is the shell's settings, shared with `config.toml`). An entry
-  of `plugins.enabled` or `dependencies` gives them as `{ version = "*", options = { ... } }` (`is_entry`,
-  `entry_table`; beside `gh`/`git`/`path` too, where `source` skips the two keys), and `plugin load` as `OPTION=VALUE`
+  of `plugins.enabled` or `dependencies` gives them as `{ version = "*", options = { ... } }` (`is_entry`, which also
+  takes an empty table as an entry, since an empty `SOURCE.SUB` level would name nothing; `entry_table`; beside `gh`/`git`/`path` too, where `source` skips the two keys), and `plugin load` as `OPTION=VALUE`
   after each plugin (`option_arg`; an argument is an option if what precedes its `=` is a valid option name), kept as
   text (`Given::Text`) until the declarations convert it. `Resolver::add` checks them (`apply`: undeclared, wrong
   type, missing required, and the defaults filled in) after reading the manifest, and keeps the declarations, the

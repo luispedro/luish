@@ -779,9 +779,10 @@ fn is_source(t: &Table<'_>) -> bool {
 }
 
 /// Whether a table in `plugins.enabled` or `dependencies` is an entry with
-/// a version or options (and not `SOURCE.PATH = "*"`).
+/// a version or options, or empty (the same as `"*"`), and not
+/// `SOURCE.PATH = "*"`.
 fn is_entry(t: &Table<'_>) -> bool {
-    t.keys().any(|k| ["version", "options"].contains(&&*k.name))
+    t.is_empty() || t.keys().any(|k| ["version", "options"].contains(&&*k.name))
 }
 
 /// Parses the TOML file `file` and gives its top-level table to `f`.
