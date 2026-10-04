@@ -1,0 +1,3 @@
+outer
+x was inherited from the environment as "outer"
+seen was set to "yes" at the prompt

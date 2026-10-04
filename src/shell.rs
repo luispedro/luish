@@ -134,6 +134,9 @@ pub struct Shell {
     /// While a startup file with `__luish_cache` blocks runs: the cache
     /// they use (`startcache::run_block`).
     pub startcache: Option<Box<crate::startcache::Run>>,
+    /// Where variables were set, while `vars.trace` or `vars.trace_history`
+    /// is on (`vartrace.rs`).
+    pub vartrace: Option<Box<crate::vartrace::VarTrace>>,
 }
 
 impl Shell {
@@ -212,6 +215,7 @@ impl Shell {
             in_rc: false,
             check_cache: None,
             startcache: None,
+            vartrace: None,
         }
     }
 
@@ -370,10 +374,7 @@ impl Shell {
         if self.vars.set(name, value).is_err() {
             return Err(readonly_message(name));
         }
-        if self.opt(Opt::Allexport) {
-            self.vars.entry(name).exported = true;
-        }
-        self.var_changed(name);
+        self.after_assign(name);
         Ok(())
     }
 
@@ -609,6 +610,27 @@ impl Shell {
             self.vars.entry(name).exported = true;
         }
         self.var_changed(name);
+        if self.vartrace.is_some() {
+            self.trace_set(name);
+        }
+    }
+
+    /// Unsets a variable (without `var_changed`).
+    pub fn unset_var(&mut self, name: &[u8]) -> Result<(), crate::vars::ReadonlyError> {
+        self.vars.unset(name)?;
+        if self.vartrace.is_some() {
+            self.trace_unset(name);
+        }
+        Ok(())
+    }
+
+    /// Saves a variable for `local` or a temporary assignment, to put back
+    /// with [`Shell::restore_saved`].
+    pub fn save_var(&mut self, name: &[u8]) -> Saved {
+        if self.vartrace.is_some() {
+            self.trace_save(name);
+        }
+        self.vars.save(name)
     }
 
     /// Restarts `getopts` at the first argument (new positional parameters).
@@ -627,11 +649,15 @@ impl Shell {
         }
     }
 
-    /// Puts back a variable saved by `local` or a temporary assignment.
-    pub fn restore_saved(&mut self, name: Vec<u8>, saved: Saved) {
-        if matches!(&name[..], b"PATH" | b"OPTIND") {
+    /// Puts back a variable saved by `local` (when `function` returns) or a
+    /// temporary assignment.
+    pub fn restore_saved(&mut self, name: Vec<u8>, saved: Saved, function: Option<&Rc<[u8]>>) {
+        if matches!(&name[..], b"PATH" | b"OPTIND") || self.vartrace.is_some() {
             self.vars.restore_saved(name.clone(), saved);
             self.var_changed(&name);
+            if self.vartrace.is_some() {
+                self.trace_restore(&name, function);
+            }
         } else {
             self.vars.restore_saved(name, saved);
         }

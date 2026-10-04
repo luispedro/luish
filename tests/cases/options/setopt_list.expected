@@ -35,6 +35,8 @@ pushd.ignore_dups
 pushd.silent
 stdin
 terminal.no_integration
+vars.trace
+vars.trace_history
 verbose
 vi
 xtrace

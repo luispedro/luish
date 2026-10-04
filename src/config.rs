@@ -684,7 +684,7 @@ fn set(sh: &mut Shell, name: &str, value: &Value<'_>) -> Result<(), String> {
     match (Options::find(name.as_bytes()), value.as_ref()) {
         (None, _) => Err(format!("no such option: {name}")),
         (Some(Setting::Flag(o, sense)), ValueInner::Boolean(on)) => {
-            sh.options.set(o, *on == sense);
+            sh.set_option(o, *on == sense);
             Ok(())
         }
         (Some(Setting::Flag(..)), _) => want("a boolean"),

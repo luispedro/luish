@@ -242,6 +242,7 @@ const ARGS: &[(&[u8], Args)] = &[
     (b"local", Args::Vars),
     (b"readonly", Args::Vars),
     (b"unset", Args::Unset),
+    (b"where", Args::Vars),
     (b"hash", Args::Commands),
     (b"type", Args::Commands),
     (b"which", Args::Commands),
@@ -1926,7 +1927,8 @@ mod tests {
                 "history ",
                 "prompt ",
                 "pushd ",
-                "terminal "
+                "terminal ",
+                "vars "
             ]
         );
         assert_eq!(

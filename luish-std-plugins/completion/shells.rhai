@@ -12,6 +12,7 @@ fn luish_options() {
         "history.expand", "history.verify", "editor.autosuggest", "editor.no_highlight",
         "highlight.paths",
         "pushd.auto", "pushd.ignore_dups", "pushd.silent", "terminal.no_integration",
+        "vars.trace", "vars.trace_history",
     ]
 }
 

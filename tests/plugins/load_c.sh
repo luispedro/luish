@@ -9,13 +9,13 @@ echo 'fn hi() { "module" }' > d/sub/m.rhai
 cd d
 __luish_internal plugin load -c '
 sh::builtin("greet", |argv| { import "sub/m" as m; print(`${m::hi()} ${argv}`); 3 });
-sh::builtin("where", |argv| print(sh::plugin_dir().ends_with("/d")));
+sh::builtin("plugindir", |argv| print(sh::plugin_dir().ends_with("/d")));
 sh::hook("chpwd", |from, to| print(`chpwd ${to.ends_with("/d")}`));
 ' greeter; echo "load: $?"
 cd ..
 greet a b; echo "greet: $?"
 type greet
-where
+plugindir
 __luish_internal plugin load -c 'print("other")' other
 __luish_internal plugin list-loaded
 # Again: the new code replaces the old, hooks and all.

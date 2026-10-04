@@ -462,7 +462,9 @@ impl Run {
 
     /// The entry to use for this id and key, if any (none when checking).
     fn lookup(&mut self, sh: &Shell, id: &[u8], key: &[u8]) -> Option<usize> {
-        let i = self.cache.find_nested(sh, id, key).filter(|_| !self.check)?;
+        // While variables are traced, the files run, so that where they set
+        // variables is recorded.
+        let i = (self.cache.find_nested(sh, id, key)).filter(|_| !self.check && sh.vartrace.is_none())?;
         self.cache.entries[i].seen = true;
         Some(i)
     }

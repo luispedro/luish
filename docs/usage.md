@@ -255,6 +255,37 @@ open when clicked (with Ctrl or a modifier in some); `setopt terminal.no_integra
 `caller` prints a frame of the stack from a script, as in bash (see `help caller`), and `BASH_SOURCE`, `FUNCNAME`
 and `BASH_LINENO` hold all of it ([Special variables](#special-variables)).
 
+## Tracing variables
+
+With variable tracing on, `where` tells where variables were set (see `help where`):
+
+```text
+$ luish -o vars.trace
+$ where PATH EDITOR
+PATH was set to "/home/me/bin:/usr/bin:/bin" in ~/.config/luish/rc.d/10-path.lsh:3
+EDITOR was set to "vi" in ~/.my-script.sh:123, in function setup
+```
+
+`setopt vars.trace` records where each variable was last set: the file and line of the code that set it and the
+function running, or the prompt, the `-c` command or standard input. `setopt vars.trace_history` also keeps the last
+100 changes of each variable, with their values, which `where -a` shows. With `vars.trace`, the changes of `PATH`,
+`MANPATH`, `PS1`, `RPROMPT` and `RPS1` are kept as in history mode, since startup files and plugins often build them
+bit by bit:
+
+```text
+$ where -a PATH
+PATH was inherited from the environment as "/usr/bin:/bin"
+PATH was set to "/home/me/bin:/usr/bin:/bin" in ~/.config/luish/rc.d/10-path.lsh:3
+PATH was set to "/home/me/bin:/usr/bin:/bin:/opt/x/bin" in ~/.local/share/luish/plugins/x/init.lsh:7, in function add
+```
+
+Tracing costs nothing while it is off. While it is on, assignments are slower (a script of function calls and
+assignments takes about a fifth longer with `vars.trace`, a third with `vars.trace_history`), and the [startup caches](#cached-startup-files) aren't used, so that
+the startup files run and what they set is recorded at their lines. Turn it on with `-o` on the command line to trace
+the startup files; with `setopt`, only what is set from then on is recorded (a variable set before shows as set
+before tracing began). Values that a plugin's `prompt-vars` sets for the prompt are put back after it, and aren't
+recorded. Tracing in a subshell stays in that subshell.
+
 ## Getting help
 
 In an interactive shell, `help` lists the built-in commands, and `help NAME` shows the help for any of them (the

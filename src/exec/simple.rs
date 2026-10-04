@@ -414,11 +414,11 @@ impl Shell {
             };
             match tied {
                 Some(Special::Dirstack) if dirstack.is_none() => dirstack = Some(self.dirstack.clone()),
-                Some(Special::Path) => saved.push((b"PATH".to_vec(), self.vars.save(b"PATH"))),
+                Some(Special::Path) => saved.push((b"PATH".to_vec(), self.save_var(b"PATH"))),
                 _ => {}
             }
             let tied = tied == Some(Special::Path);
-            let old = self.vars.save(&n);
+            let old = self.save_var(&n);
             // The value isn't evaluated for an integer variable, nor
             // converted by `-l`, `-u` or `-U`, as in zsh and bash.
             if self.vars.transform(&n).any() {
@@ -436,7 +436,7 @@ impl Shell {
         }
         let r = r.unwrap_or_else(|| f(self));
         for (n, old) in saved.into_iter().rev() {
-            self.restore_saved(n, old);
+            self.restore_saved(n, old, None);
         }
         if let Some(d) = dirstack {
             self.dirstack = d;

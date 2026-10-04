@@ -207,6 +207,7 @@ impl<'a> Arith<'a> {
                         None => self.sh.vars.set(name, value).map_err(Into::into),
                     };
                     match r {
+                        Ok(()) if self.sh.vartrace.is_some() => self.sh.trace_set(name),
                         Ok(()) => {}
                         Err(AssignError::Readonly) => {
                             return Err(format!("{}: is read only", String::from_utf8_lossy(name)));

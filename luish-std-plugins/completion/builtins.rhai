@@ -423,6 +423,7 @@ fn internal_commands() {
         print-git-rev-short  print the current git revision, short
         savestate  save the shell's state
         style  show or change the styles
+        where  show where variables were set
     `
 }
 

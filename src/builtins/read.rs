@@ -240,7 +240,7 @@ pub fn getopts(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
                     sh.set_var(b"OPTARG", vec![c])?;
                 } else {
                     sys::write_all(2, format!("Illegal option -{}\n", c as char).as_bytes());
-                    let _ = sh.vars.unset(b"OPTARG");
+                    let _ = sh.unset_var(b"OPTARG");
                 }
                 c = b'?';
                 break 'out;
@@ -262,7 +262,7 @@ pub fn getopts(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
                     c = b':';
                 } else {
                     sys::write_all(2, format!("No arg for -{} option\n", c as char).as_bytes());
-                    let _ = sh.vars.unset(b"OPTARG");
+                    let _ = sh.unset_var(b"OPTARG");
                     c = b'?';
                 }
                 break 'out;

@@ -6,6 +6,9 @@ Unreleased
       an rc.d file loads) are cached with their own keys
     * Fixed: an empty table in plugins.enabled (std.completion = { })
       enables the plugin, as "*" does, instead of nothing
+    * Variable tracing: setopt vars.trace (or luish -o vars.trace), then
+      where NAME shows where it was set; vars.trace_history keeps the
+      last changes, which where -a shows
 
 Version 0.4.0 2026-10-04 by luispedro
     * plugin: coloured output (plugin.* styles) and more feedback: load,

@@ -42,6 +42,8 @@ pub enum Opt {
     PushdIgnoreDups,
     PushdSilent,
     NoTermIntegration,
+    VarsTrace,
+    VarsTraceHistory,
 }
 
 /// Option table: (option, letter, long name), in dash's order (with POSIX's
@@ -94,6 +96,8 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::PushdIgnoreDups, "pushd.ignore_dups"),
     (Opt::PushdSilent, "pushd.silent"),
     (Opt::NoTermIntegration, "terminal.no_integration"),
+    (Opt::VarsTrace, "vars.trace"),
+    (Opt::VarsTraceHistory, "vars.trace_history"),
 ];
 
 /// Other names of luish's own options: zsh's, and those they had before
@@ -340,7 +344,8 @@ mod tests {
                 "history",
                 "prompt",
                 "pushd",
-                "terminal"
+                "terminal",
+                "vars"
             ]
         );
         assert_eq!(find_group(b"History"), Some("history"));

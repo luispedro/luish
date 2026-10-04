@@ -35,6 +35,7 @@ mod style;
 mod sys;
 mod unparse;
 mod vars;
+mod vartrace;
 
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
@@ -245,6 +246,9 @@ fn run(args: Vec<Vec<u8>>) -> ! {
 
     let interactive = force_interactive || (stdin_mode && !command_mode && sys::isatty(0) && sys::isatty(2));
     sh.bump_shlvl(interactive);
+    // `-o vars.trace`: from the start, so that what startup files set is
+    // recorded (`vartrace.rs`).
+    sh.update_var_trace(true);
     if interactive {
         sh.interactive = true;
         sh.options.set(Opt::Interactive, true);

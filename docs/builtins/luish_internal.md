@@ -14,6 +14,7 @@ __luish_internal print-git-rev
 __luish_internal print-git-rev-short
 __luish_internal savestate
 __luish_internal style [arg...]
+__luish_internal where [-a] [name...]
 ```
 
 Run one of luish's own commands.
@@ -85,5 +86,9 @@ take names that scripts might use for something else.
 
 `style`
 : Show or change styles and colour schemes (see `help style`).
+
+`where`
+: Show where variables were set, while variable tracing is on (see
+  `help where`).
 
 A missing or unknown subcommand is an error with exit status 2.

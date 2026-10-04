@@ -74,6 +74,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"unset", page!("unset")),
     (b"unsetopt", page!("setopt")),
     (b"wait", page!("wait")),
+    (b"where", page!("where")),
 ];
 
 /// `help`.

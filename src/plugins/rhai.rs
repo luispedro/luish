@@ -667,7 +667,7 @@ fn sh_module() -> Module {
     m.set_native_fn("unsetvar", |name: &str| {
         check_name(name)?;
         with_shell(|sh| {
-            if sh.vars.unset(name.as_bytes()).is_err() {
+            if sh.unset_var(name.as_bytes()).is_err() {
                 return error(format!("{name}: is read only"));
             }
             sh.var_changed(name.as_bytes());
@@ -739,7 +739,7 @@ fn set_prompt_vars(sh: &mut Shell, path: &[u8], v: Dynamic) {
             _ if !crate::lexer::is_valid_name(name.as_bytes()) => Err(format!("{name}: bad variable name")),
             Some(value) if value.contains(&0) => Err(format!("{name}: string contains a NUL byte")),
             Some(value) => sh.try_set_var(name.as_bytes(), value),
-            None => match sh.vars.unset(name.as_bytes()) {
+            None => match sh.unset_var(name.as_bytes()) {
                 Ok(()) => {
                     sh.var_changed(name.as_bytes());
                     Ok(())
@@ -1221,7 +1221,10 @@ impl Host {
             false => (Ok(()), Vec::new()),
             true => {
                 let snapshot = sh.vars.snapshot();
+                // Put back below, so not traced.
+                let trace = sh.vartrace.take();
                 let r = self.prompt_vars(sh, saved);
+                sh.vartrace = trace;
                 (r, sh.vars.changes_since(&snapshot))
             }
         };

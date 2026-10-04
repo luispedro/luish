@@ -208,7 +208,7 @@ pub fn unset(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             sh.berr(&argv[0], "Illegal number: ");
             return Err(Flow::Error(2));
         }
-        if sh.vars.unset(name).is_err() {
+        if sh.unset_var(name).is_err() {
             sh.berr(&argv[0], format!("{}: is read only", String::from_utf8_lossy(name)));
             return Err(Flow::Error(2));
         }
@@ -227,6 +227,9 @@ fn unset_element(sh: &mut Shell, cmd: &[u8], name: &[u8], index: &[u8]) -> Resul
         }
         if let Some(Value::Assoc(h)) = sh.vars.get_value_mut(name) {
             h.remove(index);
+        }
+        if sh.vartrace.is_some() {
+            sh.trace_set(name);
         }
         return Ok(());
     }
@@ -324,7 +327,7 @@ pub fn parse_set_options<'a>(sh: &mut Shell, args: &'a [Vec<u8>], cmd: &[u8]) ->
                         print_options(sh, !on);
                     }
                     Some(name) => match Options::by_name(name) {
-                        Some(o) => sh.options.set(o, on),
+                        Some(o) => sh.set_option(o, on),
                         None => {
                             sh.berr(cmd, format!("Illegal option -o {}", String::from_utf8_lossy(name)));
                             return Err(Flow::Error(2));
@@ -334,7 +337,7 @@ pub fn parse_set_options<'a>(sh: &mut Shell, args: &'a [Vec<u8>], cmd: &[u8]) ->
                 continue;
             }
             match Options::by_letter(c) {
-                Some(o) if !matches!(o, Opt::Interactive | Opt::Stdin) || cmd != b"set" => sh.options.set(o, on),
+                Some(o) if !matches!(o, Opt::Interactive | Opt::Stdin) || cmd != b"set" => sh.set_option(o, on),
                 _ => {
                     sh.berr(cmd, format!("Illegal option {}{}", a[0] as char, c as char));
                     return Err(Flow::Error(2));
@@ -472,12 +475,12 @@ fn set_setting(sh: &mut Shell, on: bool, arg: &[u8]) -> Result<(), String> {
                 Some(v) => parse_bool(v).ok_or_else(|| bad_value(v))?,
                 None => on,
             };
-            sh.options.set(o, v == sense);
+            sh.set_option(o, v == sense);
             Ok(())
         }
         Some(Setting::Value(var, kind)) => match value {
             None if on => Err(format!("{}: needs a value", text(name))),
-            None => sh.vars.unset(var).map_err(|_| format!("{}: is read only", text(var))),
+            None => sh.unset_var(var).map_err(|_| format!("{}: is read only", text(var))),
             Some(v) => {
                 if kind == Kind::Number && (v.is_empty() || !v.iter().all(u8::is_ascii_digit)) {
                     return Err(bad_value(v));
@@ -603,10 +606,13 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
             return Err(bad_name(sh, cmd, name));
         }
         if local && !sh.locals.last().unwrap().iter().any(|(n, _)| n == name) {
-            let old = sh.vars.save(name);
+            let old = sh.save_var(name);
             sh.locals.last_mut().unwrap().push((name.to_vec(), old));
             if !keep {
                 sh.restore_var(name.to_vec(), None);
+                if sh.vartrace.is_some() {
+                    sh.trace_unset(name);
+                }
             } else if sh.vars.transform(name).any() {
                 // `local` keeps the value, but not `-i`, `-l`, `-u` or `-U`
                 // (zsh and bash keep neither).

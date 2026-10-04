@@ -40,12 +40,17 @@ impl SourceFile {
         }
     }
 
-    /// Its name, as a link to it if `links` and its path is known.
-    fn shown(&self, links: bool) -> Vec<u8> {
-        let path = match &self.dir {
+    /// Its path as shown to users: `path` without a `./` after the directory.
+    pub fn display_path(&self) -> Vec<u8> {
+        match &self.dir {
             Some(dir) => [&dir[..], b"/", self.name.strip_prefix(b"./").unwrap_or(&self.name)].concat(),
             None => self.name.to_vec(),
-        };
+        }
+    }
+
+    /// Its name, as a link to it if `links` and its path is known.
+    fn shown(&self, links: bool) -> Vec<u8> {
+        let path = self.display_path();
         if links && path.first() == Some(&b'/') {
             crate::interactive::file_link(&self.name, &path)
         } else {

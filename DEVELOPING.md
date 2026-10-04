@@ -66,6 +66,7 @@ src/
 ├── state.rs            # the shell's state as commands (savestate), and differences of states
 ├── startcache.rs       # cached rc.d / login.d
 ├── config.rs           # config.toml
+├── vartrace.rs         # variable tracing (setopt vars.trace) and the `where` built-in
 ├── expand/             # mod.rs (driver, parameters, command substitution), arith.rs, split.rs, pattern.rs, glob.rs,
 │                       # qual.rs
 ├── exec/               # mod.rs (lists, pipelines, compound commands), simple.rs (commands, lookup), fork.rs,
@@ -575,6 +576,38 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   completer completes group names after `-p`, and the group's names after `-p GROUP`.
 - Tests: `options/setopt.sh` (zsh), `options/setopt_list.sh`, `options/setopt_values.sh`, `options/setopt_group.sh`,
   `options/*`.
+
+### Variable tracing (`vartrace.rs`)
+
+- `setopt vars.trace` (or `vars.trace_history`) creates `Shell::vartrace`, and turning both off drops it; options go
+  through `Shell::set_option` (`setopt`, `set -o`, `config.toml`) so that it follows them. Command-line options set
+  the bits directly, and `main` calls `update_var_trace(true)` after `bump_shlvl`, so that variables that didn't come
+  from the environment show as set by luish when it started. When tracing starts, each variable that is set gets a
+  first record: `Environment` if it is exported with the value the environment had, else `Startup` or `Before`.
+- Zero cost while off: `vartrace` is an `Option<Box>`, and each place that changes a variable tests it and calls a
+  `#[cold]` function: `Shell::after_assign` (which `try_set_var` now goes through, so every assignment through
+  `Shell` is covered), `Shell::unset_var`, `Shell::save_var` and `Shell::restore_saved` (`local`, temporary
+  assignments, typeset's local unset), arithmetic assignments (`arith.rs`, which change `Vars` directly), and
+  `unset 'h[k]'`. `with_plugin_vars` and `bump_shlvl` aren't traced (the first is undone, the second runs before
+  tracing starts). The interleaved benchmarks show no difference with tracing off; with it on, `functions.sh` takes
+  about 20% longer (`vars.trace`) and 35% (`vars.trace_history`).
+- A record (`Event`) has where the code was (`Location`: the innermost frame's file, `LINENO` if `lines_in_file`, the
+  innermost function frame, else the prompt, `-c` or standard input), and, for a variable whose history is kept
+  (`vars.trace_history`, or one of `HISTORY_VARS`), the value as shown. Otherwise only the last record is kept,
+  without its value, which is the current value. At most `HISTORY_LIMIT` (100) are kept per variable, with a count
+  of those dropped.
+- `local` and temporary assignments: `save_var` pushes the variable's last record on a stack per name
+  (`VarTrace::saved`), which `restore_saved` pops, so that a `Restored` record has the record that set the value put
+  back (`origin`, followed through earlier restores), which plain `where` shows. Saves and restores pair up per name
+  in LIFO order; one made before tracing started has no origin.
+- The startup caches aren't used while tracing (`Run::lookup` finds nothing): entries are rebuilt, so the files run
+  and what they set is recorded at their lines. The prompt's `prompt-vars` run with `vartrace` taken out, since
+  their changes are put back after the prompt (`restore_var` isn't traced).
+- `where` is in `builtins::INTERACTIVE`, and `Shell::builtin` also finds it while tracing (only after the main table
+  missed, so lookups of other commands pay a test of `vartrace` only on that path). `__luish_internal where` is the
+  same everywhere. The old plugin case that named a plugin built-in `where` now uses `plugindir`.
+- Tests: `misc/vartrace.sh`, `misc/vartrace_restore.sh`, `misc/vartrace_history.sh`, `misc/vartrace_startup.sh`,
+  `tests/plugins/vartrace_prompt.sh`.
 
 ### Interactive mode (`interactive/`)
 
@@ -1283,6 +1316,7 @@ truncates when it relocates the package.
 | `clipcopy` | `builtins/internal_clipcopy.sh`, `clipcopy` in `tests/interactive.rs` |
 | `plugin` | `builtins/internal_plugin.sh`, `builtins/plugin.sh` (same as dash), `plugin_builtin` in `tests/interactive.rs` |
 | Hints for commands not found | `exec/not_found_hint.sh` |
+| `where`, startup caches with `vars.trace` | `misc/vartrace.sh`, `misc/vartrace_restore.sh`, `misc/vartrace_history.sh`, `misc/vartrace_startup.sh`, `tests/plugins/vartrace_prompt.sh` |
 
 ## dash as the reference
 

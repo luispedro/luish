@@ -117,6 +117,7 @@ const INTERACTIVE: &[(&[u8], BuiltinFn)] = &[
     (b"plugin", crate::plugins::plugin),
     (b"print", print::print),
     (b"style", style::style),
+    (b"where", crate::vartrace::where_),
 ];
 
 /// The names of all built-ins, including the interactive-only ones (for
@@ -153,11 +154,12 @@ pub fn options<'a>(sh: &Shell, argv: &'a [Vec<u8>], allowed: &[u8]) -> Result<(V
 impl Shell {
     /// Finds a built-in: (function, special). The `-i` option can't be
     /// changed after startup, so it tells whether the shell was started
-    /// interactive, also in subshells.
+    /// interactive, also in subshells. `where` is also a built-in in any
+    /// shell while variables are traced.
     pub fn builtin(&self, name: &[u8]) -> Option<(BuiltinFn, bool)> {
         lookup(name).or_else(|| {
             if !self.opt(Opt::Interactive) {
-                return None;
+                return (self.vartrace.is_some() && name == b"where").then_some((crate::vartrace::where_, false));
             }
             INTERACTIVE.iter().find(|b| b.0 == name).map(|b| (b.1, false))
         })

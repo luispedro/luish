@@ -1,0 +1,45 @@
+X was set to "inner" in ~/s.sh:3, in function f
+X was set to "hello" in ~/lib.sh:1
+PATH was set to "/opt/bin:/usr/bin:/bin" in ~/lib.sh:3, in function addpath
+PATH was set to "/opt/bin:/usr/bin:/bin" in ~/lib.sh:3, in function addpath
+i was set to "b" in ~/s.sh:11
+r was set to "line" in ~/s.sh:12
+o was set to "b" in ~/s.sh:15
+OPTARG was set to "val" in ~/s.sh:15
+OPTIND was set to "3" in ~/s.sh:15
+d was set to "default" in ~/s.sh:16
+n was set to "5" in ~/s.sh:16
+OLDPWD was set to "/" in ~/s.sh:18
+V was set to "ev" in ~/s.sh:19
+a was set to ("1" "two words") in ~/s.sh:20
+q was set to "say \"\$x\" \`c\`\\" in ~/s.sh:20
+e was set to $'bold\e[1m' in ~/s.sh:20
+h was set to (["k"]="v") in ~/s.sh:22
+X was unset in ~/s.sh:24
+Z is not set
+not set: 1
+./s.sh: 27: where: 1bad: bad variable name
+    where 1bad; echo "bad name: $?"
+bad name: 2
+x was set to "1" in ~/s.sh:28
+x was unset again after the command in ~/s.sh:28
+after: 0
+A was inherited from the environment as "env"
+B was set to "changed" in the -c command, line 1
+IFS was set to $' \t\n' by luish when it started
+PS2 was set to "> " by luish when it started
+SHLVL is not set
+early was set to "1" before tracing began
+IFS was set to $' \t\n' before tracing began
+
+Y was set to "1" in the -c command, line 2
+
+Y was set to "1" on standard input, line 2
+where: 127
+/home/luispedro/Sync/work/luish/target/debug/luish: 1: where: variable tracing is off (turn it on with `setopt vars.trace`)
+    __luish_internal where X
+internal: 2
+unsetopt: 2
+X was set to "1" in the -c command, line 1
+subshell: 2
+X was set to "1" at the prompt

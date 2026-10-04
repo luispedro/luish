@@ -103,6 +103,17 @@ luish's own options, all off by default:
   alone in vi mode. See the user documentation on terminal
   integration.
 
+`vars.trace`
+: Record where each variable is set, which `where` shows (see `where`).
+  The changes of `PATH`, `MANPATH`, `PS1`, `RPROMPT` and `RPS1` are all
+  kept (up to 100), as with `vars.trace_history`. While it is on, the
+  startup caches aren't used. Use `luish -o vars.trace` to trace the
+  startup files too.
+
+`vars.trace_history`
+: As `vars.trace`, but keep the last 100 changes of every variable, with
+  their values, for `where -a`.
+
 The history options (see the user documentation on history):
 
 `history.ignore_space` (`histignorespace`)

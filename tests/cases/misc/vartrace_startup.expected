@@ -1,0 +1,9 @@
+/rc/bin:/usr/bin:/bin:/opt/x 1
+/rc/bin:/usr/bin:/bin:/opt/x 1
+EDITOR was set to "vi" in ~/.config/luish/rc.d/10-path.lsh:2
+CACHED was set to "1" in ~/.config/luish/rc.d/20-prompt.lsh:4
+PS1 was set to "%~ \$ " in ~/.config/luish/rc.d/20-prompt.lsh:1
+PATH was inherited from the environment as "/usr/bin:/bin"
+PATH was set to "/rc/bin:/usr/bin:/bin" in ~/.config/luish/rc.d/10-path.lsh:1
+PATH was set to "/rc/bin:/usr/bin:/bin:/opt/x" in ~/.config/luish/rc.d/20-prompt.lsh:3
+X was set to "1" in the -c command, line 1

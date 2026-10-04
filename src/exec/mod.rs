@@ -477,7 +477,7 @@ impl Shell {
             Err(e) => Err(e.into()),
         };
         for (name, saved) in self.locals.pop().unwrap().into_iter().rev() {
-            self.restore_saved(name, saved);
+            self.restore_saved(name, saved, Some(&func.name));
         }
         self.pop_frame();
         self.lineno = call_line;
