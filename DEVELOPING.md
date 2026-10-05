@@ -159,7 +159,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `highlight.rs`.
 - `Parser::started` tells a buffer of blank lines apart from a real incomplete command. The lexer reads a trailing
   `(...)` as `WordPart::GlobQual` only under `glob.bare_qualifiers`: the only place it depends on an option.
-- Unit tests in `parser.rs`, and the `parse` and `unparse` fuzz targets (see Fuzzing). No `insta` snapshots yet.
+- Unit tests in `parser.rs`, and the `parse` and `unparse` fuzz targets (see Fuzzing).
 
 ### Expansion (`expand/`)
 
@@ -1559,7 +1559,6 @@ User-visible limitations are listed in `docs/compatibility.md`. Beyond those:
 
 - Fds saved at 10 or above could collide with a user redirection to fd 10+ in the same command.
 - The native built-ins are a `fn` table, not yet on a `Builtin` trait shared with extension built-ins.
-- No fuzz targets (lexer, parser, arithmetic, pattern matcher) and no `insta` snapshots.
 - The tests never run on the musl build (CI tests glibc; the release workflow only runs `test-install.sh` on musl),
   so musl's offset in `exec/cond.rs::re_nsub` (0, from the `libc` crate's struct definition) has only been checked
   by reading it: run `exec::cond::tests::groups` on musl.

@@ -68,9 +68,8 @@ Phases 0 to 10 (the POSIX shell and the interactive mode) are done. The open pha
 ## Phase 12 — Conformance and performance
 
 Still to do: the startup gap (deferred), larger `configure` scripts (coreutils) and distribution scripts, the smoosh
-and modernish suites, `insta` snapshot tests for the parser, and `hyperfine` in CI (non-blocking) for startup and
-loop regressions, including `-c true` with and without the `plugins` feature. Optimisations only where profiling
-shows a need.
+and modernish suites, and `hyperfine` in CI (non-blocking) for startup and loop regressions, including `-c true` with
+and without the `plugins` feature. Optimisations only where profiling shows a need.
 
 ## Phase 13 — Replacing zsh (Stage 1, current focus)
 
