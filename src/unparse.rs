@@ -289,7 +289,7 @@ impl<'a> Printer<'a> {
             }
             RedirTarget::HereDoc(hd) => {
                 let hd = hd.borrow();
-                let mut body = match (hd.quoted, hd.body.0.as_slice()) {
+                let mut body = match (hd.quoted, &hd.body.0[..]) {
                     (true, [WordPart::Literal(s)]) => s.clone(),
                     (true, []) => Vec::new(),
                     (_, [WordPart::DoubleQuoted(parts)]) => {
@@ -672,7 +672,7 @@ pub trait LineVisitor {
     const WRITES: bool;
     fn line(&mut self, n: &mut u32);
     /// The parts of a word, after those nested in them.
-    fn parts(&mut self, _: &mut Vec<WordPart>) {}
+    fn parts(&mut self, _: &mut Parts) {}
 }
 
 /// Visits every line number in the list, in an order that is the same for
@@ -730,7 +730,9 @@ fn part<V: LineVisitor>(p: &mut WordPart, v: &mut V) {
     match p {
         WordPart::DoubleQuoted(ps) => {
             ps.iter_mut().for_each(|p| part(p, v));
-            v.parts(ps);
+            let mut inner = Parts::Many(std::mem::take(ps));
+            v.parts(&mut inner);
+            *ps = inner.into_vec();
         }
         WordPart::CmdSubst(l) | WordPart::ProcSubst { list: l, .. } => walk_lines(std::rc::Rc::make_mut(l), v),
         WordPart::Arith(w) => word(w, v),
@@ -876,15 +878,15 @@ pub fn strip_lines(list: &mut List) {
         fn line(&mut self, n: &mut u32) {
             *n = 0;
         }
-        fn parts(&mut self, ps: &mut Vec<WordPart>) {
+        fn parts(&mut self, ps: &mut Parts) {
             for i in 0..ps.len() {
                 if matches!(ps[i], WordPart::Escaped(b'$')) && matches!(ps.get(i + 1), Some(WordPart::CmdSubst(_))) {
                     ps[i] = WordPart::Literal(b"$".to_vec());
                 }
             }
             // Adjacent literals, as the lexer reads them.
-            let mut merged: Vec<WordPart> = Vec::with_capacity(ps.len());
-            for p in ps.drain(..) {
+            let mut merged = Parts::new();
+            for p in std::mem::take(ps) {
                 match (merged.last_mut(), p) {
                     (Some(WordPart::Literal(a)), WordPart::Literal(b)) => a.extend(b),
                     (_, p) => merged.push(p),

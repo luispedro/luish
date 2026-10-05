@@ -98,7 +98,7 @@ So an interactive shell with nvm set up starts in about 8 ms, however long the s
 has no version of Node installed; with a default version, `nvm.sh` also runs `nvm use`, and takes much longer, as
 do conda's initialization and other scripts that run programs, while the cached state stays the same size.
 
-luish parses large files more slowly than dash: `nvm.sh` (144 KB) takes about 6 ms to parse in luish and 2 ms in
+luish parses large files more slowly than dash: `nvm.sh` (144 KB) takes about 4 ms to parse in luish and 2 ms in
 dash, which is most of the difference in sourcing it without the cache.
 
 ## Commands in Rhai

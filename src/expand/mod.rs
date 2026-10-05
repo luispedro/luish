@@ -72,7 +72,7 @@ impl Shell {
                     name: mut arg, value, ..
                 } = a;
                 arg.push(b'=');
-                match value.0.as_slice() {
+                match &value.0[..] {
                     // Passed as a NUL and each element, `=value`, with its
                     // key before it as `[key`, each followed by a NUL (see
                     // `builtins::vars::split_arg`).
@@ -1391,7 +1391,7 @@ fn parse_reference(s: &[u8]) -> Option<(ParamName, Option<Index>)> {
                 b"" => return None,
                 b"@" => Index::At,
                 b"*" => Index::Star,
-                i => Index::Expr(Word(vec![WordPart::Literal(i.to_vec())])),
+                i => Index::Expr(Word(Parts::One(WordPart::Literal(i.to_vec())))),
             };
             (&rest[..open], Some(index))
         }

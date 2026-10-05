@@ -653,7 +653,7 @@ impl Parser {
     // Words
 
     fn read_word(&mut self) -> PResult<Word> {
-        let mut parts = Vec::new();
+        let mut parts = Parts::new();
         let mut lit = Vec::new();
         let mut qual = None;
         // Unclosed `(` in a regular expression (`regex_word`).
@@ -721,7 +721,7 @@ impl Parser {
 
     /// Handles one (possibly multi-byte) element of an unquoted word, or of
     /// the word inside `${x-word}`.
-    fn read_word_char(&mut self, c: u8, parts: &mut Vec<WordPart>, lit: &mut Vec<u8>, ctx: Ctx) -> PResult<()> {
+    fn read_word_char(&mut self, c: u8, parts: &mut Parts, lit: &mut Vec<u8>, ctx: Ctx) -> PResult<()> {
         match c {
             b'\\' => match self.at(1) {
                 None if !self.source_eof => return self.incomplete(),
@@ -793,7 +793,7 @@ impl Parser {
 
     /// Reads the inside of `"..."`; `pos` is just after the opening quote.
     fn read_dquote_parts(&mut self) -> PResult<Vec<WordPart>> {
-        let mut parts = Vec::new();
+        let mut parts = Parts::new();
         let mut lit = Vec::new();
         loop {
             let Some(c) = self.at(0) else {
@@ -844,7 +844,7 @@ impl Parser {
             }
         }
         flush(&mut parts, &mut lit);
-        Ok(parts)
+        Ok(parts.into_vec())
     }
 
     /// At a `$`. Returns `None` if the `$` is literal.
@@ -1380,7 +1380,7 @@ impl Parser {
     /// Reads a word up to the closing `}` or to an unquoted `stop`, and
     /// consumes that. Returns whether it was `stop`.
     fn read_param_word_to(&mut self, ctx: Ctx, stop: Option<u8>) -> PResult<(Word, bool)> {
-        let mut parts = Vec::new();
+        let mut parts = Parts::new();
         let mut lit = Vec::new();
         let at_stop = loop {
             let Some(c) = self.at(0) else {
@@ -1426,7 +1426,7 @@ impl Parser {
         let save = (self.pos, self.lineno);
         self.pos += 3;
         match self.try_read_arith()? {
-            Some(w) => Ok(WordPart::Arith(w)),
+            Some(w) => Ok(WordPart::Arith(Box::new(w))),
             None => {
                 (self.pos, self.lineno) = save;
                 self.pos += 2;
@@ -1437,7 +1437,7 @@ impl Parser {
 
     /// After `$((`. Returns `None` if this turns out to be `$( (...) )`.
     fn try_read_arith(&mut self) -> PResult<Option<Word>> {
-        let mut parts = Vec::new();
+        let mut parts = Parts::new();
         let mut lit = Vec::new();
         let mut depth = 0usize;
         loop {
@@ -1504,11 +1504,11 @@ impl Parser {
         // (and the lines after it are commands): as an empty body reads.
         for hd in std::mem::replace(&mut self.pending_heredocs, outer_heredocs) {
             *hd.body.borrow_mut() = HereDocBody {
-                body: Word(vec![if hd.quoted {
+                body: Word(Parts::One(if hd.quoted {
                     WordPart::Literal(Vec::new())
                 } else {
                     WordPart::DoubleQuoted(Vec::new())
-                }]),
+                })),
                 quoted: hd.quoted,
             };
         }
@@ -1607,7 +1607,7 @@ impl Parser {
                 }
             }
             let word = if hd.quoted {
-                Word(vec![WordPart::Literal(body)])
+                Word(Parts::One(WordPart::Literal(body)))
             } else {
                 let mut sub = Parser::new(body, lineno, true);
                 sub.aliases = self.aliases.clone();
@@ -1624,7 +1624,7 @@ impl Parser {
     }
 
     fn read_heredoc_word(&mut self) -> PResult<Word> {
-        let mut parts = Vec::new();
+        let mut parts = Parts::new();
         let mut lit = Vec::new();
         while let Some(c) = self.at(0) {
             match c {
@@ -1669,7 +1669,7 @@ impl Parser {
         }
         flush(&mut parts, &mut lit);
         // Everything in a here-doc body is quoted, as if in double quotes.
-        Ok(Word(vec![WordPart::DoubleQuoted(parts)]))
+        Ok(Word(Parts::One(WordPart::DoubleQuoted(parts.into_vec()))))
     }
 
     // ------------------------------------------------------------------
@@ -1793,7 +1793,7 @@ fn slice_index(w: Word) -> Index {
     let Some((k, i)) = at else {
         return Index::Expr(w);
     };
-    let mut start = w.0;
+    let mut start = w.0.into_vec();
     let mut end = start.split_off(k + 1);
     let Some(WordPart::Literal(s)) = start.pop() else {
         unreachable!()
@@ -1805,18 +1805,18 @@ fn slice_index(w: Word) -> Index {
     if !after.is_empty() {
         end.insert(0, WordPart::Literal(after.to_vec()));
     }
-    let side = |parts: Vec<WordPart>| (!parts.is_empty()).then_some(Word(parts));
+    let side = |parts: Vec<WordPart>| (!parts.is_empty()).then(|| Word(parts.into()));
     Index::Slice(Box::new((side(start), side(end))))
 }
 
-fn flush(parts: &mut Vec<WordPart>, lit: &mut Vec<u8>) {
+fn flush(parts: &mut Parts, lit: &mut Vec<u8>) {
     if !lit.is_empty() {
         parts.push(WordPart::Literal(std::mem::take(lit)));
     }
 }
 
 /// Converts a leading unquoted `~prefix` into a [`WordPart::Tilde`].
-pub(crate) fn mark_leading_tilde(parts: &mut Vec<WordPart>) {
+pub(crate) fn mark_leading_tilde(parts: &mut Parts) {
     let Some(WordPart::Literal(s)) = parts.first() else {
         return;
     };
@@ -1837,9 +1837,9 @@ pub(crate) fn mark_leading_tilde(parts: &mut Vec<WordPart>) {
 }
 
 /// Tilde prefixes in an assignment value: at the start and after each `:`.
-pub(crate) fn mark_assignment_tildes(parts: Vec<WordPart>) -> Vec<WordPart> {
+pub(crate) fn mark_assignment_tildes(parts: Parts) -> Parts {
     let n = parts.len();
-    let mut out = Vec::with_capacity(n);
+    let mut out = Parts::new();
     let mut at_start = true;
     for (i, part) in parts.into_iter().enumerate() {
         let WordPart::Literal(s) = part else {
@@ -1882,7 +1882,7 @@ fn mark_param_word_tildes(part: WordPart) -> WordPart {
         return part;
     };
     if let ParamOp::Default(w) | ParamOp::Assign(w) | ParamOp::Error(w) | ParamOp::Alternative(w) = &mut pe.op {
-        let mut parts = std::mem::take(&mut w.0);
+        let mut parts = std::mem::take(&mut w.0).into_vec();
         // Undo the leading tilde prefix, which ended only at `/`.
         if let Some(WordPart::Tilde(user)) = parts.first() {
             let mut lit = vec![b'~'];
@@ -1893,7 +1893,7 @@ fn mark_param_word_tildes(part: WordPart) -> WordPart {
             }
             parts[0] = WordPart::Literal(lit);
         }
-        w.0 = mark_assignment_tildes(parts);
+        w.0 = mark_assignment_tildes(parts.into());
     }
     WordPart::Param(pe)
 }

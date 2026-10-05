@@ -6,7 +6,7 @@
 //! be expansions (`{1..$n}`), which are expanded once, here; a sequence of
 //! characters can be of any characters (UTF-8 included), not only letters.
 
-use crate::ast::{Word, WordPart};
+use crate::ast::{Parts, Word, WordPart};
 
 /// A piece of a word: a byte of its unquoted literal text, which can be
 /// one of the braces' `{`, `,`, `}` and `.`, or another part, kept whole.
@@ -276,7 +276,7 @@ fn character(s: &[u8]) -> Option<char> {
 /// The word of a list of atoms, with its tilde prefix if it starts with
 /// an unquoted `~`.
 fn to_word(atoms: Vec<Atom>) -> Word {
-    let mut parts = Vec::new();
+    let mut parts = Parts::new();
     let mut lit = Vec::new();
     for a in atoms {
         match a {
@@ -301,7 +301,7 @@ mod tests {
     use super::*;
 
     fn lit(s: &str) -> Word {
-        let mut parts = vec![WordPart::Literal(s.as_bytes().to_vec())];
+        let mut parts = Parts::One(WordPart::Literal(s.as_bytes().to_vec()));
         crate::lexer::mark_leading_tilde(&mut parts);
         Word(parts)
     }
@@ -399,27 +399,33 @@ mod tests {
         let mut calls = 0;
         let mut text = |w: &Word| -> Result<Vec<u8>, ()> {
             calls += 1;
-            Ok(match w.0.as_slice() {
+            Ok(match &w.0[..] {
                 [WordPart::Param(_)] => b"3".to_vec(),
                 _ => b"x".to_vec(),
             })
         };
-        let w = Word(vec![
-            WordPart::Literal(b"{1..".to_vec()),
-            param("n"),
-            WordPart::Literal(b"}".to_vec()),
-        ]);
+        let w = Word(
+            vec![
+                WordPart::Literal(b"{1..".to_vec()),
+                param("n"),
+                WordPart::Literal(b"}".to_vec()),
+            ]
+            .into(),
+        );
         let words = expand(&w, &mut text).unwrap().unwrap();
         assert_eq!(words.len(), 3);
         // Not a sequence: the expansion is replaced by its text.
-        let w = Word(vec![
-            WordPart::Literal(b"{a..".to_vec()),
-            param("n"),
-            WordPart::Literal(b"}".to_vec()),
-        ]);
+        let w = Word(
+            vec![
+                WordPart::Literal(b"{a..".to_vec()),
+                param("n"),
+                WordPart::Literal(b"}".to_vec()),
+            ]
+            .into(),
+        );
         let words = expand(&w, &mut text).unwrap().unwrap();
         assert_eq!(
-            words[0].0,
+            words[0].0[..],
             [
                 WordPart::Literal(b"{a..".to_vec()),
                 WordPart::SingleQuoted(b"3".to_vec()),

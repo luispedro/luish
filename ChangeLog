@@ -1,4 +1,5 @@
 Unreleased
+    * Large scripts parse faster, with less memory
     * plugin.toml: luish-version = "0.5" is the oldest luish a plugin
       needs; an older one doesn't load it, and says why
     * sh::capture_cached: sh::capture kept in memory for a while;

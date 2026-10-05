@@ -250,7 +250,7 @@ impl Parser {
                 redirs.push(Redirect {
                     fd: Some(2),
                     kind: RedirKind::DupOut,
-                    target: RedirTarget::Word(Word(vec![WordPart::Literal(b"1".to_vec())])),
+                    target: RedirTarget::Word(Word(Parts::One(WordPart::Literal(b"1".to_vec())))),
                 });
             }
             self.skip_newlines()?;
@@ -651,7 +651,7 @@ impl Parser {
                 && let Some(mut a) = split_assignment(&w)
             {
                 if a.index.is_none() && a.value.0.is_empty() && self.array_follows(end)? {
-                    a.value = Word(vec![WordPart::Array(self.parse_array()?)]);
+                    a.value = Word(Parts::One(WordPart::Array(self.parse_array()?)));
                 }
                 assigns.push(a);
                 continue;
@@ -664,7 +664,10 @@ impl Parser {
                 && self.array_follows(end)?
             {
                 let items = self.parse_array()?;
-                words.push(Word(vec![WordPart::Literal(lit.to_vec()), WordPart::Array(items)]));
+                words.push(Word(Parts::Many(vec![
+                    WordPart::Literal(lit.to_vec()),
+                    WordPart::Array(items),
+                ])));
                 continue;
             }
             if words.is_empty() && assigns.is_empty() && redirs.is_empty() && self.peek_op()? == Some(Op::LParen) {
@@ -944,7 +947,7 @@ pub(crate) fn split_assignment_with(w: &Word, is_name: fn(&[u8]) -> bool) -> Opt
         return None;
     };
     let assign = |name: &[u8], append, rest: &[u8], tail: &[WordPart]| {
-        let mut parts = Vec::new();
+        let mut parts = Parts::new();
         if !rest.is_empty() {
             parts.push(WordPart::Literal(rest.to_vec()));
         }
@@ -1008,13 +1011,13 @@ fn split_subscript(w: &Word, from: usize) -> Option<(Word, bool, Word)> {
                     if !lit.is_empty() {
                         index.push(WordPart::Literal(std::mem::take(&mut lit)));
                     }
-                    let mut parts = Vec::new();
+                    let mut parts = Parts::new();
                     if !rest.is_empty() {
                         parts.push(WordPart::Literal(rest.to_vec()));
                     }
                     parts.extend(w.0[k + 1..].iter().cloned());
                     let value = Word(crate::lexer::mark_assignment_tildes(parts));
-                    return Some((Word(index), append, value));
+                    return Some((Word(index.into()), append, value));
                 }
                 _ => {}
             }
@@ -1061,7 +1064,7 @@ mod tests {
         let l = parse("echo a  'b c' \"d $x\"\n");
         let s = simple(&l);
         assert_eq!(s.words.len(), 4);
-        assert_eq!(s.words[2], Word(vec![WordPart::SingleQuoted(b"b c".to_vec())]));
+        assert_eq!(s.words[2], Word(Parts::One(WordPart::SingleQuoted(b"b c".to_vec()))));
     }
 
     #[test]
@@ -1107,7 +1110,7 @@ mod tests {
         let c = &s.assigns[2];
         assert_eq!(c.name, b"c");
         assert_eq!(c.index.as_ref().unwrap().0.len(), 2);
-        assert_eq!(c.value, Word(vec![WordPart::Literal(b"q".to_vec())]));
+        assert_eq!(c.value, Word(Parts::One(WordPart::Literal(b"q".to_vec()))));
         assert!(s.assigns[3].append && s.assigns[3].index.is_some());
         assert!(s.assigns[4].append && s.assigns[4].index.is_none());
         // Not an assignment: a command word.
@@ -1122,8 +1125,8 @@ mod tests {
         let items = simple(&l).assigns[0].array().unwrap();
         let keys: Vec<_> = items.iter().map(|i| i.key.as_ref().map(|k| k.0.len())).collect();
         assert_eq!(keys, [Some(1), Some(1), Some(1), None, None, Some(1)]);
-        assert_eq!(items[1].value, Word(vec![]));
-        assert_eq!(items[5].value, Word(vec![WordPart::Literal(b"b]=c".to_vec())]));
+        assert_eq!(items[1].value, Word::default());
+        assert_eq!(items[5].value, Word(Parts::One(WordPart::Literal(b"b]=c".to_vec()))));
         // `(` after a blank, or after other words, is a syntax error.
         assert!(parse_err("a= (x)\n").msg.contains("\"(\" unexpected"));
         assert!(parse_err("echo a=(x)\n").msg.contains("\"(\" unexpected"));
@@ -1260,7 +1263,7 @@ mod tests {
             Command::Compound(CompoundCommand::Cond { expr, .. }, _) => expr,
             c => panic!("not [[: {c:?}"),
         };
-        let lit = |s: &str| Word(vec![WordPart::Literal(s.as_bytes().to_vec())]);
+        let lit = |s: &str| Word(Parts::One(WordPart::Literal(s.as_bytes().to_vec())));
         let un = |op, s| CondExpr::Unary(op, lit(s));
         assert_eq!(cond("[[ a ]]\n"), un(b'n', "a"));
         assert_eq!(cond("[[ -f a ]]\n"), un(b'f', "a"));

@@ -1561,11 +1561,17 @@ The `arrays` benchmark (`bench/scripts/arrays.sh`) found `${#a[@]}` and `${a[@]:
 (`expand_array`), which made them quadratic in a loop over a growing array; see Arrays above. bash's slices are
 linear in the offset (its arrays are linked lists), which is why the benchmark slices arrays of a fixed size.
 
-luish parses large files about three times as slowly as dash (`-n` of nvm's 144 KB `nvm.sh`: about 6 ms to dash's
-2 ms, after startup), and touches about 4 MB of memory doing it (1046 page faults to dash's 228), so the AST or the
-parser's buffers are large. This makes sourcing `nvm.sh` without the startup cache take 1.4 times as long as in dash,
-and slows the warm startup cache (the `-n` row of its table). It is worth profiling (and see lazy function parsing
-in `PLAN.md`).
+luish parses large files about twice as slowly as dash (`-n` of nvm's 144 KB `nvm.sh`: about 4 ms to dash's 2 ms,
+after startup), and touches about 3 MB of memory doing it (913 page faults to dash's 266). This makes sourcing
+`nvm.sh` without the startup cache slower than in dash, and slows the warm startup cache (the `-n` row of its table).
+The cost is mostly allocation: under callgrind, half of the parse was `malloc`, `free` and growing `Vec`s, and dhat
+(`valgrind --tool=dhat`, with `CARGO_PROFILE_RELEASE_DEBUG=true` for the call sites) counted 52,837 allocations for
+`nvm.sh`, whose AST is all live at once since the file is one `{ ... }`. A word's parts are a `Parts` (`ast.rs`),
+which keeps a single part inline: most words have one, and a `Vec` allocated room for four (128 bytes) for each.
+That took the parse from 52,837 allocations to 41,273, its peak heap from 3.5 MB to 2.6 MB and its instructions by
+11%, for about 0.5% more instructions in the script benchmarks (reading a word's parts checks which kind it is). As
+the single part is inline, a part can't hold a `Word` inline: `Arith` boxes it, and `DoubleQuoted` keeps a `Vec`.
+See also lazy function parsing in `PLAN.md`.
 
 ## Releases
 

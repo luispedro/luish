@@ -87,7 +87,7 @@ pub struct Assign {
 impl Assign {
     /// The elements of an array assignment.
     pub fn array(&self) -> Option<&[ArrayItem]> {
-        match self.value.0.as_slice() {
+        match &self.value.0[..] {
             [WordPart::Array(items)] => Some(items),
             _ => None,
         }
@@ -306,7 +306,132 @@ impl CaseTerm {
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Word(pub Vec<WordPart>);
+pub struct Word(pub Parts);
+
+/// The parts of a word. Most words have a single part (`echo`, `$x`,
+/// `"$x"`), which is kept inline rather than in a `Vec` of its own: a `Vec`
+/// would allocate room for four. (So a part can't hold a `Word` inline.)
+#[derive(Clone)]
+pub enum Parts {
+    One(WordPart),
+    Many(Vec<WordPart>),
+}
+
+impl Parts {
+    pub const fn new() -> Parts {
+        Parts::Many(Vec::new())
+    }
+
+    pub fn push(&mut self, part: WordPart) {
+        match self {
+            Parts::Many(v) if v.is_empty() => *self = Parts::One(part),
+            Parts::Many(v) => v.push(part),
+            Parts::One(_) => {
+                let Parts::One(first) = std::mem::take(self) else {
+                    unreachable!()
+                };
+                *self = Parts::Many(vec![first, part]);
+            }
+        }
+    }
+
+    pub fn insert(&mut self, i: usize, part: WordPart) {
+        if i == self.len() {
+            return self.push(part);
+        }
+        let mut v = std::mem::take(self).into_vec();
+        v.insert(i, part);
+        *self = Parts::Many(v);
+    }
+
+    pub fn into_vec(self) -> Vec<WordPart> {
+        match self {
+            Parts::One(p) => vec![p],
+            Parts::Many(v) => v,
+        }
+    }
+}
+
+impl Default for Parts {
+    fn default() -> Parts {
+        Parts::new()
+    }
+}
+
+impl std::ops::Deref for Parts {
+    type Target = [WordPart];
+    fn deref(&self) -> &[WordPart] {
+        match self {
+            Parts::One(p) => std::slice::from_ref(p),
+            Parts::Many(v) => v,
+        }
+    }
+}
+
+impl std::ops::DerefMut for Parts {
+    fn deref_mut(&mut self) -> &mut [WordPart] {
+        match self {
+            Parts::One(p) => std::slice::from_mut(p),
+            Parts::Many(v) => v,
+        }
+    }
+}
+
+impl PartialEq for Parts {
+    fn eq(&self, other: &Parts) -> bool {
+        **self == **other
+    }
+}
+
+impl std::fmt::Debug for Parts {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl From<Vec<WordPart>> for Parts {
+    fn from(mut v: Vec<WordPart>) -> Parts {
+        match v.len() {
+            1 => Parts::One(v.pop().unwrap()),
+            _ => Parts::Many(v),
+        }
+    }
+}
+
+impl Extend<WordPart> for Parts {
+    fn extend<I: IntoIterator<Item = WordPart>>(&mut self, iter: I) {
+        for part in iter {
+            self.push(part);
+        }
+    }
+}
+
+impl FromIterator<WordPart> for Parts {
+    fn from_iter<I: IntoIterator<Item = WordPart>>(iter: I) -> Parts {
+        let mut parts = Parts::new();
+        parts.extend(iter);
+        parts
+    }
+}
+
+impl IntoIterator for Parts {
+    type Item = WordPart;
+    type IntoIter = std::iter::Chain<std::option::IntoIter<WordPart>, std::vec::IntoIter<WordPart>>;
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            Parts::One(p) => Some(p).into_iter().chain(Vec::new()),
+            Parts::Many(v) => None.into_iter().chain(v),
+        }
+    }
+}
+
+impl<'a> IntoIterator for &'a Parts {
+    type Item = &'a WordPart;
+    type IntoIter = std::slice::Iter<'a, WordPart>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WordPart {
@@ -328,7 +453,7 @@ pub enum WordPart {
         list: Rc<List>,
     },
     /// `$((...))`: the text is expanded first, then evaluated.
-    Arith(Word),
+    Arith(Box<Word>),
     /// The text inside a trailing `(...)` glob qualifier (only lexed under
     /// `setopt glob.bare_qualifiers`). Always the last part of a word.
     GlobQual(Vec<u8>),
@@ -520,7 +645,7 @@ impl Word {
     /// The word's bytes if it is a single unquoted literal (used for
     /// reserved words, aliases, and function names).
     pub fn as_literal(&self) -> Option<&[u8]> {
-        match self.0.as_slice() {
+        match &self.0[..] {
             [WordPart::Literal(s)] => Some(s),
             _ => None,
         }
