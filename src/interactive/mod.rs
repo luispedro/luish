@@ -7,6 +7,7 @@ pub(crate) mod highlight;
 mod histfile;
 pub mod history;
 mod integration;
+pub mod jobmenu;
 pub mod keys;
 mod menu;
 mod rprompt;

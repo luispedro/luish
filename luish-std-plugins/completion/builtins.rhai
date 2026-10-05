@@ -200,6 +200,7 @@ fn spec(cmd) {
         "hash" => #{opts: "-r  forget all remembered paths"},
         "jobs" => #{
             opts: `
+                -i  a menu of the jobs, to act on them
                 -l  also show the process IDs
                 -p  show only the process group IDs
             `,

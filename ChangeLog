@@ -11,6 +11,9 @@ Unreleased
       last changes, which where -a shows (numbered, in colour)
     * Fixed: test FILE -nt MISSING (and MISSING -ot FILE) is true, as in
       POSIX and dash; [[ ... ]] too, as in bash
+    * jobs -i: a menu of the jobs, to bring one to the foreground,
+      continue, stop or kill it (K, then the signal; e sends TERM, then
+      KILL after 5 s)
 
 Version 0.4.0 2026-10-04 by luispedro
     * plugin: coloured output (plugin.* styles) and more feedback: load,

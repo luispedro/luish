@@ -325,7 +325,7 @@ fn width(s: &str) -> usize {
 
 /// `s` cut to at most `max` columns, ending with `…` if it was cut, and the
 /// columns it takes.
-fn truncate(s: &str, max: usize) -> (String, usize) {
+pub(super) fn truncate(s: &str, max: usize) -> (String, usize) {
     if width(s) <= max {
         return (s.to_owned(), width(s));
     }

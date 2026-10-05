@@ -449,6 +449,70 @@ fn job_control_off() {
 }
 
 #[test]
+fn jobs_menu() {
+    let mut sh = Pty::spawn_term("jobsmenu", "vt100");
+    sh.expect("$ ");
+    // Without jobs, there is no menu.
+    sh.send("jobs -i; echo none=$?\n");
+    sh.expect("none=0\n");
+    // Each line waits for the prompt: the editor discards what is typed
+    // before it.
+    sh.send("sleep 31 & sleep 32 & echo started\n");
+    sh.expect("started\n");
+    sh.expect("$ ");
+    // The current job is selected; s stops it and b continues it.
+    sh.send("jobs -i\n");
+    sh.expect("\x1b[7m> [2]+");
+    sh.expect("q: quit");
+    sh.send("s");
+    sh.expect("Stopped (signal)");
+    sh.send("b");
+    sh.expect("Continued [2] in the background");
+    // K lists the signals; any other key sends none.
+    sh.send("K");
+    sh.expect("Send to [2] sleep 32:");
+    sh.send("x");
+    sh.expect("Nothing sent");
+    sh.send("Kk");
+    sh.expect("Killed");
+    sh.send("b");
+    sh.expect("[2] has ended");
+    // TERM, then KILL: the job ends at TERM.
+    sh.send("1Ke");
+    sh.expect("Terminated");
+    sh.send("q");
+    sh.expect("\x1b[?25h");
+    sh.expect("$ ");
+    // A job that ignores TERM gets KILL, which leaving the menu waits for.
+    sh.send("(trap '' TERM; sleep 33) & echo started\n");
+    sh.expect("started\n");
+    sh.expect("$ ");
+    sh.send("jobs -i\n");
+    sh.expect("q: quit");
+    sh.send("Ke");
+    sh.expect("KILL in 5 s");
+    sh.send("q");
+    sh.expect("Waiting to send KILL");
+    sh.expect("Killed");
+    sh.expect("$ ");
+    // f (or Enter) brings a job to the foreground, as fg does.
+    sh.send("sleep 34 & echo started\n");
+    sh.expect("started\n");
+    sh.expect("$ ");
+    sh.send("jobs -i\n");
+    sh.expect("q: quit");
+    sh.send("\r");
+    sh.expect("sleep 34\n");
+    sh.wait_for_procs(&["sleep"]);
+    sh.send("\x03");
+    sh.expect("$ ");
+    sh.send("echo st=$?\n");
+    sh.expect("st=130\n");
+    sh.send("exit\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
 fn syntax_highlighting() {
     let mut sh = Pty::spawn_term("highlight", "vt100");
     sh.expect("$ ");

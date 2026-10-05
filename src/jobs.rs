@@ -98,6 +98,15 @@ impl Job {
         state
     }
 
+    /// The job's state, as `jobs` shows it.
+    pub fn state_text(&self) -> String {
+        match self.state {
+            JobState::Running => "Running".into(),
+            JobState::Stopped => status_text(self.stop_status.unwrap_or(WaitStatus::Stopped(0))),
+            JobState::Done => status_text(self.procs.last().unwrap().status.unwrap()),
+        }
+    }
+
     /// The command text of the whole job.
     pub fn text(&self) -> String {
         let mut s = self.procs[0].cmd.clone();
@@ -133,6 +142,16 @@ impl JobTable {
 
     pub fn number(i: usize) -> usize {
         i + 1
+    }
+
+    /// How `jobs` marks job `i`: `+` for the current job, `-` for the
+    /// previous one.
+    pub fn mark(&self, i: usize) -> Option<char> {
+        match self.order.iter().position(|&j| j == i) {
+            Some(0) => Some('+'),
+            Some(1) => Some('-'),
+            _ => None,
+        }
     }
 
     /// The slot of job number `n`, if it is in use.
@@ -471,22 +490,13 @@ impl Shell {
         if mode == ShowMode::Pgid {
             return format!("{}\n", job.pgid());
         }
-        let mut s = format!("[{}]   ", JobTable::number(i));
+        let mark = self.jobs.mark(i).unwrap_or(' ');
+        let mut s = format!("[{}] {mark} ", JobTable::number(i));
         let indent = s.len();
-        let order = self.jobs.order();
-        if order.first() == Some(&i) {
-            s.replace_range(indent - 2..indent - 1, "+");
-        } else if order.get(1) == Some(&i) {
-            s.replace_range(indent - 2..indent - 1, "-");
-        }
         if mode == ShowMode::Pids {
             s.push_str(&format!("{} ", job.procs[0].pid));
         }
-        match job.state {
-            JobState::Running => s.push_str("Running"),
-            JobState::Stopped => s.push_str(&status_text(job.stop_status.unwrap_or(WaitStatus::Stopped(0)))),
-            JobState::Done => s.push_str(&status_text(job.procs.last().unwrap().status.unwrap())),
-        }
+        s.push_str(&job.state_text());
         let col = s.len();
         pad_to_cmd(&mut s, col, &job.procs[0].cmd);
         for p in &job.procs[1..] {
@@ -592,6 +602,26 @@ impl Shell {
             return Err(format!("job {} not created under job control", shown(spec)));
         }
         Ok(found)
+    }
+
+    /// Sends `sig` to job `i`: to its process group if it was created under
+    /// job control, otherwise to each of its processes that hasn't ended
+    /// (whose pid may since name another process).
+    pub fn signal_job(&self, i: usize, sig: i32) -> Result<(), i32> {
+        let job = self.jobs.get(i);
+        if job.jobctl {
+            return sys::kill(-job.pgid(), sig);
+        }
+        // Signal them all, even if one fails.
+        let mut result = Ok(());
+        for p in job
+            .procs
+            .iter()
+            .filter(|p| matches!(p.status, None | Some(WaitStatus::Stopped(_))))
+        {
+            result = result.and(sys::kill(p.pid, sig));
+        }
+        result
     }
 
     /// Continues a job in the foreground or the background (dash's

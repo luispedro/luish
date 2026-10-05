@@ -7,10 +7,13 @@ use crate::signals;
 use crate::sys;
 
 pub fn jobs(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    let (opts, args) = match options(sh, argv, b"lp") {
+    let (opts, args) = match options(sh, argv, b"ilp") {
         Ok(r) => r,
         Err(s) => return Ok(s),
     };
+    if opts.contains(&b'i') {
+        return interactive(sh, argv, args);
+    }
     let mode = match opts.last() {
         Some(b'l') => ShowMode::Pids,
         Some(b'p') => ShowMode::Pgid,
@@ -35,6 +38,29 @@ pub fn jobs(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         }
     }
     Ok(sh.out_status(out.as_bytes()))
+}
+
+/// `jobs -i [job]`: the menu of the jobs (`interactive/jobmenu.rs`), with
+/// `job` selected.
+fn interactive(sh: &mut Shell, argv: &[Vec<u8>], args: &[Vec<u8>]) -> ExecResult {
+    use crate::interactive::jobmenu;
+    if args.len() > 1 {
+        sh.berr(&argv[0], "-i takes at most one job");
+        return Ok(2);
+    }
+    let first = match args.first().map(|a| sh.get_job(Some(a), false)) {
+        Some(Err(msg)) => {
+            sh.berr(&argv[0], msg);
+            return Ok(2);
+        }
+        Some(Ok(i)) => Some(i),
+        None => None,
+    };
+    if !jobmenu::usable(sh) {
+        sh.berr(&argv[0], "-i needs a terminal");
+        return Ok(2);
+    }
+    Ok(jobmenu::run(sh, first))
 }
 
 /// `fg` and `bg`.
