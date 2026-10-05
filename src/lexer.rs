@@ -461,6 +461,17 @@ impl Parser {
         self.src.get(self.pos + off).copied()
     }
 
+    /// Appends to `lit` the bytes from `pos` up to the next one that is
+    /// `special` (or the end), and moves past them. Copying a run in one go
+    /// allocates once, where pushing byte by byte grew `lit` several times.
+    #[inline]
+    fn take_run(&mut self, lit: &mut Vec<u8>, special: impl Fn(u8) -> bool) {
+        let rest = &self.src[self.pos..];
+        let n = rest.iter().position(|&c| special(c)).unwrap_or(rest.len());
+        lit.extend_from_slice(&rest[..n]);
+        self.pos += n;
+    }
+
     /// Removes line continuations at `pos + off`, as dash's `pgetc_eatbnl`
     /// does inside `$` expansions (`$\<newline>?` is `$?`).
     fn eat_bnl(&mut self, off: usize) -> bool {
@@ -693,6 +704,7 @@ impl Parser {
                     lit.push(c);
                     self.pos += 1;
                 }
+                _ if !is_word_special(c) => self.take_run(&mut lit, is_word_special),
                 _ => self.read_word_char(c, &mut parts, &mut lit, Ctx::Unquoted)?,
             }
         }
@@ -786,6 +798,8 @@ impl Parser {
                 }
                 lit.push(c);
                 self.pos += 1;
+                // Also up to what ends a word in `${x-word}` or `$((...))`.
+                self.take_run(lit, |c| is_word_special(c) || matches!(c, b'}' | b']' | b'/' | b':'));
             }
         }
         Ok(())
@@ -840,6 +854,7 @@ impl Parser {
                     }
                     lit.push(c);
                     self.pos += 1;
+                    self.take_run(&mut lit, |c| matches!(c, b'"' | b'\\' | b'$' | b'`' | b'\n'));
                 }
             }
         }
@@ -1664,6 +1679,7 @@ impl Parser {
                     }
                     lit.push(c);
                     self.pos += 1;
+                    self.take_run(&mut lit, |c| matches!(c, b'\\' | b'$' | b'`' | b'\n'));
                 }
             }
         }
@@ -1807,6 +1823,15 @@ fn slice_index(w: Word) -> Index {
     }
     let side = |parts: Vec<WordPart>| (!parts.is_empty()).then(|| Word(parts.into()));
     Index::Slice(Box::new((side(start), side(end))))
+}
+
+/// Whether `c` ends a run of literal bytes in an unquoted word: an operator,
+/// a blank, a quote or an expansion.
+fn is_word_special(c: u8) -> bool {
+    matches!(
+        c,
+        b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'<' | b'>' | b'(' | b')' | b'\\' | b'\'' | b'"' | b'$' | b'`'
+    )
 }
 
 fn flush(parts: &mut Parts, lit: &mut Vec<u8>) {
