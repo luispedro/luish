@@ -163,7 +163,7 @@ impl Parser {
         loop {
             self.skip_newlines()?;
             match &self.peek()?.tok {
-                Tok::Op(Op::RParen | Op::DSemi) | Tok::Eof => break,
+                Tok::Op(Op::RParen | Op::DSemi | Op::SemiAmp | Op::SemiPipe | Op::DSemiAmp) | Tok::Eof => break,
                 Tok::Word(w) if w.as_literal().is_some_and(is_list_terminator) => break,
                 _ => {}
             }
@@ -543,13 +543,22 @@ impl Parser {
             }
             self.expect_op(Op::RParen)?;
             let body = self.parse_compound_list()?;
-            arms.push(CaseArm { patterns, body });
             let t = self.next()?;
-            match &t.tok {
-                Tok::Op(Op::DSemi) => {}
-                Tok::Word(w) if w.as_literal() == Some(b"esac") => break,
+            let term = match &t.tok {
+                Tok::Op(Op::DSemi) => CaseTerm::Break,
+                Tok::Op(Op::SemiAmp) => CaseTerm::FallThrough,
+                Tok::Op(Op::SemiPipe | Op::DSemiAmp) => CaseTerm::Continue,
+                Tok::Word(w) if w.as_literal() == Some(b"esac") => {
+                    arms.push(CaseArm {
+                        patterns,
+                        body,
+                        term: CaseTerm::Break,
+                    });
+                    break;
+                }
                 _ => return self.unexpected(&t, Some(";;")),
-            }
+            };
+            arms.push(CaseArm { patterns, body, term });
         }
         Ok(CompoundCommand::Case { word, arms, lineno })
     }

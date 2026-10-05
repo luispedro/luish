@@ -1,4 +1,6 @@
 Unreleased
+    * case arms can end with ;& (fall through), and ;| or ;;& (try the
+      next patterns), as in zsh and bash
     * a |& b pipes standard error too, as in zsh and bash
     * disown, as in zsh, with bash's -a, -r and process ids
     * Arithmetic: ** (and **=), ++ and -- (prefix and postfix), and the

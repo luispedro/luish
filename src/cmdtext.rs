@@ -161,7 +161,8 @@ fn push_compound(out: &mut Vec<u8>, cc: &CompoundCommand) {
                 }
                 out.extend_from_slice(b") ");
                 push_list(out, &arm.body);
-                out.extend_from_slice(b";; ");
+                out.extend_from_slice(arm.term.text());
+                out.push(b' ');
             }
             out.extend_from_slice(b"esac");
         }

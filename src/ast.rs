@@ -279,6 +279,28 @@ pub const COND_UNARY: &[u8] = b"abcdefghknoprstuvwxzLOGSN";
 pub struct CaseArm {
     pub patterns: Vec<Word>,
     pub body: List,
+    pub term: CaseTerm,
+}
+
+/// What ends an arm of `case`: what happens after its body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaseTerm {
+    /// `;;`: the `case` ends.
+    Break,
+    /// `;&` (zsh and bash): the next arm's body runs too.
+    FallThrough,
+    /// `;|` (zsh) or `;;&` (bash): the next arms' patterns are tried.
+    Continue,
+}
+
+impl CaseTerm {
+    pub fn text(self) -> &'static [u8] {
+        match self {
+            CaseTerm::Break => b";;",
+            CaseTerm::FallThrough => b";&",
+            CaseTerm::Continue => b";|",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]

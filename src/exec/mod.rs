@@ -391,26 +391,49 @@ impl Shell {
             CompoundCommand::Case { word, arms, lineno } => {
                 self.lineno = *lineno;
                 let subject = self.expand_word_str(word)?;
-                for arm in arms {
-                    for pat in &arm.patterns {
-                        let matched = match pat.as_literal() {
-                            // A pattern without special characters, as in
-                            // most arms, needs no expansion or compiling.
-                            Some(lit) if !lit.iter().any(|c| matches!(c, b'*' | b'?' | b'[' | b'\\')) => lit == subject,
-                            _ => {
-                                let p = self.expand_pattern(pat)?;
-                                crate::expand::pattern::Pattern::new(&p).matches(&subject)
-                            }
-                        };
-                        if matched {
+                let mut status = 0;
+                let mut i = 0;
+                while i < arms.len() {
+                    if !self.arm_matches(&arms[i], &subject)? {
+                        i += 1;
+                        continue;
+                    }
+                    // Run the body, and the next ones after `;&`.
+                    loop {
+                        let arm = &arms[i];
+                        i += 1;
+                        if arm.term == CaseTerm::Break || i == arms.len() {
                             return self.run_list_exit(&arm.body, exit);
+                        }
+                        status = self.run_list(&arm.body)?;
+                        if arm.term == CaseTerm::Continue {
+                            break;
                         }
                     }
                 }
-                Ok(0)
+                Ok(status)
             }
             CompoundCommand::Cond { expr, lineno } => self.run_cond(expr, *lineno),
         }
+    }
+
+    /// Whether one of the patterns of a `case` arm matches `subject`.
+    fn arm_matches(&mut self, arm: &CaseArm, subject: &[u8]) -> Result<bool, Flow> {
+        for pat in &arm.patterns {
+            let matched = match pat.as_literal() {
+                // A pattern without special characters, as in most arms,
+                // needs no expansion or compiling.
+                Some(lit) if !lit.iter().any(|c| matches!(c, b'*' | b'?' | b'[' | b'\\')) => lit == subject,
+                _ => {
+                    let p = self.expand_pattern(pat)?;
+                    crate::expand::pattern::Pattern::new(&p).matches(subject)
+                }
+            };
+            if matched {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// Fails (as a shell error) if the stack is nearly used up: nesting

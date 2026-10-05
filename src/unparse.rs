@@ -394,7 +394,7 @@ impl<'a> Printer<'a> {
                     self.w(b")");
                     self.block(&arm.body);
                     self.nl();
-                    self.w(b";;");
+                    self.w(arm.term.text());
                 }
                 self.indent -= 1;
                 self.nl();
@@ -981,6 +981,10 @@ mod tests {
         assert_eq!(
             round_trip("f() { case $1 in a|esac) x;; *) ;; esac; }"),
             "f() {\n    case $1 in\n        (a | esac)\n            x\n        ;;\n        (*)\n        ;;\n    esac\n}\n"
+        );
+        assert_eq!(
+            round_trip("f() { case $1 in a) x;& b) y;;& c) z;| d) ;& esac; a |& b; }"),
+            "f() {\n    case $1 in\n        (a)\n            x\n        ;&\n        (b)\n            y\n        ;|\n        (c)\n            z\n        ;|\n        (d)\n        ;&\n    esac\n    a 2>&1 | b\n}\n"
         );
         assert_eq!(
             round_trip("f() ( cd /; ls ) >out 2>&1"),

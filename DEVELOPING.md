@@ -124,6 +124,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   table (`NO_ALIASES`), so an `eval` doesn't allocate one. The completer's `Scan` mirrors these rules. Tests:
   `parse/alias_global.sh` (zsh), `parse/alias_suffix.sh` (zsh), unit tests in `complete.rs`.
 - Function bodies may be any command (`f() echo hi`), as in dash.
+- `case` arms may end with `;&` (run the next body too), `;|` or bash's `;;&` (try the next arms' patterns), as in
+  zsh and bash (syntax errors in dash): `Op::SemiAmp`, `Op::SemiPipe`, `Op::DSemiAmp`, recorded as `CaseArm::term`
+  (`CaseTerm`). The status is the last body's, kept if no later arm matches after `;|`. Only the body that ends the
+  `case` (`;;`, or the last arm) runs with the `exit` flag. `unparse` and job texts print `;|` for `;;&`. Tests:
+  `parse/case_fallthrough.sh` (zsh), `parse/case_fallthrough_bash.sh`, unit tests in `unparse.rs` and
+  `highlight.rs`.
 - `a |& b` (zsh and bash; a syntax error in dash, so always on): `Op::PipeAmp`, which `parse_pipeline` turns into a
   `2>&1` appended to the left command's redirections, so it runs after them and `unparse` and job texts show
   `2>&1 |`. A function definition on its left is a syntax error. Tests: `exec/pipe_amp.sh` (zsh), `parse/pipe_amp_error.sh`, `command_roles`
@@ -1309,6 +1315,7 @@ truncates when it relocates the package.
 | `**`, `++`, `--`, `,` in arithmetic | `expand/arith_extended.sh` (zsh), `expand/arith_ops.sh` |
 | `disown` | `builtins/disown.sh` (zsh), `builtins/disown_bash.sh` |
 | `\|&` | `exec/pipe_amp.sh` (zsh) |
+| `;&`, `;\|`, `;;&` in `case` | `parse/case_fallthrough.sh` (zsh), `parse/case_fallthrough_bash.sh` |
 | `<<< word` | `exec/here_string.sh` (zsh), `parse/here_string_error.sh` |
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |
