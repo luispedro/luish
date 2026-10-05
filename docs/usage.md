@@ -57,6 +57,7 @@ if [[ $name == j* && -d $dir ]]; then ...  # conditions without word splitting o
 [[ $line =~ ^([a-z]+)=(.*)$ ]] && echo "${match[1]} ${match[2]}"   # a regular expression, with its groups
 path+=(/opt/bin)                           # NAME+=value appends to a variable, or to an array
 let 'n = n * 2 + 1'                        # arithmetic, with the status of its value
+echo $((i++)) $((2**10)) $((a=1, a+1))     # ++ and -- (before or after), ** (power), and the comma operator
 typeset -i count=0                         # variable attributes, also with declare
 builtin cd /tmp                            # run the built-in even if a function has its name
 set -o pipefail                            # a pipeline fails if any of its commands does

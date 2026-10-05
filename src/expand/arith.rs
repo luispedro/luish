@@ -1,4 +1,5 @@
-//! `$((...))`: arithmetic on signed 64-bit integers, with C operators.
+//! `$((...))`: arithmetic on signed 64-bit integers, with C operators, and
+//! zsh's and bash's `**`, `++`, `--` and `,`.
 
 use crate::lexer::{is_name_char, is_name_start};
 use crate::shell::Shell;
@@ -26,6 +27,7 @@ enum Bin {
     Mul,
     Div,
     Rem,
+    Pow,
 }
 
 impl Bin {
@@ -41,6 +43,7 @@ impl Bin {
             Bin::Shl | Bin::Shr => 8,
             Bin::Add | Bin::Sub => 9,
             Bin::Mul | Bin::Div | Bin::Rem => 10,
+            Bin::Pow => 11,
         }
     }
 }
@@ -57,6 +60,7 @@ enum Op {
     Colon,
     LParen,
     RParen,
+    Comma,
 }
 
 /// The operator at the start of `s` and its length (the longest match).
@@ -79,12 +83,14 @@ fn lex_op(s: &[u8]) -> Option<(Op, usize)> {
         b'?' => return Some((Op::Quest, 1)),
         b':' => return Some((Op::Colon, 1)),
         b'(' => return Some((Op::LParen, 1)),
+        b',' => return Some((Op::Comma, 1)),
         b')' => return Some((Op::RParen, 1)),
         b'|' => (Bin::Or, 1),
         b'^' => (Bin::Xor, 1),
         b'&' => (Bin::And, 1),
         b'+' => (Bin::Add, 1),
         b'-' => (Bin::Sub, 1),
+        b'*' if at(1) == b'*' => (Bin::Pow, 2),
         b'*' => (Bin::Mul, 1),
         b'/' => (Bin::Div, 1),
         b'%' => (Bin::Rem, 1),
@@ -200,29 +206,76 @@ impl<'a> Arith<'a> {
                         self.apply(bin, lhs, rhs)?
                     }
                 };
-                if self.noeval == 0 {
-                    let value = v.to_string().into_bytes();
-                    let r = match &index {
-                        Some(sub) => self.sh.vars.set_element(name, sub, value, false),
-                        None => self.sh.vars.set(name, value).map_err(Into::into),
-                    };
-                    match r {
-                        Ok(()) if self.sh.vartrace.is_some() => self.sh.trace_set(name),
-                        Ok(()) => {}
-                        Err(AssignError::Readonly) => {
-                            return Err(format!("{}: is read only", String::from_utf8_lossy(name)));
-                        }
-                        Err(AssignError::BadSubscript) => {
-                            let sub = index.unwrap_or(Subscript::Index(0));
-                            return Err(format!("{}[{sub}]: bad array subscript", String::from_utf8_lossy(name)));
-                        }
-                    }
-                }
+                self.store(name, index, v)?;
                 return Ok(v);
             }
             self.pos = save;
         }
         self.conditional()
+    }
+
+    /// Expressions separated by `,` (zsh and bash), which has the lowest
+    /// precedence: the value of the last.
+    fn comma(&mut self) -> Result<i64, String> {
+        let mut v = self.expr()?;
+        while self.eat(Op::Comma) {
+            v = self.expr()?;
+        }
+        Ok(v)
+    }
+
+    /// Assigns `v` to the variable `name` (its element `index`), unless in
+    /// an unevaluated part.
+    fn store(&mut self, name: &[u8], index: Option<Subscript>, v: i64) -> Result<(), String> {
+        if self.noeval > 0 {
+            return Ok(());
+        }
+        let value = v.to_string().into_bytes();
+        let r = match &index {
+            Some(sub) => self.sh.vars.set_element(name, sub, value, false),
+            None => self.sh.vars.set(name, value).map_err(Into::into),
+        };
+        match r {
+            Ok(()) if self.sh.vartrace.is_some() => self.sh.trace_set(name),
+            Ok(()) => {}
+            Err(AssignError::Readonly) => {
+                return Err(format!("{}: is read only", String::from_utf8_lossy(name)));
+            }
+            Err(AssignError::BadSubscript) => {
+                let sub = index.unwrap_or(Subscript::Index(0));
+                return Err(format!("{}[{sub}]: bad array subscript", String::from_utf8_lossy(name)));
+            }
+        }
+        Ok(())
+    }
+
+    /// A variable or array element at the position, for `++` and `--`: its
+    /// name and subscript.
+    fn lvalue(&mut self) -> Result<(&'a [u8], Option<Subscript>), String> {
+        let name = self.ident();
+        if self.s.get(self.pos) != Some(&b'[') {
+            return Ok((name, None));
+        }
+        let open = self.pos;
+        let end = self.closing_bracket(open)?;
+        Ok((name, Some(self.subscript(name, open, end)?)))
+    }
+
+    /// The value of the variable `name` (its element `index`).
+    fn load(&mut self, name: &[u8], index: &Option<Subscript>) -> Result<i64, String> {
+        match index {
+            Some(sub) => self.element(name, sub),
+            None => self.var(name),
+        }
+    }
+
+    /// Whether `++` or `--` comes next (without skipping blanks): 1 or -1.
+    fn step_op(&self) -> Option<i64> {
+        match self.s.get(self.pos..self.pos + 2) {
+            Some(b"++") => Some(1),
+            Some(b"--") => Some(-1),
+            _ => None,
+        }
     }
 
     /// The position after the `]` that closes the `[` at `open`.
@@ -314,7 +367,8 @@ impl<'a> Arith<'a> {
             if skip {
                 self.noeval += 1;
             }
-            let rhs = self.binary(prec + 1)?;
+            // `**` is right-associative.
+            let rhs = self.binary(if op == Bin::Pow { prec } else { prec + 1 })?;
             if skip {
                 self.noeval -= 1;
             }
@@ -341,6 +395,15 @@ impl<'a> Arith<'a> {
             Bin::Add => a.wrapping_add(b),
             Bin::Sub => a.wrapping_sub(b),
             Bin::Mul => a.wrapping_mul(b),
+            Bin::Pow => {
+                if b < 0 {
+                    if self.noeval > 0 {
+                        return Ok(0);
+                    }
+                    return self.syntax("exponent less than 0");
+                }
+                pow(a, b as u64)
+            }
             Bin::Div | Bin::Rem => {
                 if b == 0 {
                     if self.noeval > 0 {
@@ -362,6 +425,20 @@ impl<'a> Arith<'a> {
             Some((op @ (Op::Bin(Bin::Add | Bin::Sub) | Op::Not | Op::Compl), _)) => op,
             _ => return self.primary(),
         };
+        // `++x` and `--x`; before anything but a name, two unary operators
+        // (as in bash, and as `--5` is in dash).
+        if let Some(step) = self.step_op() {
+            let start = self.pos;
+            self.pos += 2;
+            self.skip_ws();
+            if self.s.get(self.pos).is_some_and(|&c| is_name_start(c)) {
+                let (name, index) = self.lvalue()?;
+                let v = self.load(name, &index)?.wrapping_add(step);
+                self.store(name, index, v)?;
+                return Ok(v);
+            }
+            self.pos = start;
+        }
         self.pos += 1;
         if !crate::stack::ok() {
             return Err(crate::stack::TOO_DEEP.into());
@@ -405,7 +482,7 @@ impl<'a> Arith<'a> {
         };
         if c == b'(' {
             self.pos += 1;
-            let v = self.expr()?;
+            let v = self.comma()?;
             if !self.eat(Op::RParen) {
                 return self.syntax("expecting ')'");
             }
@@ -422,17 +499,31 @@ impl<'a> Arith<'a> {
             };
         }
         if is_name_start(c) {
-            let name = self.ident();
-            if self.s.get(self.pos) == Some(&b'[') {
-                let open = self.pos;
-                let end = self.closing_bracket(open)?;
-                let sub = self.subscript(name, open, end)?;
-                return self.element(name, &sub);
+            let (name, index) = self.lvalue()?;
+            let v = self.load(name, &index)?;
+            // `x++` and `x--`.
+            self.skip_ws();
+            if let Some(step) = self.step_op() {
+                self.pos += 2;
+                self.store(name, index, v.wrapping_add(step))?;
             }
-            return self.var(name);
+            return Ok(v);
         }
         self.syntax("expecting primary")
     }
+}
+
+/// `a ** b`, wrapping on overflow as the other operators do.
+fn pow(mut a: i64, mut b: u64) -> i64 {
+    let mut r: i64 = 1;
+    while b > 0 {
+        if b & 1 == 1 {
+            r = r.wrapping_mul(a);
+        }
+        a = a.wrapping_mul(a);
+        b >>= 1;
+    }
+    r
 }
 
 pub fn eval(sh: &mut Shell, s: &[u8]) -> Result<i64, String> {
@@ -446,7 +537,7 @@ pub fn eval(sh: &mut Shell, s: &[u8]) -> Result<i64, String> {
     if a.pos == s.len() {
         return Ok(0);
     }
-    let v = a.expr()?;
+    let v = a.comma()?;
     a.skip_ws();
     if a.pos != s.len() {
         return a.syntax("expecting EOF");
@@ -474,7 +565,17 @@ mod tests {
         assert_eq!(ev("!0 && 2 > 1"), Ok(1));
         assert_eq!(ev("0 && 1/0"), Ok(0));
         assert_eq!(ev("1 ? 2 : 1/0"), Ok(2));
-        assert!(ev("x = 5, 1").is_err());
+        assert_eq!(ev("x = 5, 1"), Ok(1));
+        assert_eq!(ev("2 ** 10"), Ok(1024));
+        assert_eq!(ev("2 ** 3 ** 2"), Ok(512));
+        assert_eq!(ev("-2 ** 2"), Ok(4));
+        assert_eq!(ev("2 * 3 ** 2"), Ok(18));
+        assert_eq!(ev("2 ** 64"), Ok(0));
+        assert_eq!(ev("0 ** 0"), Ok(1));
+        assert!(ev("2 ** -1").is_err());
+        assert_eq!(ev("0 && 2 ** -1"), Ok(0));
+        assert_eq!(ev("--5"), Ok(5));
+        assert_eq!(ev("5--1"), Ok(6));
         assert_eq!(ev("x = 5"), Ok(5));
         assert_eq!(ev("~0"), Ok(-1));
         assert!(ev("1/0").is_err());
@@ -489,5 +590,13 @@ mod tests {
         assert_eq!(eval(&mut sh, b"x += 4"), Ok(7));
         assert_eq!(eval(&mut sh, b"x * 2"), Ok(14));
         assert_eq!(eval(&mut sh, b"unset_var + 1"), Ok(1));
+        assert_eq!(eval(&mut sh, b"x++"), Ok(7));
+        assert_eq!(eval(&mut sh, b"x"), Ok(8));
+        assert_eq!(eval(&mut sh, b"--x + x--"), Ok(14));
+        assert_eq!(eval(&mut sh, b"x"), Ok(6));
+        assert_eq!(eval(&mut sh, b"x+++1"), Ok(7));
+        assert_eq!(eval(&mut sh, b"x **= 2"), Ok(49));
+        assert_eq!(eval(&mut sh, b"0 && x++, 1 || ++x, x"), Ok(49));
+        assert!(eval(&mut sh, b"x--1").is_err());
     }
 }

@@ -1,4 +1,6 @@
 Unreleased
+    * Arithmetic: ** (and **=), ++ and -- (prefix and postfix), and the
+      comma operator, as in zsh and bash
     * Fixed: local - restores the options when the function returns, as
       in dash
     * help is shown in colour on a terminal, with the colour scheme in use

@@ -226,6 +226,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `push_literal` (not split, but globbed). The numeric order (`compare_words`) is zsh's: the first number that
   differs decides, then the bytes. A lone quoted flagged expansion counts as a list in `DoubleQuoted` (it sets
   `cur_exists`: a string gives one word, even if empty). Tests: `expand/param_flags.sh`, `expand/param_flags_luish.sh`.
+- Arithmetic beyond POSIX (zsh and bash): `**` (`Bin::Pow`, right-associative through `Arith::binary`, below unary
+  operators as in both shells, wrapping, a negative exponent an error as in bash), `,` (`Arith::comma`, at the top
+  and inside parentheses; in subscripts too, so `${a[1,2]}` is `${a[2]}` as in bash), and `++`/`--` (`step_op`):
+  prefix in `Arith::unary` only when a name follows (otherwise two unary operators, as dash reads `--5`), postfix in
+  `Arith::primary` after a name or element. Assignments share `Arith::store`. Tests: `expand/arith_extended.sh`
+  (zsh), `expand/arith_ops.sh` (`--5`, `5--1`, which zsh rejects).
 - Arithmetic: a variable holding only blanks is 0. Quotes and backslashes inside `$((...))` are kept, so they are
   errors, as in dash. Test: `expand/arith_quotes.sh`.
 - Command substitution drops NUL bytes (so does `read`) and sets `$?` only for commands of assignments alone (so
@@ -1290,6 +1296,7 @@ truncates when it relocates the package.
 | `setopt`, `unsetopt` | `options/setopt.sh` (zsh), `options/setopt_list.sh` |
 | `%` sequences in prompts | `misc/prompt_percent.sh`, `misc/prompt_percent_long.sh`, `misc/prompt_style.sh` |
 | The right prompt | `right_prompt` in `tests/interactive.rs` |
+| `**`, `++`, `--`, `,` in arithmetic | `expand/arith_extended.sh` (zsh), `expand/arith_ops.sh` |
 | `<<< word` | `exec/here_string.sh` (zsh), `parse/here_string_error.sh` |
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |
