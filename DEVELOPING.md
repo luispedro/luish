@@ -1514,7 +1514,7 @@ follows is what they came from and what is left.
 Per external command, luish makes the same syscalls as dash (before `posix_spawn`, a loop running `/bin/true` 3000
 times took 2.42 s, then 1.80 s as in dash). Startup makes 66 syscalls to dash's 49 (56 without the `plugins`
 feature; it made 140 before `#![no_main]`, lazy signal-disposition lookup, and looking up the executable's path only
-when a script without `#!` needs it). The remaining startup gap (0.56 ms to dash's 0.36 ms per `-c true` in
+when a script without `#!` needs it). The remaining startup gap (0.51 ms to dash's 0.34 ms per `-c true` in
 `docs/performance.md`) comes from the larger binary (4.8 MB) and its libraries, `libm` (for Rhai's floats),
 `libpthread` and `libgcc_s`: on 2026-10-01 `LD_DEBUG=statistics` put about 100k cycles in the dynamic loader to dash's
 50k (so only some 15 µs of the gap), and luish took 252 page faults to dash's 189. A command substitution takes 1.2

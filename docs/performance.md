@@ -24,41 +24,43 @@ benchmark print the same output for it.
 | build | A make-like build that runs `$SH -c` for each object: fork, exec and shell startup |
 | arrays | Not POSIX: sorting, a sieve, word counts, grouping, matrices, a search and slices, in indexed and associative arrays |
 
-The script and startup measurements on this page were made on 2026-10-04, with the release build of luish at git
-revision `efe770b` (`pixi run release`), on a laptop with an Intel Core i7-1260P (4 performance cores of 2 threads
-each, and 8 slower efficiency cores) running Ubuntu 24.04. Every measurement ran pinned to the same performance core
-(`taskset -c 3`), one at a time, with the desktop running. The other shells are Ubuntu's dash 0.5.12, bash 5.2.21
-(`--posix`) and BusyBox 1.36.1 (`busybox sh`, from the `busybox-static` package), and zsh 5.9 (`--emulate sh`) from
-conda-forge, as pinned in luish's `pixi.toml`. Two complete runs of the script benchmarks gave times within 4% of each
-other for dash and luish (luish's ratios within 0.03), and within 8% for the other shells, except `textproc` under bash,
-zsh and BusyBox, which took up to 27% longer in the first run.
+The script and startup measurements on this page were made on 2026-10-05, with the release build of luish at git
+revision `9dc9b48` (`pixi run release`), on a laptop with an Intel Core i7-1260P (4 performance cores of 2 threads
+each, and 8 slower efficiency cores) running Ubuntu 26.04. Every measurement ran pinned to the same performance core
+(`taskset -c 3`), one at a time, with the desktop running. The other shells are Ubuntu's dash 0.5.12, bash 5.3
+(`--posix`) and BusyBox 1.37.0 (`busybox sh`, from the `busybox-static` package), and zsh 5.9 (`--emulate sh`) from
+conda-forge, as pinned in luish's `pixi.toml`. Two complete runs of the script benchmarks gave times within 6% of each
+other for dash and luish (luish's ratios within 0.06), and within 9% for the other shells.
 
 Seconds (and the ratio to dash; lower is faster), mean of 40 runs (two runs of `bench/run.sh -r 20`):
 
 | Benchmark | dash | luish | bash | zsh | busybox |
 |---|---|---|---|---|---|
-| arith | 0.287 (1.00) | 0.185 (0.65) | 0.843 (2.93) | 0.478 (1.66) | 0.468 (1.63) |
-| functions | 0.167 (1.00) | 0.151 (0.90) | 0.800 (4.79) | 0.728 (4.36) | 0.227 (1.36) |
-| strings | 0.214 (1.00) | 0.203 (0.95) | 0.736 (3.43) | 0.585 (2.73) | 0.306 (1.43) |
-| textproc | 0.174 (1.00) | 0.176 (1.01) | 0.481 (2.76) | 0.617 (3.55) | 0.308 (1.77) |
-| configure | 0.575 (1.00) | 0.631 (1.10) | 0.845 (1.47) | 0.770 (1.34) | 0.389 (0.68)\* |
-| build | 0.494 (1.00) | 0.560 (1.13) | 0.633 (1.28) | 0.637 (1.29) | 0.166 (0.34)\* |
+| arith | 0.267 (1.00) | 0.172 (0.65) | 0.709 (2.66) | 0.432 (1.62) | 0.352 (1.32) |
+| functions | 0.158 (1.00) | 0.142 (0.90) | 0.838 (5.30) | 0.609 (3.85) | 0.195 (1.23) |
+| strings | 0.206 (1.00) | 0.194 (0.94) | 0.681 (3.31) | 0.536 (2.60) | 0.303 (1.47) |
+| textproc | 0.164 (1.00) | 0.165 (1.01) | 0.418 (2.56) | 0.483 (2.96) | 0.238 (1.46) |
+| configure | 0.844 (1.00) | 0.869 (1.03) | 1.069 (1.27) | 1.008 (1.19) | 0.369 (0.44)\* |
+| build | 1.157 (1.00) | 1.212 (1.05) | 1.286 (1.11) | 1.276 (1.10) | 0.167 (0.14)\* |
 
 The first four run mostly inside the shell, where luish is as fast as dash, or faster. The next two spend most of
-their time starting programs, which luish does with the same system calls as dash; they take about 10% longer, mostly
+their time starting programs, which luish does with the same system calls as dash; they take about 5% longer, mostly
 because luish itself starts more slowly and a command substitution costs more (below), and `build` starts a new shell
-for each file it compiles.
+for each file it compiles. Ubuntu 26.04's `cat`, `basename` and other basic utilities are those of the Rust
+coreutils, which start in about 1.3 ms (to 0.4 ms for `/bin/true`), so these two take about twice as long for every
+shell as they did under Ubuntu 24.04, and the shell's own share of their time is smaller.
 
 \* BusyBox's times for `configure` and `build` don't measure the same work: the static BusyBox runs its own versions
 of `sed`, `cat`, `basename`, `dirname`, `rm` and other utilities in the shell's process instead of running the
 system's programs (`build` runs 204 programs under it, to 834 under dash), and as a static program it starts faster.
+This counts for more with the slower utilities of Ubuntu 26.04.
 
 `arrays` uses what zsh and bash scripts use beyond POSIX (arrays, associative arrays, `[[ ... ]]`,
 `${x//pattern/replacement}`, `${x:offset:length}`), so dash and BusyBox can't run it. Its ratios are to luish:
 
 | Benchmark | luish | bash | zsh |
 |---|---|---|---|
-| arrays | 0.148 (1.00) | 0.716 (4.84) | 0.749 (5.06) |
+| arrays | 0.142 (1.00) | 0.637 (4.47) | 0.663 (4.65) |
 
 ## Startup and single commands
 
@@ -67,14 +69,14 @@ Mean of 1000 runs for the first two rows and of 20 for the others, each shell ru
 
 | Benchmark | dash | luish | bash | zsh |
 |---|--:|--:|--:|--:|
-| `sh -c true` | 0.35 ms | 0.57 ms | 0.58 ms | 0.82 ms |
-| `sh -c /bin/true` | 0.71 ms | 0.89 ms | 0.90 ms | 1.15 ms |
-| `while` loop, 100,000 iterations of `$((i+1))` | 94 ms | 60 ms | 280 ms | 229 ms |
-| Loop running `/bin/true` 3000 times | 1.21 s | 1.23 s | 1.61 s | 1.78 s |
-| Loop running `x=$(echo hi)` 3000 times | 0.32 s | 0.37 s | 0.66 s | 0.53 s |
+| `sh -c true` | 0.34 ms | 0.51 ms | 0.55 ms | 0.74 ms |
+| `sh -c /bin/true` | 0.66 ms | 0.80 ms | 0.85 ms | 1.03 ms |
+| `while` loop, 100,000 iterations of `$((i+1))` | 86 ms | 45 ms | 193 ms | 209 ms |
+| Loop running `/bin/true` 3000 times | 1.14 s | 1.15 s | 1.50 s | 1.67 s |
+| Loop running `x=$(echo hi)` 3000 times | 0.30 s | 0.35 s | 0.62 s | 0.49 s |
 
-Starting luish takes about 0.2 ms longer than dash, as luish is a larger program (5.3 MB, with the plugin support
-built in): it loads more libraries and touches more memory (257 page faults to dash's 189). Starting a program costs
+Starting luish takes about 0.2 ms longer than dash, as luish is a larger program (5.5 MB, with the plugin support
+built in): it loads more libraries and touches more memory (170 page faults to dash's 100). Starting a program costs
 about the same as in dash. A command substitution takes about 1.2 times as long as in dash: it makes the same system
 calls, but forking a larger process costs more.
 
