@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, Position, Scope, Shared};
 
 use super::bytes::{to_bytes, to_str};
+use super::capture_cache::{self, CaptureCache};
 use super::{HookArg, HookKind, Loading, OptValue, PluginOptions};
 use crate::expand::{pattern::Pattern, split::XChar};
 use crate::interactive::{Candidate, Completion, DEFAULT_COMPLETER, Suffix};
@@ -89,6 +90,8 @@ pub struct Host {
     /// a plugin is loaded, so that loading one again reads its modules
     /// again.
     modules: RefCell<HashMap<Vec<u8>, Shared<Module>>>,
+    /// What `sh::capture_cached` ran.
+    captures: RefCell<CaptureCache>,
 }
 
 thread_local! {
@@ -369,11 +372,9 @@ fn capture_sh(sh: &mut Shell, script: &[u8]) -> RhaiResult<rhai::Map> {
     }
 }
 
-/// `sh::capture(argv, stderr)`: runs the program `argv[0]` with the
-/// arguments `argv[1..]` (see [`super::capture_argv`]) and returns its
-/// status and its output, and with `stderr` "return", its standard error,
-/// without trailing newlines.
-fn capture(argv: rhai::Array, stderr: &str) -> RhaiResult<rhai::Map> {
+/// The arguments of `sh::capture` and `sh::capture_cached`: the program
+/// and its arguments, and where its standard error goes.
+fn capture_args(name: &str, argv: rhai::Array, stderr: &str) -> RhaiResult<(Vec<Vec<u8>>, super::Stderr)> {
     use super::Stderr;
     let mode = match stderr {
         "discard" => Stderr::Discard,
@@ -382,23 +383,76 @@ fn capture(argv: rhai::Array, stderr: &str) -> RhaiResult<rhai::Map> {
         "return" => Stderr::Return,
         _ => {
             return error(format!(
-                r#"capture: stderr is "discard", "inherit", "merge" or "return", not "{stderr}""#
+                r#"{name}: stderr is "discard", "inherit", "merge" or "return", not "{stderr}""#
             ));
         }
     };
     if argv.is_empty() {
-        return error("capture: the array is empty (it holds the program and its arguments)");
+        return error(format!(
+            "{name}: the array is empty (it holds the program and its arguments)"
+        ));
     }
     let mut words = Vec::with_capacity(argv.len());
     for w in argv {
         let Ok(w) = w.into_immutable_string() else {
-            return error("capture: the array must hold strings");
+            return error(format!("{name}: the array must hold strings"));
         };
         words.push(to_shell(&w)?);
     }
+    Ok((words, mode))
+}
+
+/// `sh::capture(argv, stderr)`: runs the program `argv[0]` with the
+/// arguments `argv[1..]` (see [`super::capture_argv`]) and returns its
+/// status and its output, and with `stderr` "return", its standard error,
+/// without trailing newlines.
+fn capture(argv: rhai::Array, stderr: &str) -> RhaiResult<rhai::Map> {
+    let (words, mode) = capture_args("capture", argv, stderr)?;
     with_shell(|sh| match super::capture_argv(sh, &words, mode) {
-        Ok((status, out, err)) => Ok(captured(status, out, (mode == Stderr::Return).then_some(err))),
+        Ok((status, out, err)) => Ok(captured(status, out, (mode == super::Stderr::Return).then_some(err))),
         Err(e) => error(format!("capture: {e}")),
+    })
+}
+
+/// `sh::capture_cached(ttl, argv, stderr)`: what `sh::capture` returns,
+/// from the run of the same program and arguments in the same directory
+/// and with the same `PATH` up to `ttl` seconds ago if there was one
+/// (`capture_cache.rs`).
+fn capture_cached(ttl: i64, argv: rhai::Array, stderr: &str) -> RhaiResult<rhai::Map> {
+    if ttl < 0 {
+        return error(format!(
+            "capture_cached: the time to keep the output is negative: {ttl}"
+        ));
+    }
+    let (words, mode) = capture_args("capture_cached", argv, stderr)?;
+    let result = |status, out, err| captured(status, out, (mode == super::Stderr::Return).then_some(err));
+    with_shell(|sh| {
+        if ttl == 0 {
+            return match super::capture_argv(sh, &words, mode) {
+                Ok((status, out, err)) => Ok(result(status, out, err)),
+                Err(e) => error(format!("capture_cached: {e}")),
+            };
+        }
+        let host = host(sh)?;
+        let key = capture_cache::Key {
+            argv: words,
+            stderr: mode as u8,
+            dir: sh.curdir.clone().or_else(sys::getcwd).unwrap_or_default(),
+            path: sh.get_var(b"PATH").unwrap_or_default(),
+        };
+        if let Some(e) = host.captures.borrow().get(&key, Instant::now()) {
+            return Ok(result(e.status, e.out.clone(), e.err.clone()));
+        }
+        match super::capture_argv(sh, &key.argv, mode) {
+            Ok((status, out, err)) => {
+                let r = result(status, out.clone(), err.clone());
+                host.captures
+                    .borrow_mut()
+                    .insert(key, ttl as u64, status, out, err, Instant::now());
+                Ok(r)
+            }
+            Err(e) => error(format!("capture_cached: {e}")),
+        }
     })
 }
 
@@ -557,6 +611,10 @@ fn sh_module() -> Module {
     m.set_native_fn("capture", |_: &str| -> RhaiResult<rhai::Map> {
         error("capture: takes an array, the program and its arguments (sh::capture_sh runs shell code)")
     });
+    m.set_native_fn("capture_cached", |ttl: i64, argv: rhai::Array| {
+        capture_cached(ttl, argv, "discard")
+    });
+    m.set_native_fn("capture_cached", capture_cached);
     m.set_native_fn("which", |name: &str| {
         let name = to_shell(name)?;
         with_shell(|sh| Ok(sh.which(&name).map_or(Dynamic::UNIT, |p| to_str(&p).into())))
@@ -811,11 +869,18 @@ impl Host {
             next_id: Cell::new(1),
             running: RefCell::new(Vec::new()),
             modules: RefCell::new(HashMap::new()),
+            captures: RefCell::default(),
         }
     }
 
     fn engine(&self) -> &Engine {
         self.engine.get_or_init(new_engine)
+    }
+
+    /// Before the command line `text` runs: what `sh::capture_cached` kept
+    /// of a program it names is dropped.
+    pub fn command_line(&self, text: &[u8]) {
+        self.captures.borrow_mut().invalidate(text);
     }
 
     /// The names of the loaded plugins, in the order they were loaded.

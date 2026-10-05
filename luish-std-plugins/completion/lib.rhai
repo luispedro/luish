@@ -136,7 +136,8 @@ fn note(desc, key) {
 // The output of `-h` of the command `path` (a program and its
 // subcommands, separated by spaces), which clap doesn't wrap with
 // COLUMNS=400, or "" if a word of it doesn't look like the name of a
-// command (the words come from the command line).
+// command (the words come from the command line). It is kept for a few
+// minutes, so that each Tab doesn't run the program again.
 fn help_of(path) {
     let words = path.split(" ");
     for w in words {
@@ -144,7 +145,7 @@ fn help_of(path) {
             return "";
         }
     }
-    sh::capture(["env", "COLUMNS=400"] + words + ["-h"]).out
+    sh::capture_cached(300, ["env", "COLUMNS=400"] + words + ["-h"]).out
 }
 
 // A spec from the `--help` output of a program, in the style of clap or

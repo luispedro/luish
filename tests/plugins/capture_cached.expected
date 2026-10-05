@@ -1,0 +1,19 @@
+0 [1] -
+0 [1] -
+0 [2] err
+0 [2] err
+0 [3
+err] -
+0 [4] -
+0 [1] -
+0 [5] -
+0 [6] -
+0 [7] -
+3 [8] -
+3 [8] -
+missing: 127 true
+capture_cached: the time to keep the output is negative: -1
+capture_cached: the array is empty (it holds the program and its arguments)
+capture_cached: the array must hold strings
+capture_cached: stderr is "discard", "inherit", "merge" or "return", not "bogus"
+load: 0

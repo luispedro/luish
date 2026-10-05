@@ -1740,6 +1740,31 @@ fn plugin_builtin() {
     assert_eq!(sh.exit_status(), 0);
 }
 
+/// What `sh::capture_cached` kept of a program is dropped when a command
+/// line names the program (it may have installed something), but not
+/// for another command.
+#[cfg(feature = "plugins")]
+#[test]
+fn capture_cached_invalidation() {
+    let mut sh = Pty::spawn("capture-cached");
+    sh.expect("$ ");
+    std::fs::write(
+        sh.path("cc.rhai"),
+        r#"sh::builtin("cc", |argv| { print("runs=" + sh::capture_cached(60, ["sh", "-c", "echo >> runs; wc -l < runs"]).out); });"#,
+    )
+    .unwrap();
+    sh.run("plugin load ~/cc.rhai");
+    assert_has(&sh.run("cc"), "runs=1");
+    assert_has(&sh.run("cc"), "runs=1");
+    sh.run("true");
+    assert_has(&sh.run("cc"), "runs=1");
+    sh.run("FOO=1 /bin/sh -c :");
+    assert_has(&sh.run("cc"), "runs=2");
+    assert_has(&sh.run("cc"), "runs=2");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
 /// The first run: with an empty configuration directory, the shell offers
 /// to write `config.toml` before reading it, in a menu.
 #[cfg(feature = "plugins")]

@@ -1090,6 +1090,15 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   (`read_pipes`) so that a program filling one doesn't block. There is no way to set variables other than running
   `env`. Shell code goes through `sh::capture_sh`, the earlier `sh::capture`; a string given to `sh::capture` is an
   error that names it. Test: `tests/plugins/capture.sh`.
+- **`sh::capture_cached`** is `sh::capture` with a cache in memory (`plugins/capture_cache.rs`, on the `Host`; an
+  empty `HashMap`, so nothing until it is used), keyed on the arguments, where standard error goes, the current
+  directory (`curdir`) and `PATH`. Nothing is promised, so that the cache can drop entries at will: an entry is kept
+  for `ttl` seconds (clamped to 300), a failure for 3 s times the failures in a row (a failure is kept for its time
+  again after it expires, so that one soon after continues the run). Expired entries go when one is added, and the
+  oldest beyond 32 MiB or 4096 entries. `preexec` (interactive only) drops the entries with an argument whose base
+  name is a word of the command line that isn't an option or an assignment (`invalidate`): too many may go, which only
+  costs a run. std's `lib::help_of` (`-h` scraping) keeps its output 300 s. Tests: the unit tests in
+  `capture_cache.rs`, `tests/plugins/capture_cached.sh`, `capture_cached_invalidation` in `tests/interactive.rs`.
 - **`sh::which`** is `Shell::which` (`path.rs`): the `PATH` search that running a command does (`find_in_path`, so
   the `hash` table and an empty entry meaning `.` apply), without its fallback to a file that can't be executed, and,
   for a remembered command that is gone, the search again (as `with_command_path` tries the later directories); a name

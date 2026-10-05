@@ -9,6 +9,8 @@ mod add;
 #[cfg(feature = "plugins")]
 mod bytes;
 #[cfg(feature = "plugins")]
+mod capture_cache;
+#[cfg(feature = "plugins")]
 mod fetch;
 #[cfg(feature = "plugins")]
 mod fs;
@@ -36,6 +38,10 @@ pub enum Host {}
 
 #[cfg(not(feature = "plugins"))]
 impl Host {
+    fn command_line(&self, _: &[u8]) {
+        match *self {}
+    }
+
     fn names(&self) -> Vec<Vec<u8>> {
         match *self {}
     }
@@ -152,6 +158,7 @@ pub fn preexec(sh: &mut Shell, text: &[u8]) -> Result<(), Flow> {
         None => Ok(()),
         Some(host) => {
             let text = text.strip_suffix(b"\n").unwrap_or(text);
+            host.command_line(text);
             host.run_hooks(sh, HookKind::Preexec, &[HookArg::Text(text)])
         }
     }
