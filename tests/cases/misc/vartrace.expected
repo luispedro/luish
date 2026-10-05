@@ -36,7 +36,7 @@ Y was set to "1" in the -c command, line 2
 
 Y was set to "1" on standard input, line 2
 where: 127
-/home/luispedro/Sync/work/luish/target/debug/luish: 1: where: variable tracing is off (turn it on with `setopt vars.trace`)
+luish: 1: where: variable tracing is off (turn it on with `setopt vars.trace`)
     __luish_internal where X
 internal: 2
 unsetopt: 2

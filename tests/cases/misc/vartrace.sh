@@ -52,7 +52,7 @@ printf 'echo\nY=1\nwhere Y\n' | $SH -o vars.trace
 # Without tracing, `where` is not a built-in (except in interactive
 # shells); `__luish_internal where` fails. `unsetopt` stops tracing.
 $SH -c 'where X' 2>/dev/null; echo "where: $?"
-$SH -c '__luish_internal where X' 2>&1; echo "internal: $?"
+$SH -c '__luish_internal where X' luish 2>&1; echo "internal: $?"
 $SH -o vars.trace -c 'X=1; unsetopt vars.trace; __luish_internal where X' 2>/dev/null; echo "unsetopt: $?"
 # Tracing in a subshell stays there.
 $SH -c '(setopt vars.trace; X=1; where X); __luish_internal where X' 2>/dev/null; echo "subshell: $?"

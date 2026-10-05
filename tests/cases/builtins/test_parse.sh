@@ -28,9 +28,3 @@ t
 [ -a -a -a -a -a ]; echo $?
 [ ! -a -a -a -a -a ]; echo $?
 [ x -a ! -z -a -o ! x ]; echo $?
-[ f -nt nonexistent ]; echo $?
-[ nonexistent -ot f ]; echo $?
-[ nonexistent -nt f ]; echo $?
-[ f -ot nonexistent ]; echo $?
-[ nonexistent -nt nonexistent2 ]; echo $?
-[ nonexistent -ot nonexistent2 ]; echo $?

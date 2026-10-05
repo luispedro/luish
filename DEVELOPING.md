@@ -449,6 +449,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `umask`, `ulimit`, `kill`, `describe_command` (`command -v`/`-V`, `type`), `single_quote` (output of `set`,
   `export -p`, `alias`, `trap`), `number()` (strtoimax, 0..INT_MAX, for `exit`, `return`, `shift`, `kill`, `wait`).
   Tests: `builtins/test_parse.sh` (every expression of up to four arguments from a set of tokens),
+  `builtins/test_newer.sh` (`-nt` and `-ot` with a missing file),
   `builtins/getopts_dash.sh`, `builtins/umask_modes.sh`, `builtins/ulimit_dash.sh`, `builtins/command_describe.sh`,
   `builtins/quoting_output.sh`.
 - `echo`: `-n` only, XSI escapes always, dash's `\0nnn` and `\nnn`, and Debian's `\e`. `printf`: numeric conversions
@@ -1330,6 +1331,9 @@ truncates when it relocates the package.
   0004), processes `\e` in `echo`/`printf`, and gives 127 for exec errors other than EACCES. Upstream source:
   `https://git.kernel.org/pub/scm/utils/dash/dash.git/plain/src/<file>?h=v0.5.12` (sometimes returns 502; retry).
   Debian's patches: `https://sources.debian.org/api/src/dash/0.5.12-12/debian/patches/`.
+- CI runs on Ubuntu 24.04, whose dash (0.5.12-6) lacks some of Debian's later patches, such as the one that makes
+  `test FILE -nt MISSING` true (POSIX.1-2024). Cases whose result depends on such a patch use a `.expected` file
+  (`builtins/test_newer.sh`).
 - dash behaviours the tests rely on: `$-` lists option letters in reverse table order; `$(...)` doesn't update `$?`
   in the middle of a command; `set -x` doesn't quote; there is no `$LINENO` and no `-h`; `.*` matches `.` and `..`;
   alias listing is in hash order, so tests list aliases by name; without job control, jobs have no command text.
