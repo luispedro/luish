@@ -1106,7 +1106,9 @@ fn plugin_completer() {
     // restores after a job that dies are not the editor's raw modes.
     sh.send("sh -c 'kill -9 $$'; stty -a; echo stty-done\n");
     let out = sh.expect("stty-done\n");
-    assert!(out.contains(" icanon") && !out.contains("-icanon"), "{out}");
+    // GNU's stty separates the settings with spaces, uutils' with newlines.
+    let modes: Vec<&str> = out.split_whitespace().collect();
+    assert!(modes.contains(&"icanon") && !modes.contains(&"-icanon"), "{out}");
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
 }
