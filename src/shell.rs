@@ -96,6 +96,9 @@ pub struct Shell {
     pub procsub_orphans: Vec<i32>,
     /// Saved variables for `local`, one frame per function call.
     pub locals: Vec<Vec<(Vec<u8>, Saved)>>,
+    /// The options saved by `local -`, with the depth of `locals` of the
+    /// function call that saved them, restored when it returns.
+    pub local_options: Vec<(usize, crate::options::Options)>,
     /// Position inside a group of options for `getopts`.
     /// Writing a built-in's output failed (checked after it returns).
     pub out_failed: std::cell::Cell<bool>,
@@ -200,6 +203,7 @@ impl Shell {
             procsubs: Vec::new(),
             procsub_orphans: Vec::new(),
             locals: Vec::new(),
+            local_options: Vec::new(),
             optind: 1,
             optoff: None,
             curdir,

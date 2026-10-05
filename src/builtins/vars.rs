@@ -600,6 +600,11 @@ fn declare(sh: &mut Shell, argv: &[Vec<u8>], keep: bool) -> ExecResult {
     for a in args {
         let (name, value) = split_arg(a);
         if name == b"-" && keep {
+            // As in dash: the options are restored when the function returns.
+            let depth = sh.locals.len();
+            if sh.local_options.last().is_none_or(|s| s.0 != depth) {
+                sh.local_options.push((depth, sh.options.clone()));
+            }
             continue;
         }
         if !is_valid_name(name) {

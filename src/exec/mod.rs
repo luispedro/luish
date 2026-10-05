@@ -476,6 +476,10 @@ impl Shell {
             Err(RedirError::Open(n)) => Ok(n),
             Err(e) => Err(e.into()),
         };
+        let depth = self.locals.len();
+        if let Some((_, saved)) = self.local_options.pop_if(|s| s.0 == depth) {
+            self.restore_options(&saved);
+        }
         for (name, saved) in self.locals.pop().unwrap().into_iter().rev() {
             self.restore_saved(name, saved, Some(&func.name));
         }

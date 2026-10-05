@@ -129,6 +129,18 @@ impl Shell {
         }
     }
 
+    /// Restores the options that `set` sets to their values in `saved`, for
+    /// `local -` (as dash; luish's own options, set with `setopt`, are kept,
+    /// as bash keeps `shopt`'s).
+    pub fn restore_options(&mut self, saved: &crate::options::Options) {
+        for &(o, _, _) in crate::options::OPTIONS {
+            if !matches!(o, Opt::Interactive | Opt::Stdin) {
+                self.set_option(o, saved.get(o));
+            }
+        }
+        self.set_jobctl(self.opt(Opt::Monitor));
+    }
+
     fn start_trace(&self, at_startup: bool) -> VarTrace {
         use std::os::unix::ffi::OsStrExt;
         let env: HashMap<Vec<u8>, Vec<u8>> = std::env::vars_os()

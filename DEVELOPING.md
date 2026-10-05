@@ -582,6 +582,10 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   a `history.verify` refill. Tests: `builtins/print.sh` (zsh, through `$SH -i +m -c`, as the zsh reference runs
   natively there), `builtins/print_luish.sh`, `print_builtin` in `tests/interactive.rs`, unit tests in `print.rs`.
 - `local x` keeps the current value, as in dash (also an array's, and with `-a`).
+- `local -` (as in dash) pushes a copy of `Shell::options` on `Shell::local_options`, with the depth of `locals`
+  of the call that made it (once per call), and `call_function` restores it on return, through
+  `Shell::restore_options`: the options that `set` sets (not `interactive` or `stdin`), then job control, as `set`
+  does. luish's own options are kept, as bash keeps `shopt`'s. Test: `builtins/local_options.sh`.
 
 ### Options (`options.rs`)
 
