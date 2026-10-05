@@ -94,15 +94,15 @@ impl Parser {
     }
 
     /// The next token as a plain literal word (a reserved-word candidate).
-    fn peek_literal(&mut self) -> PResult<Option<Vec<u8>>> {
+    fn peek_literal(&mut self) -> PResult<Option<&[u8]>> {
         Ok(match &self.peek()?.tok {
-            Tok::Word(w) => w.as_literal().map(|s| s.to_vec()),
+            Tok::Word(w) => w.as_literal(),
             _ => None,
         })
     }
 
     fn peek_is_kw(&mut self, kw: &[u8]) -> PResult<bool> {
-        Ok(self.peek_literal()?.as_deref() == Some(kw))
+        Ok(self.peek_literal()? == Some(kw))
     }
 
     fn expect_kw(&mut self, kw: &str) -> PResult<()> {
@@ -270,23 +270,34 @@ impl Parser {
             let redirs = self.parse_redirects()?;
             return Ok(Command::Compound(cmd, redirs));
         }
-        if let Some(w) = self.peek_literal()? {
-            match w.as_slice() {
-                b"{" | b"if" | b"while" | b"until" | b"for" | b"case" | b"[[" => {
-                    let cmd = self.parse_compound()?;
-                    let redirs = self.parse_redirects()?;
-                    return Ok(Command::Compound(cmd, redirs));
-                }
-                b"function" => return self.parse_function_keyword(),
-                b"__luish_cache" => return self.parse_cache_block(),
-                w if is_reserved(w) => {
-                    let t = self.next()?;
-                    return self.unexpected(&t, None);
-                }
-                _ => {}
-            }
+        enum Start {
+            Compound,
+            Function,
+            Cache,
+            Reserved,
+            Simple,
         }
-        self.parse_simple()
+        let start = match self.peek_literal()? {
+            Some(b"{" | b"if" | b"while" | b"until" | b"for" | b"case" | b"[[") => Start::Compound,
+            Some(b"function") => Start::Function,
+            Some(b"__luish_cache") => Start::Cache,
+            Some(w) if is_reserved(w) => Start::Reserved,
+            _ => Start::Simple,
+        };
+        match start {
+            Start::Compound => {
+                let cmd = self.parse_compound()?;
+                let redirs = self.parse_redirects()?;
+                Ok(Command::Compound(cmd, redirs))
+            }
+            Start::Function => self.parse_function_keyword(),
+            Start::Cache => self.parse_cache_block(),
+            Start::Reserved => {
+                let t = self.next()?;
+                self.unexpected(&t, None)
+            }
+            Start::Simple => self.parse_simple(),
+        }
     }
 
     fn parse_compound(&mut self) -> PResult<CompoundCommand> {
@@ -297,10 +308,10 @@ impl Parser {
             return Ok(CompoundCommand::Subshell(list));
         }
         let kw = match &t.tok {
-            Tok::Word(w) => w.as_literal().unwrap_or_default().to_vec(),
-            _ => Vec::new(),
+            Tok::Word(w) => w.as_literal().unwrap_or_default(),
+            _ => b"",
         };
-        match kw.as_slice() {
+        match kw {
             b"{" => {
                 let list = self.parse_nonempty_list()?;
                 self.expect_kw("}")?;
@@ -754,7 +765,7 @@ impl Parser {
         self.next()?;
         let mut names = Vec::new();
         loop {
-            let Some(w) = self.peek_literal()? else {
+            let Some(w) = self.peek_literal()?.map(<[u8]>::to_vec) else {
                 if matches!(self.peek()?.tok, Tok::Word(_)) {
                     return self.err("Syntax error: Bad function name");
                 }
@@ -797,7 +808,7 @@ impl Parser {
             Tok::Op(Op::LParen) => true,
             _ => self
                 .peek_literal()?
-                .is_some_and(|w| matches!(&w[..], b"{" | b"if" | b"while" | b"until" | b"for" | b"case")),
+                .is_some_and(|w| matches!(w, b"{" | b"if" | b"while" | b"until" | b"for" | b"case")),
         };
         if !compound {
             let t = self.next()?;

@@ -1572,9 +1572,10 @@ That took the parse from 52,837 allocations to 41,273, its peak heap from 3.5 MB
 11%, for about 0.5% more instructions in the script benchmarks (reading a word's parts checks which kind it is). As
 the single part is inline, a part can't hold a `Word` inline: `Arith` boxes it, and `DoubleQuoted` keeps a `Vec`.
 The lexer also copies each run of literal bytes in one go (`take_run`) instead of pushing them one at a time, which
-grew a long literal several times: 38,562 allocations and 7% fewer instructions again. What remains is mostly one
-allocation for each word's bytes, which only spans into the source would avoid, and the parser's copies of words to
-compare them with reserved words (`peek_literal`). See also lazy function parsing in `PLAN.md`.
+grew a long literal several times: 38,562 allocations and 7% fewer instructions again. The parser compares the next
+word with reserved words in place (`peek_literal` borrows it), where it copied each one: 30,936 allocations, and in
+all 20% fewer instructions than at first. What remains is mostly one allocation for each word's bytes, which only
+spans into the source would avoid, and the AST's nodes. See also lazy function parsing in `PLAN.md`.
 
 ## Releases
 
