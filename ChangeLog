@@ -10,7 +10,7 @@ Unreleased
       where NAME shows where it was set; vars.trace_history keeps the
       last changes, which where -a shows (numbered, in colour)
     * Fixed: test FILE -nt MISSING (and MISSING -ot FILE) is true, as in
-      POSIX and dash
+      POSIX and dash; [[ ... ]] too, as in bash
 
 Version 0.4.0 2026-10-04 by luispedro
     * plugin: coloured output (plugin.* styles) and more feedback: load,

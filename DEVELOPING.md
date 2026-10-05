@@ -403,14 +403,14 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `cmdtext.rs` write it (`CondExpr::write`, which adds the parentheses that precedence needs; `=` is written `==`).
   Words are expanded as `case` expands them (`expand_word_str`, and `expand_pattern` for the right side of `=`),
   only when evaluated; the `set -x` trace is built during evaluation, so it shows only those parts. File tests reuse
-  `builtins/test.rs`, except that both files of `-nt` and `-ot` must exist, as in zsh (`test::mtime`; for `test`, as in
-  POSIX.1-2024, dash and bash, a file that exists is newer than one that doesn't). `=~` uses `regcomp`/`regexec` (`REG_EXTENDED`), without `setlocale`, so it matches bytes, as
+  `builtins/test.rs`, so with `-nt` and `-ot` a file that exists is newer than one that doesn't, as in bash (zsh: both
+  must exist). `=~` uses `regcomp`/`regexec` (`REG_EXTENDED`), without `setlocale`, so it matches bytes, as
   patterns do. The number of groups is `re_nsub`, which the `libc` crate keeps private, so `re_nsub` in `cond.rs`
   reads it at its offset (glibc or musl, unit test `exec::cond::tests::groups`); `match`, `mbegin` and `mend` are set
   only if there are groups, and `BASH_REMATCH` always, all as ordinary arrays. An error in an arithmetic operand is a shell error (status 2, as for `$((...))`; zsh uses 1). Like
   a simple command, `[[` exits under `set -e` on its own status (`run_pipeline`). The highlighter paints the
   expression's operators, and `]]` as a keyword (`After::Cond`). Tests: `parse/cond.sh` (zsh),
-  `parse/cond_regex_match.sh` (zsh), `parse/cond_regex_rematch.sh` (`zsh -o bashrematch`), `parse/cond_regex_bash.sh` and `parse/cond_xtrace.sh` (`.expected`), unit tests `parser::tests::cond` and
+  `parse/cond_regex_match.sh` (zsh), `parse/cond_regex_rematch.sh` (`zsh -o bashrematch`), `parse/cond_regex_bash.sh`, `parse/cond_newer.sh` and `parse/cond_xtrace.sh` (`.expected`), unit tests `parser::tests::cond` and
   `unparse::tests::layout`.
 - Recursion (`stack.rs`): as in Debian's dash (its patch 0009, for Debian bug 579815), a function call when 1000 are
   running is a shell error, `Maximum function recursion depth (1000) reached`; unlike dash, `func_depth` also goes

@@ -121,15 +121,9 @@ impl Shell {
             CondOp::Regex => return self.cond_regex(a, b),
             CondOp::Less => return Ok(a < b),
             CondOp::Greater => return Ok(a > b),
-            // Unlike `test`, both files must exist, as in zsh.
-            CondOp::Nt | CondOp::Ot => {
-                return Ok(match (test::mtime(a), test::mtime(b)) {
-                    (Some(x), Some(y)) if op == CondOp::Nt => x > y,
-                    (Some(x), Some(y)) => x < y,
-                    _ => false,
-                });
+            CondOp::Nt | CondOp::Ot | CondOp::Ef => {
+                return Ok(test::binary(a, op.text().as_bytes(), b).unwrap_or(false));
             }
-            CondOp::Ef => return Ok(crate::sys::same_file(a, b)),
             CondOp::Match | CondOp::NoMatch => unreachable!(),
             _ => (self.cond_arith(a)?).cmp(&self.cond_arith(b)?),
         };
