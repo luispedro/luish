@@ -10,9 +10,9 @@ A job that is disowned keeps running, but the shell forgets it: `jobs`
 doesn't list it, its end isn't reported, `wait` without arguments doesn't
 wait for it, and `exit` doesn't warn about it if it is stopped. Without
 arguments, `disown` removes the current job, so `command & disown` starts a
-command that the shell then leaves alone. See `help jobs` for how to name
-a job; as in bash, a job can also be named by the process id of one of its
-processes, such as `$!`.
+command that the shell then leaves alone; zsh's `command &|` and `command &!`
+do the same. See `help jobs` for how to name a job; as in bash, a job can
+also be named by the process id of one of its processes, such as `$!`.
 
 A stopped job stays stopped once disowned, with a warning that says how to
 continue it (`kill -CONT`).

@@ -1,4 +1,6 @@
 Unreleased
+    * cmd &| and cmd &! run cmd in the background and disown it, as in
+      zsh
     * case arms can end with ;& (fall through), and ;| or ;;& (try the
       next patterns), as in zsh and bash
     * a |& b pipes standard error too, as in zsh and bash

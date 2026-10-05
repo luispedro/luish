@@ -465,11 +465,14 @@ impl Scan<'_> {
                 b';' | b'&' | b'|' => {
                     let next = s.get(i + 1).copied();
                     let pipe_amp = c == b'|' && next == Some(b'&');
+                    // `&|` and `&!` (which may also be `&` and `!`: either way
+                    // a command follows).
+                    let amp_disown = c == b'&' && matches!(next, Some(b'|' | b'!'));
                     // `;;`, `;&`, `;|` and `;;&` end an arm of `case`.
                     let case_term = c == b';' && matches!(next, Some(b';' | b'&' | b'|'));
                     let len = match () {
                         _ if case_term && next == Some(b';') && s.get(i + 2) == Some(&b'&') => 3,
-                        _ if next == Some(c) || pipe_amp || case_term => 2,
+                        _ if next == Some(c) || pipe_amp || amp_disown || case_term => 2,
                         _ => 1,
                     };
                     let r = match (c, len) {
@@ -1682,6 +1685,10 @@ mod tests {
              d:command.unknown ;:op.control e:command.unknown &:op.control f:command.function"
         );
         assert_eq!(roles("f |& ls"), "f:command.function |&:op.pipe ls:command.external");
+        assert_eq!(
+            roles("f &| ls &! f"),
+            "f:command.function &|:op.control ls:command.external &!:op.control f:command.function"
+        );
         assert_eq!(
             roles("case x in a) ;& b) ;;& c) ;| d) ;; esac"),
             "case:keyword in:keyword ):op ;&:op ):op ;;&:op ):op ;|:op ):op ;;:op esac:keyword"

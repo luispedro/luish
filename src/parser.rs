@@ -33,7 +33,7 @@ pub fn is_reserved(w: &[u8]) -> bool {
 }
 
 /// Words that end a compound list.
-fn is_list_terminator(w: &[u8]) -> bool {
+pub(crate) fn is_list_terminator(w: &[u8]) -> bool {
     matches!(
         w,
         b"then" | b"else" | b"elif" | b"fi" | b"do" | b"done" | b"esac" | b"}"
@@ -136,19 +136,25 @@ impl Parser {
         let mut list = Vec::new();
         loop {
             let ao = self.parse_and_or()?;
-            let async_ = match self.peek_op()? {
-                Some(Op::Semi) => false,
-                Some(Op::Amp) => true,
+            let (async_, disown) = match self.peek_op()? {
+                Some(Op::Semi) => (false, false),
+                Some(Op::Amp) => (true, false),
+                Some(Op::AmpDisown) => (true, true),
                 _ => {
                     list.push(CompleteCommand {
                         list: ao,
                         async_: false,
+                        disown: false,
                     });
                     break;
                 }
             };
             self.next()?;
-            list.push(CompleteCommand { list: ao, async_ });
+            list.push(CompleteCommand {
+                list: ao,
+                async_,
+                disown,
+            });
             if matches!(self.peek()?.tok, Tok::Newline | Tok::Eof) {
                 break;
             }
@@ -168,13 +174,15 @@ impl Parser {
                 _ => {}
             }
             let ao = self.parse_and_or()?;
-            let async_ = match self.peek()?.tok {
-                Tok::Op(Op::Semi) => false,
-                Tok::Op(Op::Amp) => true,
+            let (async_, disown) = match self.peek()?.tok {
+                Tok::Op(Op::Semi) => (false, false),
+                Tok::Op(Op::Amp) => (true, false),
+                Tok::Op(Op::AmpDisown) => (true, true),
                 Tok::Newline => {
                     list.push(CompleteCommand {
                         list: ao,
                         async_: false,
+                        disown: false,
                     });
                     continue;
                 }
@@ -182,12 +190,17 @@ impl Parser {
                     list.push(CompleteCommand {
                         list: ao,
                         async_: false,
+                        disown: false,
                     });
                     break;
                 }
             };
             self.next()?;
-            list.push(CompleteCommand { list: ao, async_ });
+            list.push(CompleteCommand {
+                list: ao,
+                async_,
+                disown,
+            });
         }
         Ok(list)
     }
@@ -719,6 +732,7 @@ impl Parser {
                         rest: Vec::new(),
                     },
                     async_: false,
+                    disown: false,
                 }]),
                 redirs: Vec::new(),
             },

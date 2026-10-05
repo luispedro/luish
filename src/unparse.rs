@@ -120,7 +120,9 @@ impl<'a> Printer<'a> {
                 self.nl();
             }
             self.and_or(&cc.list);
-            if cc.async_ {
+            if cc.disown {
+                self.w(b" &|");
+            } else if cc.async_ {
                 self.w(b" &");
             }
         }
@@ -985,6 +987,10 @@ mod tests {
         assert_eq!(
             round_trip("f() { case $1 in a) x;& b) y;;& c) z;| d) ;& esac; a |& b; }"),
             "f() {\n    case $1 in\n        (a)\n            x\n        ;&\n        (b)\n            y\n        ;|\n        (c)\n            z\n        ;|\n        (d)\n        ;&\n    esac\n    a 2>&1 | b\n}\n"
+        );
+        assert_eq!(
+            round_trip("f() { a &! b &| c &! }"),
+            "f() {\n    a &\n    ! b &|\n    c &|\n}\n"
         );
         assert_eq!(
             round_trip("f() ( cd /; ls ) >out 2>&1"),

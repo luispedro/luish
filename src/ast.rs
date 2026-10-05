@@ -10,6 +10,8 @@ pub type List = Vec<CompleteCommand>;
 pub struct CompleteCommand {
     pub list: AndOrList,
     pub async_: bool,
+    /// `&|` or `&!` (zsh): run in the background, and disowned.
+    pub disown: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]

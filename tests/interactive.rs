@@ -382,6 +382,10 @@ fn disown_stopped() {
     );
     assert_eq!(sh.run("jobs"), "jobs\n$ ");
     sh.run(&format!("kill -KILL -{pgid}"));
+    // `&!` disowns a job under job control too.
+    sh.run("sleep 30 &!");
+    assert_eq!(sh.run("jobs"), "jobs\n$ ");
+    sh.run("kill $!");
     sh.send("exit\n");
     assert_eq!(sh.exit_status(), 0);
 }

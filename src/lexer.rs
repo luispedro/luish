@@ -150,6 +150,9 @@ pub enum Op {
     PipeAmp,
     OrIf,
     Amp,
+    /// `&|`, or `&!` where no command can follow the `!` (zsh): `&`, and
+    /// the job is disowned.
+    AmpDisown,
     AndIf,
     Semi,
     DSemi,
@@ -178,6 +181,7 @@ impl Op {
             Op::PipeAmp => "|&",
             Op::OrIf => "||",
             Op::Amp => "&",
+            Op::AmpDisown => "&|",
             Op::AndIf => "&&",
             Op::Semi => ";",
             Op::DSemi => ";;",
@@ -566,6 +570,8 @@ impl Parser {
             b'|' if self.at(1) == Some(b'&') => op(self, Op::PipeAmp, 2),
             b'|' => op(self, Op::Pipe, 1),
             b'&' if self.at(1) == Some(b'&') => op(self, Op::AndIf, 2),
+            b'&' if self.at(1) == Some(b'|') => op(self, Op::AmpDisown, 2),
+            b'&' if self.at(1) == Some(b'!') && self.ends_command(self.pos + 2)? => op(self, Op::AmpDisown, 2),
             b'&' => op(self, Op::Amp, 1),
             b';' => match (self.at(1), self.at(2)) {
                 (Some(b';'), Some(b'&')) => op(self, Op::DSemiAmp, 3),
@@ -594,6 +600,33 @@ impl Parser {
             },
             _ => self.lex_word(start, lineno),
         }
+    }
+
+    /// Whether no command can start at `i` (after blanks), so that `!`
+    /// before it would be a syntax error: the end of the input or the line,
+    /// a comment, an operator other than `(` or a redirection, or a reserved
+    /// word that ends a list. `&!` there is zsh's `&|`.
+    fn ends_command(&mut self, mut i: usize) -> PResult<bool> {
+        while matches!(self.src.get(i), Some(b' ' | b'\t')) {
+            i += 1;
+        }
+        let Some(&c) = self.src.get(i) else {
+            if !self.source_eof {
+                return self.incomplete();
+            }
+            return Ok(true);
+        };
+        if matches!(c, b'\n' | b'#' | b';' | b'&' | b'|' | b')') {
+            return Ok(true);
+        }
+        let end = self.src[i..]
+            .iter()
+            .position(|c| matches!(c, b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'(' | b')' | b'<' | b'>'))
+            .map_or(self.src.len(), |n| i + n);
+        if end == self.src.len() && !self.source_eof {
+            return self.incomplete();
+        }
+        Ok(crate::parser::is_list_terminator(&self.src[i..end]))
     }
 
     fn lex_word(&mut self, start: usize, lineno: u32) -> PResult<Token> {

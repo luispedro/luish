@@ -51,7 +51,11 @@ impl Shell {
         if ao.rest.is_empty() && !ao.first.negated && ao.first.cmds.len() > 1 {
             // Fork the processes of a pipeline directly, as dash does, so
             // that `$!` is the last one.
-            return self.run_multi_pipeline(&ao.first.cmds, true);
+            let r = self.run_multi_pipeline(&ao.first.cmds, true);
+            if cc.disown {
+                self.disown_last();
+            }
+            return r;
         }
         let pid = self.fork_child(ForkKind::Background(0))?;
         if pid == 0 {
@@ -61,8 +65,18 @@ impl Shell {
         self.last_bg_pid = Some(pid);
         let jobctl = self.jobctl();
         let cmd = if jobctl { cmdtext::and_or(ao) } else { String::new() };
-        self.jobs.add(Job::new(vec![(pid, cmd)], jobctl, false), true);
+        let i = self.jobs.add(Job::new(vec![(pid, cmd)], jobctl, false), true);
+        if cc.disown {
+            self.jobs.free(i);
+        }
         Ok(0)
+    }
+
+    /// Disowns the job of `$!`, for `&|` after a pipeline.
+    fn disown_last(&mut self) {
+        if let Some(i) = self.last_bg_pid.and_then(|pid| self.jobs.find_pid(pid)) {
+            self.jobs.free(i);
+        }
     }
 
     fn run_and_or(&mut self, ao: &AndOrList, exit: bool) -> ExecResult {

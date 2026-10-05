@@ -130,6 +130,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `case` (`;;`, or the last arm) runs with the `exit` flag. `unparse` and job texts print `;|` for `;;&`. Tests:
   `parse/case_fallthrough.sh` (zsh), `parse/case_fallthrough_bash.sh`, unit tests in `unparse.rs` and
   `highlight.rs`.
+- `cmd &|` and `cmd &!` (zsh): `Op::AmpDisown`, which sets `CompleteCommand::disown`; `run_complete` frees the job
+  after starting it (for a pipeline, the job of `$!`). `&|` is a syntax error in dash, so it is always one token. `a
+  &! b` is valid POSIX (`a & ! b`), so `&!` is one only where no command can follow (`Parser::ends_command`: the end
+  of the input or line, a comment, an operator other than `(` or a redirection, or a word that ends a list, such as
+  `}` or `fi`), which is a syntax error in dash; elsewhere it stays `&` and `!` (zsh disowns there too). `unparse`
+  prints `&|`. Tests: `exec/amp_disown.sh` (zsh), `parse/amp_bang.sh`, `disown_stopped` in `tests/interactive.rs`.
 - `a |& b` (zsh and bash; a syntax error in dash, so always on): `Op::PipeAmp`, which `parse_pipeline` turns into a
   `2>&1` appended to the left command's redirections, so it runs after them and `unparse` and job texts show
   `2>&1 |`. A function definition on its left is a syntax error. Tests: `exec/pipe_amp.sh` (zsh), `parse/pipe_amp_error.sh`, `command_roles`
@@ -1316,6 +1322,7 @@ truncates when it relocates the package.
 | `disown` | `builtins/disown.sh` (zsh), `builtins/disown_bash.sh` |
 | `\|&` | `exec/pipe_amp.sh` (zsh) |
 | `;&`, `;\|`, `;;&` in `case` | `parse/case_fallthrough.sh` (zsh), `parse/case_fallthrough_bash.sh` |
+| `&\|`, `&!` | `exec/amp_disown.sh` (zsh), `parse/amp_bang.sh` |
 | `<<< word` | `exec/here_string.sh` (zsh), `parse/here_string_error.sh` |
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |
