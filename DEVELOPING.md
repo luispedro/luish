@@ -403,7 +403,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `cmdtext.rs` write it (`CondExpr::write`, which adds the parentheses that precedence needs; `=` is written `==`).
   Words are expanded as `case` expands them (`expand_word_str`, and `expand_pattern` for the right side of `=`),
   only when evaluated; the `set -x` trace is built during evaluation, so it shows only those parts. File tests reuse
-  `builtins/test.rs`. `=~` uses `regcomp`/`regexec` (`REG_EXTENDED`), without `setlocale`, so it matches bytes, as
+  `builtins/test.rs`, except that both files of `-nt` and `-ot` must exist, as in zsh (`test::mtime`; for `test`, as in
+  POSIX.1-2024, dash and bash, a file that exists is newer than one that doesn't). `=~` uses `regcomp`/`regexec` (`REG_EXTENDED`), without `setlocale`, so it matches bytes, as
   patterns do. The number of groups is `re_nsub`, which the `libc` crate keeps private, so `re_nsub` in `cond.rs`
   reads it at its offset (glibc or musl, unit test `exec::cond::tests::groups`); `match`, `mbegin` and `mend` are set
   only if there are groups, and `BASH_REMATCH` always, all as ordinary arrays. An error in an arithmetic operand is a shell error (status 2, as for `$((...))`; zsh uses 1). Like

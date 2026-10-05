@@ -28,7 +28,8 @@ an error. With one argument, the expression is true if it is not empty.
 : File descriptor `fd` is a terminal.
 
 `file1 -nt file2`, `file1 -ot file2`, `file1 -ef file2`
-: `file1` is newer; older; the same file.
+: `file1` is newer; older; the same file. A file that exists is newer
+  than one that doesn't.
 
 `-n string`, `-z string`
 : `string` is not empty; is empty.

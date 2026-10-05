@@ -28,6 +28,10 @@ mkdir d; ln -s f1 link
 [[ -x d && ! -x f1 ]]; echo "$?"
 [[ -e nonexistent || -f d ]]; echo "$?"
 [[ f1 -ef link && ! f1 -ef f2 ]]; echo "$?"
+# Unlike `test`, both files of -nt and -ot must exist.
+[[ f1 -nt nonexistent ]]; echo "$?"
+[[ nonexistent -ot f1 ]]; echo "$?"
+[[ nonexistent -nt nonexistent2 ]]; echo "$?"
 [[ -t 5 ]]; echo "$?"
 # Variables and options.
 set -- a b

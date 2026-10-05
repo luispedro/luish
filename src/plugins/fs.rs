@@ -32,18 +32,11 @@ fn kind_name(t: libc::mode_t) -> &'static str {
     }
 }
 
-fn mtime(st: &libc::stat) -> (i64, i64) {
-    (st.st_mtime, st.st_mtime_nsec)
-}
-
 /// Whether `a` was modified after `b`, or exists while `b` doesn't (as
 /// bash's and make's "newer", so that a missing target is out of date).
 fn newer(a: &[u8], b: &[u8]) -> bool {
-    match (sys::stat(a), sys::stat(b)) {
-        (Some(x), Some(y)) => mtime(&x) > mtime(&y),
-        (Some(_), None) => true,
-        _ => false,
-    }
+    use crate::builtins::test::mtime;
+    mtime(a) > mtime(b)
 }
 
 /// Reads a whole file, or `None` if it can't be read.

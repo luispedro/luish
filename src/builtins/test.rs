@@ -95,8 +95,10 @@ fn parse_int(s: &[u8]) -> Result<i64, String> {
         .map_err(|_| format!("Illegal number: {}", String::from_utf8_lossy(s)))
 }
 
-fn mtime(st: &libc::stat) -> (i64, i64) {
-    (st.st_mtime, st.st_mtime_nsec)
+/// The modification time of `path`, `None` if it doesn't exist (which
+/// compares as older than any time).
+pub(crate) fn mtime(path: &[u8]) -> Option<(i64, i64)> {
+    sys::stat(path).map(|st| (st.st_mtime, st.st_mtime_nsec))
 }
 
 pub(crate) fn binary(a: &[u8], op: &[u8], b: &[u8]) -> TResult {
@@ -111,15 +113,10 @@ pub(crate) fn binary(a: &[u8], op: &[u8], b: &[u8]) -> TResult {
         b"-ge" => parse_int(a)? >= parse_int(b)?,
         b"-lt" => parse_int(a)? < parse_int(b)?,
         b"-le" => parse_int(a)? <= parse_int(b)?,
-        // As in dash, both files must exist.
-        b"-nt" => match (sys::stat(a), sys::stat(b)) {
-            (Some(x), Some(y)) => mtime(&x) > mtime(&y),
-            _ => false,
-        },
-        b"-ot" => match (sys::stat(a), sys::stat(b)) {
-            (Some(x), Some(y)) => mtime(&x) < mtime(&y),
-            _ => false,
-        },
+        // As in POSIX.1-2024, dash and bash, a file that exists is newer
+        // than one that doesn't.
+        b"-nt" => mtime(a) > mtime(b),
+        b"-ot" => mtime(a) < mtime(b),
         b"-ef" => sys::same_file(a, b),
         _ => return Err(format!("{}: unexpected operator", String::from_utf8_lossy(op))),
     })
