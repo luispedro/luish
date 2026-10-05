@@ -159,7 +159,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `highlight.rs`.
 - `Parser::started` tells a buffer of blank lines apart from a real incomplete command. The lexer reads a trailing
   `(...)` as `WordPart::GlobQual` only under `glob.bare_qualifiers`: the only place it depends on an option.
-- Unit tests in `parser.rs`. No `insta` snapshots or fuzz target yet.
+- Unit tests in `parser.rs`, and the `parse` and `unparse` fuzz targets (see Fuzzing). No `insta` snapshots yet.
 
 ### Expansion (`expand/`)
 
