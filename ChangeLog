@@ -1,4 +1,5 @@
 Unreleased
+    * help is shown in colour on a terminal, with the colour scheme in use
     * Plugin options: declared in plugin.toml's [plugin-options], given
       in plugins.enabled, dependencies or plugin load NAME OPTION=VALUE;
       seen as LUISH_PLUGIN_OPTIONS and sh::plugin_options()

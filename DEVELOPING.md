@@ -554,8 +554,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   state prints the same state), `builtins/internal_savestate_aliases.sh`, unit tests in `unparse.rs`.
 - `help` (`help.rs`) shows the Markdown in `docs/builtins/` (compiled in with `include_str!`). It is a built-in only
   in shells started with `-i` (which `set` can't change, so also their subshells). Unit tests check that every
-  built-in has a page, that pages fit 80 columns and that `docs/builtins.md` includes them all. Tests:
-  `builtins/help_noninteractive.sh`, `builtins/internal_help.sh`, `help_builtin` in `tests/interactive.rs`.
+  built-in has a page, that pages fit 80 columns and that `docs/builtins.md` includes them all. On a terminal
+  (`builtins::style::stdout_sgr`, as for `where`), it uses the colour scheme's highlighting roles: `keyword` for
+  headings, `string` for code spans (then shown without backticks), `command.builtin` for the synopsis's command
+  names, bold for terms and `**`; `sh` code blocks go through the line editor's highlighter (`classify`), with
+  command names taken as built-ins or else external commands, whatever the shell has defined. Tests:
+  `builtins/help_noninteractive.sh`, `builtins/internal_help.sh`, `help_builtin` in `tests/interactive.rs`, unit
+  tests in `help.rs`.
   When adding a page: every name, aliases such as `declare` included, needs an entry in `TOPICS` (kept sorted); the
   summary (the first paragraph after the synopsis) is at most 60 characters and rendered lines at most 79; the page
   must not contain relative links (Sphinx rejects them). After a failing `pixi run docs`, `rm -rf docs/_build`

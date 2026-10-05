@@ -1657,6 +1657,10 @@ fn help_builtin() {
     assert_has(&sh.run("type help"), "help is a shell builtin");
     assert_has(&sh.run("help true"), "Do nothing, successfully");
     assert_has(&sh.run("help false | cat"), "Do nothing, unsuccessfully");
+    // In colour on a terminal, as plain text otherwise.
+    assert_has(&sh.run("help pwd"), "\x1b[32mpwd\x1b[0m [-L | -P]");
+    assert_has(&sh.run("help pwd | cat"), "\npwd [-L | -P]");
+    assert_has(&sh.run("NO_COLOR=1 help pwd"), "\npwd [-L | -P]");
     let out = sh.run("help nosuch; echo \"status $?\"");
     assert_has(&out, "help: no help for nosuch");
     assert_has(&out, "status 1");
