@@ -1,0 +1,23 @@
+--- an older version is fine
+old loaded
+status 0
+--- so is this version
+old loaded
+status 0
+--- a newer one is not loaded, and its dependencies are not looked for
+luish: 1: __luish_internal plugin: new: needs luish 999.0 or later (this is VERSION)
+    __luish_internal plugin load new
+status 1
+--- nor is a plugin that depends on it
+luish: ~/.config/luish/plugins/user/plugin.toml: line 3: new: needs luish 999.0 or later (this is VERSION)
+--- nor in plugins.enabled
+luish: ~/.config/luish/config.toml: line 2: new: needs luish 999.0 or later (this is VERSION)
+old loaded
+old
+--- not a version
+luish: ~/.config/luish/plugins/bad/plugin.toml: line 1: luish-version: expected a version, such as "0.5" or "0.5.1"
+bad loaded
+luish: ~/.config/luish/plugins/bad/plugin.toml: line 1: luish-version: expected a version, such as "0.5" or "0.5.1"
+luish: ~/.config/luish/plugins/bad/plugin.toml: line 1: luish-version: expected a version, such as "0.5" or "0.5.1"
+luish: ~/.config/luish/plugins/bad/plugin.toml: line 1: luish-version: expected a version, such as "0.5" or "0.5.1"
+luish: ~/.config/luish/plugins/bad/plugin.toml: line 1: luish-version: expected a version, such as "0.5" or "0.5.1"

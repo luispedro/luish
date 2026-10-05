@@ -27,7 +27,9 @@ plugin runs its `init.lsh`, then its `extension.rhai`, then (in interactive
 shells) its
 `rc.lsh` and `post-rc.lsh`; during the startup files of `rc.d`,
 `post-rc.lsh` waits for their end. The dependencies that a plugin's
-`plugin.toml` lists are loaded first, unless they are already loaded.
+`plugin.toml` lists are loaded first, unless they are already loaded. A
+plugin whose `plugin.toml` has `luish-version = "X.Y"` isn't loaded by an
+older luish, nor are the plugins that depend on it.
 The `option=value` arguments after a plugin are its options, which its
 `plugin.toml` declares (see the plugins page of the documentation); a
 plugin that is already loaded, as a dependency or otherwise, must be given

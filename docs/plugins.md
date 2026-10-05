@@ -455,6 +455,24 @@ colorscheme = { dark = "solarized-dark", light = "solarized-light" }
 
 See [](colour-schemes.md) for how to make the schemes.
 
+### The oldest luish a plugin needs: `luish-version`
+
+A plugin that uses something added in a recent luish can say so in its `plugin.toml`:
+
+```toml
+luish-version = "0.5"   # or "0.5.1"
+```
+
+An older luish then doesn't load it, nor the plugins that depend on it, and says why (`plugin sync` and the startup
+of an interactive shell report it too):
+
+```text
+luish: ~/.config/luish/config.toml: line 3: proxy: needs luish 0.5 or later (this is 0.4.0)
+```
+
+The value is a version, `MAJOR`, `MAJOR.MINOR` or `MAJOR.MINOR.PATCH` (the missing numbers are 0); anything else is
+reported as an error in `plugin.toml`, and the plugin loads.
+
 ### Libraries
 
 A plugin can be meant for other plugins to use rather than for users to load: a set of Rhai modules that their

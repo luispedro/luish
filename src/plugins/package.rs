@@ -852,15 +852,25 @@ fn parse_config(sh: &Shell, file: &[u8], bytes: &[u8], problems: &mut Vec<Proble
     Ok(config.unwrap_or_default())
 }
 
-/// The dependencies in `plugin.toml`, the manifest of the directory plugin
-/// `dir`, which messages call `shown`, and the options it declares.
-/// `library` must be a boolean (it is read by `is_library`); the manifest's
-/// other keys (such as `description`) are ignored.
-fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -> (Vec<Entry>, Vec<Decl>) {
+/// What a directory plugin's `plugin.toml` says: its dependencies, the
+/// options it declares, and the oldest luish it needs (`luish-version`).
+#[derive(Default)]
+struct Manifest {
+    entries: Vec<Entry>,
+    decls: Vec<Decl>,
+    luish: Option<String>,
+}
+
+/// `plugin.toml`, the manifest of the directory plugin `dir`, which
+/// messages call `shown`. `library` must be a boolean (it is read by
+/// `is_library`); the manifest's other keys (such as `description`) are
+/// ignored.
+fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -> Manifest {
     let file = [dir, b"/plugin.toml"].concat();
     let r = with_toml(&file, shown, |text, mut root| {
         let mut out = Vec::new();
         let mut decls = Vec::new();
+        let mut luish = None;
         let mut r = Reader {
             sh,
             file: shown,
@@ -873,13 +883,26 @@ fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -
         {
             r.err(value.span.start, "library: not a boolean");
         }
+        if let Some(value) = root.remove("luish-version") {
+            match value.as_str() {
+                Some(v) if parse_version(v).is_some() => luish = Some(v.to_string()),
+                _ => r.err(
+                    value.span.start,
+                    "luish-version: expected a version, such as \"0.5\" or \"0.5.1\"",
+                ),
+            }
+        }
         if let Some(value) = root.remove("dependencies") {
             r.entries(value, "dependencies", &mut out);
         }
         if let Some(value) = root.remove("plugin-options") {
             decls = r.declarations(value);
         }
-        (out, decls)
+        Manifest {
+            entries: out,
+            decls,
+            luish,
+        }
     });
     match r {
         Ok(entries) => entries.unwrap_or_default(),
@@ -888,6 +911,26 @@ fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -
             Default::default()
         }
     }
+}
+
+/// The numbers of a version `MAJOR[.MINOR[.PATCH]]`, with the missing ones
+/// 0. A pre-release suffix (`0.5.0-dev`) is ignored.
+fn parse_version(v: &str) -> Option<[u64; 3]> {
+    let v = v.split_once('-').map_or(v, |(v, _)| v);
+    let mut out = [0; 3];
+    let mut parts = v.split('.');
+    for (i, part) in parts.by_ref().enumerate() {
+        if i == 3 || part.is_empty() || !part.bytes().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        out[i] = part.parse().ok()?;
+    }
+    Some(out)
+}
+
+/// Whether this luish is `required` or later.
+fn is_at_least(required: &str) -> bool {
+    parse_version(env!("CARGO_PKG_VERSION")) >= parse_version(required)
 }
 
 // ----------------------------------------------------------------------
@@ -1472,8 +1515,22 @@ impl<'a> Resolver<'a> {
             if !git {
                 self.manifests.push(file);
             }
-            let entries;
-            (entries, decls) = manifest(self.sh, &abs, &shown, &mut self.problems);
+            let m = manifest(self.sh, &abs, &shown, &mut self.problems);
+            decls = m.decls;
+            // A plugin for a newer luish isn't loaded, nor are its
+            // dependencies looked for (they may need it too).
+            let entries = match m.luish {
+                Some(v) if !is_at_least(&v) => {
+                    let msg = format!(
+                        "{name}: needs luish {v} or later (this is {})",
+                        env!("CARGO_PKG_VERSION")
+                    );
+                    self.problem(loc, msg);
+                    ok = false;
+                    Vec::new()
+                }
+                _ => m.entries,
+            };
             let scope = coll.map_or(Scope::None, Scope::Collection);
             let dependent = format!("for {name}");
             for d in &entries {
@@ -1604,7 +1661,7 @@ pub(super) fn given_options(
     opts: super::OptionArgs,
 ) -> Result<PluginOptions, String> {
     let decls = match found.kind {
-        Kind::Dir => manifest(sh, &found.path, &found.path, &mut Vec::new()).1,
+        Kind::Dir => manifest(sh, &found.path, &found.path, &mut Vec::new()).decls,
         _ => Vec::new(),
     };
     let given: Vec<_> = opts.into_iter().map(|(k, v)| (k, Given::Text(v))).collect();
@@ -2142,7 +2199,22 @@ pub fn available(sh: &mut Shell) -> Vec<(Vec<u8>, Vec<u8>)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, GitRef, Origin, Pin, compare_url, lock_text, parent, toml_str};
+    use super::{Config, GitRef, Origin, Pin, compare_url, is_at_least, lock_text, parent, parse_version, toml_str};
+
+    #[test]
+    fn versions() {
+        assert_eq!(parse_version("1"), Some([1, 0, 0]));
+        assert_eq!(parse_version("0.5"), Some([0, 5, 0]));
+        assert_eq!(parse_version("0.5.12"), Some([0, 5, 12]));
+        assert_eq!(parse_version("0.5.0-dev"), Some([0, 5, 0]));
+        for bad in ["", "x", "0.5.", ".5", "1.2.3.4", "v0.5", "0.5 ", "-1", ">=0.5"] {
+            assert_eq!(parse_version(bad), None, "{bad}");
+        }
+        assert!(parse_version("0.10") > parse_version("0.9.9"));
+        assert!(is_at_least("0.1"));
+        assert!(is_at_least(env!("CARGO_PKG_VERSION")));
+        assert!(!is_at_least("999"));
+    }
 
     #[test]
     fn parent_of_odd_paths() {

@@ -60,7 +60,7 @@ Phases 0 to 10 (the POSIX shell and the interactive mode) are done. The open pha
 3. `login.lsh`: run after `login.d`, in its cache, or uncached after `~/.profile` without `login.d`.
 4. `flock` on the data directory, for two `plugin sync` at once (extraction is already safe: rename into place).
 5. Version requirements other than `"*"`, once plugins have versions (a `version` in `plugin.toml`, or tags).
-6. More in `plugin.toml`: `description` (shown by `list-available -l`), the oldest luish a plugin needs.
+6. More in `plugin.toml`: `description` (shown by `list-available -l`).
 
 **Later**: a plugin's `bin/` on `PATH` and `completions/`; Tab after `plugin load NAME` offering its options (and
 `plugin list-loaded -l` showing them); archives for systems without git.

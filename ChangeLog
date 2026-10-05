@@ -1,4 +1,6 @@
 Unreleased
+    * plugin.toml: luish-version = "0.5" is the oldest luish a plugin
+      needs; an older one doesn't load it, and says why
     * sh::capture_cached: sh::capture kept in memory for a while;
       std completers that read -h use it
     * cmd &| and cmd &! run cmd in the background and disown it, as in

@@ -1248,6 +1248,14 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   nothing else. `plugin.toml` itself counts as an entry point (`ENTRY_POINTS`), so a library of Rhai modules needs
   no other file; the resolver's `manifest` reports a `library` that isn't a boolean. Test:
   `tests/plugins/library.sh`.
+- `luish-version` in `plugin.toml` is the oldest luish a plugin needs (as Cargo's `rust-version`). The resolver's
+  `manifest` reads it (`parse_version`: one to three numbers, a `-suffix` ignored, so a `0.5.0-dev` build counts as
+  0.5.0) and `Resolver::add` compares it with `CARGO_PKG_VERSION`: a plugin for a newer luish is a problem at the
+  entry that asked for it, which fails that entry and so its dependents, and its own dependencies aren't resolved.
+  Every path that loads a plugin by name or path goes through the resolver, so the check costs nothing at load
+  time beyond the manifest's parse that was already there. `plugin restore` (`given_options`) doesn't check: the
+  startup cache is per version of luish. A value that isn't a version is reported, and the plugin loads. Tests:
+  `tests/plugins/luish_version.sh`, `package::tests::versions`.
 - `plugin.toml`'s `options`, `alias`, `bindkey`, `colorscheme` and `style` tables are applied by `load_found` (with `config.rs`'s code), in
   interactive shells, after the extension loads and before `rc.lsh`; its options override `config.toml`'s, by design
   (a plugin can package a set of options). The file is parsed again there (the resolver only keeps the
