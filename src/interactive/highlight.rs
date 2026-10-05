@@ -463,11 +463,14 @@ impl Scan<'_> {
                     i = e;
                 }
                 b';' | b'&' | b'|' => {
-                    let len = if s.get(i + 1) == Some(&c) { 2 } else { 1 };
+                    let next = s.get(i + 1).copied();
+                    let pipe_amp = c == b'|' && next == Some(b'&');
+                    let len = if next == Some(c) || pipe_amp { 2 } else { 1 };
                     let r = match (c, len) {
                         _ if pattern => role::OP,
                         (b';', 2) => role::OP,
                         (b'|', 1) => role::PIPE,
+                        _ if pipe_amp => role::PIPE,
                         _ => role::CONTROL,
                     };
                     self.paint(i, i + len, r);
@@ -1673,6 +1676,7 @@ mod tests {
             "a:command.unknown |:op.pipe b:command.unknown ||:op.control c:command.unknown &&:op.control \
              d:command.unknown ;:op.control e:command.unknown &:op.control f:command.function"
         );
+        assert_eq!(roles("f |& ls"), "f:command.function |&:op.pipe ls:command.external");
         assert_eq!(
             roles("case x in a*|[b]) ;; esac"),
             "case:keyword in:keyword *:expand.glob |:op [b]:expand.glob ):op ;;:op esac:keyword"

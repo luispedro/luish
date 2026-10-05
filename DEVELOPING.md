@@ -124,6 +124,10 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   table (`NO_ALIASES`), so an `eval` doesn't allocate one. The completer's `Scan` mirrors these rules. Tests:
   `parse/alias_global.sh` (zsh), `parse/alias_suffix.sh` (zsh), unit tests in `complete.rs`.
 - Function bodies may be any command (`f() echo hi`), as in dash.
+- `a |& b` (zsh and bash; a syntax error in dash, so always on): `Op::PipeAmp`, which `parse_pipeline` turns into a
+  `2>&1` appended to the left command's redirections, so it runs after them and `unparse` and job texts show
+  `2>&1 |`. A function definition on its left is a syntax error. Tests: `exec/pipe_amp.sh` (zsh), `parse/pipe_amp_error.sh`, `command_roles`
+  in `highlight.rs`.
 - Process substitution: `read_word` reads `<(` and `>(` anywhere in a word (a syntax error in dash, so it is always
   on, and only `<` and `>` pay for the check) as a `WordPart::ProcSubst`, as bash and zsh do (`--input=<(cmd)`, and
   `2<(cmd)` is one word, not an fd number); `lex_token` sends a token that starts with one to `lex_word`. Not in
@@ -1304,6 +1308,7 @@ truncates when it relocates the package.
 | The right prompt | `right_prompt` in `tests/interactive.rs` |
 | `**`, `++`, `--`, `,` in arithmetic | `expand/arith_extended.sh` (zsh), `expand/arith_ops.sh` |
 | `disown` | `builtins/disown.sh` (zsh), `builtins/disown_bash.sh` |
+| `\|&` | `exec/pipe_amp.sh` (zsh) |
 | `<<< word` | `exec/here_string.sh` (zsh), `parse/here_string_error.sh` |
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |

@@ -225,8 +225,21 @@ impl Parser {
             negated = !negated;
         }
         let mut cmds = vec![self.parse_command()?];
-        while self.peek_op()? == Some(Op::Pipe) {
-            self.next()?;
+        while let Some(op @ (Op::Pipe | Op::PipeAmp)) = self.peek_op()? {
+            let t = self.next()?;
+            if op == Op::PipeAmp {
+                // `a |& b` is `a 2>&1 | b`, after a's own redirections.
+                let redirs = match cmds.last_mut().unwrap() {
+                    Command::Simple(c) => &mut c.redirs,
+                    Command::Compound(_, r) => r,
+                    _ => return self.unexpected(&t, None),
+                };
+                redirs.push(Redirect {
+                    fd: Some(2),
+                    kind: RedirKind::DupOut,
+                    target: RedirTarget::Word(Word(vec![WordPart::Literal(b"1".to_vec())])),
+                });
+            }
             self.skip_newlines()?;
             cmds.push(self.parse_command()?);
         }

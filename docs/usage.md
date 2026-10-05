@@ -62,6 +62,7 @@ typeset -i count=0                         # variable attributes, also with decl
 builtin cd /tmp                            # run the built-in even if a function has its name
 set -o pipefail                            # a pipeline fails if any of its commands does
 diff <(sort a) <(sort b)                   # process substitution: a file to read the output of a command
+make |& less                               # pipe standard error too, as make 2>&1 | less
 read -r first rest <<< "$line"             # a here-string: the word and a newline on stdin
 ```
 

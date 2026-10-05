@@ -1,4 +1,5 @@
 Unreleased
+    * a |& b pipes standard error too, as in zsh and bash
     * disown, as in zsh, with bash's -a, -r and process ids
     * Arithmetic: ** (and **=), ++ and -- (prefix and postfix), and the
       comma operator, as in zsh and bash

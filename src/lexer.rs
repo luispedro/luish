@@ -146,6 +146,8 @@ pub type PResult<T> = Result<T, ParseError>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Op {
     Pipe,
+    /// `|&`: a pipe of standard output and standard error (zsh and bash).
+    PipeAmp,
     OrIf,
     Amp,
     AndIf,
@@ -169,6 +171,7 @@ impl Op {
     pub fn text(self) -> &'static str {
         match self {
             Op::Pipe => "|",
+            Op::PipeAmp => "|&",
             Op::OrIf => "||",
             Op::Amp => "&",
             Op::AndIf => "&&",
@@ -553,6 +556,7 @@ impl Parser {
             }
             b'(' | b'|' if self.regex_word => self.lex_word(start, lineno),
             b'|' if self.at(1) == Some(b'|') => op(self, Op::OrIf, 2),
+            b'|' if self.at(1) == Some(b'&') => op(self, Op::PipeAmp, 2),
             b'|' => op(self, Op::Pipe, 1),
             b'&' if self.at(1) == Some(b'&') => op(self, Op::AndIf, 2),
             b'&' => op(self, Op::Amp, 1),
