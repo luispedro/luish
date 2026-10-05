@@ -81,7 +81,9 @@ Other qualifiers change the result:
 | `T` | add a character after each name for its type, as `ls -F`: `/` directory, `@` symbolic link, `*` executable, `\|` named pipe, `=` socket, `#` block device, `%` character device, and a space for other files |
 | `:h`, `:t`, `:r`, `:e`, `:a`, `:A`, `:u`, `:l` | modifiers, at the end of the list: remove the last path component (head; `:hN` keeps the first *N*), keep only it (tail; `:tN` the last *N*), remove the extension (root), keep only the extension, make the path absolute (also resolving symbolic links with `:A`), convert to upper or lower case. They are those of [parameter expansion](usage.md#parameter-expansion) |
 
-A bad qualifier is an error, with status 1, as in zsh: `*(Z)` gives `unknown file attribute: Z`.
+A bad qualifier is an error, with status 1, as in zsh: `*(Z)` gives `*(Z): bad glob qualifier: unknown file attribute: Z`.
+As in zsh with `globsubst`, the qualifier may come from an expansion, so `echo $PS1` fails if `PS1` ends in
+`%(...)`; quote the expansion (`echo "$PS1"`) to keep it literal.
 
 ## Differences from zsh
 

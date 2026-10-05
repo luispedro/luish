@@ -272,9 +272,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - Glob qualifiers (`qual.rs`): kept as text and recognized when a field ends in an unquoted `(...)` at glob time, so
   that, as in zsh's `sh` emulation, they can come from an expansion. Supported: file type, permission, owner,
   device, link count, size and time tests, `^ - , N D n`, `o`/`O` (`n L l a m c d N`), subscripts (from 0), `M`,
-  `T`, and the modifiers of `modify.rs`. Errors have status 1. `savestate` sets the option before the functions, and wraps a function
+  `T`, and the modifiers of `modify.rs`. Errors have status 1 and name the field (which may come from an expansion,
+  such as an unquoted `$PS1` ending in `%(...)`). `savestate` sets the option before the functions, and wraps a function
   with a qualifier in `set -o`/`+o` when it is off. Tests: `expand/glob_qualifiers.sh`,
-  `expand/glob_qualifier_errors.sh`, `builtins/internal_savestate_globqual.sh`, unit tests in `qual.rs` and
+  `expand/glob_qualifier_errors.sh`, `expand/glob_qualifier_error_message.sh`,
+  `builtins/internal_savestate_globqual.sh`, unit tests in `qual.rs` and
   `parser.rs`.
 - zsh's modifiers (`modify.rs`): `Modifier::read` reads one (a letter, and a count after `h` or `t`) and `apply`
   applies it, with zsh's results (`remtpath`, `remlpath`, `chabspath`, `chrealpath` in zsh's `hist.c`): `h` and `t`
@@ -1344,7 +1346,7 @@ truncates when it relocates the package.
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |
 | `**/` | `expand/globstar.sh` (zsh), `expand/globstar_off.sh` (dash), `expand/globstar_loop.sh` |
-| Glob qualifiers | `expand/glob_qualifiers.sh`, `expand/glob_qualifier_errors.sh` (zsh `+o shglob -o bareglobqual +o ksharrays`), `builtins/internal_savestate_globqual.sh` |
+| Glob qualifiers | `expand/glob_qualifiers.sh`, `expand/glob_qualifier_errors.sh` (zsh `+o shglob -o bareglobqual +o ksharrays`), `expand/glob_qualifier_error_message.sh`, `builtins/internal_savestate_globqual.sh` |
 | A directory as a command | `builtins/autocd.sh` (zsh) |
 | `bindkey` | `builtins/bindkey.sh` (same as dash), `builtins/internal_bindkey.sh`, `line_editor_keys` in `tests/interactive.rs` |
 | `style`, colour schemes | `builtins/internal_style.sh`, `misc/config_toml_style.sh`, `tests/plugins/manifest_style.sh`, `syntax_highlighting` in `tests/interactive.rs` |

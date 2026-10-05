@@ -234,8 +234,10 @@ impl Shell {
         let qual = match qual::Qualifiers::parse(&q) {
             Ok(qual) => qual,
             Err(msg) => {
-                // Status 1, as in zsh.
-                self.error(msg);
+                // Status 1, as in zsh. The field is shown, as it may come
+                // from an expansion (`echo $PS1` with `%(...)` at the end).
+                let shown = String::from_utf8_lossy(&bytes(&field)).into_owned();
+                self.error(format!("{shown}: bad glob qualifier: {msg}"));
                 return Err(Flow::Error(1));
             }
         };

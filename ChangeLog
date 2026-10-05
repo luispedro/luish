@@ -1,3 +1,6 @@
+Unreleased
+    * Bad glob qualifier errors name the word
+
 Version 0.5.0 2026-10-05 by luispedro
     * Large scripts parse faster, with less memory
     * plugin.toml: luish-version = "0.5" is the oldest luish a plugin

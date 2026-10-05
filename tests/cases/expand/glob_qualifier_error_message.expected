@@ -1,0 +1,2 @@
+%#%([root].#.x): bad glob qualifier: number expected
+*(Z): bad glob qualifier: unknown file attribute: Z
