@@ -1,21 +1,23 @@
-P was set to "3" in ~/h.sh:6
-PATH was inherited from the environment as "/usr/bin:/bin"
-PATH was set to "/x:/usr/bin:/bin" in ~/h.sh:3
-PATH was set to "/x:/usr/bin:/bin:/y" in ~/h.sh:4
-i was set to "105" in ~/h.sh:9
-i was set to "105" in ~/h.sh:9
+[1 - current state] P was set to "3" in ~/h.sh:6
+
+[1] PATH was inherited from the environment as "/usr/bin:/bin"
+[2] PATH was set to "/x:/usr/bin:/bin" in ~/h.sh:3
+[3 - current state] PATH was set to "/x:/usr/bin:/bin:/y" in ~/h.sh:4
+[1 - current state] i was set to "105" in ~/h.sh:9
+[1 - current state] i was set to "105" in ~/h.sh:9
 1
 -- history
-P was set to "1" in ~/h.sh:1
-P was set to "2" in ~/h.sh:2
-P was unset in ~/h.sh:5
-P was set to "3" in ~/h.sh:6
-PATH was inherited from the environment as "/usr/bin:/bin"
-PATH was set to "/x:/usr/bin:/bin" in ~/h.sh:3
-PATH was set to "/x:/usr/bin:/bin:/y" in ~/h.sh:4
+[1] P was set to "1" in ~/h.sh:1
+[2] P was set to "2" in ~/h.sh:2
+[3] P was unset in ~/h.sh:5
+[4 - current state] P was set to "3" in ~/h.sh:6
+
+[1] PATH was inherited from the environment as "/usr/bin:/bin"
+[2] PATH was set to "/x:/usr/bin:/bin" in ~/h.sh:3
+[3 - current state] PATH was set to "/x:/usr/bin:/bin:/y" in ~/h.sh:4
 (6 earlier changes of i not kept)
-i was set to "6" in ~/h.sh:9
-i was set to "105" in ~/h.sh:9
+[7] i was set to "6" in ~/h.sh:9
+[106 - current state] i was set to "105" in ~/h.sh:9
 101
-P was set in the -c command, line 1
-P was set to "3" in the -c command, line 1
+[1] P was set in the -c command, line 1
+[2 - current state] P was set to "3" in the -c command, line 1

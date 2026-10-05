@@ -30,6 +30,7 @@ use crate::frames::{FrameKind, SourceFile};
 use crate::hash::HashMap;
 use crate::options::Opt;
 use crate::shell::{ExecResult, Shell};
+use crate::style::Role;
 use crate::vars::{Special, Value};
 
 /// How many changes of a variable are kept in history mode.
@@ -251,24 +252,28 @@ impl Shell {
 
     /// Appends what `where` shows for `name` (with `all`, every change
     /// recorded); false if it isn't set and has no record.
-    fn where_one(&self, trace: &VarTrace, name: &[u8], all: bool, out: &mut Vec<u8>) -> bool {
-        let links = crate::interactive::links(self);
+    fn where_one(&self, trace: &VarTrace, p: &Painter, name: &[u8], all: bool, out: &mut Vec<u8>) -> bool {
         let current = self.vars.get_value(name).map(show_value);
         let changes = trace.vars.get(name);
         let Some(last) = changes.and_then(|c| c.events.back()) else {
-            let text = String::from_utf8_lossy(name);
+            let mut t = Text::default();
             match current {
                 Some(v) => {
-                    out.extend_from_slice(format!("{text} is set to ").as_bytes());
-                    out.extend_from_slice(&v);
-                    out.extend_from_slice(b", but where wasn't recorded\n");
-                }
-                None if self.vars.special(name).is_some() || name == b"LINENO" => {
-                    out.extend_from_slice(format!("{text} is a special parameter, set by the shell\n").as_bytes());
+                    t.paint(p, Kind::Name, name);
+                    t.plain(b" is set to");
+                    let line = Line::new(t, Some(&v), Text::from(b"(where wasn't recorded)"));
+                    let wide = line.too_wide(p);
+                    line.write(p, wide, out);
                 }
                 None => {
-                    out.extend_from_slice(format!("{text} is not set\n").as_bytes());
-                    return false;
+                    let special = self.vars.special(name).is_some() || name == b"LINENO";
+                    t.paint(p, if special { Kind::Name } else { Kind::Unset }, name);
+                    t.plain(match special {
+                        true => b" is a special parameter, set by the shell",
+                        false => b" is not set",
+                    });
+                    Line::new(t, None, Text::default()).write(p, false, out);
+                    return special;
                 }
             }
             return true;
@@ -280,22 +285,23 @@ impl Shell {
                 (What::Restored(_), Some(o)) => o,
                 _ => last,
             };
-            describe(name, shown, Some(current.as_deref()), links, self, out);
+            let line = describe(self, p, None, name, shown, Some(current.as_deref()));
+            let wide = line.too_wide(p);
+            line.write(p, wide, out);
             return true;
         }
         let changes = changes.unwrap();
         if changes.dropped > 0 {
             let n = changes.dropped;
             let s = if n == 1 { "" } else { "s" };
-            out.extend_from_slice(
-                format!(
-                    "({n} earlier change{s} of {} not kept)\n",
-                    String::from_utf8_lossy(name)
-                )
-                .as_bytes(),
-            );
+            let mut t = Text::default();
+            t.paint(p, Kind::Detail, format!("({n} earlier change{s} of ").as_bytes());
+            t.paint(p, Kind::Name, name);
+            t.paint(p, Kind::Detail, b" not kept)");
+            Line::new(t, None, Text::default()).write(p, false, out);
         }
         let n = changes.events.len();
+        let mut lines = Vec::with_capacity(n);
         for (i, e) in changes.events.iter().enumerate() {
             // A value that wasn't kept is the current one, for the last.
             let value = match &e.value {
@@ -303,101 +309,261 @@ impl Shell {
                 None if i + 1 == n => Some(current.as_deref()),
                 None => None,
             };
-            describe(name, e, value, links, self, out);
+            let number = changes.dropped + i + 1;
+            let label = match i + 1 == n {
+                true => format!("[{number} - current state]"),
+                false => format!("[{number}]"),
+            };
+            lines.push(describe(self, p, Some(label.as_bytes()), name, e, value));
+        }
+        // If one value goes on a line of its own, they all do.
+        let wide = lines.iter().any(|l| l.too_wide(p));
+        for line in lines {
+            line.write(p, wide, out);
         }
         true
     }
 }
 
-/// Appends the line that tells what `e` did to `name`, with `value` the
-/// value it set, as shown (`Some(None)` for unset, `None` if not known).
-fn describe(name: &[u8], e: &Event, value: Option<Option<&[u8]>>, links: bool, sh: &Shell, out: &mut Vec<u8>) {
-    out.extend_from_slice(name);
-    let to = |out: &mut Vec<u8>, prefix: &[u8]| {
-        if let Some(Some(v)) = value {
-            out.extend_from_slice(prefix);
-            out.extend_from_slice(v);
+/// What a piece of what `where` prints is, which picks its style from the
+/// line editor's highlighting roles.
+#[derive(Clone, Copy)]
+enum Kind {
+    /// A variable's name.
+    Name,
+    /// The name of a variable that isn't set.
+    Unset,
+    /// A value.
+    Value,
+    /// A file.
+    File,
+    /// A function's name.
+    Function,
+    /// The numbers of changes, and notes.
+    Detail,
+}
+
+const KINDS: [Role; 6] = [
+    Role::of("var"),
+    Role::of("var.unset"),
+    Role::of("string"),
+    Role::of("path"),
+    Role::of("command.function"),
+    Role::of("comment"),
+];
+
+/// How `where` prints: its colours (none for plain text), whether files are
+/// links, and how wide a line can be before a value goes on a line of its
+/// own.
+struct Painter {
+    sgr: Option<[String; KINDS.len()]>,
+    links: bool,
+    width: usize,
+}
+
+impl Painter {
+    fn new(sh: &Shell) -> Painter {
+        let cols = crate::sys::isatty(1).then(|| crate::sys::window_size(1)).flatten();
+        Painter {
+            sgr: crate::builtins::style::stdout_sgr(sh, KINDS),
+            links: crate::interactive::links(sh),
+            width: cols.map(|c| c.0).filter(|&c| c > 0).unwrap_or(80),
+        }
+    }
+
+    fn sgr(&self, kind: Kind) -> Option<&str> {
+        self.sgr
+            .as_ref()
+            .map(|s| s[kind as usize].as_str())
+            .filter(|s| !s.is_empty())
+    }
+}
+
+/// Text, painted, with its width on the terminal.
+#[derive(Default)]
+struct Text {
+    s: Vec<u8>,
+    width: usize,
+}
+
+impl Text {
+    fn from(t: &[u8]) -> Text {
+        let mut text = Text::default();
+        text.plain(t);
+        text
+    }
+
+    fn plain(&mut self, t: &[u8]) {
+        self.s.extend_from_slice(t);
+        self.width += width(t);
+    }
+
+    fn paint(&mut self, p: &Painter, kind: Kind, t: &[u8]) {
+        self.painted(p, kind, t, t);
+    }
+
+    /// Appends `t`, which shows as `shown` (without escape sequences), in
+    /// the style of `kind`.
+    fn painted(&mut self, p: &Painter, kind: Kind, t: &[u8], shown: &[u8]) {
+        match p.sgr(kind) {
+            Some(on) => {
+                self.s.extend_from_slice(on.as_bytes());
+                self.s.extend_from_slice(t);
+                self.s.extend_from_slice(b"\x1b[m");
+            }
+            None => self.s.extend_from_slice(t),
+        }
+        self.width += width(shown);
+    }
+}
+
+/// The width of `t` on the terminal, counting a character as one column.
+fn width(t: &[u8]) -> usize {
+    t.iter().filter(|&&c| c & 0xc0 != 0x80).count()
+}
+
+/// What `where` prints about a change: `head` (what was done to the
+/// variable), the value and `tail` (where), each left out if empty.
+struct Line<'a> {
+    head: Text,
+    value: Option<&'a [u8]>,
+    tail: Text,
+}
+
+impl<'a> Line<'a> {
+    fn new(head: Text, value: Option<&'a [u8]>, tail: Text) -> Line<'a> {
+        Line { head, value, tail }
+    }
+
+    /// Whether it is wider than the terminal on one line.
+    fn too_wide(&self, p: &Painter) -> bool {
+        let gap = |t: usize| if t > 0 { t + 1 } else { 0 };
+        self.head.width + self.value.map_or(0, |v| gap(width(v))) + gap(self.tail.width) > p.width
+    }
+
+    /// Appends it on one line, or with `wide`, with the value and `tail` on
+    /// lines of their own below `head`, indented.
+    fn write(self, p: &Painter, wide: bool, out: &mut Vec<u8>) {
+        let sep: &[u8] = if wide && self.value.is_some() { b"\n    " } else { b" " };
+        out.extend(self.head.s);
+        if let Some(v) = self.value {
+            out.extend_from_slice(sep);
+            let mut t = Text::default();
+            t.paint(p, Kind::Value, v);
+            out.extend(t.s);
+        }
+        if self.tail.width > 0 {
+            out.extend_from_slice(sep);
+            out.extend(self.tail.s);
+        }
+        out.push(b'\n');
+    }
+}
+
+/// What `e` did to `name`, with `value` the value it set, as shown
+/// (`Some(None)` for unset, `None` if not known), after `label`.
+fn describe<'a>(
+    sh: &Shell,
+    p: &Painter,
+    label: Option<&[u8]>,
+    name: &[u8],
+    e: &Event,
+    value: Option<Option<&'a [u8]>>,
+) -> Line<'a> {
+    let mut head = Text::default();
+    if let Some(l) = label {
+        head.paint(p, Kind::Detail, l);
+        head.plain(b" ");
+    }
+    head.paint(p, Kind::Name, name);
+    let unset = value == Some(None);
+    let value = value.flatten();
+    let mut tail = Text::default();
+    let to = |head: &mut Text, prefix: &[u8]| {
+        if value.is_some() {
+            head.plain(prefix);
         }
     };
     match &e.what {
         What::Set => {
-            out.extend_from_slice(b" was set");
-            to(out, b" to ");
+            head.plain(b" was set");
+            to(&mut head, b" to");
         }
-        What::Unset => out.extend_from_slice(b" was unset"),
-        What::Restored(_) if value == Some(None) => out.extend_from_slice(b" was unset again"),
+        What::Unset => head.plain(b" was unset"),
+        What::Restored(_) if unset => head.plain(b" was unset again"),
         What::Restored(_) => {
-            out.extend_from_slice(b" was restored");
-            to(out, b" to ");
+            head.plain(b" was restored");
+            to(&mut head, b" to");
         }
         What::Environment => {
-            out.extend_from_slice(b" was inherited from the environment");
-            to(out, b" as ");
+            head.plain(b" was inherited from the environment");
+            to(&mut head, b" as");
         }
         What::Startup => {
-            out.extend_from_slice(b" was set");
-            to(out, b" to ");
-            out.extend_from_slice(b" by luish when it started");
+            head.plain(b" was set");
+            to(&mut head, b" to");
+            tail.plain(b"by luish when it started");
         }
         What::Before => {
-            out.extend_from_slice(b" was set");
-            to(out, b" to ");
-            out.extend_from_slice(b" before tracing began");
+            head.plain(b" was set");
+            to(&mut head, b" to");
+            tail.plain(b"before tracing began");
         }
     }
     match (&e.what, &e.at) {
         (What::Restored(Some(f)), _) => {
-            out.extend_from_slice(b" on return from function ");
-            out.extend_from_slice(f);
+            tail.plain(b"on return from function ");
+            tail.paint(p, Kind::Function, f);
         }
         (What::Restored(None), Some(at)) => {
-            out.extend_from_slice(b" after the command ");
-            location(sh, at, links, out);
+            tail.plain(b"after the command ");
+            location(sh, p, at, &mut tail);
         }
-        (_, Some(at)) => {
-            out.push(b' ');
-            location(sh, at, links, out);
-        }
+        (_, Some(at)) => location(sh, p, at, &mut tail),
         (_, None) => {}
     }
-    out.push(b'\n');
+    let value = match &e.what {
+        What::Unset => None,
+        _ => value,
+    };
+    Line::new(head, value, tail)
 }
 
 /// Appends where `at` is: `in FILE:LINE`, `at the prompt`, ..., and the
 /// function running.
-fn location(sh: &Shell, at: &Location, links: bool, out: &mut Vec<u8>) {
+fn location(sh: &Shell, p: &Painter, at: &Location, out: &mut Text) {
     let line = (at.line > 0).then(|| at.line.to_string());
     match &at.place {
         Place::File(f) => {
-            out.extend_from_slice(b"in ");
+            out.plain(b"in ");
             let path = f.display_path();
             let mut shown = tilde(sh, &path);
             if let Some(l) = &line {
                 shown.push(b':');
                 shown.extend_from_slice(l.as_bytes());
             }
-            if links && path.first() == Some(&b'/') {
-                shown = crate::interactive::file_link(&shown, &path);
+            match p.links && path.first() == Some(&b'/') {
+                true => out.painted(p, Kind::File, &crate::interactive::file_link(&shown, &path), &shown),
+                false => out.paint(p, Kind::File, &shown),
             }
-            out.extend(shown);
         }
-        Place::Prompt => out.extend_from_slice(b"at the prompt"),
+        Place::Prompt => out.plain(b"at the prompt"),
         Place::Command => {
-            out.extend_from_slice(b"in the -c command");
+            out.plain(b"in the -c command");
             if let Some(l) = &line {
-                out.extend_from_slice(format!(", line {l}").as_bytes());
+                out.plain(format!(", line {l}").as_bytes());
             }
         }
         Place::Stdin => {
-            out.extend_from_slice(b"on standard input");
+            out.plain(b"on standard input");
             if let Some(l) = &line {
-                out.extend_from_slice(format!(", line {l}").as_bytes());
+                out.plain(format!(", line {l}").as_bytes());
             }
         }
     }
     if let Some(f) = &at.function {
-        out.extend_from_slice(b", in function ");
-        out.extend_from_slice(f);
+        out.plain(b", in function ");
+        out.paint(p, Kind::Function, f);
     }
 }
 
@@ -508,9 +674,14 @@ pub fn where_(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             .collect(),
         _ => args.to_vec(),
     };
+    let p = Painter::new(sh);
     let mut out = Vec::new();
     let mut status = 0;
-    for name in &names {
+    for (i, name) in names.iter().enumerate() {
+        // With -a, a blank line between variables.
+        if all && i > 0 {
+            out.push(b'\n');
+        }
         if !crate::lexer::is_valid_name(name) {
             sh.out(&out);
             out.clear();
@@ -526,10 +697,65 @@ pub fn where_(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             Some(Special::Path) => b"PATH",
             _ => name,
         };
-        if !sh.where_one(trace, name, all, &mut out) && status == 0 {
+        if !sh.where_one(trace, &p, name, all, &mut out) && status == 0 {
             status = 1;
         }
     }
     sh.out(&out);
     Ok(status)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn painter(sgr: bool) -> Painter {
+        Painter {
+            sgr: sgr.then(|| KINDS.map(|r| format!("\x1b[{}m", r.index().unwrap()))),
+            links: false,
+            width: 30,
+        }
+    }
+
+    fn line(p: &Painter, value: &'static [u8]) -> Line<'static> {
+        let mut head = Text::default();
+        head.paint(p, Kind::Name, b"X");
+        head.plain(b" was set to");
+        let mut tail = Text::from(b"in function ");
+        tail.paint(p, Kind::Function, b"f");
+        Line::new(head, Some(value), tail)
+    }
+
+    fn written(p: &Painter, value: &'static [u8]) -> String {
+        let l = line(p, value);
+        let mut out = Vec::new();
+        let wide = l.too_wide(p);
+        l.write(p, wide, &mut out);
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn plain_layout() {
+        let p = painter(false);
+        assert_eq!(written(&p, b"\"1\""), "X was set to \"1\" in function f\n");
+        assert_eq!(
+            written(&p, b"\"12345678\""),
+            "X was set to\n    \"12345678\"\n    in function f\n"
+        );
+    }
+
+    #[test]
+    fn width_leaves_out_escapes() {
+        // The same layout with colours.
+        let p = painter(true);
+        let [name, value, function] =
+            [Kind::Name, Kind::Value, Kind::Function].map(|k| KINDS[k as usize].index().unwrap());
+        assert_eq!(
+            written(&p, b"\"1\""),
+            format!("\x1b[{name}mX\x1b[m was set to \x1b[{value}m\"1\"\x1b[m in function \x1b[{function}mf\x1b[m\n")
+        );
+        assert!(written(&p, b"\"12345678\"").contains("\n    "));
+        // Characters, not bytes.
+        assert_eq!(width("é".as_bytes()), 1);
+    }
 }

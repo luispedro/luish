@@ -40,20 +40,9 @@ pub struct Ui {
 impl Ui {
     /// The colours for standard output.
     pub fn new(sh: &Shell) -> Ui {
-        let no_color = sh.get_var(b"NO_COLOR").is_some_and(|v| !v.is_empty());
-        if no_color || !crate::sys::isatty(1) {
-            return Ui::plain();
+        Ui {
+            sgr: crate::builtins::style::stdout_sgr(sh, KINDS.map(|(_, role)| role)),
         }
-        let scheme = crate::builtins::style::scheme_in_use(sh);
-        let r = sh.styles.resolver(scheme.as_deref());
-        let sgr = KINDS.map(|(_, role)| {
-            let params = role.index().map(|i| crate::style::ROLES[i]).map(|n| r.get(n).sgr());
-            match params {
-                Some(p) if !p.is_empty() => format!("\x1b[{p}m"),
-                _ => String::new(),
-            }
-        });
-        Ui { sgr: Some(sgr) }
     }
 
     /// No colours.

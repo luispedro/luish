@@ -606,6 +606,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - `where` is in `builtins::INTERACTIVE`, and `Shell::builtin` also finds it while tracing (only after the main table
   missed, so lookups of other commands pay a test of `vartrace` only on that path). `__luish_internal where` is the
   same everywhere. The old plugin case that named a plugin built-in `where` now uses `plugindir`.
+- `where` prints each change as a `Line` (what was done, the value, where), on one line or, if that is wider than the
+  terminal (80 columns when stdout isn't one), with the value and where on indented lines of their own; `-a` decides
+  once per variable, so its numbered entries line up. Colours come from highlighting roles (`var`, `string`, `path`,
+  `command.function`, `comment`) through `builtins::style::stdout_sgr`, which `plugin`'s `Ui` also uses: none unless
+  stdout is a terminal and `$NO_COLOR` is unset. Widths leave out escapes (`Text`); unit tests in `vartrace.rs`.
 - Tests: `misc/vartrace.sh`, `misc/vartrace_restore.sh`, `misc/vartrace_history.sh`, `misc/vartrace_startup.sh`,
   `tests/plugins/vartrace_prompt.sh`.
 

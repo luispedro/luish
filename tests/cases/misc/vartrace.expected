@@ -43,3 +43,6 @@ unsetopt: 2
 X was set to "1" in the -c command, line 1
 subshell: 2
 X was set to "1" at the prompt
+v was set to
+    "0123456789012345678901234567890123456789012345678901234567890123456789"
+    in the -c command, line 1

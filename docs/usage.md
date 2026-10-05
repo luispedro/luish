@@ -266,6 +266,10 @@ PATH was set to "/home/me/bin:/usr/bin:/bin" in ~/.config/luish/rc.d/10-path.lsh
 EDITOR was set to "vi" in ~/.my-script.sh:123, in function setup
 ```
 
+A value too long for the terminal goes on a line of its own, below, and where it was set on the next. On a terminal,
+names, values, files and functions are in colour, in the styles `var`, `string`, `path`, `command.function` and
+`comment` (the numbers of changes) of the line editor's highlighting.
+
 `setopt vars.trace` records where each variable was last set: the file and line of the code that set it and the
 function running, or the prompt, the `-c` command or standard input. `setopt vars.trace_history` also keeps the last
 100 changes of each variable, with their values, which `where -a` shows. With `vars.trace`, the changes of `PATH`,
@@ -274,9 +278,14 @@ bit by bit:
 
 ```text
 $ where -a PATH
-PATH was inherited from the environment as "/usr/bin:/bin"
-PATH was set to "/home/me/bin:/usr/bin:/bin" in ~/.config/luish/rc.d/10-path.lsh:3
-PATH was set to "/home/me/bin:/usr/bin:/bin:/opt/x/bin" in ~/.local/share/luish/plugins/x/init.lsh:7, in function add
+[1] PATH was inherited from the environment as
+    "/usr/bin:/bin"
+[2] PATH was set to
+    "/home/me/bin:/usr/bin:/bin"
+    in ~/.config/luish/rc.d/10-path.lsh:3
+[3 - current state] PATH was set to
+    "/home/me/bin:/usr/bin:/bin:/opt/x/bin"
+    in ~/.local/share/luish/plugins/x/init.lsh:7, in function add
 ```
 
 Tracing costs nothing while it is off. While it is on, assignments are slower (a script of function calls and

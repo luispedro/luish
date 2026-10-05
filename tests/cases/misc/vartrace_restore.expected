@@ -1,46 +1,46 @@
 X was set to "tmp" in ~/r.sh:3
 X was set to "hello" in ~/r.sh:1
-X was restored to "hello" after the command in ~/r.sh:4
+[1 - current state] X was restored to "hello" after the command in ~/r.sh:4
 X was set to "inner" in ~/r.sh:7, in function f
 X was set to "inner" in ~/r.sh:7, in function f
 X was set to "hello" in ~/r.sh:1
-X was restored to "hello" on return from function f
+[1 - current state] X was restored to "hello" on return from function f
 X was unset in ~/r.sh:12
-X was unset again on return from function f2
+[1 - current state] X was unset again on return from function f2
 X was unset in ~/r.sh:18, in function f3
 X was set to "1" in ~/r.sh:17
 -- history
 X was set to "tmp" in ~/r.sh:3
 X was set to "hello" in ~/r.sh:1
-X was set to "hello" in ~/r.sh:1
-X was set to "tmp" in ~/r.sh:3
-X was restored to "hello" after the command in ~/r.sh:3
-X was set to "tmp" in ~/r.sh:4
-X was restored to "hello" after the command in ~/r.sh:4
+[1] X was set to "hello" in ~/r.sh:1
+[2] X was set to "tmp" in ~/r.sh:3
+[3] X was restored to "hello" after the command in ~/r.sh:3
+[4] X was set to "tmp" in ~/r.sh:4
+[5 - current state] X was restored to "hello" after the command in ~/r.sh:4
 X was set to "inner" in ~/r.sh:7, in function f
 X was set to "inner" in ~/r.sh:7, in function f
 X was set to "hello" in ~/r.sh:1
-X was set to "hello" in ~/r.sh:1
-X was set to "tmp" in ~/r.sh:3
-X was restored to "hello" after the command in ~/r.sh:3
-X was set to "tmp" in ~/r.sh:4
-X was restored to "hello" after the command in ~/r.sh:4
-X was set to "inner" in ~/r.sh:7, in function f
-X was set to "deeper" in ~/r.sh:8, in function h
-X was restored to "inner" on return from function h
-X was restored to "hello" on return from function f
+[1] X was set to "hello" in ~/r.sh:1
+[2] X was set to "tmp" in ~/r.sh:3
+[3] X was restored to "hello" after the command in ~/r.sh:3
+[4] X was set to "tmp" in ~/r.sh:4
+[5] X was restored to "hello" after the command in ~/r.sh:4
+[6] X was set to "inner" in ~/r.sh:7, in function f
+[7] X was set to "deeper" in ~/r.sh:8, in function h
+[8] X was restored to "inner" on return from function h
+[9 - current state] X was restored to "hello" on return from function f
 X was unset in ~/r.sh:12
-X was set to "hello" in ~/r.sh:1
-X was set to "tmp" in ~/r.sh:3
-X was restored to "hello" after the command in ~/r.sh:3
-X was set to "tmp" in ~/r.sh:4
-X was restored to "hello" after the command in ~/r.sh:4
-X was set to "inner" in ~/r.sh:7, in function f
-X was set to "deeper" in ~/r.sh:8, in function h
-X was restored to "inner" on return from function h
-X was restored to "hello" on return from function f
-X was unset in ~/r.sh:12
-X was set to "in" in ~/r.sh:13, in function f2
-X was unset again on return from function f2
+[1] X was set to "hello" in ~/r.sh:1
+[2] X was set to "tmp" in ~/r.sh:3
+[3] X was restored to "hello" after the command in ~/r.sh:3
+[4] X was set to "tmp" in ~/r.sh:4
+[5] X was restored to "hello" after the command in ~/r.sh:4
+[6] X was set to "inner" in ~/r.sh:7, in function f
+[7] X was set to "deeper" in ~/r.sh:8, in function h
+[8] X was restored to "inner" on return from function h
+[9] X was restored to "hello" on return from function f
+[10] X was unset in ~/r.sh:12
+[11] X was set to "in" in ~/r.sh:13, in function f2
+[12 - current state] X was unset again on return from function f2
 X was unset in ~/r.sh:18, in function f3
 X was set to "1" in ~/r.sh:17

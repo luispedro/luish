@@ -26,15 +26,31 @@ variable `local` returns, or after a command with a temporary assignment
 `PATH`. Without names, `where` shows every variable that is set.
 
 `-a`
-: Show every change recorded, oldest first, with the values set and
-  values put back. With `vars.trace` this is the last change only, except
-  for `PATH`, `MANPATH`, `PS1`, `RPROMPT` and `RPS1`, whose last 100
-  changes are kept; `vars.trace_history` keeps the last 100 changes of
-  every variable. A first line tells how many older changes were dropped.
+: Show every change recorded, oldest first and numbered, with the values
+  set and values put back; the last is marked `current state`. With
+  `vars.trace` this is the last change only, except for `PATH`,
+  `MANPATH`, `PS1`, `RPROMPT` and `RPS1`, whose last 100 changes are
+  kept; `vars.trace_history` keeps the last 100 changes of every
+  variable. A first line tells how many older changes were dropped, and
+  a blank line separates variables.
+
+```sh
+$ where -a PATH
+[1] PATH was inherited from the environment as
+    "/usr/bin:/bin"
+[2 - current state] PATH was set to
+    "/home/me/bin:/usr/bin:/bin"
+    in ~/.config/luish/rc.d/path.lsh:3
+```
 
 Values are shown in double quotes, or as `$'...'` if they have control
 characters; arrays are shown as `("a" "b")`, and values longer than 4096
-bytes are cut.
+bytes are cut. A value too long to fit on the line (of the terminal, or
+80 columns) goes on a line of its own, indented, and where it was set
+on the next; with `-a`, if one of a variable's values does, they all do.
+On a terminal, names, values, files and functions are in colour, in the
+styles `var`, `string`, `path`, `command.function` and `comment` (see
+`help style`), unless `$NO_COLOR` is set.
 
 `where` is a built-in of interactive shells, and of other shells while
 variables are traced; elsewhere `__luish_internal where` runs it. It is

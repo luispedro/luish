@@ -34,6 +34,26 @@ pub fn scheme_in_use(sh: &Shell) -> Option<String> {
     sh.styles.choice().scheme(background(sh).0).map(str::to_owned)
 }
 
+/// The escape sequences that start text in each of `roles` (empty for a role
+/// without a style) in what a built-in prints on standard output, from the
+/// colour scheme in use; none when standard output isn't a terminal or
+/// `$NO_COLOR` is set, so that what scripts read stays plain text.
+pub fn stdout_sgr<const N: usize>(sh: &Shell, roles: [style::Role; N]) -> Option<[String; N]> {
+    let no_color = sh.get_var(b"NO_COLOR").is_some_and(|v| !v.is_empty());
+    if no_color || !crate::sys::isatty(1) {
+        return None;
+    }
+    let scheme = scheme_in_use(sh);
+    let r = sh.styles.resolver(scheme.as_deref());
+    Some(roles.map(|role| {
+        let params = role.index().map(|i| style::ROLES[i]).map(|n| r.get(n).sgr());
+        match params {
+            Some(p) if !p.is_empty() => format!("\x1b[{p}m"),
+            _ => String::new(),
+        }
+    }))
+}
+
 fn text(arg: &[u8]) -> String {
     String::from_utf8_lossy(arg).into_owned()
 }

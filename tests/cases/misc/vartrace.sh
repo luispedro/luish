@@ -58,3 +58,6 @@ $SH -o vars.trace -c 'X=1; unsetopt vars.trace; __luish_internal where X' 2>/dev
 $SH -c '(setopt vars.trace; X=1; where X); __luish_internal where X' 2>/dev/null; echo "subshell: $?"
 # At the prompt (of an interactive shell, here without a terminal).
 printf 'X=1\nwhere X\n' | $SH -i +m -o vars.trace 2>/dev/null
+# A value too long for one line (80 columns without a terminal) goes on a
+# line of its own, as does where it was set.
+$SH -o vars.trace -c 'v=0123456789012345678901234567890123456789012345678901234567890123456789; where v'
