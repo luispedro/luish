@@ -191,14 +191,14 @@ status 0
 --- ssh -J del
 delta 
 status 0
---- ssh nop
+--- ssh no_p
 status 1
 --- ssh eps
 epsilon 
 status 0
---- ssh noh
+--- ssh no_h
 status 1
---- ssh nol
+--- ssh no_l
 status 1
 --- ssh !
 status 1
