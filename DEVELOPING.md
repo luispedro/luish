@@ -462,6 +462,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   editor has the terminal, so leaving waits until every such job has ended (Ctrl-C leaves without), which also lets
   the prompt report it. `Menu` (keys and drawing) doesn't see `Shell`. Tests: unit tests in `jobmenu.rs`, `jobs_menu`
   in `tests/interactive.rs`, `builtins/jobs_menu.sh` (without a terminal).
+- `disown` (zsh's, with bash's `-a`, `-r`, `-h` and process ids, `jobs::disown`) frees the jobs' slots
+  (`JobTable::free`), resolving every argument first so that naming a job twice frees it once; the children are
+  still reaped, by `waitpid(-1)`, as any unknown child is. A stopped job gets zsh's warning (with `-PGID`, or each
+  pid without job control). luish never sends SIGHUP to its jobs (as dash; zsh does on exit, bash on SIGHUP), so
+  `-h` does nothing. Errors are status 1 (bash; zsh uses 127 for an unknown job). Tests: `builtins/disown.sh`
+  (zsh), `builtins/disown_bash.sh`, `disown_stopped` in `tests/interactive.rs`.
 
 ### Built-ins (`builtins/`)
 
@@ -1297,6 +1303,7 @@ truncates when it relocates the package.
 | `%` sequences in prompts | `misc/prompt_percent.sh`, `misc/prompt_percent_long.sh`, `misc/prompt_style.sh` |
 | The right prompt | `right_prompt` in `tests/interactive.rs` |
 | `**`, `++`, `--`, `,` in arithmetic | `expand/arith_extended.sh` (zsh), `expand/arith_ops.sh` |
+| `disown` | `builtins/disown.sh` (zsh), `builtins/disown_bash.sh` |
 | `<<< word` | `exec/here_string.sh` (zsh), `parse/here_string_error.sh` |
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |

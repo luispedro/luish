@@ -1,4 +1,4 @@
-//! `jobs`, `fg`, `bg`, `wait`, and `kill`.
+//! `jobs`, `fg`, `bg`, `wait`, `disown`, and `kill`.
 
 use super::options;
 use crate::jobs::{JobState, ShowMode, Waited};
@@ -168,6 +168,79 @@ pub fn wait(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         };
     }
     Ok(status)
+}
+
+/// `disown` (not POSIX; as in zsh and bash): removes jobs from the table,
+/// so that they are no longer reported, waited for or warned about. luish
+/// never sends SIGHUP to its jobs, so bash's `-h` has nothing to do.
+pub fn disown(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    let (opts, args) = match options(sh, argv, b"ahr") {
+        Ok(r) => r,
+        Err(s) => return Ok(s),
+    };
+    let running = opts.contains(&b'r');
+    let mut status = 0;
+    let mut slots = Vec::new();
+    if opts.contains(&b'a') || (running && args.is_empty()) {
+        slots = sh.jobs.order().to_vec();
+    } else if args.is_empty() {
+        match sh.get_job(None, false) {
+            Ok(i) => slots.push(i),
+            Err(msg) => {
+                sh.berr(&argv[0], msg);
+                return Ok(1);
+            }
+        }
+    }
+    for a in args {
+        // A job, or as in bash, the process id of one of its processes.
+        let found = if a.first() == Some(&b'%') {
+            sh.get_job(Some(a), false)
+        } else {
+            match super::parse_uint(a) {
+                Some(pid) => sh
+                    .jobs
+                    .find_pid(pid as i32)
+                    .ok_or_else(|| format!("No such job: {}", text(a))),
+                None => Err(format!("Illegal number: {}", text(a))),
+            }
+        };
+        match found {
+            Ok(i) if !slots.contains(&i) => slots.push(i),
+            Ok(_) => {}
+            Err(msg) => {
+                sh.berr(&argv[0], msg);
+                status = 1;
+            }
+        }
+    }
+    if opts.contains(&b'h') {
+        return Ok(status);
+    }
+    for i in slots {
+        let job = sh.jobs.get(i);
+        if running && job.state != JobState::Running {
+            continue;
+        }
+        if job.state == JobState::Stopped {
+            // As in zsh (which also names each process).
+            let pids = if job.jobctl {
+                format!(" -{}", job.pgid())
+            } else {
+                job.procs.iter().map(|p| format!(" {}", p.pid)).collect()
+            };
+            sh.berr(
+                &argv[0],
+                format!("warning: job is stopped, use `kill -CONT{pids}' to resume"),
+            );
+        }
+        sh.jobs.free(i);
+    }
+    Ok(status)
+}
+
+fn text(s: &[u8]) -> std::borrow::Cow<'_, str> {
+    String::from_utf8_lossy(s)
 }
 
 /// A port of dash's `killcmd` (except for jobs started without job

@@ -363,6 +363,30 @@ fn stopped_pipeline_and_exit_warning() {
 }
 
 #[test]
+fn disown_stopped() {
+    let mut sh = Pty::spawn("disown");
+    sh.expect("$ ");
+    sh.send("sleep 30\n");
+    sh.wait_for_procs(&["sleep"]);
+    sh.send("\x1a");
+    assert_has(&sh.expect("\n$ "), "[1] + Stopped                    sleep 30\n");
+    // A stopped job is disowned with a warning that tells how to continue
+    // it, and `exit` no longer warns about it.
+    let out = sh.run("disown");
+    let marker = "disown: warning: job is stopped, use `kill -CONT -";
+    let at = out.find(marker).unwrap_or_else(|| panic!("no warning in:\n{out}")) + marker.len();
+    let pgid: String = out[at..].chars().take_while(char::is_ascii_digit).collect();
+    assert!(
+        !pgid.is_empty() && out[at + pgid.len()..].starts_with("' to resume"),
+        "{out}"
+    );
+    assert_eq!(sh.run("jobs"), "jobs\n$ ");
+    sh.run(&format!("kill -KILL -{pgid}"));
+    sh.send("exit\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
 fn pipefail_job_control() {
     let mut sh = Pty::spawn("pipefail");
     sh.expect("$ ");

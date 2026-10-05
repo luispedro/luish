@@ -36,6 +36,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"continue", page!("continue")),
     (b"declare", page!("typeset")),
     (b"dirs", page!("dirs")),
+    (b"disown", page!("disown")),
     (b"echo", page!("echo")),
     (b"eval", page!("eval")),
     (b"exec", page!("exec")),

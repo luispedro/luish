@@ -1,0 +1,9 @@
+by pid: 0
+still running
+-h: still a job
+-a: both running
+-r: running
+errors: 1
+removed anyway
+no such job: 1
+bad option: 2

@@ -80,6 +80,8 @@ builtins! {
     (b"declare", vars::typeset, false),
     // Not POSIX: as in zsh.
     (b"dirs", dirstack::dirs, false),
+    // Not POSIX: as in zsh and bash.
+    (b"disown", jobs::disown, false),
     (b"echo", echo::echo, false),
     (b"false", false_, false),
     (b"fc", fc::fc, false),

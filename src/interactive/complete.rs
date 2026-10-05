@@ -253,6 +253,7 @@ const ARGS: &[(&[u8], Args)] = &[
     (b"bg", Args::Jobs),
     (b"jobs", Args::Jobs),
     (b"wait", Args::Jobs),
+    (b"disown", Args::Jobs),
     (b"kill", Args::Kill),
     (b"trap", Args::Trap),
     (b"plugin", Args::Plugin),
