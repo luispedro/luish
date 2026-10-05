@@ -1,5 +1,61 @@
 # What's new
 
+## Version 0.5.0 (5 October 2026)
+
+This release brings more of zsh's and bash's language, a way to find where
+variables were set, a menu of the jobs, and options for plugins.
+
+**Where variables were set.** With `setopt vars.trace` (or
+`luish -o vars.trace`, to trace the startup files too), the new `where`
+built-in shows the file and line that last set a variable, and the function
+that ran. `setopt vars.trace_history` keeps the last changes of each
+variable, which `where -a` lists, numbered and in colour (see
+[](usage.md#tracing-variables)).
+
+**Jobs.**
+
+- `jobs -i` shows a menu of the jobs, to bring one to the foreground,
+  continue, stop or kill it (`K`, then a key for the signal: `e` sends
+  `TERM`, then `KILL` if the job is still there 5 s later).
+- `disown`, as in zsh, with bash's `-a`, `-r` and `-h`, and jobs named by a
+  process id (`disown $!`).
+- `cmd &|` and `cmd &!` run `cmd` in the background and disown it, as in zsh.
+
+**The language.**
+
+- `a |& b` pipes standard error too, as in zsh and bash.
+- `case` arms can end with `;&` (fall through to the next arm), or with `;|`
+  or `;;&` (go on trying the next patterns), as in zsh and bash.
+- Arithmetic has `**` (and `**=`), `++` and `--` (prefix and postfix), and
+  the comma operator, as in zsh and bash.
+
+**Plugins.**
+
+- Plugin options: a plugin declares them in its `plugin.toml`'s
+  `[plugin-options]`, and they are given in `plugins.enabled`, in
+  dependencies, or as `plugin load NAME OPTION=VALUE`; extensions see them
+  as `sh::plugin_options()` and shell code as `$LUISH_PLUGIN_OPTIONS` (see
+  [](plugins.md#plugin-options-plugin-options)).
+- `luish-version` in `plugin.toml` names the oldest luish a plugin needs; an
+  older luish doesn't load the plugin, and says why (see
+  [](plugins.md#the-oldest-luish-a-plugin-needs-luish-version)).
+- `sh::capture_cached` is `sh::capture` with its output kept in memory for a
+  while; the standard completers that read a program's `-h` use it, so
+  pressing Tab again doesn't rerun the program.
+- The `__luish_cache` blocks of plugins that `config.toml` enables (or that
+  an `rc.d` file loads) are cached with keys of their own.
+
+**Other improvements.** `help` is shown in colour on a terminal, with the
+colour scheme in use, and large scripts parse faster, with less memory.
+
+**Fixes.**
+
+- `local -` restores the options when the function returns, as in dash.
+- `test FILE -nt MISSING` (and `MISSING -ot FILE`) is true when `FILE`
+  exists, as in POSIX and dash; `[[ ... ]]` too, as in bash.
+- An empty table in `plugins.enabled` (`std.completion = { }`) enables the
+  plugin, as `"*"` does, instead of nothing.
+
 ## Version 0.4.0 (4 October 2026)
 
 This release is about the terminal: colour schemes and styles for the line

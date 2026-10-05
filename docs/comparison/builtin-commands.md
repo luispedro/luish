@@ -5,12 +5,12 @@ It complements [](index.md); [](../builtins.md) documents luish's own built-ins 
 
 The lists are those of dash 0.5.12 (Debian and Ubuntu's), bash 5.2 (`compgen -b`), zsh 5.9 (`${(k)builtins}`
 with no startup files, which includes the built-ins of modules zsh loads on demand, such as `zstyle` and the
-completion system's) and luish 0.4.0. zsh's other modules, loaded with `zmodload` (such as `zsh/files`, `zsh/datetime`
+completion system's) and luish 0.5.0. zsh's other modules, loaded with `zmodload` (such as `zsh/files`, `zsh/datetime`
 or `zsh/system`), add more, and bash can load more with `enable -f`; those are not listed.
 
 | | dash | bash | zsh | luish |
 |---|--:|--:|--:|--:|
-| Built-ins | 38 | 61 | 103 | 52, and 4 more in interactive shells |
+| Built-ins | 38 | 61 | 103 | 53, and 7 more in interactive shells |
 
 In the tables, ✓ marks a built-in, – its absence, and *i* a built-in that luish has only in interactive shells (and
 their subshells), so that scripts find the same commands as under dash; there, `__luish_internal NAME` runs it.
@@ -57,7 +57,7 @@ speed.
 | `fg` | ✓ | ✓ | ✓ | ✓ | |
 | `getopts` | ✓ | ✓ | ✓ | ✓ | |
 | `hash` | ✓ | ✓ | ✓ | ✓ | `-r`; no `-d`, `-p`, `-t`, `-l`. Rarely needed: luish clears the cache itself when a `PATH` directory changes |
-| `jobs` | ✓ | ✓ | ✓ | ✓ | `-l`, `-p`; no `-r`, `-s`, `-n`, `-x` |
+| `jobs` | ✓ | ✓ | ✓ | ✓ | `-l`, `-p`, and `-i`, a menu to act on the jobs; no `-r`, `-s`, `-n`, `-x` |
 | `kill` | ✓ | ✓ | ✓ | ✓ | `-s`, `-SIGNAL`, `-l`, and jobs (`%1`) |
 | `printf` | ✓ | ✓ | ✓ | ✓ | `%b`; no `-v` or `%q` |
 | `pwd` | ✓ | ✓ | ✓ | ✓ | `-L`, `-P` |
@@ -78,11 +78,13 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 |---|:-:|:-:|:-:|:-:|---|
 | `bindkey` | – | – | ✓ | *i* | zsh's, for the emacs keymap and the widgets luish has; keys can also be named (`Up`, `Ctrl-Right`). No other keymaps (`-M`) and no user-defined widgets |
 | `builtin` | – | ✓ | ✓ | ✓ | |
+| `caller` | – | ✓ | – | ✓ | bash's |
 | `chdir` | ✓ | – | ✓ | ✓ | The same as `cd` |
 | `declare`, `typeset` | – | ✓ | ✓ | ✓ | `-a`, `-A`, `-f`, `-g`, `-i`, `-l`, `-p`, `-r`, `-u`, `-U`, `-x`, and `+f`; no namerefs (bash's `-n`), floating point (zsh's `-E`, `-F`), padding (zsh's `-L`, `-R`, `-Z`), `-t` or tied variables (zsh's `-T`) |
+| `disown` | – | ✓ | ✓ | ✓ | As in zsh, with bash's `-a`, `-r` and `-h`, and process ids |
 | `dirs`, `pushd`, `popd` | – | ✓ | ✓ | ✓ | As in zsh: `-q`, `-L`, `-P`, `+n`, `-n`; `dirs -l`, `-p`, `-v`, `-c` |
 | `help` | – | ✓ | – | *i* | Help for luish's built-ins, from the pages in [](../builtins.md) |
-| `let` | – | ✓ | ✓ | ✓ | As in zsh; integers only, and without `**` (as dash's arithmetic) |
+| `let` | – | ✓ | ✓ | ✓ | As in zsh; integers only |
 | `local` | ✓ | ✓ | ✓ | ✓ | Special, as in dash. Takes `typeset`'s options and arrays (`local a=(x y)`). Without a value, keeps the outer value, as in dash (in bash and zsh it starts unset or empty) |
 | `print` | – | – | ✓ | *i* | zsh's, with its options except `-p` (no coprocesses) and `-S` |
 | `setopt`, `unsetopt` | – | – | ✓ | ✓ | zsh's names for the options luish has, and luish's grouped names (`history.share`) and `NAME=VALUE` settings |
@@ -94,7 +96,6 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 
 | Built-in | What it does | In luish |
 |---|---|---|
-| `disown` | Remove a job from the job table | Not yet. `nohup` or `setsid` for new commands |
 | `enable` (zsh's also `disable`) | Turn built-ins off or on | `command NAME` or a full path runs the program instead |
 | `history` | List the history | `fc -l` |
 | `logout` | Exit a login shell | `exit` |
@@ -105,7 +106,6 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 | Built-in | What it does | In luish |
 |---|---|---|
 | `bind` | readline key bindings | `bindkey`, or `[bindkey]` in `config.toml` |
-| `caller` | The call stack, for debugging | None |
 | `compgen`, `complete`, `compopt` | Programmable completion | Completers in Rhai, from [plugins](../plugins.md); `std.bash-completion` runs bash's completion scripts |
 | `mapfile`, `readarray` | Read lines into an array | A loop: `while IFS= read -r l; do a+=("$l"); done` |
 | `shopt` | bash's own options | `setopt`, for the options luish has (luish suggests the name for some, such as `globstar`) |
@@ -134,7 +134,7 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 | `ttyctl` | Freeze the terminal's settings | None |
 | `unfunction`, `unhash` | Remove functions, aliases or cached commands | `unset -f`, `unalias`, `hash -r` |
 | `vared` | Edit a variable in the line editor | None |
-| `whence`, `where`, `which` | Describe or find commands | `type`, `command -v`, `command -V` |
+| `whence`, `where`, `which` | Describe or find commands | `type`, `command -v`, `command -V`. luish's own `where` shows where variables were set |
 | `zcompile` | Compile scripts | None needed for startup files: the [startup cache](../usage.md#cached-startup-files) saves their effect |
 | `zformat`, `zparseopts`, `zregexparse` | Formatting and parsing helpers | `printf`, `getopts`, `[[ =~ ]]` |
 | `zle` | Line editor widgets | `bindkey` binds keys to luish's widgets; no user-defined widgets |
@@ -146,7 +146,10 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 | Built-in | What it does |
 |---|---|
 | `__luish_internal` | Subcommands that are not needed often: `check-cache` (check the startup cache), `savestate` (print commands that restore the shell's state), `complete` (show what Tab would offer), `print-git-rev`, and the interactive-only built-ins, which work there in scripts too |
+| `clipcopy` (*i*) | Put text on the clipboard, through the terminal |
 | `plugin` (*i*) | Load, list, add, fetch and update [plugins](../plugins.md) |
+| `style` (*i*) | Set or show the styles and colour schemes of the line editor |
+| `where` (*i*) | Show where variables were set, with `setopt vars.trace` (also in scripts, while variables are traced) |
 
 Plugins can add further built-ins, written in Rhai (see [](../extensions.md)).
 

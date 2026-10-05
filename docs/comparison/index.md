@@ -1,7 +1,7 @@
 # luish, dash, bash and zsh
 
 This page compares luish with the three shells people most often choose between on Linux: dash (the usual `/bin/sh`
-on Debian and Ubuntu), bash and zsh. It describes luish 0.4.0 (October 2026), a young project that already
+on Debian and Ubuntu), bash and zsh. It describes luish 0.5.0 (October 2026), a young project that already
 replaces dash for scripts, and is meant to replace zsh as an interactive shell; [](../compatibility.md) has the details
 behind each claim here. Two further pages go into detail:
 [](language.md), on arrays, expansions, arithmetic, globbing and the rest of the language, and
@@ -92,7 +92,7 @@ unchanged, about five times faster. luish has:
 
 Brace expansion (`{a,b}`, `{1..10}`) needs `setopt expand.braces`. Not yet: `$'...'` strings, `select`, `coproc`, `shopt`
 and `extglob`, `mapfile`, `printf -v`, `local -n`, `${x^^}`, `wait -n`, the `ERR` trap, the `time` keyword, and
-arithmetic beyond dash's (`((...))`, `**`, `++`, floating point). Where bash and zsh disagree, luish documents which it follows (usually zsh's `sh`
+`((...))` and floating-point arithmetic. Where bash and zsh disagree, luish documents which it follows (usually zsh's `sh`
 emulation, sometimes bash).
 
 [](language.md) compares these features one by one.
@@ -113,7 +113,8 @@ luish is usable as a daily shell, and its author is moving to it from zsh. What 
   `gh`, `docker` and `kubectl`, Click programs, nix). bash-completion can serve as a fallback for the rest.
 - **zsh's conveniences**: `autocd`, `auto_pushd` and the directory stack, `CDPATH`, global and suffix aliases, `**/`,
   glob qualifiers (`vi *(.om[0])`), `print`, `setopt` with zsh's option names.
-- **Job control** as in dash and bash: `jobs`, `fg`, `bg`, Ctrl-Z.
+- **Job control** as in dash and bash: `jobs`, `fg`, `bg`, Ctrl-Z, with `disown` and zsh's `&|`, and a menu of the
+  jobs (`jobs -i`).
 
 Still missing compared with a full zsh setup: compsys's breadth of completions and its configuration (`zstyle`),
 grouped and coloured completion menus, user-defined widgets (`zle -N`), shell
@@ -131,6 +132,9 @@ improvement on it.
   and pinned to exact commits in a lock file, so a configuration is reproducible across machines. A plugin can carry
   options, aliases, key bindings and an extension in [Rhai](https://rhai.rs), which runs inside the shell without
   starting a process (see [](../plugins.md)).
+- **Variable tracing.** With `setopt vars.trace`, `where PATH` shows the file and line that last set `PATH` (and
+  the function that ran), and `vars.trace_history` keeps the earlier values too (see
+  [](../usage.md#tracing-variables)).
 - **Settings in TOML**, with options named in groups (`history.share`, `glob.star`); zsh's names still work.
 - **Commands installed while the shell runs are found.** luish notices when a `PATH` directory changes, so a new
   program that shadows an old one is used without `hash -r` or `rehash` (see [](../improvements.md)).
