@@ -39,7 +39,7 @@ use crate::path::{DirStamp, dir_stamps};
 use crate::sys;
 
 /// What the completer knows about the shell, refreshed before each prompt.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Names {
     pub functions: Vec<Vec<u8>>,
     pub aliases: Rc<AliasMap>,
@@ -75,6 +75,9 @@ pub struct Names {
     /// The options `setopt` and `unsetopt` can change, named as they list
     /// them, and whether each is on.
     pub options: Vec<(&'static str, bool)>,
+    /// In the SSH mode's client, the executables in the server's `PATH`
+    /// (sorted), which the highlighter looks in rather than in `path`.
+    pub commands: Option<Rc<Vec<Vec<u8>>>>,
 }
 
 /// Runs the completer for a command (in `Names::completers`), given the
@@ -91,6 +94,18 @@ pub type Expand = fn(&[u8]) -> Option<Vec<Vec<u8>>>;
 /// there is no such variable.
 pub type Subscripts = fn(&[u8]) -> Option<Vec<(Vec<u8>, Vec<u8>)>>;
 
+/// In the SSH mode's client, what Tab does, as the server works it out from
+/// the line before and after the cursor (see [`ShellHelper::tab`]).
+pub type RemoteTab = fn(&[u8], &[u8]) -> Tab;
+
+/// What Tab does to the word before the cursor.
+pub enum Tab {
+    /// Replaces the text from the index by the expansion of the word.
+    Expand(usize, String),
+    /// The matches for the text from the index.
+    Matches(usize, Vec<Item>),
+}
+
 #[derive(Default)]
 pub struct ShellHelper {
     pub names: Names,
@@ -98,6 +113,9 @@ pub struct ShellHelper {
     pub ask: Option<Ask>,
     pub expand: Option<Expand>,
     pub subscripts: Option<Subscripts>,
+    /// Set in the SSH mode's client, which asks the server instead.
+    pub remote_tab: Option<RemoteTab>,
+    pub lookup: Option<super::highlight::Lookup>,
     /// The prompt, as the line editor measures it (for the menu's height).
     pub prompt: String,
     pub menu: Arc<Mutex<Menu>>,
@@ -165,6 +183,8 @@ struct PathCache {
     path: Vec<u8>,
     stamps: Vec<DirStamp>,
     names: Vec<Vec<u8>>,
+    /// Counts the rescans.
+    generation: u64,
 }
 
 pub(super) const RESERVED: &[&[u8]] = &[
@@ -1028,6 +1048,19 @@ impl PathCache {
         self.names = crate::path::executables(path, b"");
         self.path = path.to_vec();
         self.stamps = stamps;
+        self.generation += 1;
+    }
+}
+
+impl ShellHelper {
+    /// The executables in `PATH`, unless they are the same as at
+    /// `generation`, and the generation they are now (for the SSH mode's
+    /// client, which highlights with them).
+    pub fn path_commands(&self, generation: u64) -> (u64, Option<Vec<Vec<u8>>>) {
+        let mut cache = self.path_cache.borrow_mut();
+        cache.refresh(&self.names.path);
+        let changed = (cache.generation != generation).then(|| cache.names.clone());
+        (cache.generation, changed)
     }
 }
 
@@ -1040,6 +1073,19 @@ enum Files {
 }
 
 impl ShellHelper {
+    /// What Tab does to the word that ends at the end of `before`, with
+    /// `after` after the cursor: expands it, or else gives its matches.
+    pub fn tab(&self, before: &[u8], after: &[u8]) -> Tab {
+        if let Some(remote) = self.remote_tab {
+            return remote(before, after);
+        }
+        if let Some((start, text)) = self.expansion(before, after) {
+            return Tab::Expand(start, text);
+        }
+        let (start, items) = self.complete_bytes(before, after);
+        Tab::Matches(start, items)
+    }
+
     /// Completes the word that ends at the end of `line`. `after` is the
     /// text after the cursor.
     fn complete_bytes(&self, line: &[u8], after: &[u8]) -> (usize, Vec<Item>) {
@@ -1544,10 +1590,10 @@ impl Completer for ShellHelper {
         // (Not held while an extension's completer runs.)
         drop(menu);
         let (before, after) = line.as_bytes().split_at(pos);
-        if let Some((start, text)) = self.expansion(before, after) {
-            return Ok((start, vec![pair(&text)]));
-        }
-        let (start, items) = self.complete_bytes(before, after);
+        let (start, items) = match self.tab(before, after) {
+            Tab::Expand(start, text) => return Ok((start, vec![pair(&text)])),
+            Tab::Matches(start, items) => (start, items),
+        };
         if items.len() < 2 {
             return Ok((start, items.iter().map(|i| pair(&i.replacement)).collect()));
         }
@@ -1869,6 +1915,7 @@ mod tests {
                     ("history.share", true),
                     ("history.save_no_dups", false),
                 ],
+                commands: None,
             },
             ask: Some(fake_git),
             ..Default::default()

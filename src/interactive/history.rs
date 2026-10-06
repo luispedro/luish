@@ -37,6 +37,26 @@ pub struct ShellHistory {
     file: FileState,
     /// Shared with the key bindings, for the prefix searches (`starts_with`).
     pub search: Arc<Mutex<Search>>,
+    /// Counts the changes other than adding entries and dropping the
+    /// oldest, after which the SSH mode's client gets the whole history.
+    rewrites: u64,
+}
+
+/// What the SSH mode's client has been sent of the history.
+#[derive(Default)]
+pub struct Sent {
+    rewrites: Option<u64>,
+    /// The event number after the newest entry sent.
+    next: usize,
+}
+
+/// Changes to the history, for the SSH mode's client: the event number of
+/// the oldest entry, whether to drop all the entries first, and the entries
+/// to add.
+pub struct Changes {
+    pub first: usize,
+    pub reset: bool,
+    pub added: Vec<String>,
 }
 
 /// The line being edited, for zsh's `history-beginning-search-backward`
@@ -65,6 +85,7 @@ impl Default for ShellHistory {
             saved: 1,
             file: FileState::default(),
             search: Arc::default(),
+            rewrites: 0,
         }
     }
 }
@@ -122,6 +143,7 @@ impl ShellHistory {
     }
 
     fn pop(&mut self) {
+        self.rewrites += 1;
         self.entries.pop_back();
         self.saved = self.saved.min(self.next_event());
     }
@@ -178,6 +200,7 @@ impl ShellHistory {
         if records.is_empty() {
             return;
         }
+        self.rewrites += 1;
         let unsaved = self.next_event().saturating_sub(self.saved.max(self.first));
         let mut kept: Vec<Entry> = (0..unsaved).filter_map(|_| self.entries.pop_back()).collect();
         // The current command stays the newest entry only if it is unsaved.
@@ -192,6 +215,38 @@ impl ShellHistory {
         let excess = self.entries.len().saturating_sub(self.max_len);
         self.entries.drain(..excess);
         self.first += excess;
+    }
+
+    /// The changes since `sent`, which then counts them as sent.
+    pub fn changes(&self, sent: &mut Sent) -> Changes {
+        let reset = sent.rewrites != Some(self.rewrites);
+        let from = if reset { self.first } else { sent.next.max(self.first) };
+        let added = (from..self.next_event())
+            .map(|n| self.entries[n - self.first].text.clone())
+            .collect();
+        sent.rewrites = Some(self.rewrites);
+        sent.next = self.next_event();
+        Changes {
+            first: self.first,
+            reset,
+            added,
+        }
+    }
+
+    /// Makes the changes the server sent (in the SSH mode's client, whose
+    /// history is a copy of the server's).
+    pub fn apply(&mut self, c: Changes) {
+        if c.reset || c.first > self.next_event() {
+            self.entries.clear();
+            self.first = c.first;
+        }
+        while self.first < c.first && self.entries.pop_front().is_some() {
+            self.first += 1;
+        }
+        self.max_len = usize::MAX;
+        for text in c.added {
+            self.entries.push_back(Entry { text, time: 0 });
+        }
     }
 
     /// Reads the history file.
@@ -491,6 +546,35 @@ mod tests {
             share,
             no_dups: false,
         }
+    }
+
+    #[test]
+    fn copy() {
+        let mut h = ShellHistory::default();
+        let mut copy = ShellHistory::default();
+        let mut sent = Sent::default();
+        let check = |h: &ShellHistory, copy: &mut ShellHistory, sent: &mut Sent, reset: bool| {
+            let c = h.changes(sent);
+            assert_eq!(c.reset, reset);
+            copy.apply(c);
+            assert_eq!(texts(copy), texts(h));
+            assert_eq!(copy.first, h.first);
+        };
+        h.add_current("a", false);
+        h.add_current("b", false);
+        check(&h, &mut copy, &mut sent, true);
+        h.add_current("c", false);
+        check(&h, &mut copy, &mut sent, false);
+        // `fc` replacing its own entry.
+        h.remove_current();
+        h.add_entry("d");
+        check(&h, &mut copy, &mut sent, true);
+        // Old entries dropped.
+        let _ = h.set_max_len(2);
+        h.add_current("e", false);
+        check(&h, &mut copy, &mut sent, false);
+        let _ = h.set_max_len(1);
+        check(&h, &mut copy, &mut sent, false);
     }
 
     #[test]

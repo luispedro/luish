@@ -77,7 +77,8 @@ src/
 ├── builtins/           # mod.rs (table, special vs regular), one file per built-in or small group; help.rs
 ├── interactive/        # mod.rs (REPL, rustyline helper), history.rs, histfile.rs, bang.rs (history expansion),
 │                       # complete.rs, menu.rs, keys.rs, highlight.rs, rprompt.rs (RPROMPT), firstrun.rs (the first-run menu),
-│                       # jobmenu.rs (jobs -i)
+│                       # jobmenu.rs (jobs -i), remote.rs (the editor's side of the SSH mode)
+├── remote/             # the SSH mode: mod.rs (protocol), relay.rs (`--serve`), client.rs (`--remote`, `--ssh`)
 └── plugins/            # mod.rs (the `plugin` built-in), package.rs (config.toml's [plugins], plugin.toml,
                         # plugins.lock), fetch.rs (git), add.rs (`plugin add`), rhai.rs, fs.rs, vcs.rs, bytes.rs
 tests/
@@ -1314,6 +1315,68 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   tests for the byte conversion, `git status` parsing and (with a stand-in completer) in `complete.rs`, and
   `plugin_builtin`, `plugin_completer`, `cobra_completer`, `git_completion` and `bash_completion_bridge` (skipped
   without bash-completion) in `tests/interactive.rs`.
+
+### SSH mode (`remote/`, `interactive/remote.rs`)
+
+Stage 3, started as a walking skeleton (`PLAN.md`). `luish --remote CMD...` (the client) runs CMD with pipes for its
+stdin and stdout; CMD starts `luish --serve` (the server), usually through `ssh -T` (`--ssh HOST`). Both are
+dispatched in `main::run` before `Shell::new`, so they cost other invocations one comparison.
+
+- **Protocol** (`remote/mod.rs`): frames of a type byte (`msg`), a 32-bit length and a payload, built with
+  `Enc`/`Dec` (no serde; every getter is checked, so a short message is an error, not a panic). The server first
+  writes `MAGIC`, so that what a remote startup file prints before luish starts is shown, not taken for a frame; then
+  both send `HELLO` with `VERSION`, which must be equal (the messages carry internal types, such as styles and keymap
+  changes, by name where that is cheap). Bump `VERSION` with any change to a message.
+- **Server** (`relay.rs`): the process ssh started becomes the relay. It opens a pty with the client's size, sets
+  `TERM` as the client's, and forks the shell, which makes the pty its controlling terminal in a session of its own
+  and carries on in `main` as `luish -i`, with its end of a socket pair (close-on-exec) given to
+  `interactive::remote::start_serving`. Commands, job control and the terminal's signals (`^C` and `^Z` arrive as
+  bytes) are then those of a local terminal; the executor knows nothing of the mode. The relay polls the client,
+  the socket and the pty: keys go to the pty (queued, the pty is non-blocking), the pty's output to the client, and
+  the shell's messages to the client. When the socket closes, the shell has exited or `exec`ed: the relay goes on
+  passing the pty through, checking for the process's exit every 100 ms, then sends the rest of the output and `EXIT`
+  with its status. When the client goes, closing the pty hangs up the shell.
+- **Ordering**: the pty's output and the shell's messages travel apart, so the shell writes `SYNC` (an OSC string) to
+  the pty before a `REQUEST`, and the relay sends the request only once it has seen (and taken out) the `SYNC`. The
+  end of the output that may be the start of a `SYNC` is kept back, at most 50 ms.
+- **Keys typed ahead**: before a request, the shell sends `HOLD`; the relay then stops writing keys to the pty (it
+  drops them, counting them) until the line comes back, and answers `HELD`. Only then does the shell read what is
+  left on its pty (`typeahead`, with `ICANON` off for a moment), sending it in the request. The relay puts in front
+  of the request how many bytes of input it had written to the pty; the client keeps the input sent since the last
+  request and adds the bytes from there on. So keys typed after the command's output but before the prompt (half a
+  round trip over ssh) are neither lost nor read by the next command. A typed-ahead line ending in a newline runs
+  without editing (the client prints the prompt and the line); the rest starts the line (control characters are
+  dropped).
+- **The line** (`interactive/mod.rs`): `read_line` is `request` (everything the editor needs from `Shell`, as the
+  plain-data `Request`, with the side effects of a prompt) then `edit` (the editor, given a `Request`). In the
+  server, `remote::serve_line` sends the request instead, with the history's changes (`ShellHistory::changes`: the
+  entries added since, or all of them after a change other than an addition, counted by `rewrites`), the commands on
+  `PATH` when they changed (`ShellHelper::path_commands`), and the keys typed ahead; then answers `TAB` (with
+  `ShellHelper::tab`, so the completer, extensions included, runs in the shell as for a local Tab) and `LOOKUP` until
+  `LINE` comes. In the client, `client_line` decodes it into a `Request` and calls the same `edit`.
+- **The client's editor** is the same `ShellHelper` with two hooks set: `remote_tab` (Tab is one round trip; the
+  client only draws the menu) and `lookup` (the highlighter's questions about files: `highlight::Query`). A lookup
+  waits at most `LOOKUP_WAIT` (20 ms); an answer that comes later is kept and used at the next redraw, and the
+  highlighter doesn't cache an unanswered one (`command_kind`, `path_mods`). Answers carry the request's number, so
+  those for an earlier prompt are dropped. Command names are looked up in `Names::commands` (the server's `PATH`)
+  rather than searched for. The history is a copy (`ShellHistory::apply`) for up-arrow, searches and
+  autosuggestions; the server's history stays the one `fc` and `!` use and that is saved.
+- **The client** (`client.rs`): a thread reads the server: output is written to the terminal as it comes (so
+  background jobs' output shows while editing, as in a local terminal), other messages go to the main thread through
+  a channel, with a byte on a pipe to wake its `poll`. Between lines the terminal is raw (`cfmakeraw`, as ssh with a
+  pty) and keys go to the pty as typed; for a line, the terminal is given back to the editor in its original modes.
+  The window size is sent on SIGWINCH and before each line (rustyline installs its own handler while it reads a
+  line, and restores the client's). SIGPIPE is ignored so a lost connection shows as a failed write. Without `EXIT`,
+  the client exits with the transport's status (255 if that was 0, as ssh's for a lost connection).
+- Tests: `remote_mode` (commands on the server's pty, job control, `^C`, `cat`, window size while editing and while a
+  command runs, keys typed ahead, lines sent together, keys typed between a command's output and the prompt, `exec`
+  and the exit status) and `remote_editing` (Tab and the menu, the history and `fc`, highlighting of the server's
+  commands and files) in `tests/interactive.rs`, all over `luish --remote luish --serve`; `wait_for_remote_procs`
+  finds jobs on the server's pty. Unit tests: frames, `MAGIC` and `Enc`/`Dec` in `remote/mod.rs`, a request and a
+  Tab reply round trip in `interactive/remote.rs`, `history::tests::copy`. The keys-typed-ahead steps fail about half
+  the time without the hold (checked by disabling it), not every time: the window is a race.
+- Not yet: a redraw when a late lookup answer comes; Ctrl-C while the client waits for Tab; forwarding more of the
+  environment than `TERM`; anything for a connection that drops (mosh's job).
 
 ### Signals and startup
 

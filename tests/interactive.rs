@@ -66,8 +66,33 @@ impl Pty {
 
     /// `extra` are further variables of the environment.
     fn spawn_env(dir: PathBuf, term: &str, owns_dir: bool, path: Option<&str>, extra: &[&str]) -> Pty {
+        Pty::spawn_args(dir, term, owns_dir, path, extra, &["-i"])
+    }
+
+    /// The SSH mode's client, with a server on this host (`luish --remote
+    /// luish --serve`), in a new directory as `spawn_term`.
+    fn spawn_remote(name: &str, term: &str) -> Pty {
+        let dir = Pty::new_dir(name);
+        std::fs::create_dir_all(dir.join(".config/luish")).unwrap();
+        std::fs::write(dir.join(".config/luish/luishrc"), "").unwrap();
+        let luish = env!("CARGO_BIN_EXE_luish");
+        Pty::spawn_args(
+            dir,
+            term,
+            true,
+            None,
+            &["LUISH_BACKGROUND=dark"],
+            &["--remote", luish, "--serve"],
+        )
+    }
+
+    /// `args` are luish's arguments.
+    fn spawn_args(dir: PathBuf, term: &str, owns_dir: bool, path: Option<&str>, extra: &[&str], args: &[&str]) -> Pty {
         let shell = CString::new(env!("CARGO_BIN_EXE_luish")).unwrap();
-        let argv = [CString::new("luish").unwrap(), CString::new("-i").unwrap()];
+        let argv: Vec<CString> = std::iter::once("luish")
+            .chain(args.iter().copied())
+            .map(|a| CString::new(a).unwrap())
+            .collect();
         let path = path.map_or_else(|| std::env::var("PATH").unwrap_or_default(), Into::into);
         let env = [
             format!("PATH={path}"),
@@ -250,6 +275,23 @@ impl Pty {
         }
     }
 
+    /// Waits until a process named by each of `names` (after exec) is in
+    /// the foreground of the SSH mode's server's pty: in a session whose
+    /// leader (the shell) is the child of the relay, the client's child.
+    fn wait_for_remote_procs(&mut self, names: &[&str]) {
+        let start = Instant::now();
+        loop {
+            let found = remote_foreground(self.pid);
+            if names.iter().all(|n| found.iter().any(|f| f == n)) {
+                return;
+            }
+            if start.elapsed() > TIMEOUT {
+                self.fail(&format!("timed out waiting for {names:?} to get the server's terminal"));
+            }
+            self.read_some(Duration::from_millis(10));
+        }
+    }
+
     /// Waits for the shell to exit and returns its exit status.
     fn exit_status(&mut self) -> i32 {
         let start = Instant::now();
@@ -285,6 +327,37 @@ impl Drop for Pty {
             let _ = std::fs::remove_dir_all(&self.dir);
         }
     }
+}
+
+/// The fields of `/proc/PID/stat` after the command name, and the name.
+fn proc_stat(pid: &str) -> Option<(String, Vec<String>)> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    // pid (comm) state ppid pgrp session tty_nr tpgid ...
+    let (open, close) = (stat.find('(')?, stat.rfind(')')?);
+    let fields = stat[close + 2..].split(' ').map(String::from).collect();
+    Some((stat[open + 1..close].to_string(), fields))
+}
+
+/// Command names of the processes in the foreground of the pty of the SSH
+/// mode's server under the client `client`.
+fn remote_foreground(client: i32) -> Vec<String> {
+    let ppid = |pid: &str| proc_stat(pid).and_then(|(_, f)| f.get(1).cloned());
+    let mut out = Vec::new();
+    for e in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let Some((name, f)) = proc_stat(&e.file_name().to_string_lossy()) else {
+            continue;
+        };
+        // In its terminal's foreground group, in a session whose leader's
+        // parent's parent is the client.
+        let (Some(pgrp), Some(session), Some(tpgid)) = (f.get(2), f.get(3), f.get(5)) else {
+            continue;
+        };
+        let relay = ppid(session);
+        if pgrp == tpgid && relay.and_then(|r| ppid(&r)) == Some(client.to_string()) {
+            out.push(name);
+        }
+    }
+    out
 }
 
 /// Command names of the processes in a process group (from `/proc`).
@@ -1875,5 +1948,115 @@ fn first_run() {
     let text = std::fs::read_to_string(&config).unwrap();
     assert_has(&text, "\n[options.editor]\nautosuggest = true\n");
     sh.send("exit\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
+fn remote_mode() {
+    let mut sh = Pty::spawn_remote("remote", "dumb");
+    sh.expect("$ ");
+    // The commands run on the server's pty, not the client's.
+    sh.send("tty; tty <&2 | cat; echo here\n");
+    sh.expect("here\n");
+    sh.expect("$ ");
+    assert_has(&sh.run("echo $((6 * 7))"), "42\n");
+    // Job control on the server's pty.
+    sh.send("sleep 30\n");
+    sh.wait_for_remote_procs(&["sleep"]);
+    sh.send("\x1a");
+    assert_has(&sh.expect("\n$ "), "[1] + Stopped                    sleep 30\n");
+    assert_has(&sh.run("echo st=$?"), "st=148\n");
+    sh.send("fg\n");
+    sh.wait_for_remote_procs(&["sleep"]);
+    sh.send("\x03");
+    sh.expect("\n$ ");
+    assert_has(&sh.run("echo st=$?"), "st=130\n");
+    // A program reading the terminal.
+    sh.send("cat\n");
+    sh.wait_for_remote_procs(&["cat"]);
+    sh.send("typed\n\x04");
+    assert_has(&sh.expect("\n$ "), "typed\ntyped\n");
+    // The window's size, as the client's terminal changes: before a command
+    // line is sent, and while a command runs.
+    sh.resize(100, 40);
+    assert_has(&sh.run("stty size"), "40 100\n");
+    sh.send("cat >/dev/null; stty size\n");
+    sh.wait_for_remote_procs(&["cat"]);
+    sh.resize(90, 30);
+    sh.send("\x04");
+    assert_has(&sh.expect("\n$ "), "30 90\n");
+    // Keys typed while a command runs start the next line.
+    sh.send("cat >/dev/null; echo done\n");
+    sh.wait_for_remote_procs(&["cat"]);
+    sh.send("\x04echo typed-ahead\n");
+    sh.expect("done\n");
+    sh.expect("\ntyped-ahead\n$ ");
+    // Lines sent together: the second comes while the client is passing
+    // keys to the pty, or while the request for it is on its way. (Each
+    // prints what isn't in its text: with `TERM=dumb`, the terminal echoes
+    // keys where they come, maybe before the prompt.)
+    for i in 100..105 {
+        sh.send(&format!("true\necho second-$(({i}))\n"));
+        sh.expect(&format!("second-{i}\n"));
+    }
+    // Keys typed once a command's output has come but before the prompt:
+    // after the server has taken those left on its pty.
+    for i in 100..105 {
+        sh.send(&format!("echo output-$(({i}))\n"));
+        sh.expect(&format!("output-{i}\n"));
+        sh.send(&format!("echo next-$(({i}))\n"));
+        sh.expect(&format!("next-{i}\n"));
+    }
+    // A program the shell `exec`s has the terminal until it exits.
+    sh.send("exec /bin/sh -c 'read x; echo got-$x; exit 3'\n");
+    sh.wait_for_remote_procs(&["sh"]);
+    sh.send("abc\n");
+    sh.expect("got-abc\n");
+    assert_eq!(sh.exit_status(), 3);
+}
+
+#[test]
+fn remote_editing() {
+    let mut sh = Pty::spawn_remote("remote-edit", "vt100");
+    std::fs::create_dir(sh.path("somedir")).unwrap();
+    std::fs::write(sh.path("somedir/afile"), "found it\n").unwrap();
+    sh.expect("$ ");
+    // Tab completes on the server, from its directory.
+    sh.send("cat som\t\t\n");
+    sh.expect("found it\n");
+    sh.expect("\x1b[?2004h");
+    // A second Tab opens the menu, drawn by the client.
+    sh.send("zqfa() { :; }; zqfb() { :; }\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("zqf\t\t");
+    sh.expect("zqfa  zqfb");
+    sh.send("\x03");
+    sh.expect("\x1b[?2004h");
+    // The history is the server's, recalled by the client.
+    sh.send("echo from-history\n");
+    sh.expect("from-history\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("\x1b[A\n");
+    sh.expect("from-history\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("fc -l -1\n");
+    sh.expect("echo from-history\n");
+    sh.expect("\x1b[?2004h");
+    // The highlighter knows the commands in the server's `PATH`, and asks it
+    // about files.
+    sh.send("mkdir bin; printf '#!/bin/sh\\n' >bin/zqtool; chmod +x bin/zqtool; PATH=$PWD/bin:$PATH\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("zqtool");
+    sh.expect("\x1b[32mzqtool\x1b[0m");
+    sh.send("\x03");
+    sh.expect("\x1b[?2004h");
+    sh.send("setopt highlight.paths; : >afile\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("ls afile ~/af");
+    sh.send("x");
+    sh.expect("\x1b[4mafile\x1b[0m \x1b[34m~\x1b[0m/afx");
+    sh.send("\x03");
+    sh.expect("\x1b[?2004h");
+    sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
 }

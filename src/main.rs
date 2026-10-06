@@ -26,6 +26,7 @@ mod parser;
 mod path;
 mod plugins;
 mod prompt;
+mod remote;
 mod shell;
 mod signals;
 mod stack;
@@ -68,6 +69,10 @@ interactive shell if it is a terminal.
                       (-o err_exit, -o no_glob, -o prompt_percent)
   --no-rcs            don't read any startup files
   --no-plugins        make `plugin load` do nothing
+  --remote CMD...     edit lines here and run them in the shell that CMD
+                      starts with `luish --serve`, usually through ssh
+  --ssh [OPTION...] HOST
+                      the same as --remote ssh -T [OPTION...] HOST luish --serve
   --help              show this help and exit
   --version           show the version and exit
 
@@ -150,7 +155,18 @@ extern "C" fn main(argc: libc::c_int, argv: *const *const libc::c_char) -> libc:
 }
 
 #[cfg_attr(test, allow(dead_code))]
-fn run(args: Vec<Vec<u8>>) -> ! {
+fn run(mut args: Vec<Vec<u8>>) -> ! {
+    // The SSH mode: the client, or the server, which then runs as an
+    // interactive shell on its own pty (`remote/`).
+    match args.get(1).map(Vec::as_slice) {
+        Some(b"--remote") => remote::client::run(&args[2..]),
+        Some(b"--ssh") => remote::client::ssh(&args[2..]),
+        _ => {}
+    }
+    let serve = (args.get(1).is_some_and(|a| a == b"--serve")).then(|| {
+        args[1] = b"-i".to_vec();
+        remote::relay::start()
+    });
     let mut sh = Shell::new();
     sh.arg0 = args.first().cloned().unwrap_or_else(|| b"luish".to_vec());
     let mut inv = Invocation {
@@ -272,6 +288,9 @@ fn run(args: Vec<Vec<u8>>) -> ! {
                 input = Input::fd(0, true);
             }
         }
+    }
+    if let Some(fd) = serve {
+        interactive::remote::start_serving(fd);
     }
     if !no_rcs {
         if matches!(input, Input::Editor) && sys::isatty(2) && !sh.no_plugins {

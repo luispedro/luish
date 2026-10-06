@@ -220,17 +220,33 @@ Still to do:
 
 ### Stage 3: SSH client/server mode
 
-The line editor runs on the local client, so typing is instant, while commands run on the remote host.
+The line editor runs on the local client, so typing, moving in the line and the completion menu are instant, while
+commands, completion and everything else that needs the remote host's state run there. Started by the user's choice
+(2026-10-06) ahead of M4, as a walking skeleton; how it is built is in `DEVELOPING.md` (SSH mode).
 
-- **Transport**: standard SSH. The client runs something like `ssh host luish --serve` and speaks a protocol over
-  its stdin and stdout. No daemon and no extra ports (unlike mosh's UDP).
-- **Line editing mode**: the client shows the prompt the server sends, edits locally, and sends complete command
-  lines. Completion and "is this input complete?" are round trips, which is why the editor only sees plain data.
-  History can live on the client and be shared across hosts.
-- **Pass-through mode**: while a command runs, the server runs it on a pty of its own, and the client forwards
-  terminal input and output as-is, plus window-size changes, so full-screen programs work as over SSH today.
-- **Open questions**: installing the server binary when the remote host has none; protocol versioning; dropped
-  connections (which mosh survives and plain SSH doesn't).
+- **Transport**: any command whose stdin and stdout reach `luish --serve` on the other host: `luish --remote CMD...`,
+  with `luish --ssh HOST` for `ssh -T HOST luish --serve`. No daemon and no extra ports (unlike mosh's UDP), and
+  `luish --remote luish --serve` tests it all on one host.
+- **Server**: a relay process and the shell. The relay keeps the transport, opens a pty and forks the shell onto it
+  as a session leader, so commands, job control, Ctrl-C and Ctrl-Z work as in a local terminal and the executor is
+  unchanged. Only `interactive::read_line` differs: instead of running the editor, it sends a `Request` (all the
+  editor needs, as plain data: prompts, the `Names` snapshot, colours, keymap, history changes) and answers Tab and
+  file lookups until the line comes back.
+- **Client**: the same editor, given the `Request`. Tab is one round trip (the server runs the whole completer and
+  sends the matches; the client draws the menu). The highlighter gets the commands on `PATH` in the snapshot (when
+  they change) and asks for paths, waiting briefly; a late answer shows at the next redraw.
+- **History** stays on the server (its file, `fc`, `!!`); the client keeps a copy, updated with each `Request`, for
+  up-arrow, searches and autosuggestions.
+- **Pass-through**: while a command runs the client's terminal is raw and keys go to the pty as typed, with window
+  size changes; full-screen programs work as over `ssh -t`. Keys typed ahead are taken back from the pty to start
+  the next line.
+
+Still to do, after the skeleton:
+
+- Redraw the line when a late lookup arrives (the highlighter's pending answers).
+- Job notifications and output of background jobs while the client edits (they are written as they come).
+- **Open questions**: installing the server binary when the remote host has none; protocol versioning (now: both
+  ends must speak the same version); dropped connections (which mosh survives and plain SSH doesn't).
 
 ## Risks
 

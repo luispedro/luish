@@ -10,6 +10,7 @@ mod integration;
 pub mod jobmenu;
 pub mod keys;
 mod menu;
+pub mod remote;
 mod rprompt;
 mod termcolors;
 mod tty;
@@ -190,13 +191,19 @@ const UNSUPPORTED: [&str; 3] = ["dumb", "cons25", "emacs"];
 
 /// Sets up the line editor. Returns false if it can't be used.
 pub fn init_editor() -> bool {
-    let Ok(mut ed) = Editor::with_history(Config::default(), ShellHistory::default()) else {
-        return false;
-    };
     let mut helper = ShellHelper::default();
     helper.ask = Some(ask);
     helper.expand = Some(expand);
     helper.subscripts = Some(subscripts);
+    install_editor(helper)
+}
+
+/// Sets up the line editor with `helper`. Returns false if it can't be
+/// used.
+fn install_editor(helper: ShellHelper) -> bool {
+    let Ok(mut ed) = Editor::with_history(Config::default(), ShellHistory::default()) else {
+        return false;
+    };
     ed.history_mut().search = helper.keys.lock().map(|k| k.search.clone()).unwrap_or_default();
     keys::bind(&mut ed, &helper.menu, &helper.keys);
     ed.set_helper(Some(helper));
@@ -386,6 +393,7 @@ fn names(sh: &Shell) -> Names {
             .filter(|o| !matches!(o.0, crate::options::Opt::Interactive | crate::options::Opt::Stdin))
             .map(|(o, name)| (name, sh.opt(o)))
             .collect(),
+        commands: None,
     }
 }
 
@@ -530,9 +538,57 @@ fn colors(sh: &Shell) -> (Rc<highlight::Colors>, bool) {
     (c, on)
 }
 
+/// Everything the line editor needs to read a line, as plain data: in the
+/// SSH mode, the server sends it to the client (`remote.rs`).
+pub struct Request {
+    pub continuation: bool,
+    /// The text read so far of an incomplete command, which the highlighter
+    /// continues from.
+    pub pending: Vec<u8>,
+    /// The prompt as written (with the terminal's marks), and as the line
+    /// editor measures it, if that differs.
+    pub prompt: String,
+    pub plain: Option<String>,
+    /// The right prompt, the columns it leaves free at the right edge
+    /// (`ZLE_RPROMPT_INDENT`), and whether it goes once the line is
+    /// accepted.
+    pub right: Option<crate::prompt::Prompt>,
+    pub indent: usize,
+    pub transient: bool,
+    pub vi: bool,
+    pub suggest: bool,
+    /// Whether to mark the line for the terminal (`integration.rs`).
+    pub marks: bool,
+    pub names: Names,
+    pub colors: Rc<highlight::Colors>,
+    pub highlight_on: bool,
+    pub wordchars: Option<String>,
+    pub keymap: keys::Keymap,
+    /// The text to start the line with: a line whose history references
+    /// were expanded, with `history.verify`, or one that `print -z` pushed.
+    pub start: Option<String>,
+}
+
 /// Reads a line with the editor. `pending` is the text read so far of an
 /// incomplete command, which the highlighter continues from.
 pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
+    let req = request(sh, continuation, pending);
+    if remote::serving() {
+        return remote::serve_line(sh, req);
+    }
+    SHELL.set(sh as *mut Shell);
+    let line = edit(req);
+    SHELL.set(std::ptr::null_mut());
+    if let Some(n) = EXIT.take() {
+        sh.exit(n);
+    }
+    line
+}
+
+/// What the editor needs from the shell to read a line. Before a command's
+/// first line, also updates the history, the terminal's colours and what
+/// the terminal knows of the directory.
+fn request(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Request {
     if !continuation {
         update_history(sh);
         find_background(sh);
@@ -543,30 +599,63 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
         integration::before_prompt(sh);
     }
     let (p, right) = prompts(sh, continuation, true);
-    let mut text = String::from_utf8_lossy(&p.text).into_owned();
+    let mut prompt = String::from_utf8_lossy(&p.text).into_owned();
     // The line editor measures the prompt without its escape sequences.
     let mut plain = p.plain.map(|s| String::from_utf8_lossy(&s).into_owned());
     if marks {
-        plain.get_or_insert_with(|| text.clone());
-        text = integration::mark_prompt(&text, continuation);
+        plain.get_or_insert_with(|| prompt.clone());
+        prompt = integration::mark_prompt(&prompt, continuation);
     }
-    let vi = sh.opt(Opt::Vi);
-    // Not for the continuation lines of a command.
-    let suggest = sh.opt(Opt::Autosuggest) && !continuation;
-    let names = names(sh);
     let (colors, highlight_on) = colors(sh);
-    let wordchars = sh
-        .get_var(b"WORDCHARS")
-        .map(|w| String::from_utf8_lossy(&w).into_owned());
-    let keymap = sh.keymap.clone();
     // zsh's default leaves the last column free.
     let indent = right.as_ref().map_or(1, |_| {
         let v = sh.get_var(b"ZLE_RPROMPT_INDENT").unwrap_or_default();
         std::str::from_utf8(&v).ok().and_then(|v| v.parse().ok()).unwrap_or(1)
     });
-    let transient = sh.opt(Opt::TransientRprompt);
-    SHELL.set(sh as *mut Shell);
-    let line = EDITOR.with(|e| {
+    Request {
+        continuation,
+        pending: pending.to_vec(),
+        prompt,
+        plain,
+        right,
+        indent,
+        transient: sh.opt(Opt::TransientRprompt),
+        vi: sh.opt(Opt::Vi),
+        // Not for the continuation lines of a command.
+        suggest: sh.opt(Opt::Autosuggest) && !continuation,
+        marks,
+        names: names(sh),
+        colors,
+        highlight_on,
+        wordchars: (sh.get_var(b"WORDCHARS")).map(|w| String::from_utf8_lossy(&w).into_owned()),
+        keymap: sh.keymap.clone(),
+        start: REFILL
+            .take()
+            .or_else(|| (!continuation).then(|| PUSHED.with_borrow_mut(Vec::pop)).flatten()),
+    }
+}
+
+/// Reads a line with the editor, as `req` asks.
+fn edit(req: Request) -> Line {
+    let Request {
+        continuation,
+        pending,
+        prompt: text,
+        plain,
+        right,
+        indent,
+        transient,
+        vi,
+        suggest,
+        marks,
+        names,
+        colors,
+        highlight_on,
+        wordchars,
+        keymap,
+        start: refill,
+    } = req;
+    EDITOR.with(|e| {
         let mut e = e.borrow_mut();
         let Some(ed) = e.as_mut() else {
             return Line::Eof;
@@ -575,9 +664,6 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
             return Line::Eof;
         };
         keys::update(ed, &menu, &keys, &keymap, wordchars);
-        let refill = REFILL
-            .take()
-            .or_else(|| (!continuation).then(|| PUSHED.with_borrow_mut(Vec::pop)).flatten());
         // The history entry to start with, after `accept-line-and-down-history`.
         let initial = (!continuation && refill.is_none())
             .then(|| NEXT.take())
@@ -597,7 +683,7 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
             h.suggest = suggest;
             h.right.set(right.as_ref(), indent, transient);
             h.highlight.context.clear();
-            h.highlight.context.extend_from_slice(pending);
+            h.highlight.context.extend_from_slice(&pending);
             h.highlight.known.get_mut().clear();
             *h.highlight.parsed.get_mut() = Default::default();
             h.highlight.paths.get_mut().clear();
@@ -638,12 +724,7 @@ pub fn read_line(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Line {
             Err(ReadlineError::Interrupted) => Line::Interrupted,
             Err(_) => Line::Eof,
         }
-    });
-    SHELL.set(std::ptr::null_mut());
-    if let Some(n) = EXIT.take() {
-        sh.exit(n);
-    }
-    line
+    })
 }
 
 /// Whether error messages make the names of files links to them (OSC 8):

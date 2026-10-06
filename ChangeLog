@@ -1,5 +1,6 @@
 Unreleased
     * Bad glob qualifier errors name the word
+    * luish --ssh HOST: edit command lines locally, run them on HOST
 
 Version 0.5.0 2026-10-05 by luispedro
     * Large scripts parse faster, with less memory

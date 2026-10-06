@@ -205,6 +205,11 @@ impl Colors {
         }
     }
 
+    /// Each role's name and style.
+    pub fn roles(&self) -> impl Iterator<Item = (&'static str, &Style)> {
+        ROLES.iter().copied().zip(&self.styles)
+    }
+
     /// The colours of the completion menu and suggestions with `$NO_COLOR`
     /// set: the selection in reverse video, and suggestions in grey.
     pub fn no_color() -> Colors {
@@ -244,6 +249,53 @@ impl Colors {
 
 /// The names in a directory, sorted, or None if it can't be read.
 type Listing = Option<Vec<Vec<u8>>>;
+
+/// What the highlighter asks about a file.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum Query {
+    /// Whether it is an executable regular file.
+    Executable,
+    Dir,
+    /// Whether it exists (`lstat`).
+    Exists,
+    /// The names in a directory.
+    List,
+}
+
+/// The answer to a `Query`.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum Found {
+    Bool(bool),
+    Names(Listing),
+}
+
+/// In the SSH mode's client, asks the server about a file: None if the
+/// answer hasn't come yet (it may at a later redraw).
+pub type Lookup = fn(Query, &[u8]) -> Option<Found>;
+
+/// Answers `q` about `path` from the file system.
+pub fn look_up(q: Query, path: &[u8]) -> Found {
+    match q {
+        Query::Executable => Found::Bool(is_executable(path)),
+        Query::Dir => Found::Bool(sys::is_dir(path)),
+        Query::Exists => Found::Bool(sys::lstat(path).is_some()),
+        Query::List => Found::Names(sys::read_dir(path)),
+    }
+}
+
+impl ShellHelper {
+    /// Answers `q` about `path`, from the server in the SSH mode's client.
+    fn ask_fs(&self, q: Query, path: &[u8]) -> Option<Found> {
+        match self.lookup {
+            Some(f) => f(q, path),
+            None => Some(look_up(q, path)),
+        }
+    }
+
+    fn fs_bool(&self, q: Query, path: &[u8]) -> Option<bool> {
+        Some(self.ask_fs(q, path)? == Found::Bool(true))
+    }
+}
 
 /// What the highlighter needs besides `Names`, refreshed before each prompt.
 #[derive(Default)]
@@ -1289,12 +1341,15 @@ impl ShellHelper {
         if let Some(&k) = self.highlight.known.borrow().get(name) {
             return k;
         }
+        // Not if an answer from the server is still to come.
+        let mut sure = true;
         let k = if name.contains(&b'/') {
             let found = match (name.strip_prefix(b"~/"), &self.names.home) {
-                (Some(rest), Some(home)) => is_executable(&[&home[..], b"/", rest].concat()),
-                _ => is_executable(name),
+                (Some(rest), Some(home)) => self.fs_bool(Query::Executable, &[&home[..], b"/", rest].concat()),
+                _ => self.fs_bool(Query::Executable, name),
             };
-            found.then_some(CommandKind::External)
+            sure = found.is_some();
+            found.unwrap_or(false).then_some(CommandKind::External)
         } else if self.names.aliases.contains(name) || self.names.aliases.for_suffix(name).is_some() {
             Some(CommandKind::Alias)
         } else if crate::builtins::lookup(name).is_some_and(|(_, special)| special) {
@@ -1304,13 +1359,27 @@ impl ShellHelper {
         } else if crate::builtins::names().any(|b| b == name) || self.names.builtins.iter().any(|c| c == name) {
             Some(CommandKind::Builtin)
         } else {
-            let found = crate::path::search(&self.names.path, name).is_some_and(|(_, _, exec)| exec);
+            let found = match &self.names.commands {
+                Some(c) => c.binary_search_by(|c| c[..].cmp(name)).is_ok(),
+                None => crate::path::search(&self.names.path, name).is_some_and(|(_, _, exec)| exec),
+            };
             found.then_some(CommandKind::External)
         };
-        let k = k
-            .or_else(|| (self.names.autocd && self.is_autocd_dir(name)).then_some(CommandKind::Directory))
-            .unwrap_or(CommandKind::Unknown);
-        self.highlight.known.borrow_mut().insert(name.to_vec(), k);
+        let k = match k {
+            Some(k) => k,
+            None if self.names.autocd => match self.is_autocd_dir(name) {
+                Some(true) => CommandKind::Directory,
+                Some(false) => CommandKind::Unknown,
+                None => {
+                    sure = false;
+                    CommandKind::Unknown
+                }
+            },
+            None => CommandKind::Unknown,
+        };
+        if sure {
+            self.highlight.known.borrow_mut().insert(name.to_vec(), k);
+        }
         k
     }
 }
@@ -1318,19 +1387,25 @@ impl ShellHelper {
 impl ShellHelper {
     /// Whether `name` is a directory that `setopt cd.auto` changes to (see
     /// `Shell::autocd_target`).
-    fn is_autocd_dir(&self, name: &[u8]) -> bool {
+    /// None if an answer from the server is still to come.
+    fn is_autocd_dir(&self, name: &[u8]) -> Option<bool> {
         let name = match (name.strip_prefix(b"~/"), &self.names.home) {
             (Some(rest), Some(home)) => [&home[..], b"/", rest].concat(),
             _ => name.to_vec(),
         };
-        if sys::is_dir(&name) {
-            return true;
+        if self.fs_bool(Query::Dir, &name)? {
+            return Some(true);
         }
         let dotted = name == b"." || name == b".." || name.starts_with(b"./") || name.starts_with(b"../");
-        !dotted
-            && !name.starts_with(b"/")
-            && (self.names.cdpath.split(|&c| c == b':'))
-                .any(|p| !p.is_empty() && sys::is_dir(&[p, b"/", &name].concat()))
+        if dotted || name.starts_with(b"/") {
+            return Some(false);
+        }
+        for p in self.names.cdpath.split(|&c| c == b':').filter(|p| !p.is_empty()) {
+            if self.fs_bool(Query::Dir, &[p, b"/", &name].concat())? {
+                return Some(true);
+            }
+        }
+        Some(false)
     }
 }
 
@@ -1363,7 +1438,9 @@ impl ShellHelper {
         let exists = match cached {
             Some(e) => e,
             None if self.spend() => {
-                let e = sys::lstat(path).is_some();
+                let Some(e) = self.fs_bool(Query::Exists, path) else {
+                    return 0;
+                };
                 st.paths.borrow_mut().insert(path.to_vec(), e);
                 e
             }
@@ -1388,7 +1465,10 @@ impl ShellHelper {
             if !self.spend() {
                 return 0;
             }
-            let names = sys::read_dir(dir).map(|mut n| {
+            let Some(Found::Names(names)) = self.ask_fs(Query::List, dir) else {
+                return 0;
+            };
+            let names = names.map(|mut n| {
                 n.sort_unstable();
                 n
             });

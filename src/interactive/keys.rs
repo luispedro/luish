@@ -240,6 +240,28 @@ impl Keymap {
         out
     }
 
+    /// The changes, with each sequence as `bindkey` shows it, and the
+    /// version (for the SSH mode's client).
+    pub fn to_wire(&self) -> (u64, Vec<(String, Option<&'static str>)>) {
+        (self.version, self.changes.iter().map(|(k, w)| (show(k), *w)).collect())
+    }
+
+    /// The keymap that `to_wire` gave. Sequences or widgets that this luish
+    /// doesn't know are left out.
+    pub fn from_wire(version: u64, changes: Vec<(String, Option<String>)>) -> Keymap {
+        let changes = (changes.into_iter())
+            .filter_map(|(seq, w)| {
+                let keys = decode(&parse(seq.as_bytes()).ok()?)?;
+                let w = match w {
+                    Some(w) => Some(widget(w.as_bytes())?.0),
+                    None => None,
+                };
+                Some((keys, w))
+            })
+            .collect();
+        Keymap { changes, version }
+    }
+
     /// Commands that restore the changes (for `savestate`): the name of
     /// each, and the command.
     pub fn state(&self) -> Vec<(Vec<u8>, Vec<u8>)> {

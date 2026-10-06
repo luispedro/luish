@@ -42,6 +42,24 @@ no_glob`, `-o prompt_percent`; `+o glob` is the same as
 
 Options end at the first operand, or at `--` or `-`.
 
+### Remote shells over SSH
+
+`luish --ssh HOST` logs in to HOST with ssh and runs luish there, but edits command lines here: typing, moving in
+the line, the history and the completion menu don't wait for the network. Commands run on HOST, and so do Tab
+completion, the prompt and everything the startup files set up there. luish must be installed on HOST, in a
+directory on the `PATH` that ssh gives commands (often not the one a login shell has).
+
+```sh
+luish --ssh myserver                  # ssh -T myserver luish --serve
+luish --ssh -p 2222 me@myserver       # ssh options go before the host
+luish --remote ssh -T myserver ~/.local/bin/luish --serve -l
+```
+
+`--remote` runs any command that starts `luish --serve` at the other end (and gives its standard input and output
+to it); `luish --serve` takes the usual options, such as `-l` for a login shell. While a command runs, the keys go
+to it as typed and its output comes back as it is printed, so full-screen programs such as vim work as they do
+over ssh. The history is HOST's. Both ends must be the same version of luish.
+
 ## Shell language extensions
 
 luish runs the POSIX shell language as dash does, and adds some of what bash
