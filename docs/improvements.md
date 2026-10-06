@@ -19,6 +19,24 @@ of each plugin.
   for them, and a plugin written only in shell doesn't start Rhai.
 
 
+## Remote shells that feel local
+
+Over ssh, every key goes to the server and back before it shows, so on a slow
+connection typing lags and the shell feels sluggish. `luish --ssh HOST` splits
+the shell in two: the line editor runs on your machine, and the commands run on
+HOST. Typing, moving in the line, searching the history and the completion menu
+are instant, while Tab completion, the prompt and everything your startup files
+set up still come from HOST. Full-screen programs such as vim work as over ssh.
+
+```sh
+luish --ssh myserver                  # copies luish to myserver, if needed
+luish --ssh -p 2222 me@myserver       # ssh options go before the host
+```
+
+luish needn't be installed on HOST: `luish --ssh` copies itself there the first
+time (see [](usage.md#remote-shells-over-ssh)). It uses ssh as it is, with
+your keys and `~/.ssh/config`, and needs no daemon or extra ports.
+
 ## As fast as dash, with zsh's features
 
 bash and zsh are up to five times slower than dash on scripts that run mostly

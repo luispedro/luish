@@ -14,6 +14,12 @@ and can include an extension written in [Rhai](https://rhai.rs), a small embedde
 language, for hooks, prompt variables, Tab completion and commands (see [](extensions.md)). They can be automatically fetched
 from github or other git repositories and pinned to specific commits.
 
+**Remote shells that feel local.** `luish --ssh HOST` runs your commands on HOST,
+but edits the command line on your own machine: typing, moving in the line, the
+history and the completion menu don't wait for the network, however slow the
+connection. luish needn't be installed on HOST, as it copies itself there (see
+[](usage.md#remote-shells-over-ssh)).
+
 **As fast as dash, with zsh's features.** Scripts run as fast as under dash
 (see [](performance.md)) while interactive use is intended to be as
 full-featured as zsh.

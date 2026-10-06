@@ -19,6 +19,9 @@ fast as [dash](http://gondor.apana.org.au/~herbert/dash/).
   with `plugin add`), fetched from git and pinned in a lock file. Plugins can add hooks, prompt variables, completion
   and commands. Anything beyond POSIX that changes behaviour is opt-in, and none of it costs anything when it is not
   used.
+- **Remote shells that feel local**: `luish --ssh HOST` runs commands on HOST but edits command lines on your
+  machine, so typing, the history and the completion menu don't wait for the network. luish needn't be installed on
+  HOST: it copies itself there.
 - **bash's and zsh's scripting extensions**: arrays and associative arrays, `[[ ... ]]`, `${x/pattern/replacement}`,
   process substitution (`<(...)`), `typeset`, zsh's parameter flags and more. Scripts that use them run up to six
   times faster than under bash or zsh.

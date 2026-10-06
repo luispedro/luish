@@ -135,6 +135,9 @@ improvement on it.
 - **Variable tracing.** With `setopt vars.trace`, `where PATH` shows the file and line that last set `PATH` (and
   the function that ran), and `vars.trace_history` keeps the earlier values too (see
   [](../usage.md#tracing-variables)).
+- **Remote shells with a local line editor.** `luish --ssh HOST` edits command lines on the local machine and runs
+  them on HOST, so typing, the history and the completion menu don't wait for the network, while completion and the
+  prompt come from HOST (see [](../usage.md#remote-shells-over-ssh)).
 - **Settings in TOML**, with options named in groups (`history.share`, `glob.star`); zsh's names still work.
 - **Commands installed while the shell runs are found.** luish notices when a `PATH` directory changes, so a new
   program that shadows an old one is used without `hash -r` or `rehash` (see [](../improvements.md)).
@@ -153,8 +156,8 @@ improvement on it.
 ## Where luish is going
 
 The current work is finishing the replacement of zsh: more completion (a generic bridge to programs' own completion
-and to `--help`) and typing to narrow the menu. After that come a history with the directory, exit status and
-duration of each command, and a mode for SSH in which the line editor runs on the local machine.
+and to `--help`) and typing to narrow the menu. After that comes a history with the directory, exit status and
+duration of each command.
 
 ```{toctree}
 :hidden:
