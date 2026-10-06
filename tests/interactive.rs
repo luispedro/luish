@@ -72,6 +72,11 @@ impl Pty {
     /// The SSH mode's client, with a server on this host (`luish --remote
     /// luish --serve`), in a new directory as `spawn_term`.
     fn spawn_remote(name: &str, term: &str) -> Pty {
+        Pty::spawn_remote_env(name, term, &[])
+    }
+
+    /// `extra` are further variables of the environment.
+    fn spawn_remote_env(name: &str, term: &str, extra: &[&str]) -> Pty {
         let dir = Pty::new_dir(name);
         std::fs::create_dir_all(dir.join(".config/luish")).unwrap();
         std::fs::write(dir.join(".config/luish/luishrc"), "").unwrap();
@@ -81,7 +86,7 @@ impl Pty {
             term,
             true,
             None,
-            &["LUISH_BACKGROUND=dark"],
+            &[&["LUISH_BACKGROUND=dark"], extra].concat(),
             &["--remote", luish, "--serve"],
         )
     }
@@ -2013,6 +2018,43 @@ fn remote_mode() {
     sh.send("abc\n");
     sh.expect("got-abc\n");
     assert_eq!(sh.exit_status(), 3);
+}
+
+#[test]
+fn remote_chaos() {
+    // Over a bad network (`LUISH_CHAOS=1`: the bytes each way cut into
+    // pieces and delayed), nothing is lost or out of order.
+    let mut sh = Pty::spawn_remote_env("remote-chaos", "dumb", &["LUISH_CHAOS=1:42"]);
+    sh.expect("chaos level 1 (LUISH_CHAOS=1:42)");
+    sh.expect("$ ");
+    assert_has(&sh.run("echo $((6 * 7))"), "42\n");
+    assert_has(
+        &sh.run("seq 1 30000 | tr -d '\\n' | wc -c; echo ${LUISH_CHAOS-unset}"),
+        "138894\nunset\n",
+    );
+    // Lines sent together, and keys typed while a command runs.
+    for i in 100..103 {
+        sh.send(&format!("true\necho second-$(({i}))\n"));
+        sh.expect(&format!("second-{i}\n"));
+    }
+    sh.send("cat >/dev/null; echo done\n");
+    sh.wait_for_remote_procs(&["cat"]);
+    sh.send("\x04echo typed-ahead\n");
+    sh.expect("done\n");
+    sh.expect("\ntyped-ahead\n");
+    sh.send("exit 4\n");
+    assert_eq!(sh.exit_status(), 4);
+    // Tab and the highlighter's lookups, which wait for answers.
+    let mut sh = Pty::spawn_remote_env("remote-chaos-edit", "vt100", &["LUISH_CHAOS=1:7"]);
+    std::fs::write(sh.path("afile"), "found it\n").unwrap();
+    sh.expect("\x1b[?2004h");
+    sh.send("setopt highlight.paths\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("cat af\t\n");
+    sh.expect("found it\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
 }
 
 #[test]

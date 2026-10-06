@@ -14,9 +14,14 @@
 //! comes back, and the shell reads those left on the pty to send them with
 //! the request. The request says where in the client's input the relay
 //! stopped, so that the client starts the line with the keys after it.
+//!
+//! With `LUISH_CHAOS` set, the link to the client is a bad network
+//! (`chaos.rs`), for testing.
 
 use std::collections::VecDeque;
+use std::time::Instant;
 
+use super::chaos::Chaos;
 use super::{Dec, Enc, Forward, Frame, MAGIC, Reader, VERSION, msg, write_frame};
 use crate::interactive::remote::SYNC;
 use crate::sys;
@@ -32,6 +37,7 @@ fn fail(what: &str) -> ! {
 /// after taking the client's variables for its terminal and locale
 /// (`forward`); the relay never returns.
 pub fn start() -> i32 {
+    let chaos = Chaos::from_env().unwrap_or_else(|()| fail("LUISH_CHAOS must be 0, 1 or 2, or LEVEL:SEED"));
     let mut hello = Enc::default();
     hello.u32(VERSION).str(env!("CARGO_PKG_VERSION"));
     if !sys::write_all(1, MAGIC) || !write_frame(1, msg::HELLO, &hello.buf) {
@@ -119,6 +125,7 @@ pub fn start() -> i32 {
         to_pty: Vec::new(),
         received: 0,
         held_at: None,
+        chaos: chaos.map(Box::new),
     }
     .run()
 }
@@ -143,6 +150,8 @@ struct Relay {
     received: u64,
     /// While the shell waits for a line: how many of them went to the pty.
     held_at: Option<u64>,
+    /// The bad network between the client and the relay, if testing.
+    chaos: Option<Box<Chaos>>,
 }
 
 impl Relay {
@@ -152,6 +161,7 @@ impl Relay {
         // program, which then has the pty to itself until it exits.
         let mut ctl_open = true;
         loop {
+            self.arrive();
             while let Some(f) = self
                 .from_client
                 .next()
@@ -183,12 +193,19 @@ impl Relay {
                 (true, false) => 100,
                 (true, true) => -1,
             };
+            // Or until the next bytes arrive through the chaos.
+            let (timeout, chaos) = match self.chaos.as_ref().and_then(|c| c.wait(Instant::now())) {
+                Some(w) if timeout < 0 || w < timeout => (w, true),
+                _ => (timeout, false),
+            };
             let ready = super::poll(&mut fds, timeout);
             if !ctl_open && let Ok(Some((_, ws))) = sys::waitpid(self.pid, libc::WNOHANG) {
                 self.finish(ws.code());
             }
             if !ready {
-                self.flush();
+                if !chaos {
+                    self.flush();
+                }
                 continue;
             }
             if fds[2].revents & libc::POLLOUT != 0 {
@@ -207,7 +224,7 @@ impl Relay {
                     _ => ctl_open = false,
                 }
             }
-            if fds[0].revents != 0 && self.from_client.fill(0) != Some(true) {
+            if fds[0].revents != 0 && !self.read_client() {
                 // The client has gone: closing the pty hangs up the shell.
                 sys::close(self.master);
                 sys::exit(0);
@@ -250,12 +267,43 @@ impl Relay {
                 self.held.push_back(f);
                 self.release();
             }
-            _ => self.to_client(f.kind, &f.data),
+            _ => self.send_client(f.kind, &f.data),
         }
     }
 
-    fn to_client(&self, kind: u8, data: &[u8]) {
-        if !write_frame(1, kind, data) {
+    fn send_client(&mut self, kind: u8, data: &[u8]) {
+        match &mut self.chaos {
+            Some(c) => c.send(&super::frame(kind, data), Instant::now()),
+            None if !write_frame(1, kind, data) => {
+                sys::close(self.master);
+                sys::exit(0);
+            }
+            None => {}
+        }
+    }
+
+    /// Reads what the client sent. False once it has gone.
+    fn read_client(&mut self) -> bool {
+        let Some(c) = &mut self.chaos else {
+            return self.from_client.fill(0) == Some(true);
+        };
+        let mut buf = [0u8; 16384];
+        match sys::read(0, &mut buf, false) {
+            Ok(n @ 1..) => {
+                c.receive(&buf[..n], Instant::now());
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Passes on, each way, the bytes the chaos has let through by now.
+    /// Exits once it has dropped the connection.
+    fn arrive(&mut self) {
+        let Some(c) = &mut self.chaos else { return };
+        let a = c.arrived(Instant::now());
+        self.from_client.feed(&a.inp);
+        if a.gone || !sys::write_all(1, &a.out) {
             sys::close(self.master);
             sys::exit(0);
         }
@@ -269,7 +317,7 @@ impl Relay {
             let mut e = Enc::default();
             e.u64(self.held_at.unwrap_or(self.received));
             e.buf.extend_from_slice(&f.data);
-            self.to_client(f.kind, &e.buf);
+            self.send_client(f.kind, &e.buf);
         }
     }
 
@@ -322,7 +370,7 @@ impl Relay {
         out.extend_from_slice(&rest[..rest.len() - keep]);
         self.kept = rest[rest.len() - keep..].to_vec();
         if !out.is_empty() {
-            self.to_client(msg::OUTPUT, &out);
+            self.send_client(msg::OUTPUT, &out);
         }
         self.release();
     }
@@ -331,7 +379,7 @@ impl Relay {
     fn flush(&mut self) {
         let kept = std::mem::take(&mut self.kept);
         if !kept.is_empty() {
-            self.to_client(msg::OUTPUT, &kept);
+            self.send_client(msg::OUTPUT, &kept);
         }
     }
 
@@ -352,7 +400,14 @@ impl Relay {
         self.flush();
         let mut e = Enc::default();
         e.u32(status as u32);
-        self.to_client(msg::EXIT, &e.buf);
+        self.send_client(msg::EXIT, &e.buf);
+        while let Some(c) = &self.chaos
+            && c.sending()
+        {
+            let w = c.wait(Instant::now()).unwrap_or(0);
+            super::poll(&mut [], w);
+            self.arrive();
+        }
         sys::exit(0)
     }
 }

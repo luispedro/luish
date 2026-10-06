@@ -78,7 +78,8 @@ src/
 ├── interactive/        # mod.rs (REPL, rustyline helper), history.rs, histfile.rs, bang.rs (history expansion),
 │                       # complete.rs, menu.rs, keys.rs, highlight.rs, rprompt.rs (RPROMPT), firstrun.rs (the first-run menu),
 │                       # jobmenu.rs (jobs -i), remote.rs (the editor's side of the SSH mode)
-├── remote/             # the SSH mode: mod.rs (protocol), relay.rs (`--serve`), client.rs (`--remote`, `--ssh`)
+├── remote/             # the SSH mode: mod.rs (protocol), relay.rs (`--serve`), client.rs (`--remote`, `--ssh`),
+│                       # chaos.rs (a bad network, for testing)
 └── plugins/            # mod.rs (the `plugin` built-in), package.rs (config.toml's [plugins], plugin.toml,
                         # plugins.lock), fetch.rs (git), add.rs (`plugin add`), rhai.rs, fs.rs, vcs.rs, bytes.rs
 tests/
@@ -1372,13 +1373,21 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
   The window size is sent on SIGWINCH and before each line (rustyline installs its own handler while it reads a
   line, and restores the client's). SIGPIPE is ignored so a lost connection shows as a failed write. Without `EXIT`,
   the client exits with the transport's status (255 if that was 0, as ssh's for a lost connection).
+- **Chaos** (`chaos.rs`), for testing over a bad network without one: `LUISH_CHAOS=LEVEL` (or `LEVEL:SEED`) in
+  the server's environment passes the bytes each way between the relay and the client (after the greeting) through
+  queues with a time for each piece. Level 1 cuts them at random places and delays each piece by 20 to 200 ms, in
+  order (as TCP over a slow link: nothing lost or reordered, so the protocol needs no recovery); level 2 also stalls
+  (one piece in 50 waits 0.5 to 3 s more) and drops the connection (one piece in 300): nothing passes any more, and
+  2 to 10 s later the relay exits, as when ssh gives up, so the client says the connection was lost and the shell
+  is hung up. The relay unsets the variable, prints the seed to stderr, and polls until the next piece is due; it
+  costs a server without it one `getenv`. Over ssh: `--luish-path='LUISH_CHAOS=2 luish'`.
 - Tests: `remote_mode` (commands on the server's pty, job control, `^C`, `cat`, window size while editing and while a
   command runs, keys typed ahead, lines sent together, keys typed between a command's output and the prompt, `exec`
   and the exit status) and `remote_editing` (Tab and the menu, the history and `fc`, highlighting of the server's
   commands and files), both over `luish --remote luish --serve`; `remote_environment` (the forwarded variables, with
-  the server under `env -i`); and `remote_ssh` (`--ssh` and `--luish-path`, with a stand-in `ssh`), all in
-  `tests/interactive.rs`. `wait_for_remote_procs` finds jobs on the server's pty. Unit tests: frames, `MAGIC`,
-  `forward` and `Enc`/`Dec` in `remote/mod.rs`, a request and a Tab reply round trip in `interactive/remote.rs`,
+  the server under `env -i`); `remote_ssh` (`--ssh` and `--luish-path`, with a stand-in `ssh`); and `remote_chaos`
+  (commands, a large output, keys typed ahead, Tab and lookups, at chaos level 1), all in `tests/interactive.rs`. `wait_for_remote_procs` finds jobs on the server's pty. Unit tests: frames, `MAGIC`,
+  `forward` and `Enc`/`Dec` in `remote/mod.rs`, the order, delays and drops in `remote/chaos.rs`, a request and a Tab reply round trip in `interactive/remote.rs`,
   `history::tests::copy`. The keys-typed-ahead steps fail about half the time without the hold (checked by disabling
   it), not every time: the window is a race.
 - Not yet: a redraw when a late lookup answer comes; Ctrl-C while the client waits for Tab; anything for a

@@ -7,6 +7,7 @@
 //! (`relay.rs`). The editor's side (what a line request holds) is in
 //! `interactive/remote.rs`; the client in `client.rs`.
 
+pub mod chaos;
 pub mod client;
 pub mod relay;
 
@@ -85,13 +86,18 @@ pub struct Frame {
     pub data: Vec<u8>,
 }
 
-/// Writes a frame. False if the other end has gone.
-pub fn write_frame(fd: i32, kind: u8, data: &[u8]) -> bool {
+/// A frame's bytes.
+pub fn frame(kind: u8, data: &[u8]) -> Vec<u8> {
     let mut buf = Vec::with_capacity(5 + data.len());
     buf.push(kind);
     buf.extend_from_slice(&(data.len() as u32).to_be_bytes());
     buf.extend_from_slice(data);
-    crate::sys::write_all(fd, &buf)
+    buf
+}
+
+/// Writes a frame. False if the other end has gone.
+pub fn write_frame(fd: i32, kind: u8, data: &[u8]) -> bool {
+    crate::sys::write_all(fd, &frame(kind, data))
 }
 
 /// Collects bytes read from a stream and cuts them into frames.
@@ -101,7 +107,6 @@ pub struct Reader {
 }
 
 impl Reader {
-    #[cfg(test)]
     pub fn feed(&mut self, data: &[u8]) {
         self.buf.extend_from_slice(data);
     }
