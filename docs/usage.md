@@ -47,11 +47,14 @@ Options end at the first operand, or at `--` or `-`.
 `luish --ssh HOST` logs in to HOST with ssh and runs luish there, but edits command lines here: typing, moving in
 the line, the history and the completion menu don't wait for the network. Commands run on HOST, and so do Tab
 completion, the prompt and everything the startup files set up there. luish must be installed on HOST, in a
-directory on the `PATH` that ssh gives commands (often not the one a login shell has).
+directory on the `PATH` that ssh gives commands (often not the one a login shell has), or else named with
+`--luish-path=PROGRAM` (as rsync's `--rsync-path`). PROGRAM is run by the remote user's shell, so it may start with
+`~/`.
 
 ```sh
 luish --ssh myserver                  # ssh -T myserver luish --serve
 luish --ssh -p 2222 me@myserver       # ssh options go before the host
+luish --ssh --luish-path='~/.local/bin/luish' myserver
 luish --remote ssh -T myserver ~/.local/bin/luish --serve -l
 ```
 

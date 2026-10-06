@@ -73,6 +73,7 @@ interactive shell if it is a terminal.
                       starts with `luish --serve`, usually through ssh
   --ssh [OPTION...] HOST
                       the same as --remote ssh -T [OPTION...] HOST luish --serve
+                      (with --luish-path=PROGRAM, PROGRAM instead of luish)
   --help              show this help and exit
   --version           show the version and exit
 

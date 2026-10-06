@@ -31,14 +31,33 @@ fn fail(what: &str) -> ! {
 }
 
 /// `luish --ssh [SSH-OPTION...] HOST`: `ssh -T [SSH-OPTION...] HOST luish
-/// --serve`.
+/// --serve`. `--luish-path=PROGRAM` (or `--luish-path PROGRAM`), anywhere
+/// among the options, replaces `luish`, as rsync's `--rsync-path`: the
+/// remote shell runs it, so `~/bin/luish` works. ssh's own options never
+/// start with `--`.
 pub fn ssh(args: &[Vec<u8>]) -> ! {
-    if args.is_empty() {
+    let mut program = b"luish".to_vec();
+    let mut cmd = vec![b"ssh".to_vec(), b"-T".to_vec()];
+    let mut args = args.iter();
+    while let Some(a) = args.next() {
+        if let Some(p) = a.strip_prefix(b"--luish-path=") {
+            program = p.to_vec();
+        } else if a == b"--luish-path" {
+            program = args
+                .next()
+                .unwrap_or_else(|| fail("--luish-path requires a program"))
+                .clone();
+        } else {
+            cmd.push(a.clone());
+        }
+    }
+    if cmd.len() == 2 {
         fail("--ssh requires a host");
     }
-    let mut cmd = vec![b"ssh".to_vec(), b"-T".to_vec()];
-    cmd.extend_from_slice(args);
-    cmd.extend([b"luish".to_vec(), b"--serve".to_vec()]);
+    if program.is_empty() {
+        fail("--luish-path requires a program");
+    }
+    cmd.extend([program, b"--serve".to_vec()]);
     run(&cmd)
 }
 

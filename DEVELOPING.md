@@ -1319,7 +1319,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 ### SSH mode (`remote/`, `interactive/remote.rs`)
 
 Stage 3, started as a walking skeleton (`PLAN.md`). `luish --remote CMD...` (the client) runs CMD with pipes for its
-stdin and stdout; CMD starts `luish --serve` (the server), usually through `ssh -T` (`--ssh HOST`). Both are
+stdin and stdout; CMD starts `luish --serve` (the server), usually through `ssh -T` (`--ssh HOST`, where
+`--luish-path=PROGRAM` among ssh's options replaces `luish`; ssh's own options never start with `--`). Both are
 dispatched in `main::run` before `Shell::new`, so they cost other invocations one comparison.
 
 - **Protocol** (`remote/mod.rs`): frames of a type byte (`msg`), a 32-bit length and a payload, built with
@@ -1371,7 +1372,8 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
 - Tests: `remote_mode` (commands on the server's pty, job control, `^C`, `cat`, window size while editing and while a
   command runs, keys typed ahead, lines sent together, keys typed between a command's output and the prompt, `exec`
   and the exit status) and `remote_editing` (Tab and the menu, the history and `fc`, highlighting of the server's
-  commands and files) in `tests/interactive.rs`, all over `luish --remote luish --serve`; `wait_for_remote_procs`
+  commands and files) in `tests/interactive.rs`, all over `luish --remote luish --serve`, and `remote_ssh` (`--ssh` and
+`--luish-path`, with a stand-in `ssh`); `wait_for_remote_procs`
   finds jobs on the server's pty. Unit tests: frames, `MAGIC` and `Enc`/`Dec` in `remote/mod.rs`, a request and a
   Tab reply round trip in `interactive/remote.rs`, `history::tests::copy`. The keys-typed-ahead steps fail about half
   the time without the hold (checked by disabling it), not every time: the window is a race.

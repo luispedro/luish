@@ -2060,3 +2060,34 @@ fn remote_editing() {
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);
 }
+
+#[test]
+fn remote_ssh() {
+    // `--ssh` with a stand-in for ssh, which runs the command as ssh does
+    // (with the user's shell), and luish only where `--luish-path` says.
+    let dir = Pty::new_dir("remote-ssh");
+    std::fs::create_dir_all(dir.join(".config/luish")).unwrap();
+    std::fs::write(dir.join(".config/luish/luishrc"), "").unwrap();
+    std::fs::create_dir(dir.join("bin")).unwrap();
+    let ssh = dir.join("bin/ssh");
+    std::fs::write(
+        &ssh,
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" >\"$HOME/ssh-args\"\nshift 4\nexec /bin/sh -c \"$*\"\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&ssh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_luish"), dir.join("server")).unwrap();
+    let path = format!(
+        "{}:{}",
+        dir.join("bin").display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let args = ["--ssh", "-p", "2222", "--luish-path=~/server", "myhost"];
+    let mut sh = Pty::spawn_args(dir, "dumb", true, Some(&path), &["LUISH_BACKGROUND=dark"], &args);
+    sh.expect("$ ");
+    assert_has(&sh.run("echo x-$((6 * 7))"), "x-42\n");
+    let sent = std::fs::read_to_string(sh.path("ssh-args")).unwrap();
+    assert_eq!(sent, "-T\n-p\n2222\nmyhost\n~/server\n--serve\n");
+    sh.send("exit 4\n");
+    assert_eq!(sh.exit_status(), 4);
+}
