@@ -247,8 +247,8 @@ Still to do, after the skeleton:
   only way to wake its editor, would hold back keys that come in one read (`DEVELOPING.md`, SSH mode): this needs
   a fix in rustyline first.
 - Job notifications and output of background jobs while the client edits (they are written as they come).
-- **Open questions**: installing the server binary when the remote host has none; protocol versioning (now: both
-  ends must speak the same version); dropped connections (which mosh survives and plain SSH doesn't).
+- **Open questions**: protocol versioning (now: both ends must speak the same version, which `--ssh` ensures by
+  copying the client's binary, but `--remote` and `--luish-path` don't); dropped connections (which mosh survives and plain SSH doesn't).
 
 ## Risks
 

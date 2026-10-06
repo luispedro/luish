@@ -12,7 +12,8 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
-use super::{Dec, Enc, Reader, VERSION, msg, write_frame};
+use super::{COPY, Dec, Enc, MAGIC, Reader, VERSION, msg, write_frame};
+use crate::builtins::internal::BUILD_ID;
 use crate::interactive::remote::{self as editor, Link};
 use crate::sys;
 
@@ -30,23 +31,26 @@ fn fail(what: &str) -> ! {
     sys::exit(255)
 }
 
-/// `luish --ssh [SSH-OPTION...] HOST`: `ssh -T [SSH-OPTION...] HOST luish
-/// --serve`. `--luish-path=PROGRAM` (or `--luish-path PROGRAM`), anywhere
-/// among the options, replaces `luish`, as rsync's `--rsync-path`: the
+/// `luish --ssh [SSH-OPTION...] HOST`: `ssh -T [SSH-OPTION...] HOST`
+/// with a script that runs a copy of this luish, kept on the server by
+/// version and contents, after copying it there if it isn't (`Image`).
+/// `--luish-path=PROGRAM` (or `--luish-path PROGRAM`), anywhere among the
+/// options, runs `PROGRAM --serve` instead, as rsync's `--rsync-path`: the
 /// remote shell runs it, so `~/bin/luish` works. ssh's own options never
 /// start with `--`.
 pub fn ssh(args: &[Vec<u8>]) -> ! {
-    let mut program = b"luish".to_vec();
+    let mut program = None;
     let mut cmd = vec![b"ssh".to_vec(), b"-T".to_vec()];
     let mut args = args.iter();
     while let Some(a) = args.next() {
         if let Some(p) = a.strip_prefix(b"--luish-path=") {
-            program = p.to_vec();
+            program = Some(p.to_vec());
         } else if a == b"--luish-path" {
-            program = args
-                .next()
-                .unwrap_or_else(|| fail("--luish-path requires a program"))
-                .clone();
+            program = Some(
+                args.next()
+                    .unwrap_or_else(|| fail("--luish-path requires a program"))
+                    .clone(),
+            );
         } else {
             cmd.push(a.clone());
         }
@@ -54,11 +58,101 @@ pub fn ssh(args: &[Vec<u8>]) -> ! {
     if cmd.len() == 2 {
         fail("--ssh requires a host");
     }
-    if program.is_empty() {
+    if program.as_ref().is_some_and(|p| p.is_empty()) {
         fail("--luish-path requires a program");
     }
-    cmd.extend([program, b"--serve".to_vec()]);
-    run(&cmd)
+    let image = program.is_none().then(Image::new);
+    match &image {
+        Some(image) => cmd.push(image.script()),
+        None => cmd.extend([program.unwrap_or_else(|| b"luish".to_vec()), b"--serve".to_vec()]),
+    }
+    connect(&cmd, image)
+}
+
+/// This luish's executable, for `--ssh` to copy to the server. It is kept
+/// there as `~/.cache/luish/binaries/luish-VERSION-BUILD`, BUILD being
+/// `BUILD_ID` (the commit, and a hash of the sources if they differ from
+/// it), so that each version (or build) of the client runs its own,
+/// whatever else is installed.
+struct Image {
+    /// The copy's file name.
+    name: String,
+}
+
+/// The command `--ssh` runs on the server, in `sh -c '...'` for whatever
+/// the user's shell is: so on one line, with no `'`, no `!` (for csh) and
+/// no `\\` (for fish). It runs the copy (NAME) if it is there; else it writes `COPY` and `uname
+/// -sm`, and reads a count of bytes and that many bytes: the copy, which it
+/// checks runs (a build linked with a newer libc than the server's
+/// doesn't), and removes copies more than 30 days old. With 0 bytes, or a
+/// copy that can't run, it runs the `luish` on its `PATH` instead.
+const SCRIPT: &str = concat!(
+    "d=${XDG_CACHE_HOME:-$HOME/.cache}/luish/binaries; f=$d/NAME; ",
+    r#"if [ -x "$f" ]; then exec "$f" --serve; fi; "#,
+    r#"printf "\0luish-copy\0%s\n" "$(uname -sm)"; read n; "#,
+    r#"case $n in [1-9]*) t=$f.$$; "#,
+    r#"mkdir -p "$d" && head -c "$n" >"$t" && [ $(wc -c <"$t") = "$n" ] "#,
+    r#"|| { rm -f "$t"; echo "luish: cannot copy luish to $f" >&2; exit 255; }; "#,
+    r#"chmod +x "$t"; if "$t" --version >/dev/null; then "#,
+    r#"find "$d" -name "luish-*" -mtime +30 -exec rm -f {} +; "#,
+    r#"mv -f "$t" "$f"; exec "$f" --serve; fi; "#,
+    r#"rm -f "$t"; echo "luish: the copy of luish cannot run on this host" >&2;; "#,
+    "esac; exec luish --serve",
+);
+
+impl Image {
+    fn new() -> Image {
+        const VERSION: &str = env!("CARGO_PKG_VERSION");
+        // Outside a git checkout, `BUILD_ID` starts with the version.
+        let id = BUILD_ID.strip_prefix(VERSION).unwrap_or(BUILD_ID);
+        let id = id.strip_prefix('-').unwrap_or(id);
+        Image {
+            name: format!("luish-{VERSION}-{id}"),
+        }
+    }
+
+    fn script(&self) -> Vec<u8> {
+        format!("sh -c '{}'", SCRIPT.replace("NAME", &self.name)).into_bytes()
+    }
+
+    /// Answers the script, which has written `uname -sm` (as `host`):
+    /// sends the copy if the server is the same system as this one, else
+    /// 0. False if the server has gone.
+    fn send(&self, to: i32, host: &[u8]) -> bool {
+        let here = uname();
+        let bytes = if host != here.as_bytes() {
+            Err(format!("the server runs {}, not {here}", String::from_utf8_lossy(host)))
+        } else {
+            std::fs::read("/proc/self/exe").map_err(|e| format!("cannot read /proc/self/exe: {e}"))
+        };
+        let bytes = match bytes {
+            Ok(b) => b,
+            Err(why) => {
+                sys::write_all(2, format!("luish: {why}: using the server's own luish\n").as_bytes());
+                return sys::write_all(to, b"0\n");
+            }
+        };
+        let msg = format!(
+            "luish: copying luish {} to the server ({:.1} MB)\n",
+            env!("CARGO_PKG_VERSION"),
+            bytes.len() as f64 / 1e6
+        );
+        sys::write_all(2, msg.as_bytes());
+        sys::write_all(to, format!("{}\n", bytes.len()).as_bytes()) && sys::write_all(to, &bytes)
+    }
+}
+
+/// This system, as `uname -sm` writes it.
+fn uname() -> String {
+    // SAFETY: uname fills the struct, whose fields are NUL-terminated.
+    unsafe {
+        let mut u: libc::utsname = std::mem::zeroed();
+        if libc::uname(&mut u) != 0 {
+            return String::new();
+        }
+        let field = |f: &[libc::c_char]| std::ffi::CStr::from_ptr(f.as_ptr()).to_string_lossy().into_owned();
+        format!("{} {}", field(&u.sysname), field(&u.machine))
+    }
 }
 
 struct Conn {
@@ -82,6 +176,12 @@ impl Link for Rc<Conn> {
 
 /// `luish --remote CMD...`.
 pub fn run(cmd: &[Vec<u8>]) -> ! {
+    connect(cmd, None)
+}
+
+/// Runs CMD and talks to the server it starts, first copying `image` if
+/// the server asks for it.
+fn connect(cmd: &[Vec<u8>], image: Option<Image>) -> ! {
     if cmd.is_empty() {
         fail("--remote requires a command");
     }
@@ -126,7 +226,24 @@ pub fn run(cmd: &[Vec<u8>]) -> ! {
     let mut from = Reader::default();
     // What the remote startup files printed before luish started.
     loop {
-        if let Some(before) = from.take_until_magic() {
+        if let Some(image) = &image
+            && let Some(before) = from.take_until(COPY)
+        {
+            sys::write_all(2, &before);
+            let host = loop {
+                if let Some(line) = from.take_until(b"\n") {
+                    break line;
+                }
+                if from.fill(from_rd) != Some(true) {
+                    gone(pid);
+                }
+            };
+            if !image.send(to_wr, &host) {
+                gone(pid);
+            }
+            continue;
+        }
+        if let Some(before) = from.take_until(MAGIC) {
             sys::write_all(2, &before);
             break;
         }

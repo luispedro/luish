@@ -2172,3 +2172,76 @@ fn remote_ssh() {
     sh.send("exit 4\n");
     assert_eq!(sh.exit_status(), 4);
 }
+
+#[test]
+fn remote_ssh_copy() {
+    // Without `--luish-path`, `--ssh` copies this luish to the server's
+    // cache the first time (removing old copies) and runs the copy after
+    // that; on another system it runs the server's own luish.
+    let dir = Pty::new_dir("remote-ssh-copy");
+    std::fs::create_dir_all(dir.join(".config/luish")).unwrap();
+    std::fs::write(dir.join(".config/luish/luishrc"), "").unwrap();
+    std::fs::create_dir(dir.join("bin")).unwrap();
+    let script = |name: &str, text: &str| {
+        let f = dir.join("bin").join(name);
+        std::fs::write(&f, text).unwrap();
+        std::fs::set_permissions(&f, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    };
+    script("ssh", "#!/bin/sh\nshift 2\nexec /bin/sh -c \"$*\"\n");
+    let cache = dir.join(".cache/luish/binaries");
+    std::fs::create_dir_all(&cache).unwrap();
+    let old = std::fs::File::create(cache.join("luish-0.0.1-old")).unwrap();
+    old.set_modified(std::time::SystemTime::now() - Duration::from_secs(40 * 86400))
+        .unwrap();
+    drop(old);
+    let path = format!(
+        "{}:{}",
+        dir.join("bin").display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    let spawn = |owns_dir| {
+        let env = ["LUISH_BACKGROUND=dark"];
+        Pty::spawn_args(dir.clone(), "dumb", owns_dir, Some(&path), &env, &["--ssh", "myhost"])
+    };
+    let copies = || {
+        let mut names: Vec<String> = std::fs::read_dir(&cache)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
+    };
+
+    let mut sh = spawn(false);
+    assert_has(&sh.expect("$ "), "luish: copying luish");
+    let exe = sh.run("readlink /proc/$$/exe");
+    let names = copies();
+    assert_eq!(names.len(), 1, "{names:?}");
+    assert!(names[0].starts_with(concat!("luish-", env!("CARGO_PKG_VERSION"), "-")));
+    assert_has(&exe, &format!("{}\n", cache.join(&names[0]).display()));
+    sh.send("exit 3\n");
+    assert_eq!(sh.exit_status(), 3);
+
+    let mut sh = spawn(false);
+    let before = sh.expect("$ ");
+    assert!(!before.contains("copying"), "copied again: {before:?}");
+    assert_has(&sh.run("readlink /proc/$$/exe"), &names[0]);
+    sh.send("exit 4\n");
+    assert_eq!(sh.exit_status(), 4);
+    assert_eq!(copies(), names);
+
+    // Another system: the server's own luish (on its `PATH`).
+    std::fs::remove_dir_all(&cache).unwrap();
+    script("uname", "#!/bin/sh\necho Linux sparc64\n");
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_luish"), dir.join("bin/luish")).unwrap();
+    let mut sh = spawn(true);
+    let before = sh.expect("$ ");
+    assert_has(&before, "luish: the server runs Linux sparc64, not Linux ");
+    assert_has(&before, ": using the server's own luish\n");
+    let exe = sh.run("readlink /proc/$$/exe");
+    let real = std::fs::canonicalize(env!("CARGO_BIN_EXE_luish")).unwrap();
+    assert_has(&exe, &format!("{}\n", real.display()));
+    assert!(!cache.exists());
+    sh.send("exit 5\n");
+    assert_eq!(sh.exit_status(), 5);
+}

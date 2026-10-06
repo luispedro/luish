@@ -72,8 +72,9 @@ interactive shell if it is a terminal.
   --remote CMD...     edit lines here and run them in the shell that CMD
                       starts with `luish --serve`, usually through ssh
   --ssh [OPTION...] HOST
-                      the same as --remote ssh -T [OPTION...] HOST luish --serve
-                      (with --luish-path=PROGRAM, PROGRAM instead of luish)
+                      the same as --remote ssh -T [OPTION...] HOST luish --serve,
+                      with a copy of this luish that it keeps on HOST
+                      (with --luish-path=PROGRAM, PROGRAM instead, not copied)
   --help              show this help and exit
   --version           show the version and exit
 

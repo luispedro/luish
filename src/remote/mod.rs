@@ -18,6 +18,11 @@ pub const VERSION: u32 = 2;
 /// what a remote startup file printed before luish started.
 pub const MAGIC: &[u8] = b"\0luish-serve\0";
 
+/// What the script that `--ssh` runs on the server writes when it has no
+/// copy of this luish, followed by `uname -sm` and a newline
+/// (`client::Image`).
+pub const COPY: &[u8] = b"\0luish-copy\0";
+
 /// The message types. The relay handles those of the transport (hello,
 /// input, resize, output, exit) and passes the others between the client
 /// and the shell.
@@ -157,12 +162,12 @@ impl Reader {
         }
     }
 
-    /// Takes the bytes before `MAGIC`, once it has come (and drops it).
-    /// None until then.
-    pub fn take_until_magic(&mut self) -> Option<Vec<u8>> {
-        let i = self.buf.windows(MAGIC.len()).position(|w| w == MAGIC)?;
+    /// Takes the bytes before `mark` (such as `MAGIC`), once it has come
+    /// (and drops it). None until then.
+    pub fn take_until(&mut self, mark: &[u8]) -> Option<Vec<u8>> {
+        let i = self.buf.windows(mark.len()).position(|w| w == mark)?;
         let before = self.buf[..i].to_vec();
-        self.buf.drain(..i + MAGIC.len());
+        self.buf.drain(..i + mark.len());
         Some(before)
     }
 }
@@ -391,9 +396,9 @@ mod tests {
     fn magic() {
         let mut r = Reader::default();
         r.feed(b"motd\n\0luish-se");
-        assert!(r.take_until_magic().is_none());
+        assert!(r.take_until(MAGIC).is_none());
         r.feed(b"rve\0H");
-        assert_eq!(r.take_until_magic().unwrap(), b"motd\n");
+        assert_eq!(r.take_until(MAGIC).unwrap(), b"motd\n");
         r.feed(&[0, 0, 0, 0]);
         assert_eq!(r.next().unwrap().unwrap().kind, b'H');
     }
