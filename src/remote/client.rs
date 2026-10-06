@@ -112,13 +112,17 @@ pub fn run(cmd: &[Vec<u8>]) -> ! {
     unsafe { libc::signal(libc::SIGPIPE, libc::SIG_IGN) };
 
     let (cols, rows) = super::window_size(1).unwrap_or((80, 24));
+    let vars: Vec<_> = std::env::vars_os()
+        .filter(|(name, _)| super::forward(name.as_encoded_bytes()).is_some())
+        .collect();
     let mut hello = Enc::default();
-    let term = std::env::var_os("TERM").unwrap_or_default();
     hello
         .u32(VERSION)
-        .bytes(term.as_encoded_bytes())
         .u32(cols.into())
-        .u32(rows.into());
+        .u32(rows.into())
+        .list(&vars, |e, (name, value)| {
+            e.bytes(name.as_encoded_bytes()).bytes(value.as_encoded_bytes());
+        });
     let mut from = Reader::default();
     // What the remote startup files printed before luish started.
     loop {

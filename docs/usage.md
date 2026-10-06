@@ -63,6 +63,9 @@ to it); `luish --serve` takes the usual options, such as `-l` for a login shell.
 to it as typed and its output comes back as it is printed, so full-screen programs such as vim work as they do
 over ssh. The history is HOST's. Both ends must be the same version of luish.
 
+The variables that describe the terminal (`TERM`, `COLORTERM`, `TERM_PROGRAM` and `TERM_PROGRAM_VERSION`) are
+passed to HOST, replacing its own, and so is the locale (`LANG`, `LANGUAGE` and `LC_*`) where HOST has not set it.
+
 ## Shell language extensions
 
 luish runs the POSIX shell language as dash does, and adds some of what bash

@@ -17,7 +17,7 @@
 
 use std::collections::VecDeque;
 
-use super::{Dec, Enc, Frame, MAGIC, Reader, VERSION, msg, write_frame};
+use super::{Dec, Enc, Forward, Frame, MAGIC, Reader, VERSION, msg, write_frame};
 use crate::interactive::remote::SYNC;
 use crate::sys;
 
@@ -29,7 +29,8 @@ fn fail(what: &str) -> ! {
 
 /// Starts the server: greets the client, opens the pty and forks the shell
 /// onto it. Returns in the shell, with its end of the socket to the relay,
-/// after setting `TERM` as the client's; the relay never returns.
+/// after taking the client's variables for its terminal and locale
+/// (`forward`); the relay never returns.
 pub fn start() -> i32 {
     let mut hello = Enc::default();
     hello.u32(VERSION).str(env!("CARGO_PKG_VERSION"));
@@ -39,17 +40,18 @@ pub fn start() -> i32 {
     let mut from_client = Reader::default();
     let Some(f) = from_client.read(0) else { sys::exit(1) };
     let mut d = Dec::new(&f.data);
-    let (Some(version), Some(term), Some(cols), Some(rows)) = (d.u32(), d.bytes(), d.u32(), d.u32()) else {
-        fail("the client sent no greeting");
-    };
-    if f.kind != msg::HELLO || version != VERSION {
+    if f.kind != msg::HELLO || d.u32() != Some(VERSION) {
         // The client reports it, having our version.
         sys::exit(1);
     }
-    if !term.is_empty() {
-        let term = sys::cstr(&term);
+    let (Some(cols), Some(rows), Some(vars)) = (d.u32(), d.u32(), d.list(|d| Some((d.bytes()?, d.bytes()?)))) else {
+        fail("the client sent no greeting");
+    };
+    for (name, value) in vars {
+        let Some(how) = super::forward(&name) else { continue };
+        let (name, value) = (sys::cstr(&name), sys::cstr(&value));
         // SAFETY: single-threaded, before anything reads the environment.
-        unsafe { libc::setenv(c"TERM".as_ptr(), term.as_ptr(), 1) };
+        unsafe { libc::setenv(name.as_ptr(), value.as_ptr(), (how == Forward::Replace).into()) };
     }
     let ws = libc::winsize {
         ws_row: rows as u16,

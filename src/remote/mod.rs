@@ -11,7 +11,7 @@ pub mod client;
 pub mod relay;
 
 /// Bumped whenever a message changes: both ends must speak the same.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// What the server writes before its hello, so that the client can skip
 /// what a remote startup file printed before luish started.
@@ -21,8 +21,9 @@ pub const MAGIC: &[u8] = b"\0luish-serve\0";
 /// input, resize, output, exit) and passes the others between the client
 /// and the shell.
 pub mod msg {
-    /// Client to server: the protocol version, `TERM`, the window size.
-    /// Server to client: the protocol version.
+    /// Client to server: the protocol version, the window size, and the
+    /// variables of its environment that `forward` names. Server to client:
+    /// the protocol version.
     pub const HELLO: u8 = b'H';
     /// Client to server: keys for the pty, while a command runs.
     pub const INPUT: u8 = b'I';
@@ -51,6 +52,28 @@ pub mod msg {
     /// Answered with `LOOKUP_REPLY`.
     pub const LOOKUP: u8 = b'F';
     pub const LOOKUP_REPLY: u8 = b'f';
+}
+
+/// How the server takes a variable of the client's environment.
+#[derive(Debug, PartialEq)]
+pub enum Forward {
+    /// It describes the client's terminal, so it replaces the server's (as
+    /// ssh does with `TERM` when it opens a pty).
+    Replace,
+    /// The locale, used where the server has none (ssh often forwards it
+    /// already, through `SendEnv`).
+    IfUnset,
+}
+
+/// Whether the client sends the variable `name` to the server, and how the
+/// server takes it. The others stay the server's.
+pub fn forward(name: &[u8]) -> Option<Forward> {
+    match name {
+        b"TERM" | b"COLORTERM" | b"TERM_PROGRAM" | b"TERM_PROGRAM_VERSION" => Some(Forward::Replace),
+        b"LANG" | b"LANGUAGE" => Some(Forward::IfUnset),
+        _ if name.starts_with(b"LC_") => Some(Forward::IfUnset),
+        _ => None,
+    }
 }
 
 /// The most a frame may hold, so that garbage isn't taken for a length.
@@ -348,6 +371,15 @@ mod tests {
             }
         }
         assert_eq!(got, [(b'A', b"hello".to_vec()), (b'B', vec![]), (b'C', b"x".to_vec())]);
+    }
+
+    #[test]
+    fn forwarded() {
+        assert_eq!(forward(b"COLORTERM"), Some(Forward::Replace));
+        assert_eq!(forward(b"LC_CTYPE"), Some(Forward::IfUnset));
+        assert_eq!(forward(b"LANG"), Some(Forward::IfUnset));
+        assert_eq!(forward(b"PATH"), None);
+        assert_eq!(forward(b"TERMINFO"), None);
     }
 
     #[test]

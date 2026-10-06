@@ -2062,6 +2062,45 @@ fn remote_editing() {
 }
 
 #[test]
+fn remote_environment() {
+    // The server starts with an environment of its own (as over ssh), and
+    // takes the client's terminal variables, and its locale where it has
+    // none.
+    let dir = Pty::new_dir("remote-env");
+    std::fs::create_dir_all(dir.join(".config/luish")).unwrap();
+    std::fs::write(dir.join(".config/luish/luishrc"), "").unwrap();
+    let home = format!("HOME={}", dir.display());
+    let path = format!("PATH={}", std::env::var("PATH").unwrap_or_default());
+    let args = [
+        "--remote",
+        "env",
+        "-i",
+        &home,
+        &path,
+        "PS1=$ ",
+        "LUISH_BACKGROUND=dark",
+        "LANG=C.UTF-8",
+        "COLORTERM=server",
+        env!("CARGO_BIN_EXE_luish"),
+        "--serve",
+    ];
+    let extra = [
+        "LUISH_BACKGROUND=dark",
+        "COLORTERM=truecolor",
+        "TERM_PROGRAM=testterm",
+        "LANG=POSIX",
+        "LC_CTYPE=C",
+        "OTHER=client",
+    ];
+    let mut sh = Pty::spawn_args(dir, "dumb", true, None, &extra, &args);
+    sh.expect("$ ");
+    let got = sh.run("echo \"v-$TERM $COLORTERM $TERM_PROGRAM $LANG $LC_ALL $LC_CTYPE ${OTHER-unset}\"");
+    assert_has(&got, "v-dumb truecolor testterm C.UTF-8 C C unset\n");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
 fn remote_ssh() {
     // `--ssh` with a stand-in for ssh, which runs the command as ssh does
     // (with the user's shell), and luish only where `--luish-path` says.

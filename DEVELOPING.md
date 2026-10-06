@@ -1328,8 +1328,11 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
   writes `MAGIC`, so that what a remote startup file prints before luish starts is shown, not taken for a frame; then
   both send `HELLO` with `VERSION`, which must be equal (the messages carry internal types, such as styles and keymap
   changes, by name where that is cheap). Bump `VERSION` with any change to a message.
-- **Server** (`relay.rs`): the process ssh started becomes the relay. It opens a pty with the client's size, sets
-  `TERM` as the client's, and forks the shell, which makes the pty its controlling terminal in a session of its own
+- **Server** (`relay.rs`): the process ssh started becomes the relay. It opens a pty with the client's size, takes
+  the client's variables that `remote::forward` names (`HELLO` carries them): those of the terminal (`TERM`,
+  `COLORTERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`) replace its own, as ssh does with `TERM` for a pty, and the
+  locale (`LANG`, `LANGUAGE`, `LC_*`) fills in what it hasn't set (ssh's `SendEnv` often forwards it already, and
+  the server may lack the client's locale). Then it forks the shell, which makes the pty its controlling terminal in a session of its own
   and carries on in `main` as `luish -i`, with its end of a socket pair (close-on-exec) given to
   `interactive::remote::start_serving`. Commands, job control and the terminal's signals (`^C` and `^Z` arrive as
   bytes) are then those of a local terminal; the executor knows nothing of the mode. The relay polls the client,
@@ -1372,13 +1375,20 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
 - Tests: `remote_mode` (commands on the server's pty, job control, `^C`, `cat`, window size while editing and while a
   command runs, keys typed ahead, lines sent together, keys typed between a command's output and the prompt, `exec`
   and the exit status) and `remote_editing` (Tab and the menu, the history and `fc`, highlighting of the server's
-  commands and files) in `tests/interactive.rs`, all over `luish --remote luish --serve`, and `remote_ssh` (`--ssh` and
-`--luish-path`, with a stand-in `ssh`); `wait_for_remote_procs`
-  finds jobs on the server's pty. Unit tests: frames, `MAGIC` and `Enc`/`Dec` in `remote/mod.rs`, a request and a
-  Tab reply round trip in `interactive/remote.rs`, `history::tests::copy`. The keys-typed-ahead steps fail about half
-  the time without the hold (checked by disabling it), not every time: the window is a race.
-- Not yet: a redraw when a late lookup answer comes; Ctrl-C while the client waits for Tab; forwarding more of the
-  environment than `TERM`; anything for a connection that drops (mosh's job).
+  commands and files), both over `luish --remote luish --serve`; `remote_environment` (the forwarded variables, with
+  the server under `env -i`); and `remote_ssh` (`--ssh` and `--luish-path`, with a stand-in `ssh`), all in
+  `tests/interactive.rs`. `wait_for_remote_procs` finds jobs on the server's pty. Unit tests: frames, `MAGIC`,
+  `forward` and `Enc`/`Dec` in `remote/mod.rs`, a request and a Tab reply round trip in `interactive/remote.rs`,
+  `history::tests::copy`. The keys-typed-ahead steps fail about half the time without the hold (checked by disabling
+  it), not every time: the window is a race.
+- Not yet: a redraw when a late lookup answer comes; Ctrl-C while the client waits for Tab; anything for a
+  connection that drops (mosh's job). The first two are harder than they look. In rustyline 18, the only way to wake
+  the editor from another thread is an `ExternalPrinter`, but once one exists the editor waits for keys with `select` on the
+  terminal, which ignores the bytes already in its `BufReader`, so keys that come in one read (typed fast, or
+  pasted) would wait for the next event; and an external print always ends with a newline (so a redraw would need
+  `"\x1b[A\n"`, which moves the prompt down when it is on the top row). While waiting for Tab, the client can't tell
+  `^C` from other keys without reading them (and losing them for the editor), and turning `ISIG` on would also send
+  SIGINT to ssh, which shares the client's process group (it must, to ask for a password).
 
 ### Signals and startup
 
