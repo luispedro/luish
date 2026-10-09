@@ -540,6 +540,7 @@ fn colors(sh: &Shell) -> (Rc<highlight::Colors>, bool) {
 
 /// Everything the line editor needs to read a line, as plain data: in the
 /// SSH mode, the server sends it to the client (`remote.rs`).
+#[derive(Clone)]
 pub struct Request {
     pub continuation: bool,
     /// The text read so far of an incomplete command, which the highlighter

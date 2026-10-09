@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::Duration;
 
+use super::escape::{self, Action, Escapes};
 use super::{COPY, Dec, Enc, MAGIC, Reader, VERSION, msg, write_frame};
 use crate::builtins::internal::BUILD_ID;
 use crate::interactive::remote::{self as editor, Link};
@@ -36,13 +37,18 @@ fn fail(what: &str) -> ! {
 /// contents, after copying it there if it isn't (`Image`). See `Ssh::parse`
 /// for luish's own options among ssh's.
 pub fn ssh(args: &[Vec<u8>]) -> ! {
-    let Ssh { mut cmd, program, copy } = Ssh::parse(args).unwrap_or_else(|e| fail(&e));
+    let Ssh {
+        mut cmd,
+        program,
+        copy,
+        escape,
+    } = Ssh::parse(args).unwrap_or_else(|e| fail(&e));
     let image = program.is_none().then(Image::new);
     match &image {
         Some(image) => cmd.push(image.script(copy)),
         None => cmd.extend([program.unwrap_or_else(|| b"luish".to_vec()), b"--serve".to_vec()]),
     }
-    connect(&cmd, image)
+    connect(&cmd, image, escape)
 }
 
 /// When `--ssh` copies luish to the server.
@@ -65,6 +71,15 @@ struct Ssh {
     /// `--luish-path`.
     program: Option<Vec<u8>>,
     copy: CopyMode,
+    /// The escape character (`-o ssh.escape_char`), None for none.
+    escape: Option<u8>,
+}
+
+/// An option given as `-o ssh.NAME`.
+#[derive(Debug, PartialEq)]
+enum SshOption {
+    Copy(CopyMode),
+    Escape(Option<u8>),
 }
 
 impl Ssh {
@@ -76,14 +91,16 @@ impl Ssh {
     /// - `-e COMMAND`, `--rsh=COMMAND` or `--ssh-command=COMMAND` replaces
     ///   `ssh -T`, as rsync's `--rsh`:
     ///   split into words at blanks, with quotes as in the shell;
-    /// - `--copy-luish` and `-o ssh.no_auto_copy` (`CopyMode`).
+    /// - `--copy-luish` and `-o ssh.no_auto_copy` (`CopyMode`);
+    /// - `-o ssh.escape_char=C` (`escape.rs`).
     ///
     /// ssh's own `-e` (its escape character) would do nothing: ssh's input
-    /// is a pipe.
+    /// is a pipe, and the client has the escapes instead.
     fn parse(args: &[Vec<u8>]) -> Result<Ssh, String> {
         let mut program = None;
         let mut rsh = None;
         let mut copy = CopyMode::Auto;
+        let mut escape = Some(b'~');
         let mut copy_luish = false;
         let mut rest = Vec::new();
         let mut args = args.iter();
@@ -117,7 +134,10 @@ impl Ssh {
                 copy_luish = true;
             } else if let Some(o) = value(None, Some("-o"))? {
                 match o.strip_prefix(b"ssh.") {
-                    Some(name) => copy = Self::option(name)?,
+                    Some(name) => match Self::option(name)? {
+                        SshOption::Copy(c) => copy = c,
+                        SshOption::Escape(e) => escape = e,
+                    },
                     None => rest.extend([b"-o".to_vec(), o]),
                 }
             } else {
@@ -144,20 +164,34 @@ impl Ssh {
             return Err("--rsh requires a command".into());
         }
         cmd.append(&mut rest);
-        Ok(Ssh { cmd, program, copy })
+        Ok(Ssh {
+            cmd,
+            program,
+            copy,
+            escape,
+        })
     }
 
-    /// `-o ssh.NAME`, whose NAME is matched as `setopt`'s: case and `_`
-    /// don't matter, and a `no` prefix inverts it.
-    fn option(name: &[u8]) -> Result<CopyMode, String> {
+    /// `-o ssh.NAME` or `-o ssh.NAME=VALUE`, whose NAME is matched as
+    /// `setopt`'s: case and `_` don't matter, and a `no` prefix inverts it.
+    fn option(option: &[u8]) -> Result<SshOption, String> {
+        let (name, value) = match option.iter().position(|&c| c == b'=') {
+            Some(i) => (&option[..i], Some(&option[i + 1..])),
+            None => (option, None),
+        };
         let norm: Vec<u8> = name
             .iter()
             .filter(|&&c| c != b'_')
             .map(|c| c.to_ascii_lowercase())
             .collect();
-        match &norm[..] {
-            b"autocopy" => Ok(CopyMode::Auto),
-            b"noautocopy" => Ok(CopyMode::Never),
+        match (&norm[..], value) {
+            (b"autocopy", None) => Ok(SshOption::Copy(CopyMode::Auto)),
+            (b"noautocopy", None) => Ok(SshOption::Copy(CopyMode::Never)),
+            // A printable character, or none (ssh also takes `^X`, which the
+            // line editor would read as a key of its own).
+            (b"escapechar", Some(b"none")) => Ok(SshOption::Escape(None)),
+            (b"escapechar", Some(&[c])) if c.is_ascii_graphic() => Ok(SshOption::Escape(Some(c))),
+            (b"escapechar", _) => Err("--ssh: ssh.escape_char must be a printable character or none".into()),
             _ => Err(format!("--ssh: unknown option ssh.{}", String::from_utf8_lossy(name))),
         }
     }
@@ -325,12 +359,12 @@ impl Link for Rc<Conn> {
 
 /// `luish --remote CMD...`.
 pub fn run(cmd: &[Vec<u8>]) -> ! {
-    connect(cmd, None)
+    connect(cmd, None, Some(b'~'))
 }
 
 /// Runs CMD and talks to the server it starts, first copying `image` if
-/// the server asks for it.
-fn connect(cmd: &[Vec<u8>], image: Option<Image>) -> ! {
+/// the server asks for it, with `escape` as the escape character.
+fn connect(cmd: &[Vec<u8>], image: Option<Image>, escape: Option<u8>) -> ! {
     if cmd.is_empty() {
         fail("--remote requires a command");
     }
@@ -427,7 +461,7 @@ fn connect(cmd: &[Vec<u8>], image: Option<Image>) -> ! {
     let (tx, rx) = channel();
     std::thread::spawn(move || read_server(from, from_rd, tx, wake_wr));
     let conn = Rc::new(Conn { to: to_wr, events: rx });
-    if !editor::init_client(Box::new(conn.clone())) {
+    if !editor::init_client(Box::new(conn.clone()), escape) {
         fail("cannot start the line editor");
     }
     Client {
@@ -438,6 +472,8 @@ fn connect(cmd: &[Vec<u8>], image: Option<Image>) -> ! {
         wake: wake_rd,
         saved: sys::tcgetattr(0),
         size: (cols, rows),
+        escapes: Escapes::new(escape),
+        escape_char: escape,
     }
     .run()
 }
@@ -495,6 +531,10 @@ struct Client {
     saved: Option<libc::termios>,
     /// The window size the server has.
     size: (u16, u16),
+    /// The escapes in the keys typed while a command runs, and the escape
+    /// character.
+    escapes: Escapes,
+    escape_char: Option<u8>,
 }
 
 impl Client {
@@ -538,22 +578,86 @@ impl Client {
             if fds[0].revents != 0 {
                 let mut buf = [0u8; 16384];
                 match sys::read(0, &mut buf, false) {
-                    Ok(n @ 1..) => {
-                        if !self.conn.send(msg::INPUT, &buf[..n]) {
-                            self.end(None);
-                        }
-                        self.sent.extend_from_slice(&buf[..n]);
-                    }
+                    Ok(n @ 1..) => self.input(&buf[..n]),
                     _ => self.end(Some(0)),
                 }
             }
         }
     }
 
+    /// Keys typed while a command runs: passed on to the server's pty,
+    /// apart from the escapes.
+    fn input(&mut self, keys: &[u8]) {
+        let mut out = Vec::with_capacity(keys.len());
+        for &k in keys {
+            if let Some(a) = self.escapes.key(k, &mut out) {
+                self.send_input(&std::mem::take(&mut out));
+                let mut echo = self.escape_char.into_iter().collect::<Vec<_>>();
+                echo.extend_from_slice(escape::echo(a));
+                echo.extend_from_slice(b"\r\n");
+                sys::write_all(2, &echo);
+                self.escape(a, false);
+            }
+        }
+        self.send_input(&out);
+    }
+
+    fn send_input(&mut self, keys: &[u8]) {
+        if keys.is_empty() {
+            return;
+        }
+        if !self.conn.send(msg::INPUT, keys) {
+            self.end(None);
+        }
+        self.sent.extend_from_slice(keys);
+    }
+
+    /// Does what the escape `a` asks, after its echo. While a command runs
+    /// the terminal is raw, else (`editing`) as it was.
+    fn escape(&self, a: Action, editing: bool) {
+        match a {
+            Action::Disconnect => self.disconnect(),
+            Action::Suspend => {
+                if !editing {
+                    self.cooked();
+                }
+                // Only the client stops: ssh keeps the connection.
+                // SAFETY: plain raise.
+                unsafe { libc::raise(libc::SIGTSTP) };
+                if !editing {
+                    self.raw();
+                }
+            }
+            Action::Help => {
+                sys::write_all(2, &escape::help(self.escape_char.unwrap_or(b'~')));
+            }
+        }
+    }
+
+    /// `~.`: ends the transport (ssh, which may wait for a network that
+    /// has gone) and exits with 255, as ssh's `~.`.
+    fn disconnect(&self) -> ! {
+        self.cooked();
+        sys::write_all(2, b"luish: the connection to the server was closed\n");
+        // SAFETY: plain kill.
+        unsafe { libc::kill(self.pid, libc::SIGTERM) };
+        for _ in 0..100 {
+            if !matches!(sys::waitpid(self.pid, libc::WNOHANG), Ok(None)) {
+                sys::exit(255);
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // SAFETY: plain kill.
+        unsafe { libc::kill(self.pid, libc::SIGKILL) };
+        let _ = sys::waitpid(self.pid, 0);
+        sys::exit(255)
+    }
+
     fn event(&mut self, e: Event) {
         match e {
             Some((msg::REQUEST, data)) => {
                 self.cooked();
+                let held = self.escapes.line_read();
                 let sent = std::mem::take(&mut self.sent);
                 let before = self.sent_before;
                 self.sent_before += sent.len() as u64;
@@ -563,7 +667,7 @@ impl Client {
                     sent[from as usize..].to_vec()
                 };
                 // (The terminal is in its own modes, to exit with.)
-                let reply = editor::client_line(&data, unsent)
+                let reply = editor::client_line(&data, unsent, held, |a| self.escape(a, true))
                     .unwrap_or_else(|| fail("the server sent a request this client can't read"));
                 // The command runs with the window's size.
                 self.send_size();
@@ -667,6 +771,9 @@ mod tests {
         let s = parse(&["-o", "ssh.no_auto_copy", "--copy-luish", "h"]).unwrap();
         assert_eq!(s.copy, CopyMode::Always);
         assert_eq!(s.cmd, words(&["ssh", "-T", "h"]));
+        assert_eq!(s.escape, Some(b'~'));
+        assert_eq!(parse(&["-o", "ssh.escape_char=%", "h"]).unwrap().escape, Some(b'%'));
+        assert_eq!(parse(&["-ossh.EscapeChar=none", "h"]).unwrap().escape, None);
         for bad in [
             &[][..],
             &["--copy-luish"],
@@ -674,6 +781,10 @@ mod tests {
             &["-e", "", "h"],
             &["-e", "'ssh", "h"],
             &["-o", "ssh.copy", "h"],
+            &["-o", "ssh.escape_char", "h"],
+            &["-o", "ssh.escape_char=^]", "h"],
+            &["-o", "ssh.escape_char= ", "h"],
+            &["-o", "ssh.no_auto_copy=1", "h"],
             &["--luish-path=", "h"],
             &["--copy-luish", "--luish-path=l", "h"],
         ] {

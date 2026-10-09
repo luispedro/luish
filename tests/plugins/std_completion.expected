@@ -224,6 +224,7 @@ status 0
 StrictHostKeyChecking=
 status 0
 --- luish --ssh -o ssh.
+ssh.escape_char=	the escape character (~), or none
 ssh.no_auto_copy 	never copy luish to HOST
 status 0
 --- luish --ssh -e

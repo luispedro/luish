@@ -80,6 +80,8 @@ interactive shell if it is a terminal.
                             COMMAND instead of ssh -T (split into words)
       --copy-luish          copy luish to HOST again, even if it is there
       -o ssh.no_auto_copy   never copy luish (use the copy, or HOST's luish)
+      -o ssh.escape_char=C  C instead of ~ for the escapes (~. ~^Z ~? ~~),
+                            or none
   --help              show this help and exit
   --version           show the version and exit
 

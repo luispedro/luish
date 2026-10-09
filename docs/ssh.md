@@ -56,6 +56,36 @@ its Enter runs as soon as the prompt comes.
 
 The output of background jobs shows as it comes, also while you edit a line.
 
+## Escapes
+
+ssh's escapes work as they do in ssh: the escape character, `~`, at the start
+of a line, then a key.
+
+| Escape | What it does |
+|---|---|
+| `~.` | Closes the connection (even one that hangs), and luish exits with status 255, as ssh does |
+| `~^Z` | Suspends luish, back to the shell you started it from (`fg` continues it). ssh keeps the connection open meanwhile |
+| `~?` | Lists the escapes |
+| `~~` | Types a single `~`, so `~~.` closes an ssh that runs on HOST |
+
+While a command runs, "the start of a line" is after Enter, as in ssh. At
+the prompt, it is an empty line: `~` goes into the line as any other key, and
+the key after it makes the escape. Any other key after `~` is typed as usual
+(so `~/bin` and `~user` need nothing special), and so are ssh's other escapes
+(`~C`, `~#`, `~R`, `~B`, `~V`, `~v` and `~&`), which need ssh itself.
+On a terminal where luish doesn't edit lines (`TERM=dumb`), type the escape
+as a line of its own, ended with Enter.
+
+`-o ssh.escape_char=C` makes another printable character the escape
+character, and `-o ssh.escape_char=none` turns the escapes off:
+
+```sh
+luish --ssh -o ssh.escape_char=% myserver
+```
+
+ssh's own escape character (its `-e`, or `EscapeChar` in `~/.ssh/config`)
+does nothing here: ssh never sees your keys, only luish's messages.
+
 ## The shell on HOST
 
 `luish --ssh` starts an interactive shell on HOST, but not a login shell (plain
@@ -115,7 +145,7 @@ luish --ssh --luish-path=luish myserver        # the luish on the PATH, never a 
 copies nothing. HOST's own shell runs it, so it may start with `~/`. PROGRAM
 must be the same version of luish as yours.
 
-Two options control the copy:
+Two options control the copy (`-o ssh.escape_char` is [above](#escapes)):
 
 ```sh
 luish --ssh -o ssh.no_auto_copy myserver   # never copy luish
@@ -152,7 +182,8 @@ luish --ssh -e 'docker exec -i' mycontainer    # anything that runs a command
 ```
 
 ssh's own `-e` (its escape character) isn't available, as it would do
-nothing: ssh's input is a pipe to luish, not your terminal.
+nothing: ssh's input is a pipe to luish, not your terminal. luish has the
+escapes instead ([above](#escapes)).
 
 `luish --remote COMMAND...` runs COMMAND with its standard input
 and output connected to luish, and COMMAND must start `luish --serve` at the
@@ -199,8 +230,10 @@ day from `~/.bashrc`) is shown on standard error. luish's own messages are:
 | `cannot copy luish to FILE` | The copy couldn't be written on HOST (a full or read-only disk) |
 | `the server's luish (VERSION) speaks another version of the protocol than this one (VERSION)` | With `--luish-path` or `--remote`, the two ends are different versions |
 | `the connection to the server was lost` | ssh exited, or the network went away |
+| `the connection to the server was closed` | You typed `~.` |
 | `--copy-luish and --luish-path can't be used together` | `--luish-path` names the luish to run, so nothing is copied |
-| `--ssh: unknown option ssh.NAME` | Only `-o ssh.no_auto_copy` (and `-o ssh.auto_copy`) are luish's |
+| `--ssh: unknown option ssh.NAME` | Only `-o ssh.no_auto_copy` (and `-o ssh.auto_copy`) and `-o ssh.escape_char` are luish's |
+| `--ssh: ssh.escape_char must be a printable character or none` | `-o ssh.escape_char` takes one character, such as `%`, not ssh's `^]` |
 | `--remote: standard input and output must be a terminal` | `luish --ssh` is for interactive use; for scripts, use `ssh HOST luish -c '...'` |
 
 ## Limitations
@@ -208,8 +241,8 @@ day from `~/.bashrc`) is shown on standard error. luish's own messages are:
 - **A dropped connection ends the session**, as with ssh: unlike mosh, luish
   doesn't reconnect. Run tmux or screen on HOST to keep work going across
   disconnections.
-- **`^C` doesn't interrupt a Tab** that waits for HOST: the completion comes
-  when HOST answers.
+- **`^C` doesn't interrupt a Tab** that waits for HOST, and `~.` doesn't
+  close the connection then: the completion comes when HOST answers.
 - **Output while you edit**: what background jobs print while you edit a line
   is written as it comes, and the line isn't redrawn below it.
 - **Highlighting of paths may lag** on a slow connection: a late answer shows

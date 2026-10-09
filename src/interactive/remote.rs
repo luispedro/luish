@@ -9,6 +9,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use rustyline::{Cmd, KeyCode, KeyEvent, Modifiers};
+
 use super::complete::{Names, ShellHelper, Tab};
 use super::highlight::{Colors, Found, Query, VarKind};
 use super::history::{Changes, Sent};
@@ -17,6 +19,7 @@ use super::{EDITOR, EXIT, Request, SHELL};
 use crate::hash::HashMap;
 use crate::input::Line;
 use crate::lexer::AliasMap;
+use crate::remote::escape::{self, Action};
 use crate::remote::{Dec, Enc, LineReply, Reader, msg};
 use crate::shell::Shell;
 use crate::style::{Color, Style};
@@ -55,6 +58,12 @@ thread_local! {
     /// Keys typed while the last command ran that the next lines start
     /// with.
     static AHEAD: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    /// The escape character (`remote::escape`), on the client only; whether
+    /// it was typed on an empty line (as the last key); and the escape that
+    /// ended the line.
+    static ESCAPE: Cell<Option<u8>> = const { Cell::new(None) };
+    static ESCAPE_HELD: Cell<bool> = const { Cell::new(false) };
+    static ESCAPED: Cell<Option<Action>> = const { Cell::new(None) };
 }
 
 /// Whether this shell is the server of the SSH mode.
@@ -169,9 +178,11 @@ pub trait Link {
 }
 
 /// Sets up the client's line editor, which asks `link` what Tab does and
-/// about files. Returns false if the editor can't be used.
-pub fn init_client(link: Box<dyn Link>) -> bool {
+/// about files, with `escape` as the escape character. Returns false if
+/// the editor can't be used.
+pub fn init_client(link: Box<dyn Link>, escape: Option<u8>) -> bool {
     LINK.set(Some(link));
+    ESCAPE.set(escape);
     let mut helper = ShellHelper::default();
     helper.remote_tab = Some(remote_tab);
     helper.lookup = Some(lookup);
@@ -180,9 +191,16 @@ pub fn init_client(link: Box<dyn Link>) -> bool {
 
 /// Reads a line as the request in `data` asks, after the relay's count.
 /// `unsent` gives the keys sent to the server from that count on, which
-/// the pty didn't get. None if the request can't be read (from a server
-/// that speaks another protocol).
-pub fn client_line(data: &[u8], unsent: impl FnOnce(u64) -> Vec<u8>) -> Option<LineReply> {
+/// the pty didn't get, and `held` whether the escape character was typed
+/// after them. `escape` does what an escape typed in the line asks. None
+/// if the request can't be read (from a server that speaks another
+/// protocol).
+pub fn client_line(
+    data: &[u8],
+    unsent: impl FnOnce(u64) -> Vec<u8>,
+    held: bool,
+    mut escape: impl FnMut(Action),
+) -> Option<LineReply> {
     let mut d = Dec::new(data);
     let held_at = d.u64()?;
     let mut req = decode_request(&mut d)?;
@@ -194,6 +212,10 @@ pub fn client_line(data: &[u8], unsent: impl FnOnce(u64) -> Vec<u8>) -> Option<L
     // Those the pty got first, then the others.
     let mut typed = d.bytes()?;
     typed.extend(unsent(held_at));
+    if held && let Some(c) = ESCAPE.get() {
+        typed.push(c);
+        ESCAPE_HELD.set(true);
+    }
     super::with_history(|h| h.apply(changes));
     if let Some(c) = commands {
         COMMANDS.set(Rc::new(c));
@@ -223,11 +245,68 @@ pub fn client_line(data: &[u8], unsent: impl FnOnce(u64) -> Vec<u8>) -> Option<L
         }
         Ok(_) => {}
     }
-    Some(match super::edit(req) {
-        Line::Text(t) => LineReply::Text(t),
-        Line::Interrupted => LineReply::Interrupted,
-        Line::Eof => LineReply::Eof,
-    })
+    loop {
+        let reply = match super::edit(req.clone()) {
+            // Where the editor reads whole lines, the escape is a line.
+            Line::Text(t) if let Some(a) = escape_line(&t) => {
+                escape(a);
+                continue;
+            }
+            Line::Text(t) => LineReply::Text(t),
+            Line::Interrupted => match ESCAPED.take() {
+                // The line was empty: it starts again.
+                Some(a) => {
+                    escape(a);
+                    req.start = None;
+                    continue;
+                }
+                None => LineReply::Interrupted,
+            },
+            Line::Eof => LineReply::Eof,
+        };
+        return Some(reply);
+    }
+}
+
+/// The escape that the line `t` makes, on a terminal that the editor
+/// doesn't support (as `TERM=dumb`), which reads whole lines.
+fn escape_line(t: &[u8]) -> Option<Action> {
+    match t {
+        [c, key, b'\n'] if Some(*c) == ESCAPE.get() && !super::EDITS.get() => escape::action(*key),
+        _ => None,
+    }
+}
+
+/// In the client's line editor, before `key` does anything: the escapes,
+/// as ssh's but at the start of an empty line. The escape character goes
+/// into the line as any other; a key after it that makes an escape ends
+/// the line, which `client_line` then reads again, and writes the rest of
+/// the escape (as ssh does).
+pub fn escape_key(key: KeyEvent, line: &str, pos: usize) -> Option<Cmd> {
+    let ch = ESCAPE.get()?;
+    let held = ESCAPE_HELD.replace(false);
+    let byte = match key {
+        KeyEvent(KeyCode::Char(c), Modifiers::NONE) if c.is_ascii() => c as u8,
+        KeyEvent(KeyCode::Char(c @ '@'..='_'), Modifiers::CTRL) => c as u8 - b'@',
+        _ => return None,
+    };
+    if line.is_empty() && byte == ch {
+        ESCAPE_HELD.set(true);
+        return None;
+    }
+    // Not in vi's command mode, where the character doesn't go in.
+    if !held || line.as_bytes() != [ch] || pos != 1 {
+        return None;
+    }
+    if byte == ch {
+        return Some(Cmd::Noop);
+    }
+    let a = escape::action(byte)?;
+    // Over the autosuggestion.
+    sys::write_all(1, b"\x1b[K");
+    sys::write_all(1, escape::echo(a));
+    ESCAPED.set(Some(a));
+    Some(Cmd::Interrupt)
 }
 
 /// Tab, in the client: the server works out what it does.

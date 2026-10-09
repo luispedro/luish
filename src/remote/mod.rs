@@ -9,6 +9,7 @@
 
 pub mod chaos;
 pub mod client;
+pub mod escape;
 pub mod relay;
 
 /// Bumped whenever a message changes: both ends must speak the same.

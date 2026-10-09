@@ -2021,6 +2021,101 @@ fn remote_mode() {
 }
 
 #[test]
+fn remote_escapes() {
+    // ssh's escapes, which the client handles: at the start of an empty
+    // line in the editor, and after a newline while a command runs.
+    let mut sh = Pty::spawn_remote("remote-escapes", "vt100");
+    sh.expect("\x1b[?2004h");
+    sh.send("~?");
+    sh.expect("\x1b[K?");
+    sh.expect(" ~.   - terminate connection\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("echo x-$((6 * 7))\n");
+    sh.expect("x-42\n");
+    sh.expect("\x1b[?2004h");
+    // Twice types it once; with any other key, it is typed as any other.
+    sh.send("~~/; echo st=$?\n");
+    sh.expect("st=126\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("~/; echo st=$?\n");
+    sh.expect("st=126\n");
+    sh.expect("\x1b[?2004h");
+    // Only on an empty line.
+    sh.send("echo a~.\n");
+    sh.expect("\na~.\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("~.");
+    sh.expect("\x1b[K.");
+    sh.expect("luish: the connection to the server was closed\n");
+    assert_eq!(sh.exit_status(), 255);
+
+    // While a command runs: what isn't an escape reaches it.
+    let mut sh = Pty::spawn_remote("remote-escapes-run", "dumb");
+    sh.expect("$ ");
+    sh.send("cat\n");
+    sh.wait_for_remote_procs(&["cat"]);
+    sh.send("~?");
+    sh.expect(" ~?   - this message\n");
+    sh.send("~~x\n~/y\na~.\n\x04");
+    assert_has(&sh.expect("\n$ "), "~x\n~/y\na~.\n");
+    assert_has(&sh.run("echo st=$?"), "st=0\n");
+    // Where the editor reads whole lines (`TERM=dumb`), the escape is a
+    // line of its own.
+    sh.send("~?\n");
+    sh.expect(" ~~   - send the escape character by typing it twice\n");
+    sh.expect("$ ");
+    // `~.` ends the session with 255, as ssh's.
+    sh.send("sleep 30\n");
+    sh.wait_for_remote_procs(&["sleep"]);
+    sh.send("~.");
+    sh.expect("~.\n");
+    sh.expect("luish: the connection to the server was closed\n");
+    assert_eq!(sh.exit_status(), 255);
+}
+
+#[test]
+fn remote_escape_suspend() {
+    // `~^Z` suspends the client (in a shell with job control), at the
+    // prompt and while a command runs; another escape character, given
+    // with `-o ssh.escape_char`.
+    let mut sh = Pty::spawn_term("remote-escape-suspend", "vt100");
+    sh.expect("$ ");
+    let luish = env!("CARGO_BIN_EXE_luish");
+    let ssh = sh.path("ssh");
+    std::fs::write(&ssh, "#!/bin/sh\nshift\nexec /bin/sh -c \"$*\"\n").unwrap();
+    std::fs::set_permissions(&ssh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    sh.send(&format!(
+        "PS1='r> ' {luish} --ssh -e {} -o ssh.escape_char=% --luish-path={luish} host\n",
+        ssh.display()
+    ));
+    sh.expect("r> ");
+    sh.send("%\x1a");
+    sh.expect("%^Z [suspend luish]\n");
+    sh.expect("Stopped");
+    sh.expect("$ ");
+    sh.send("fg\n");
+    sh.expect("r> ");
+    sh.send("~.; echo x-$((6 * 7))\n");
+    sh.expect("x-42\n");
+    sh.expect("r> ");
+    sh.send("echo started; cat\n");
+    sh.expect("started\n");
+    sh.send("%\x1a");
+    sh.expect("%^Z [suspend luish]\n");
+    sh.expect("Stopped");
+    sh.expect("$ ");
+    sh.send("fg\n");
+    sh.wait_for_procs(&["luish"]);
+    sh.send("typed\n\x04");
+    sh.expect("typed\n");
+    sh.expect("r> ");
+    sh.send("exit 3\n");
+    sh.expect("$ ");
+    sh.send("echo st=$?\n");
+    sh.expect("st=3\n");
+}
+
+#[test]
 fn remote_chaos() {
     // Over a bad network (`LUISH_CHAOS=1`: the bytes each way cut into
     // pieces and delayed), nothing is lost or out of order.

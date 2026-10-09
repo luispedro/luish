@@ -11,6 +11,7 @@ use crate::style::{self, Color, Style};
 use crate::sys;
 
 /// An expanded prompt.
+#[derive(Clone)]
 pub struct Prompt {
     /// What to write to the terminal.
     pub text: Vec<u8>,

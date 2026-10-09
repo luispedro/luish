@@ -1326,8 +1326,8 @@ Stage 3, started as a walking skeleton (`PLAN.md`). `luish --remote CMD...` (the
 stdin and stdout; CMD starts `luish --serve` (the server), usually through `ssh -T` (`--ssh HOST`). luish's own
 options among ssh's (`client::Ssh::parse`): `--luish-path=PROGRAM` replaces `luish`, `-e`/`--rsh`/`--ssh-command=COMMAND`
 replaces `ssh -T` (split into words as rsync does, with quotes), `--copy-luish` and `-o ssh.no_auto_copy`
-(`CopyMode`). ssh's own options never start with `--`, its `-o` names have no `.`, and its `-e` would do nothing (its
-input is a pipe). Both are
+(`CopyMode`), and `-o ssh.escape_char=C`. ssh's own options never start with `--`, its `-o` names have no `.`, and its
+`-e` would do nothing (its input is a pipe). Both are
 dispatched in `main::run` before `Shell::new`, so they cost other invocations one comparison.
 
 - **The copy** (`client::Image`): without `--luish-path`, `--ssh` runs a script (`client::SCRIPT_*`, in `sh -c '...'`
@@ -1395,6 +1395,23 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
   The window size is sent on SIGWINCH and before each line (rustyline installs its own handler while it reads a
   line, and restores the client's). SIGPIPE is ignored so a lost connection shows as a failed write. Without `EXIT`,
   the client exits with the transport's status (255 if that was 0, as ssh's for a lost connection).
+- **Escapes** (`escape.rs`): ssh's `~.`, `~^Z`, `~?` and `~~`, in the client. ssh can't have them: `ssh -T` turns
+  them off (ssh only takes escapes with a pty), and its input is the protocol, whose frames could hold `\n~.`. Making
+  ssh take them (`-tt`, a pty for its input, raw mode on the server, `~` doubled after each newline) would be
+  fragile, `~C` and `~?` use `/dev/tty` behind the client's back, and `-e` commands have none. While a command runs,
+  `Escapes` filters the keys before they are sent (and counted for the keys typed ahead) as ssh's `process_escapes`
+  does: the character after `\r` or `\n` (or a line read) is held until the next key; an escape doesn't change "at
+  the start of a line", the character twice sends it once, and any other key sends both (so ssh's escapes that the
+  client lacks, `~C`, `~#`, `~R`, `~B`, `~V`, `~v`, `~&`, are typed as text, and `~vagrant/` works). In the editor,
+  `interactive::remote::escape_key`, called first by both key handlers of `keys.rs` (one thread-local read for
+  other shells), takes the escape character typed on an empty line as text and remembers it; if the next key makes
+  an escape while the line is just that character, it writes the rest of the escape over the autosuggestion
+  (`ESC [K`) and returns `Cmd::Interrupt`, and `client_line` does the escape and reads the line again (`Request` is
+  `Clone` for that). A character held when the request comes starts the line, as if typed in the editor. Where the
+  editor reads whole lines (`TERM=dumb`), a line that is just an escape is one. `~.` sends SIGTERM to the transport
+  (ssh then exits at once without a message, even on a network that has gone; SIGKILL after a second) and exits
+  with 255, as ssh's `~.`. `~^Z` stops only the client (`raise`), so ssh keeps the connection; rustyline's own
+  suspend would stop the process group.
 - **Chaos** (`chaos.rs`), for testing over a bad network without one: `LUISH_CHAOS=LEVEL` (or `LEVEL:SEED`) in
   the server's environment passes the bytes each way between the relay and the client (after the greeting) through
   queues with a time for each piece. Level 1 cuts them at random places and delays each piece by 20 to 200 ms, in
@@ -1409,13 +1426,16 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
   commands and files), both over `luish --remote luish --serve`; `remote_environment` (the forwarded variables, with
   the server under `env -i`); `remote_ssh` (`--ssh`, `-e` and `--luish-path`, with a stand-in `ssh`); `remote_ssh_copy`
   (the copy, made once and reused, old copies removed, `-o ssh.no_auto_copy` with and without a copy, `--copy-luish`
-  replacing a damaged copy, and another system's `uname` falling back to `luish` on `PATH`); and `remote_chaos` (commands, a large output, keys typed ahead, Tab and lookups, at chaos level 1), all in
+  replacing a damaged copy, and another system's `uname` falling back to `luish` on `PATH`); `remote_escapes` (`~?`,
+  `~~`, `~` with another key and `~.` in the editor; while `cat` runs; as a line with `TERM=dumb`; `~.` while a
+  command runs); `remote_escape_suspend` (`~^Z` at the prompt and while `cat` runs, from a shell with job control,
+  with `-o ssh.escape_char`); and `remote_chaos` (commands, a large output, keys typed ahead, Tab and lookups, at chaos level 1), all in
   `tests/interactive.rs`. `wait_for_remote_procs` finds jobs on the server's pty. Unit tests: frames, `MAGIC`,
   `forward` and `Enc`/`Dec` in `remote/mod.rs`, the order, delays and drops in `remote/chaos.rs`, a request and a Tab
   reply round trip in `interactive/remote.rs`, `history::tests::copy`, `--ssh`'s options and `--rsh`'s
-  words in `remote/client.rs`. The keys-typed-ahead steps fail about half the
+  words in `remote/client.rs`, and the escapes in keys typed in pieces in `remote/escape.rs`. The keys-typed-ahead steps fail about half the
   time without the hold (checked by disabling it), not every time: the window is a race.
-- Not yet: a redraw when a late lookup answer comes; Ctrl-C while the client waits for Tab; anything for a
+- Not yet: a redraw when a late lookup answer comes; Ctrl-C (and `~.`) while the client waits for Tab; anything for a
   connection that drops (mosh's job). The first two are harder than they look. In rustyline 18, the only way to wake
   the editor from another thread is an `ExternalPrinter`, but once one exists the editor waits for keys with `select` on the
   terminal, which ignores the bytes already in its `BufReader`, so keys that come in one read (typed fast, or

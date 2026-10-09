@@ -993,6 +993,11 @@ struct Dispatch {
 impl ConditionalEventHandler for Dispatch {
     fn handle(&self, evt: &Event, n: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
         let Event::KeySeq(keys) = evt else { return None };
+        if let [key] = keys.as_slice()
+            && let Some(cmd) = super::remote::escape_key(*key, ctx.line(), ctx.pos())
+        {
+            return Some(cmd);
+        }
         if ctx.mode() == EditMode::Vi
             && let Some(key) = keys.last()
         {
@@ -1013,11 +1018,18 @@ impl ConditionalEventHandler for Dispatch {
 }
 
 /// The keys that nothing else binds, which do what rustyline does: in vi
-/// mode, the cursor's shape follows the input mode they lead to.
+/// mode, the cursor's shape follows the input mode they lead to. (Both
+/// handlers first look for the SSH mode's escapes.)
 struct ViCursor;
 
 impl ConditionalEventHandler for ViCursor {
     fn handle(&self, evt: &Event, _: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
+        if let Event::KeySeq(keys) = evt
+            && let [key] = keys.as_slice()
+            && let Some(cmd) = super::remote::escape_key(*key, ctx.line(), ctx.pos())
+        {
+            return Some(cmd);
+        }
         if ctx.mode() == EditMode::Vi
             && let Event::KeySeq(keys) = evt
             && let Some(key) = keys.last()

@@ -124,7 +124,10 @@ fn luish_ssh() {
         values: specs::ssh_client_values() + #{
             "-e": "commands",
             "--luish-path": "none",
-            "-o": specs::ssh_options() + [#{value: "ssh.no_auto_copy", desc: "never copy luish to HOST"}],
+            "-o": specs::ssh_options() + [
+                #{value: "ssh.no_auto_copy", desc: "never copy luish to HOST"},
+                #{value: "ssh.escape_char=", suffix: "", desc: "the escape character (~), or none"},
+            ],
         },
         args: ["hosts", "none"],
     }
