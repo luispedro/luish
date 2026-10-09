@@ -16,7 +16,8 @@ plugin check [-q]
 Load, unload and fetch plugins.
 
 `plugin load` loads each plugin: `name` is the source called `name` in
-`config.toml`'s `plugins.available` (or `std`), else the first of the Rhai
+`config.toml`'s `plugins.available` (or `std`, or a source that an enabled
+plugin's `plugin.toml` makes available), else the first of the Rhai
 file `name.rhai`, the shell file `name.lsh` and the directory `name` in
 `$XDG_CONFIG_HOME/luish/plugins` (by default `~/.config/luish/plugins`);
 `source/path` is the plugin at `path` in the collection `source` (`name`,
@@ -90,9 +91,11 @@ The exit status is 1 if it was declined, if the name is already used, or
 if the source can't be fetched (then `config.toml` isn't changed).
 
 `plugin sync` fetches, with git, the sources of the plugins in
-`config.toml`'s `plugins.enabled` (and of their dependencies) and of its
-`plugins.available`, and records the commit of each in `plugins.lock`, next
-to `config.toml`. A source that is already in `plugins.lock` stays at its
+`config.toml`'s `plugins.enabled` (and of their dependencies), of its
+`plugins.available` and of the sources that the enabled plugins make
+available (in their `plugin.toml`'s `[available]`), and records the commit
+of each in `plugins.lock`, next to `config.toml`, with the sources that the
+plugins make available. A source that is already in `plugins.lock` stays at its
 commit. `plugin update` fetches the newest commit of each git source, or of
 the sources named, and updates `plugins.lock`. Both print the sources they
 fetch, those whose commits changed (`Updating SOURCE OLD..NEW`, with a link

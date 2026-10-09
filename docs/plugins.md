@@ -332,6 +332,37 @@ std.completion = "*"                  # a plugin of a source that luish knows
 fzf = { gh = "bob/luish-fzf" }        # a source of its own
 ```
 
+### Making sources available: `[available]`
+
+A plugin can also make sources available, in an `[available]` table that is written as `config.toml`'s
+`[plugins.available]`. Its dependencies can then name plugins of those sources:
+
+```toml
+# ~/src/luish-personal-plugin/plugin.toml
+[available]
+extra = { gh = "luispedro/luish-extra" }
+
+[dependencies]
+extra.complete.bio = "*"
+```
+
+Once `plugin sync` has run, the sources that the enabled plugins declare are available as if they were in
+`config.toml`: `plugin load extra/complete/gui` loads one of their plugins, `plugin list-available` and Tab after
+`plugin load` list them, `plugin add extra/complete/gui` enables one, `plugins.enabled` can name them, and `plugin
+update extra` updates the source. `plugin sync` installs all of their plugins, as for the sources in `config.toml`,
+and records the sources in `plugins.lock`, so a change to `[available]` takes effect at the next `plugin sync`.
+
+- Only the plugins that are enabled (in `plugins.enabled`, or as their dependencies) declare sources. A plugin that
+  is only installed, from an available source, doesn't.
+- A plugin's dependencies can use the sources in `config.toml` and those it declares itself, but not those that
+  other plugins declare.
+- `config.toml`'s `[plugins.available]` takes precedence: a source of the same name there is used instead, so a
+  machine can, for one, use a local checkout (`extra = { path = "~/src/luish-extra" }`). `plugin sync` and `plugin
+  check` warn when the two differ.
+- Two enabled plugins that declare a source with the same name must give the same source. Otherwise it is an error
+  (resolve it by defining that source in `config.toml`).
+- `std` can only be redefined in `config.toml`.
+
 
 `plugin.toml` can also set options and define aliases and key bindings, in
 `[options]`, `[alias]` and `[bindkey]` tables as in `config.toml` (see

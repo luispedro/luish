@@ -11,6 +11,8 @@ Unreleased
     * luish --ssh: ssh's escapes ~. ~^Z ~? ~~, and -o ssh.escape_char
     * std.completion completes luish --ssh (ssh's options, luish's own,
       hosts) and luish --remote CMD
+    * plugin.toml: [available] makes sources available, as
+      config.toml's plugins.available
 
 Version 0.5.0 2026-10-05 by luispedro
     * Large scripts parse faster, with less memory

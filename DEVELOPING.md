@@ -1245,6 +1245,23 @@ no plugin completer, as luish's own completer skips it as a
   collection named as a plugin. A plain `NAME` in a manifest is a sibling (`Coll::dir`, the plugin's parent),
   `"/PATH"` is from the top of the same source (`Target::InSource`, only in manifests), and `SOURCE/PATH` from the
   top of a named one. Tests: `tests/plugins/packages.sh`, `nested.sh`.
+- **Sources declared by plugins.** A manifest's `[available]` (`Reader::sources`, shared with `plugins.available`;
+  `std` only in `config.toml`) declares named sources. `Resolver::declare` takes them in when the manifest is read:
+  a name that `config.toml` defines (`Config::named`) is its, with a warning when the source differs
+  (`Resolver::warnings`, which only `plugin sync` and `plugin check` print, so a deliberate override doesn't
+  speak at every startup); the rest go on the plugin's stack entry (`Resolving::sources`) for its own
+  dependencies, and, while the enabled plugins are resolved (`check_options`, so not for the plugins of available
+  sources that `sync` installs), into `Resolver::declared`, where two plugins must agree. `Resolver::named` looks
+  for a source in `config.toml` (and `std`), then, in a manifest, in its own declarations only (so the result
+  doesn't depend on the order plugins are resolved), and in `plugins.enabled` and for `plugin load` in
+  `Resolver::declared` and then `Config::declared`. `resolve_enabled` defers an entry of `plugins.enabled` whose
+  source isn't known yet until no entry makes progress, so `extra.complete.gui` can come before the plugin that
+  declares `extra` (its error, if it stays unknown, comes after the others). `sync` installs every plugin of the
+  declared sources too (`resolve_all`) and writes them to `plugins.lock` as `[[available]]` (name, `declared-by`,
+  `url` and ref or an absolute `path`, `subdir`; an older luish ignores them), from which `config_and_pins` fills
+  `Config::declared` for startup, `plugin load`, `unload`, `list-available` and `add` (`Config::known`), so these
+  never read other plugins' manifests, and a change to `[available]` takes effect at the next `plugin sync`.
+  Test: `tests/plugins/declared_sources.sh`.
 - `plugin list-available` leaves out the loaded plugins by absolute path, and `plugin unload ARG`, if no plugin is
   loaded under the name ARG, unloads the one at the path that `plugin load ARG` would load (`package::location`,
   else `find`). Test: `tests/plugins/packages.sh`.

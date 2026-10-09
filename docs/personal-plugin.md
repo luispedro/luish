@@ -117,8 +117,12 @@ personal = { path = "~/src/luish-personal-plugin" }
 
 ## What goes where
 
-- **`plugin.toml`**: dependencies, options, aliases and key bindings. Prefer it
-  to shell where it can express the setting.
+- **`plugin.toml`**: dependencies, options, aliases and key bindings, and the
+  sources of plugins you load now and then, in `[available]` (such as
+  `extra = { gh = "luispedro/luish-extra" }`, so that `plugin load
+  extra/complete/gui` works on every machine; see [Making sources
+  available](plugins.md#making-sources-available-available)). Prefer it to
+  shell where it can express the setting.
 - **`rc.lsh`**: variables, functions and the prompt, for interactive shells.
 - **`init.lsh`**: what scripts need too (but most configuration is only for interactive use).
 - **`post-rc.lsh`**: what must run after the machine's own `rc.d` (see

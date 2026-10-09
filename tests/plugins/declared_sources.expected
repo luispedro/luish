@@ -1,0 +1,106 @@
+--- before plugin sync: the manifest can use its own source
+bio
+personal
+extra/complete/bio
+personal
+luish: 1: __luish_internal plugin: cannot open extra/complete/gui: No such file
+    __luish_internal plugin load extra/complete/gui; echo "status $?"
+status 1
+--- plugin sync records it
+0 git sources locked, 2 plugins enabled: extra/complete/bio, personal
+status 0
+# Written by luish (plugin sync, plugin update). Don't edit.
+version = 1
+
+[[plugin]]
+name = "extra/complete/bio"
+source = "extra"
+path = "complete/bio.lsh"
+dependencies = []
+
+[[plugin]]
+name = "personal"
+source = "~/src/personal"
+path = "."
+dependencies = ["complete/bio"]
+
+[[available]]
+name = "extra"
+declared-by = "personal"
+path = "~/src/extra"
+--- then plugin load, list-available and plugin add know it
+extra/complete/bio
+extra/complete/gui
+gui
+Added extra/complete/gui to [plugins.enabled] in ~/.config/luish/config.toml
+0 git sources locked, 3 plugins enabled: extra/complete/bio, personal, extra/complete/gui
+gui
+status 0
+[plugins.enabled]
+personal = { path = "~/src/personal" }
+"extra/complete/gui" = "*"
+bio
+personal
+gui
+extra/complete/bio
+personal
+extra/complete/gui
+--- plugins.enabled can name it before the plugin that declares it
+status 0
+gui
+bio
+personal
+extra/complete/gui
+extra/complete/bio
+personal
+--- but not without it
+luish: ~/.config/luish/config.toml: line 2: extra/complete/gui: no source called extra
+status 1
+--- config.toml wins, with a warning if its source is another
+luish: ~/src/personal/plugin.toml: line 2: warning: extra: overridden by plugins.available in config.toml
+0 git sources locked, 2 plugins enabled: extra/complete/bio, personal
+status 0
+luish: ~/src/personal/plugin.toml: line 2: warning: extra: overridden by plugins.available in config.toml
+No git sources to check
+status 0
+0
+bio from the checkout
+personal
+extra/complete/bio
+personal
+status 0
+--- two plugins that disagree
+luish: ~/src/work/plugin.toml: line 2: extra: personal declares another source with this name (define it in config.toml's plugins.available to choose one)
+status 1
+--- and that agree
+status 0
+[[available]]
+name = "extra"
+--- a plugin that is only available declares nothing
+status 0
+coll/p
+luish: 1: __luish_internal plugin: cannot open hidden/h: No such file
+    __luish_internal plugin load hidden/h; echo "status $?"
+status 1
+--- a git source: pinned, and plugin update knows its name
+Fetching g
+Locking g at f022b08
+1 git source locked, 1 plugin enabled: personal
+status 0
+[[available]]
+name = "g"
+declared-by = "personal"
+url = "file://~/grepo"
+branch = "main"
+g
+Fetching g
+Up to date g at f022b08
+1 git source locked (none updated), 1 plugin enabled: personal
+status 0
+--- errors
+luish: ~/src/personal/plugin.toml: line 2: std: only config.toml can redefine std
+luish: ~/src/personal/plugin.toml: line 3: a/b: bad source name
+luish: ~/src/personal/plugin.toml: line 4: x: expected a table ({ gh = "OWNER/REPO" })
+status 1
+luish: ~/src/personal/plugin.toml: line 1: available: not a table
+status 1

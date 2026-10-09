@@ -255,6 +255,24 @@ fn differences(decls: &[Decl], a: &PluginOptions, b: &PluginOptions) -> (String,
 struct Config {
     available: Vec<(String, Source)>,
     enabled: Vec<Entry>,
+    /// The sources that the enabled plugins declare, as `plugin sync`
+    /// recorded them in `plugins.lock` (for `plugin load` and the like; it
+    /// and `plugin check` find them in the manifests).
+    declared: Vec<Declared>,
+}
+
+/// A source that a plugin's manifest declares, in its `[available]` table.
+#[derive(Clone, Debug)]
+struct Declared {
+    name: String,
+    source: Source,
+    /// The plugin that declares it.
+    by: String,
+}
+
+/// Whether two sources are the same files (their labels aside).
+fn same_source(a: &Source, b: &Source) -> bool {
+    a.origin == b.origin && a.subdir == b.subdir
 }
 
 impl Entry {
@@ -281,6 +299,14 @@ impl Config {
             },
             subdir: Some(STD_SUBDIR.into()),
             label: "std".into(),
+        })
+    }
+
+    /// [`Config::named`], else a source that an enabled plugin declares.
+    fn known(&self, name: &str) -> Option<Source> {
+        self.named(name).or_else(|| {
+            let d = self.declared.iter().find(|d| d.name == name)?;
+            Some(d.source.clone())
         })
     }
 }
@@ -352,26 +378,39 @@ impl Reader<'_> {
             self.err(value.span.start, "plugins: not a table");
             return config;
         };
-        for (key, mut value) in in_order(t) {
+        for (key, value) in in_order(t) {
             match &*key.name {
                 "available" => {
-                    let ValueInner::Table(t) = value.take() else {
-                        self.err(value.span.start, "plugins.available: not a table");
-                        continue;
-                    };
-                    for (key, value) in in_order(t) {
-                        if !valid_name(&key.name) {
-                            self.err(key.span.start, format!("{}: bad source name", key.name));
-                        } else if let Some((source, _)) = self.source(&key.name, &value, false) {
-                            config.available.push((key.name.to_string(), source));
-                        }
-                    }
+                    let sources = self.sources(value, "plugins.available", true);
+                    config.available.extend(sources.into_iter().map(|(n, s, _)| (n, s)));
                 }
                 "enabled" => self.entries(value, "plugins.enabled", &mut config.enabled),
                 name => self.err(key.span.start, format!("unknown key: plugins.{name}")),
             }
         }
         config
+    }
+
+    /// A table of named sources: `plugins.available`, or a manifest's
+    /// `available` (where `std` can't be defined), with where each was
+    /// written.
+    fn sources(&mut self, mut value: Value<'_>, what: &str, std: bool) -> Vec<(String, Source, Loc)> {
+        let mut out = Vec::new();
+        let ValueInner::Table(t) = value.take() else {
+            self.err(value.span.start, format!("{what}: not a table"));
+            return out;
+        };
+        for (key, value) in in_order(t) {
+            let (start, name) = (key.span.start, &*key.name);
+            if !valid_name(name) {
+                self.err(start, format!("{name}: bad source name"));
+            } else if name == "std" && !std {
+                self.err(start, "std: only config.toml can redefine std");
+            } else if let Some((source, _)) = self.source(name, &value, false) {
+                out.push((name.to_string(), source, self.loc(start)));
+            }
+        }
+        out
     }
 
     /// A table of entries: `plugins.enabled`, or a manifest's
@@ -853,10 +892,12 @@ fn parse_config(sh: &Shell, file: &[u8], bytes: &[u8], problems: &mut Vec<Proble
 }
 
 /// What a directory plugin's `plugin.toml` says: its dependencies, the
-/// options it declares, and the oldest luish it needs (`luish-version`).
+/// sources it declares, the options it declares, and the oldest luish it
+/// needs (`luish-version`).
 #[derive(Default)]
 struct Manifest {
     entries: Vec<Entry>,
+    available: Vec<(String, Source, Loc)>,
     decls: Vec<Decl>,
     luish: Option<String>,
 }
@@ -869,6 +910,7 @@ fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -
     let file = [dir, b"/plugin.toml"].concat();
     let r = with_toml(&file, shown, |text, mut root| {
         let mut out = Vec::new();
+        let mut available = Vec::new();
         let mut decls = Vec::new();
         let mut luish = None;
         let mut r = Reader {
@@ -892,6 +934,10 @@ fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -
                 ),
             }
         }
+        // (Before the dependencies, which may use them.)
+        if let Some(value) = root.remove("available") {
+            available = r.sources(value, "available", false);
+        }
         if let Some(value) = root.remove("dependencies") {
             r.entries(value, "dependencies", &mut out);
         }
@@ -900,6 +946,7 @@ fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -
         }
         Manifest {
             entries: out,
+            available,
             decls,
             luish,
         }
@@ -950,14 +997,22 @@ fn lock_path(sh: &Shell) -> Option<Vec<u8>> {
     Some(p)
 }
 
+/// What `plugins.lock` holds: the pins, and the sources that the enabled
+/// plugins declare.
+#[derive(Default)]
+struct Lock {
+    pins: Vec<Pin>,
+    declared: Vec<Declared>,
+}
+
 /// Why the lock can't be used. With `newer`, it must not be rewritten.
 struct LockError {
     newer: bool,
     msg: String,
 }
 
-/// The pins in `plugins.lock` (none if it doesn't exist).
-fn read_lock(file: &[u8]) -> Result<Vec<Pin>, LockError> {
+/// What `plugins.lock` holds (nothing if it doesn't exist).
+fn read_lock(file: &[u8]) -> Result<Lock, LockError> {
     let bad = |msg: String| LockError { newer: false, msg };
     let r = with_toml(file, file, |text, mut root| {
         let at = |offset: usize| line_of(text.as_bytes(), offset);
@@ -972,37 +1027,60 @@ fn read_lock(file: &[u8]) -> Result<Vec<Pin>, LockError> {
             Some((_, o)) => return Err(bad(format!("line {}: unknown version", at(o)))),
             None => return Err(bad("no version".into())),
         }
-        let mut pins = Vec::new();
-        let Some(mut sources) = root.remove("source") else {
-            return Ok(pins);
+        let mut lock = Lock::default();
+        let mut array = |key: &str| match root.remove(key) {
+            None => Ok(Vec::new()),
+            Some(mut v) => match v.take() {
+                ValueInner::Array(a) => Ok(a),
+                _ => Err(bad(format!("line {}: {key}: not an array", at(v.span.start)))),
+            },
         };
-        let ValueInner::Array(sources) = sources.take() else {
-            return Err(bad(format!("line {}: source: not an array", at(sources.span.start))));
+        let (sources, declared) = (array("source")?, array("available")?);
+        let field = |s: &Value<'_>, k: &str| {
+            s.as_table()
+                .and_then(|t| t.get(k))
+                .and_then(|v| v.as_str())
+                .map(String::from)
+        };
+        let gitref = |s: &Value<'_>| match (field(s, "branch"), field(s, "tag"), field(s, "rev")) {
+            (None, None, None) => Some(GitRef::Head),
+            (Some(b), None, None) => Some(GitRef::Branch(b)),
+            (None, Some(t), None) => Some(GitRef::Tag(t)),
+            (None, None, Some(r)) => Some(GitRef::Rev(r)),
+            _ => None,
         };
         for s in sources {
-            let field = |k: &str| {
-                s.as_table()
-                    .and_then(|t| t.get(k))
-                    .and_then(|v| v.as_str())
-                    .map(String::from)
-            };
-            let gitref = match (field("branch"), field("tag"), field("rev")) {
-                (None, None, None) => Some(GitRef::Head),
-                (Some(b), None, None) => Some(GitRef::Branch(b)),
-                (None, Some(t), None) => Some(GitRef::Tag(t)),
-                (None, None, Some(r)) => Some(GitRef::Rev(r)),
-                _ => None,
-            };
-            match (field("url"), gitref, field("commit")) {
-                (Some(url), Some(at), Some(commit)) if fetch::is_hash(&commit) => pins.push(Pin { url, at, commit }),
+            match (field(&s, "url"), gitref(&s), field(&s, "commit")) {
+                (Some(url), Some(at), Some(commit)) if fetch::is_hash(&commit) => {
+                    lock.pins.push(Pin { url, at, commit })
+                }
                 _ => return Err(bad(format!("line {}: bad source", at(s.span.start)))),
             }
         }
-        Ok(pins)
+        for s in declared {
+            let origin = match (field(&s, "url"), gitref(&s), field(&s, "path")) {
+                (Some(url), Some(at), None) => Some(Origin::Git { url, at }),
+                (None, Some(GitRef::Head), Some(p)) if p.starts_with('/') => Some(Origin::Local(p.into_bytes())),
+                _ => None,
+            };
+            match (field(&s, "name"), origin, field(&s, "declared-by")) {
+                (Some(name), Some(origin), Some(by)) if valid_name(&name) && name != "std" => {
+                    let subdir = field(&s, "subdir");
+                    let label = name.clone();
+                    lock.declared.push(Declared {
+                        name,
+                        source: Source { origin, subdir, label },
+                        by,
+                    });
+                }
+                _ => return Err(bad(format!("line {}: bad available source", at(s.span.start)))),
+            }
+        }
+        Ok(lock)
     });
     match r {
         Ok(Some(r)) => r,
-        Ok(None) => Ok(Vec::new()),
+        Ok(None) => Ok(Lock::default()),
         Err(p) => Err(bad(match p.loc {
             Some(l) => format!("line {}: {}", l.line, p.msg),
             None => p.msg,
@@ -1010,9 +1088,10 @@ fn read_lock(file: &[u8]) -> Result<Vec<Pin>, LockError> {
     }
 }
 
-/// The text of `plugins.lock`: the pins sorted by URL, and the plugins that
-/// interactive shells load, sorted by name.
-fn lock_text(pins: &[Pin], plugins: &[Resolved]) -> String {
+/// The text of `plugins.lock`: the pins sorted by URL, the plugins that
+/// interactive shells load, and the sources that they declare, sorted by
+/// name.
+fn lock_text(pins: &[Pin], plugins: &[Resolved], declared: &[Declared]) -> String {
     let mut out = String::from("# Written by luish (plugin sync, plugin update). Don't edit.\n");
     out.push_str(&format!("version = {LOCK_VERSION}\n"));
     let mut pins: Vec<_> = pins.iter().collect();
@@ -1035,6 +1114,27 @@ fn lock_text(pins: &[Pin], plugins: &[Resolved]) -> String {
             toml_str(&p.rel),
             deps.join(", "),
         ));
+    }
+    let mut declared: Vec<_> = declared.iter().collect();
+    declared.sort_by(|a, b| a.name.cmp(&b.name));
+    for d in declared {
+        out.push_str(&format!(
+            "\n[[available]]\nname = {}\ndeclared-by = {}\n",
+            toml_str(&d.name),
+            toml_str(&d.by)
+        ));
+        match &d.source.origin {
+            Origin::Git { url, at } => {
+                out.push_str(&format!("url = {}\n", toml_str(url)));
+                if let Some((k, v)) = at.field() {
+                    out.push_str(&format!("{k} = {}\n", toml_str(v)));
+                }
+            }
+            Origin::Local(p) => out.push_str(&format!("path = {}\n", toml_str(&String::from_utf8_lossy(p)))),
+        }
+        if let Some(s) = &d.source.subdir {
+            out.push_str(&format!("subdir = {}\n", toml_str(s)));
+        }
     }
     out
 }
@@ -1147,6 +1247,14 @@ enum Fetching {
     Update(Vec<String>),
 }
 
+/// A plugin whose dependencies are being resolved.
+struct Resolving {
+    name: String,
+    abs: Vec<u8>,
+    /// The sources that it declares, for its dependencies.
+    sources: Vec<(String, Source)>,
+}
+
 struct Resolver<'a> {
     sh: &'a mut Shell,
     config: &'a Config,
@@ -1160,8 +1268,12 @@ struct Resolver<'a> {
     /// The plugins resolved, in the order to load them.
     done: Vec<Resolved>,
     /// The plugins being resolved (for cycles and names).
-    stack: Vec<(String, Vec<u8>)>,
+    stack: Vec<Resolving>,
+    /// The sources that the enabled plugins resolved so far declare.
+    declared: Vec<Declared>,
     problems: Vec<Problem>,
+    /// What only `plugin sync` and `plugin check` report.
+    warnings: Vec<Problem>,
     /// The sources that aren't installed (with `Fetching::No`).
     missing: Vec<String>,
     /// The manifests of local plugins read or looked for, for the startup
@@ -1191,7 +1303,9 @@ impl<'a> Resolver<'a> {
             updated: Vec::new(),
             done: Vec::new(),
             stack: Vec::new(),
+            declared: Vec::new(),
             problems: Vec::new(),
+            warnings: Vec::new(),
             missing: Vec::new(),
             manifests: Vec::new(),
             interrupted: false,
@@ -1217,6 +1331,75 @@ impl<'a> Resolver<'a> {
             loc: loc.cloned(),
             msg: msg.into(),
         });
+    }
+
+    /// The source called `name`, for an entry in `scope`: one of
+    /// `config.toml` (or `std`), else, in `plugins.enabled` and for `plugin
+    /// load`, one that an enabled plugin declares, and in a manifest, one
+    /// that it declares itself.
+    fn named(&self, name: &str, scope: &Scope) -> Option<Source> {
+        if let Some(s) = self.config.named(name) {
+            return Some(s);
+        }
+        let found = match scope {
+            Scope::Config => (self.declared.iter())
+                .chain(&self.config.declared)
+                .find(|d| d.name == name)
+                .map(|d| &d.source),
+            _ => (self.stack.last()?.sources.iter())
+                .find(|(n, _)| n == name)
+                .map(|(_, s)| s),
+        };
+        found.cloned()
+    }
+
+    /// Whether the source that the entry `e` of `plugins.enabled` names, if
+    /// any, is known yet.
+    fn knows(&self, e: &Entry) -> bool {
+        match &e.target {
+            Target::Named(Some(src)) => self.named(src, &Scope::Config).is_some(),
+            _ => true,
+        }
+    }
+
+    /// Takes in the sources that the manifest of the plugin `by` declares,
+    /// and gives those that its dependencies can use. `config.toml`
+    /// overrides them (with a warning if its source is another). Those of
+    /// the plugins that are enabled (or loaded) are recorded, and two of
+    /// these must agree.
+    fn declare(&mut self, by: &str, sources: Vec<(String, Source, Loc)>) -> Vec<(String, Source)> {
+        let mut own = Vec::new();
+        for (name, source, loc) in sources {
+            if let Some(theirs) = self.config.named(&name) {
+                if self.check_options && !same_source(&theirs, &source) {
+                    self.warnings.push(Problem {
+                        loc: Some(loc),
+                        msg: format!("warning: {name}: overridden by plugins.available in config.toml"),
+                    });
+                }
+                continue;
+            }
+            if self.check_options {
+                match self.declared.iter().find(|d| d.name == name) {
+                    Some(d) if same_source(&d.source, &source) => {}
+                    Some(d) => {
+                        let msg = format!(
+                            "{name}: {} declares another source with this name (define it in config.toml's plugins.available to choose one)",
+                            d.by
+                        );
+                        self.problem(Some(&loc), msg);
+                        continue;
+                    }
+                    None => self.declared.push(Declared {
+                        name: name.clone(),
+                        source: source.clone(),
+                        by: by.to_string(),
+                    }),
+                }
+            }
+            own.push((name, source));
+        }
+        own
     }
 
     /// The directory (or file) with the files of `source`, fetched if
@@ -1371,7 +1554,7 @@ impl<'a> Resolver<'a> {
         let name = e.name.as_str();
         let (found, label, root, coll, full) = match (&e.target, scope) {
             (Target::Named(Some(src)), _) => {
-                let Some(source) = self.config.named(src) else {
+                let Some(source) = self.named(src, scope) else {
                     self.problem(loc, format!("{src}/{name}: no source called {src}"));
                     return Err(());
                 };
@@ -1384,7 +1567,7 @@ impl<'a> Resolver<'a> {
                 let coll = Coll::of(&found, &root, &source.label, Some(src));
                 (found, source.label, root, Some(coll), format!("{src}/{name}"))
             }
-            (Target::Named(None), Scope::Config) => match self.config.named(name) {
+            (Target::Named(None), Scope::Config) => match self.named(name, scope) {
                 Some(source) => {
                     let root = self.root(&source, name, loc)?;
                     let (found, member) = self.pick(&root, &source.label, name, true, loc)?;
@@ -1478,15 +1661,15 @@ impl<'a> Resolver<'a> {
             self.problem(loc, msg);
             return Err(());
         }
-        if let Some(i) = self.stack.iter().position(|(_, p)| *p == abs) {
-            let mut cycle: Vec<&str> = self.stack[i..].iter().map(|(n, _)| n.as_str()).collect();
+        if let Some(i) = self.stack.iter().position(|p| p.abs == abs) {
+            let mut cycle: Vec<&str> = self.stack[i..].iter().map(|p| p.name.as_str()).collect();
             cycle.push(name);
             let msg = format!("dependency cycle: {}", cycle.join(" -> "));
             self.problem(loc, msg);
             return Err(());
         }
         let other = self.done.iter().find(|p| p.name == name).map(|p| p.source.clone());
-        let other = other.or_else(|| self.stack.iter().any(|(n, _)| n == name).then(String::new));
+        let other = other.or_else(|| self.stack.iter().any(|p| p.name == name).then(String::new));
         if let Some(other) = other {
             let msg = match other.is_empty() {
                 true => format!("{name}: two different plugins with this name"),
@@ -1503,7 +1686,6 @@ impl<'a> Resolver<'a> {
         let mut ok = true;
         let mut decls = Vec::new();
         if found.kind == Kind::Dir {
-            self.stack.push((name.to_string(), abs.clone()));
             let file = [abs.as_slice(), b"/plugin.toml"].concat();
             // A git plugin's files are in the data directory, which
             // messages don't show.
@@ -1516,6 +1698,12 @@ impl<'a> Resolver<'a> {
                 self.manifests.push(file);
             }
             let m = manifest(self.sh, &abs, &shown, &mut self.problems);
+            let sources = self.declare(name, m.available);
+            self.stack.push(Resolving {
+                name: name.to_string(),
+                abs: abs.clone(),
+                sources,
+            });
             decls = m.decls;
             // A plugin for a newer luish isn't loaded, nor are its
             // dependencies looked for (they may need it too).
@@ -1592,10 +1780,10 @@ fn find_path(dir: &[u8], path: &str) -> Option<Found> {
     super::find_path(dir, path.as_bytes())
 }
 
-/// The lock's pins, or none (with a problem) if it can't be read.
-fn locked_pins(sh: &Shell, problems: &mut Vec<Problem>) -> Result<Vec<Pin>, LockError> {
+/// What the lock holds, or `Err` (with a problem) if it can't be read.
+fn locked(sh: &Shell, problems: &mut Vec<Problem>) -> Result<Lock, LockError> {
     let Some(file) = lock_path(sh) else {
-        return Ok(Vec::new());
+        return Ok(Lock::default());
     };
     read_lock(&file).inspect_err(|e| {
         problems.push(Problem {
@@ -1615,7 +1803,7 @@ fn locked_pins(sh: &Shell, problems: &mut Vec<Problem>) -> Result<Vec<Pin>, Lock
 pub fn load_enabled(sh: &mut Shell) -> bool {
     let mut problems = Vec::new();
     // config.rs reports a file that isn't TOML.
-    let Ok(config) = read_config(sh, &mut problems) else {
+    let Ok(mut config) = read_config(sh, &mut problems) else {
         return true;
     };
     let mut ok = problems.is_empty();
@@ -1628,12 +1816,11 @@ pub fn load_enabled(sh: &mut Shell) -> bool {
         rec.push(lock);
     }
     let mut problems = Vec::new();
-    let pins = locked_pins(sh, &mut problems).unwrap_or_default();
-    let mut r = Resolver::new(sh, &config, pins, Fetching::No);
+    let lock = locked(sh, &mut problems).unwrap_or_default();
+    config.declared = lock.declared;
+    let mut r = Resolver::new(sh, &config, lock.pins, Fetching::No);
     r.problems = problems;
-    for e in &config.enabled {
-        let _ = r.resolve(e, &Scope::Config, ENABLED);
-    }
+    resolve_enabled(&mut r, &config);
     r.report_missing();
     let (done, problems, manifests) = (r.done, r.problems, r.manifests);
     if let Some(rec) = &mut sh.sourced_files {
@@ -1645,6 +1832,40 @@ pub fn load_enabled(sh: &mut Shell) -> bool {
         let _ = super::load_found(sh, b"plugin", &p.found, Some(p.name.into_bytes()), p.options, true);
     }
     ok
+}
+
+/// Resolves the entries of `plugins.enabled`. One of a source that an
+/// enabled plugin declares waits until that plugin is resolved.
+fn resolve_enabled(r: &mut Resolver, config: &Config) {
+    let mut waiting: Vec<&Entry> = config.enabled.iter().collect();
+    loop {
+        let before = waiting.len();
+        waiting.retain(|e| {
+            if !r.knows(e) {
+                return true;
+            }
+            let _ = r.resolve(e, &Scope::Config, ENABLED);
+            false
+        });
+        if waiting.len() == before {
+            break;
+        }
+    }
+    // (Each is an error.)
+    for e in waiting {
+        let _ = r.resolve(e, &Scope::Config, ENABLED);
+    }
+}
+
+/// `config.toml`'s `[plugins]` and the lock's pins, for `plugin load` and
+/// the like, with the sources that the enabled plugins declare. Errors in
+/// the table are for `plugin sync` and startup to report; a lock that can't
+/// be read shows as plugins that aren't installed.
+fn config_and_pins(sh: &Shell) -> (Config, Vec<Pin>) {
+    let mut config = read_config(sh, &mut Vec::new()).unwrap_or_default();
+    let lock = read_lock(&lock_path(sh).unwrap_or_default()).unwrap_or_default();
+    config.declared = lock.declared;
+    (config, lock.pins)
 }
 
 /// Who gives the options of an entry of `plugins.enabled`, and of `plugin
@@ -1674,15 +1895,12 @@ pub(super) fn given_options(
 /// yet.
 pub fn load(sh: &mut Shell, cmd: &[u8], arg: &[u8], opts: super::OptionArgs) -> ExecResult {
     let given: Vec<_> = opts.into_iter().map(|(k, v)| (k, Given::Text(v))).collect();
-    // Errors in the table are for `plugin sync` and startup to report.
-    let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
+    let (config, pins) = config_and_pins(sh);
     let text = String::from_utf8_lossy(arg);
     let named = match text.split_once('/') {
-        Some((src, path)) => config.named(src).is_some() && valid_path(path),
-        None => config.named(&text).is_some(),
+        Some((src, path)) => config.known(src).is_some() && valid_path(path),
+        None => config.known(&text).is_some(),
     };
-    // A lock that can't be read shows as plugins that aren't installed.
-    let pins = read_lock(&lock_path(sh).unwrap_or_default()).unwrap_or_default();
     let mut r = Resolver::new(sh, &config, pins, Fetching::No);
     let ok = if named {
         let (source, name) = match text.split_once('/') {
@@ -1775,11 +1993,10 @@ fn load_resolved(cmd: &[u8], mut r: Resolver, ok: bool) -> ExecResult {
 
 /// For `plugin add`: loads the plugin `name` of `plugins.enabled`.
 pub(super) fn load_added(sh: &mut Shell, cmd: &[u8], name: &str) -> ExecResult {
-    let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
+    let (config, pins) = config_and_pins(sh);
     let Some(e) = config.enabled.iter().find(|e| e.key() == name) else {
         return Ok(0);
     };
-    let pins = read_lock(&lock_path(sh).unwrap_or_default()).unwrap_or_default();
     let mut r = Resolver::new(sh, &config, pins, Fetching::No);
     let ok = r.resolve(e, &Scope::Config, ENABLED).is_ok();
     load_resolved(cmd, r, ok)
@@ -1809,10 +2026,9 @@ fn problem_text(p: &Problem) -> String {
 }
 
 /// For `plugin add`: whether `name` is a source (in `plugins.available`,
-/// or `std`).
+/// `std`, or one that an enabled plugin declares).
 pub(super) fn is_named_source(sh: &Shell, name: &str) -> bool {
-    let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
-    config.named(name).is_some()
+    config_and_pins(sh).0.known(name).is_some()
 }
 
 /// The first 7 characters of a commit hash, as messages show it.
@@ -1849,8 +2065,8 @@ fn read_state(sh: &mut Shell, cmd: &[u8]) -> Result<(Config, Vec<u8>, Vec<Pin>),
         sh.berr(cmd, "no configuration directory (HOME is not set)");
         return Err(1);
     };
-    let pins = match locked_pins(sh, &mut problems) {
-        Ok(pins) => pins,
+    let pins = match locked(sh, &mut problems) {
+        Ok(lock) => lock.pins,
         Err(e) if e.newer => {
             print_problems(sh, Some(cmd), &problems);
             return Err(1);
@@ -1867,14 +2083,15 @@ fn read_state(sh: &mut Shell, cmd: &[u8]) -> Result<(Config, Vec<u8>, Vec<Pin>),
 /// (so that `plugin load` finds them and their dependencies). Gives the
 /// enabled plugins, and whether resolving them had problems.
 fn resolve_all(r: &mut Resolver, config: &Config) -> (Vec<Resolved>, bool) {
-    for e in &config.enabled {
-        let _ = r.resolve(e, &Scope::Config, ENABLED);
-    }
+    resolve_enabled(r, config);
     let enabled = std::mem::take(&mut r.done);
     let failed = !r.problems.is_empty();
-    // The others are installed, but not loaded: options are for loading.
+    // The others are installed, but not loaded: options are for loading,
+    // and their manifests' sources don't count.
     r.check_options = false;
-    for (name, source) in &config.available {
+    let declared = r.declared.iter().map(|d| (d.name.clone(), d.source.clone()));
+    let sources: Vec<_> = config.available.iter().cloned().chain(declared).collect();
+    for (name, source) in &sources {
         if r.interrupted {
             break;
         }
@@ -1960,7 +2177,9 @@ pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>, quiet: bool)
         }
     }
     failed |= r.interrupted;
-    let (used, problems, ui) = (r.used, r.problems, r.ui);
+    let (used, problems, warnings, ui) = (r.used, r.problems, r.warnings, r.ui);
+    let declared = r.declared;
+    print_problems(sh, Some(cmd), &warnings);
     print_problems(sh, Some(cmd), &problems);
     if failed {
         return Ok(1);
@@ -2005,7 +2224,7 @@ pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>, quiet: bool)
         }
     }
     let pins: Vec<Pin> = used.into_iter().map(|(p, _)| p).collect();
-    let empty = pins.is_empty() && enabled.is_empty();
+    let empty = pins.is_empty() && enabled.is_empty() && declared.is_empty();
     if empty && crate::sys::stat(&lock).is_none() {
         if !quiet {
             sh.out(
@@ -2015,7 +2234,7 @@ pub fn sync(sh: &mut Shell, cmd: &[u8], update: Option<&[Vec<u8>]>, quiet: bool)
         }
         return Ok(0);
     }
-    if let Err(e) = write_file(&lock, &lock_text(&pins, &enabled)) {
+    if let Err(e) = write_file(&lock, &lock_text(&pins, &enabled, &declared)) {
         sh.berr(cmd, e);
         return Ok(1);
     }
@@ -2060,7 +2279,8 @@ pub fn check(sh: &mut Shell, cmd: &[u8], quiet: bool) -> ExecResult {
     let ui = Ui::new(sh);
     let mut r = Resolver::new(sh, &config, pins, Fetching::No);
     let (enabled, _) = resolve_all(&mut r, &config);
-    let (used, problems, mut missing) = (r.used, r.problems, r.missing);
+    let (used, problems, warnings, mut missing) = (r.used, r.problems, r.warnings, r.missing);
+    print_problems(sh, Some(cmd), &warnings);
     print_problems(sh, Some(cmd), &problems);
     let mut status = if problems.is_empty() { 0 } else { 1 };
     let (mut checked, mut newer, mut fixed) = (0, 0, 0);
@@ -2153,15 +2373,14 @@ pub fn check(sh: &mut Shell, cmd: &[u8], quiet: bool) -> ExecResult {
 /// The path of the plugin that `plugin load ARG` loads from a source (`ARG`
 /// a source, or `SOURCE/PATH`), if it is installed. For `plugin unload`.
 pub fn location(sh: &mut Shell, arg: &[u8]) -> Option<Vec<u8>> {
-    let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
+    let (config, pins) = config_and_pins(sh);
     let text = String::from_utf8_lossy(arg);
     let (src, name, only) = match text.split_once('/') {
         Some((src, path)) if valid_path(path) => (src, path, false),
         Some(_) => return None,
         None => (&*text, &*text, true),
     };
-    let source = config.named(src)?;
-    let pins = read_lock(&lock_path(sh).unwrap_or_default()).unwrap_or_default();
+    let source = config.known(src)?;
     let mut r = Resolver::new(sh, &config, pins, Fetching::No);
     let root = r.root(&source, src, None).ok()?;
     r.pick(&root, src, name, only, None).ok().map(|(found, _)| found.path)
@@ -2171,16 +2390,17 @@ pub fn location(sh: &mut Shell, arg: &[u8]) -> Option<Vec<u8>> {
 /// list-available`: `SOURCE` for a source that is one plugin, and
 /// `SOURCE/PATH` for each plugin of a collection, with the plugin's path.
 pub fn available(sh: &mut Shell) -> Vec<(Vec<u8>, Vec<u8>)> {
-    let config = read_config(sh, &mut Vec::new()).unwrap_or_default();
-    let pins = read_lock(&lock_path(sh).unwrap_or_default()).unwrap_or_default();
+    let (config, pins) = config_and_pins(sh);
     let mut names: Vec<String> = config.available.iter().map(|(n, _)| n.clone()).collect();
-    if !names.iter().any(|n| n == "std") {
-        names.push("std".into());
+    for n in std::iter::once("std").chain(config.declared.iter().map(|d| d.name.as_str())) {
+        if !names.iter().any(|m| m == n) {
+            names.push(n.into());
+        }
     }
     let mut r = Resolver::new(sh, &config, pins, Fetching::No);
     let mut out = Vec::new();
     for name in names {
-        let Some(source) = r.config.named(&name) else { continue };
+        let Some(source) = r.config.known(&name) else { continue };
         let Ok(root) = r.root(&source, &name, None) else {
             continue;
         };
@@ -2263,7 +2483,11 @@ mod tests {
             at,
             commit: "0123456789abcdef0123456789abcdef01234567".into(),
         };
-        let text = lock_text(&[pin("b", GitRef::Branch("main".into())), pin("a", GitRef::Head)], &[]);
+        let text = lock_text(
+            &[pin("b", GitRef::Branch("main".into())), pin("a", GitRef::Head)],
+            &[],
+            &[],
+        );
         assert_eq!(
             text,
             "# Written by luish (plugin sync, plugin update). Don't edit.\nversion = 1\n\

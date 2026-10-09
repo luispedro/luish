@@ -97,9 +97,9 @@ luish: ~/.config/luish/config.toml: line 9: v.subdir: must be a relative path in
 luish: ~/.config/luish/config.toml: line 10: u: unknown key: colour
 luish: ~/.config/luish/config.toml: line 12: greet: unsupported version requirement "1.0" (only "*")
 luish: ~/.config/luish/config.toml: line 14: a/b//c: bad plugin name (NAME or SOURCE/PATH)
-luish: ~/.config/luish/config.toml: line 13: a/b/c: no source called a
 luish: ~/.config/luish/config.toml: line 15: /x: only in the plugin.toml of a plugin of a collection
 luish: ~/.config/luish/config.toml: line 16: nosuch: no such plugin
+luish: ~/.config/luish/config.toml: line 13: a/b/c: no source called a
 luish: ~/.config/luish/config.toml: line 17: nosrc/x: no source called nosrc
 helper
 helper
