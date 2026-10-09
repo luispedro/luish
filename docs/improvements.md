@@ -34,7 +34,7 @@ luish --ssh -p 2222 me@myserver       # ssh options go before the host
 ```
 
 luish needn't be installed on HOST: `luish --ssh` copies itself there the first
-time (see [](usage.md#remote-shells-over-ssh)). It uses ssh as it is, with
+time (see [](ssh.md)). It uses ssh as it is, with
 your keys and `~/.ssh/config`, and needs no daemon or extra ports.
 
 ## As fast as dash, with zsh's features

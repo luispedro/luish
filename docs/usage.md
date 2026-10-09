@@ -44,36 +44,10 @@ Options end at the first operand, or at `--` or `-`.
 
 ### Remote shells over SSH
 
-`luish --ssh HOST` logs in to HOST with ssh and runs luish there, but edits command lines here: typing, moving in
-the line, the history and the completion menu don't wait for the network. Commands run on HOST, and so do Tab
-completion, the prompt and everything the startup files set up there.
-
-luish needn't be installed on HOST: the first time, `luish --ssh` copies itself there, as
-`~/.cache/luish/binaries/luish-VERSION-BUILD` (BUILD being the git commit it was built from) (in `$XDG_CACHE_HOME` if ssh's commands have it), and runs that copy
-from then on. So each version (and build) of luish runs its own copy on HOST, whatever else is installed there.
-Copies more than 30 days old are removed when a new one is made. If HOST is another system or architecture (as
-`uname -sm` says), or the copy can't run there (a build linked with a newer C library than HOST's: the release
-builds run on any Linux from 2014 on), the `luish` on the `PATH` that ssh gives commands is run instead (often
-not the one a login shell has).
-
-`--luish-path=PROGRAM` runs PROGRAM on HOST, and copies nothing (as rsync's `--rsync-path`). PROGRAM is run by the
-remote user's shell, so it may start with `~/`; `--luish-path=luish` runs the one on the `PATH`.
-
-```sh
-luish --ssh myserver                  # copies luish to myserver, if needed
-luish --ssh -p 2222 me@myserver       # ssh options go before the host
-luish --ssh --luish-path='~/.local/bin/luish' myserver
-luish --remote ssh -T myserver ~/.local/bin/luish --serve -l
-```
-
-`--remote` runs any command that starts `luish --serve` at the other end (and gives its standard input and output
-to it); `luish --serve` takes the usual options, such as `-l` for a login shell. While a command runs, the keys go
-to it as typed and its output comes back as it is printed, so full-screen programs such as vim work as they do
-over ssh. The history is HOST's. Both ends must be the same version of luish (which `--ssh` makes sure of unless
-given `--luish-path`).
-
-The variables that describe the terminal (`TERM`, `COLORTERM`, `TERM_PROGRAM` and `TERM_PROGRAM_VERSION`) are
-passed to HOST, replacing its own, and so is the locale (`LANG`, `LANGUAGE` and `LC_*`) where HOST has not set it.
+`luish --ssh [OPTION...] HOST` logs in to HOST with ssh (ssh's options go before the host) and runs luish there, but
+edits command lines here, so typing, the history and the completion menu don't wait for the network. luish copies
+itself to HOST if needed; `--luish-path=PROGRAM` runs PROGRAM there instead. `luish --remote COMMAND...` does the same
+over any COMMAND that starts `luish --serve` at the other end. See [](ssh.md).
 
 ## Shell language extensions
 

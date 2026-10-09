@@ -18,7 +18,7 @@ from github or other git repositories and pinned to specific commits.
 but edits the command line on your own machine: typing, moving in the line, the
 history and the completion menu don't wait for the network, however slow the
 connection. luish needn't be installed on HOST, as it copies itself there (see
-[](usage.md#remote-shells-over-ssh)).
+[](ssh.md)).
 
 **As fast as dash, with zsh's features.** Scripts run as fast as under dash
 (see [](performance.md)) while interactive use is intended to be as
@@ -77,6 +77,7 @@ installation
 getting-started
 personal-plugin
 usage
+ssh
 colour-schemes
 globbing
 builtins
