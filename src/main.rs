@@ -73,8 +73,13 @@ interactive shell if it is a terminal.
                       starts with `luish --serve`, usually through ssh
   --ssh [OPTION...] HOST
                       the same as --remote ssh -T [OPTION...] HOST luish --serve,
-                      with a copy of this luish that it keeps on HOST
-                      (with --luish-path=PROGRAM, PROGRAM instead, not copied)
+                      with a copy of this luish that it keeps on HOST; among
+                      the OPTIONs, luish's own:
+      --luish-path=PROGRAM  run PROGRAM on HOST instead of a copy
+      -e, --rsh=COMMAND, --ssh-command=COMMAND
+                            COMMAND instead of ssh -T (split into words)
+      --copy-luish          copy luish to HOST again, even if it is there
+      -o ssh.no_auto_copy   never copy luish (use the copy, or HOST's luish)
   --help              show this help and exit
   --version           show the version and exit
 

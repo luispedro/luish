@@ -115,6 +115,20 @@ luish --ssh --luish-path=luish myserver        # the luish on the PATH, never a 
 copies nothing. HOST's own shell runs it, so it may start with `~/`. PROGRAM
 must be the same version of luish as yours.
 
+Two options control the copy:
+
+```sh
+luish --ssh -o ssh.no_auto_copy myserver   # never copy luish
+luish --ssh --copy-luish myserver          # copy luish, even if HOST has the copy
+```
+
+`-o ssh.no_auto_copy` runs the copy if HOST has it, and otherwise the `luish`
+on HOST's `PATH`, without copying anything (as on a slow or metered link).
+Its name is matched as `setopt`'s: case and `_` don't matter
+(`-o ssh.NoAutoCopy`), and `-o ssh.auto_copy` turns it back off.
+`--copy-luish` copies luish to HOST again, replacing the copy there (if it was
+damaged, say), and overrides `-o ssh.no_auto_copy`.
+
 ## Other transports
 
 `luish --ssh [OPTION...] HOST` is a short way to write
@@ -123,7 +137,24 @@ must be the same version of luish as yours.
 luish --remote ssh -T [OPTION...] HOST luish --serve
 ```
 
-plus the copy. `luish --remote COMMAND...` runs COMMAND with its standard input
+plus the copy.
+
+To reach HOST with another command than `ssh -T`, name it with `-e COMMAND`
+(or `--rsh=COMMAND`, as in rsync, or `--ssh-command=COMMAND`, as git's
+`core.sshCommand`). COMMAND is split into words at blanks, with
+quotes as in the shell, and is run with ssh's options (the rest of the
+`--ssh` arguments) and HOST after it, then the command for HOST; it replaces
+`ssh -T` as a whole:
+
+```sh
+luish --ssh -e 'ssh -T -F ~/.ssh/work-config' myserver
+luish --ssh -e 'docker exec -i' mycontainer    # anything that runs a command
+```
+
+ssh's own `-e` (its escape character) isn't available, as it would do
+nothing: ssh's input is a pipe to luish, not your terminal.
+
+`luish --remote COMMAND...` runs COMMAND with its standard input
 and output connected to luish, and COMMAND must start `luish --serve` at the
 other end. `luish --serve` takes the usual options after `--serve`, such as
 `-l` for a login shell:
@@ -168,6 +199,8 @@ day from `~/.bashrc`) is shown on standard error. luish's own messages are:
 | `cannot copy luish to FILE` | The copy couldn't be written on HOST (a full or read-only disk) |
 | `the server's luish (VERSION) speaks another version of the protocol than this one (VERSION)` | With `--luish-path` or `--remote`, the two ends are different versions |
 | `the connection to the server was lost` | ssh exited, or the network went away |
+| `--copy-luish and --luish-path can't be used together` | `--luish-path` names the luish to run, so nothing is copied |
+| `--ssh: unknown option ssh.NAME` | Only `-o ssh.no_auto_copy` (and `-o ssh.auto_copy`) are luish's |
 | `--remote: standard input and output must be a terminal` | `luish --ssh` is for interactive use; for scripts, use `ssh HOST luish -c '...'` |
 
 ## Limitations

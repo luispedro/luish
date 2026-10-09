@@ -1320,11 +1320,14 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 ### SSH mode (`remote/`, `interactive/remote.rs`)
 
 Stage 3, started as a walking skeleton (`PLAN.md`). `luish --remote CMD...` (the client) runs CMD with pipes for its
-stdin and stdout; CMD starts `luish --serve` (the server), usually through `ssh -T` (`--ssh HOST`, where
-`--luish-path=PROGRAM` among ssh's options replaces `luish`; ssh's own options never start with `--`). Both are
+stdin and stdout; CMD starts `luish --serve` (the server), usually through `ssh -T` (`--ssh HOST`). luish's own
+options among ssh's (`client::Ssh::parse`): `--luish-path=PROGRAM` replaces `luish`, `-e`/`--rsh`/`--ssh-command=COMMAND`
+replaces `ssh -T` (split into words as rsync does, with quotes), `--copy-luish` and `-o ssh.no_auto_copy`
+(`CopyMode`). ssh's own options never start with `--`, its `-o` names have no `.`, and its `-e` would do nothing (its
+input is a pipe). Both are
 dispatched in `main::run` before `Shell::new`, so they cost other invocations one comparison.
 
-- **The copy** (`client::Image`): without `--luish-path`, `--ssh` runs a script (`client::SCRIPT`, in `sh -c '...'`
+- **The copy** (`client::Image`): without `--luish-path`, `--ssh` runs a script (`client::SCRIPT_*`, in `sh -c '...'`
   so that it doesn't depend on the user's shell, on one line with no `!`, `'` or `\\` for csh and fish) that execs
   `~/.cache/luish/binaries/luish-VERSION-BUILD`, BUILD being `BUILD_ID` (`build.rs`: the commit, plus a hash of the
   sources when they differ from it), so that a build with uncommitted changes gets its own copy. (Builds of the same
@@ -1336,7 +1339,9 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
   ahead (busybox's) loses nothing. The copy is written to a temporary name, checked (its size, then that
   `--version` runs, which a build linked with a newer glibc than the server's fails, falling back to `luish` on
   `PATH`) and renamed, so concurrent connections are safe; copies of other versions older than 30 days are removed
-  then (one used every day is copied again after 30 days, which is harmless).
+  then (one used every day is copied again after 30 days, which is harmless). The script is built from parts:
+  `-o ssh.no_auto_copy` leaves out the copying (so an existing copy still runs, else `luish` on `PATH`, with no round
+  trip), and `--copy-luish` leaves out running an existing copy.
 
 - **Protocol** (`remote/mod.rs`): frames of a type byte (`msg`), a 32-bit length and a payload, built with
   `Enc`/`Dec` (no serde; every getter is checked, so a short message is an error, not a panic). The server first
@@ -1399,12 +1404,13 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
   command runs, keys typed ahead, lines sent together, keys typed between a command's output and the prompt, `exec`
   and the exit status) and `remote_editing` (Tab and the menu, the history and `fc`, highlighting of the server's
   commands and files), both over `luish --remote luish --serve`; `remote_environment` (the forwarded variables, with
-  the server under `env -i`); `remote_ssh` (`--ssh` and `--luish-path`, with a stand-in `ssh`); `remote_ssh_copy`
-  (the copy, made once and reused, old copies removed, and another system's `uname` falling back to `luish` on
-  `PATH`); and `remote_chaos` (commands, a large output, keys typed ahead, Tab and lookups, at chaos level 1), all in
+  the server under `env -i`); `remote_ssh` (`--ssh`, `-e` and `--luish-path`, with a stand-in `ssh`); `remote_ssh_copy`
+  (the copy, made once and reused, old copies removed, `-o ssh.no_auto_copy` with and without a copy, `--copy-luish`
+  replacing a damaged copy, and another system's `uname` falling back to `luish` on `PATH`); and `remote_chaos` (commands, a large output, keys typed ahead, Tab and lookups, at chaos level 1), all in
   `tests/interactive.rs`. `wait_for_remote_procs` finds jobs on the server's pty. Unit tests: frames, `MAGIC`,
   `forward` and `Enc`/`Dec` in `remote/mod.rs`, the order, delays and drops in `remote/chaos.rs`, a request and a Tab
-  reply round trip in `interactive/remote.rs`, `history::tests::copy`. The keys-typed-ahead steps fail about half the
+  reply round trip in `interactive/remote.rs`, `history::tests::copy`, `--ssh`'s options and `--rsh`'s
+  words in `remote/client.rs`. The keys-typed-ahead steps fail about half the
   time without the hold (checked by disabling it), not every time: the window is a race.
 - Not yet: a redraw when a late lookup answer comes; Ctrl-C while the client waits for Tab; anything for a
   connection that drops (mosh's job). The first two are harder than they look. In rustyline 18, the only way to wake

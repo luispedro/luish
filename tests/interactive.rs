@@ -2145,7 +2145,8 @@ fn remote_environment() {
 #[test]
 fn remote_ssh() {
     // `--ssh` with a stand-in for ssh, which runs the command as ssh does
-    // (with the user's shell), and luish only where `--luish-path` says.
+    // (with the user's shell), and luish only where `--luish-path` says;
+    // `-e` replaces `ssh -T`.
     let dir = Pty::new_dir("remote-ssh");
     std::fs::create_dir_all(dir.join(".config/luish")).unwrap();
     std::fs::write(dir.join(".config/luish/luishrc"), "").unwrap();
@@ -2163,12 +2164,20 @@ fn remote_ssh() {
         dir.join("bin").display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    let args = ["--ssh", "-p", "2222", "--luish-path=~/server", "myhost"];
+    let args = [
+        "--ssh",
+        "-e",
+        "ssh 'a b'",
+        "-p",
+        "2222",
+        "--luish-path=~/server",
+        "myhost",
+    ];
     let mut sh = Pty::spawn_args(dir, "dumb", true, Some(&path), &["LUISH_BACKGROUND=dark"], &args);
     sh.expect("$ ");
     assert_has(&sh.run("echo x-$((6 * 7))"), "x-42\n");
     let sent = std::fs::read_to_string(sh.path("ssh-args")).unwrap();
-    assert_eq!(sent, "-T\n-p\n2222\nmyhost\n~/server\n--serve\n");
+    assert_eq!(sent, "a b\n-p\n2222\nmyhost\n~/server\n--serve\n");
     sh.send("exit 4\n");
     assert_eq!(sh.exit_status(), 4);
 }
@@ -2177,7 +2186,8 @@ fn remote_ssh() {
 fn remote_ssh_copy() {
     // Without `--luish-path`, `--ssh` copies this luish to the server's
     // cache the first time (removing old copies) and runs the copy after
-    // that; on another system it runs the server's own luish.
+    // that; on another system it runs the server's own luish. `--copy-luish`
+    // copies it again, and `-o ssh.no_auto_copy` never does.
     let dir = Pty::new_dir("remote-ssh-copy");
     std::fs::create_dir_all(dir.join(".config/luish")).unwrap();
     std::fs::write(dir.join(".config/luish/luishrc"), "").unwrap();
@@ -2199,10 +2209,12 @@ fn remote_ssh_copy() {
         dir.join("bin").display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    let spawn = |owns_dir| {
+    let spawn_with = |owns_dir, opt: &[&str]| {
         let env = ["LUISH_BACKGROUND=dark"];
-        Pty::spawn_args(dir.clone(), "dumb", owns_dir, Some(&path), &env, &["--ssh", "myhost"])
+        let args = [&["--ssh"], opt, &["myhost"]].concat();
+        Pty::spawn_args(dir.clone(), "dumb", owns_dir, Some(&path), &env, &args)
     };
+    let spawn = |owns_dir| spawn_with(owns_dir, &[]);
     let copies = || {
         let mut names: Vec<String> = std::fs::read_dir(&cache)
             .unwrap()
@@ -2230,16 +2242,38 @@ fn remote_ssh_copy() {
     assert_eq!(sh.exit_status(), 4);
     assert_eq!(copies(), names);
 
-    // Another system: the server's own luish (on its `PATH`).
+    let mut sh = spawn_with(false, &["-o", "ssh.no_auto_copy"]);
+    assert!(!sh.expect("$ ").contains("copying"));
+    assert_has(&sh.run("readlink /proc/$$/exe"), &names[0]);
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+
+    std::fs::write(cache.join(&names[0]), "#!/bin/sh\nexit 1\n").unwrap();
+    let mut sh = spawn_with(false, &["-o", "ssh.no_auto_copy", "--copy-luish"]);
+    assert_has(&sh.expect("$ "), "luish: copying luish");
+    assert_has(&sh.run("readlink /proc/$$/exe"), &names[0]);
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+    assert_eq!(copies(), names);
+
+    // No copy, and none made: the server's own luish (on its `PATH`).
     std::fs::remove_dir_all(&cache).unwrap();
-    script("uname", "#!/bin/sh\necho Linux sparc64\n");
     std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_luish"), dir.join("bin/luish")).unwrap();
+    let real = std::fs::canonicalize(env!("CARGO_BIN_EXE_luish")).unwrap();
+    let mut sh = spawn_with(false, &["-ossh.no_auto_copy"]);
+    assert!(!sh.expect("$ ").contains("luish:"));
+    assert_has(&sh.run("readlink /proc/$$/exe"), &format!("{}\n", real.display()));
+    assert!(!cache.exists());
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+
+    // Another system: the server's own luish.
+    script("uname", "#!/bin/sh\necho Linux sparc64\n");
     let mut sh = spawn(true);
     let before = sh.expect("$ ");
     assert_has(&before, "luish: the server runs Linux sparc64, not Linux ");
     assert_has(&before, ": using the server's own luish\n");
     let exe = sh.run("readlink /proc/$$/exe");
-    let real = std::fs::canonicalize(env!("CARGO_BIN_EXE_luish")).unwrap();
     assert_has(&exe, &format!("{}\n", real.display()));
     assert!(!cache.exists());
     sh.send("exit 5\n");

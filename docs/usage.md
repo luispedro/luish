@@ -46,7 +46,9 @@ Options end at the first operand, or at `--` or `-`.
 
 `luish --ssh [OPTION...] HOST` logs in to HOST with ssh (ssh's options go before the host) and runs luish there, but
 edits command lines here, so typing, the history and the completion menu don't wait for the network. luish copies
-itself to HOST if needed; `--luish-path=PROGRAM` runs PROGRAM there instead. `luish --remote COMMAND...` does the same
+itself to HOST if needed (`-o ssh.no_auto_copy` never does, `--copy-luish` always does); `--luish-path=PROGRAM` runs
+PROGRAM there instead, and `-e COMMAND` (or `--rsh=COMMAND`, as in rsync, or `--ssh-command=COMMAND`) uses COMMAND instead of `ssh -T`.
+`luish --remote COMMAND...` does the same
 over any COMMAND that starts `luish --serve` at the other end. See [](ssh.md).
 
 ## Shell language extensions

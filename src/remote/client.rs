@@ -31,42 +31,181 @@ fn fail(what: &str) -> ! {
     sys::exit(255)
 }
 
-/// `luish --ssh [SSH-OPTION...] HOST`: `ssh -T [SSH-OPTION...] HOST`
-/// with a script that runs a copy of this luish, kept on the server by
-/// version and contents, after copying it there if it isn't (`Image`).
-/// `--luish-path=PROGRAM` (or `--luish-path PROGRAM`), anywhere among the
-/// options, runs `PROGRAM --serve` instead, as rsync's `--rsync-path`: the
-/// remote shell runs it, so `~/bin/luish` works. ssh's own options never
-/// start with `--`.
+/// `luish --ssh [OPTION...] HOST`: `ssh -T [OPTION...] HOST` with a script
+/// that runs a copy of this luish, kept on the server by version and
+/// contents, after copying it there if it isn't (`Image`). See `Ssh::parse`
+/// for luish's own options among ssh's.
 pub fn ssh(args: &[Vec<u8>]) -> ! {
-    let mut program = None;
-    let mut cmd = vec![b"ssh".to_vec(), b"-T".to_vec()];
-    let mut args = args.iter();
-    while let Some(a) = args.next() {
-        if let Some(p) = a.strip_prefix(b"--luish-path=") {
-            program = Some(p.to_vec());
-        } else if a == b"--luish-path" {
-            program = Some(
-                args.next()
-                    .unwrap_or_else(|| fail("--luish-path requires a program"))
-                    .clone(),
-            );
-        } else {
-            cmd.push(a.clone());
-        }
-    }
-    if cmd.len() == 2 {
-        fail("--ssh requires a host");
-    }
-    if program.as_ref().is_some_and(|p| p.is_empty()) {
-        fail("--luish-path requires a program");
-    }
+    let Ssh { mut cmd, program, copy } = Ssh::parse(args).unwrap_or_else(|e| fail(&e));
     let image = program.is_none().then(Image::new);
     match &image {
-        Some(image) => cmd.push(image.script()),
+        Some(image) => cmd.push(image.script(copy)),
         None => cmd.extend([program.unwrap_or_else(|| b"luish".to_vec()), b"--serve".to_vec()]),
     }
     connect(&cmd, image)
+}
+
+/// When `--ssh` copies luish to the server.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum CopyMode {
+    /// When the server has no copy of this build (the default).
+    Auto,
+    /// Never (`-o ssh.no_auto_copy`): it runs the copy if it is there, else
+    /// the `luish` on its `PATH`.
+    Never,
+    /// Always, replacing the copy that is there (`--copy-luish`).
+    Always,
+}
+
+/// What `--ssh`'s arguments say.
+#[derive(Debug, PartialEq)]
+struct Ssh {
+    /// The command, up to the one for the server.
+    cmd: Vec<Vec<u8>>,
+    /// `--luish-path`.
+    program: Option<Vec<u8>>,
+    copy: CopyMode,
+}
+
+impl Ssh {
+    /// luish's own options, anywhere among ssh's (which never start with
+    /// `--`, and have no `.` in the names given to `-o`):
+    /// - `--luish-path=PROGRAM` runs `PROGRAM --serve` instead of a copy, as
+    ///   rsync's `--rsync-path`: the remote shell runs it, so `~/bin/luish`
+    ///   works;
+    /// - `-e COMMAND`, `--rsh=COMMAND` or `--ssh-command=COMMAND` replaces
+    ///   `ssh -T`, as rsync's `--rsh`:
+    ///   split into words at blanks, with quotes as in the shell;
+    /// - `--copy-luish` and `-o ssh.no_auto_copy` (`CopyMode`).
+    ///
+    /// ssh's own `-e` (its escape character) would do nothing: ssh's input
+    /// is a pipe.
+    fn parse(args: &[Vec<u8>]) -> Result<Ssh, String> {
+        let mut program = None;
+        let mut rsh = None;
+        let mut copy = CopyMode::Auto;
+        let mut copy_luish = false;
+        let mut rest = Vec::new();
+        let mut args = args.iter();
+        while let Some(a) = args.next() {
+            // The value of an option that takes one, given as `--NAME=VALUE`,
+            // `--NAME VALUE`, `-xVALUE` or `-x VALUE`.
+            let mut value = |long: Option<&str>, short: Option<&str>| -> Result<Option<Vec<u8>>, String> {
+                if let Some(v) = long.and_then(|l| a.strip_prefix(format!("{l}=").as_bytes())) {
+                    return Ok(Some(v.to_vec()));
+                }
+                if let Some(v) = short.and_then(|s| a.strip_prefix(s.as_bytes()))
+                    && !v.is_empty()
+                {
+                    return Ok(Some(v.to_vec()));
+                }
+                let Some(name) = [long, short].into_iter().flatten().find(|n| a == n.as_bytes()) else {
+                    return Ok(None);
+                };
+                args.next()
+                    .cloned()
+                    .map(Some)
+                    .ok_or_else(|| format!("{name} requires an argument"))
+            };
+            if let Some(p) = value(Some("--luish-path"), None)? {
+                program = Some(p);
+            } else if let Some(c) = value(Some("--rsh"), Some("-e"))? {
+                rsh = Some(c);
+            } else if let Some(c) = value(Some("--ssh-command"), None)? {
+                rsh = Some(c);
+            } else if a == b"--copy-luish" {
+                copy_luish = true;
+            } else if let Some(o) = value(None, Some("-o"))? {
+                match o.strip_prefix(b"ssh.") {
+                    Some(name) => copy = Self::option(name)?,
+                    None => rest.extend([b"-o".to_vec(), o]),
+                }
+            } else {
+                rest.push(a.clone());
+            }
+        }
+        if rest.is_empty() {
+            return Err("--ssh requires a host".into());
+        }
+        if program.as_ref().is_some_and(|p| p.is_empty()) {
+            return Err("--luish-path requires a program".into());
+        }
+        if copy_luish {
+            if program.is_some() {
+                return Err("--copy-luish and --luish-path can't be used together".into());
+            }
+            copy = CopyMode::Always;
+        }
+        let mut cmd = match rsh {
+            Some(c) => split_words(&c).ok_or("--rsh: unmatched quote")?,
+            None => vec![b"ssh".to_vec(), b"-T".to_vec()],
+        };
+        if cmd.is_empty() {
+            return Err("--rsh requires a command".into());
+        }
+        cmd.append(&mut rest);
+        Ok(Ssh { cmd, program, copy })
+    }
+
+    /// `-o ssh.NAME`, whose NAME is matched as `setopt`'s: case and `_`
+    /// don't matter, and a `no` prefix inverts it.
+    fn option(name: &[u8]) -> Result<CopyMode, String> {
+        let norm: Vec<u8> = name
+            .iter()
+            .filter(|&&c| c != b'_')
+            .map(|c| c.to_ascii_lowercase())
+            .collect();
+        match &norm[..] {
+            b"autocopy" => Ok(CopyMode::Auto),
+            b"noautocopy" => Ok(CopyMode::Never),
+            _ => Err(format!("--ssh: unknown option ssh.{}", String::from_utf8_lossy(name))),
+        }
+    }
+}
+
+/// Splits `--rsh`'s COMMAND into words at blanks, with `'...'`, `"..."`
+/// and `\` quoting as in the shell. None for an unmatched quote.
+fn split_words(s: &[u8]) -> Option<Vec<Vec<u8>>> {
+    let mut words = Vec::new();
+    let mut word: Option<Vec<u8>> = None;
+    let mut i = 0;
+    while i < s.len() {
+        let c = s[i];
+        i += 1;
+        match c {
+            b' ' | b'\t' | b'\n' => words.extend(word.take()),
+            b'\'' => {
+                let end = i + s[i..].iter().position(|&c| c == b'\'')?;
+                word.get_or_insert_default().extend_from_slice(&s[i..end]);
+                i = end + 1;
+            }
+            b'"' => {
+                let w = word.get_or_insert_default();
+                loop {
+                    match *s.get(i)? {
+                        b'"' => break,
+                        b'\\' if matches!(s.get(i + 1), Some(b'"' | b'\\' | b'$' | b'`')) => {
+                            w.push(s[i + 1]);
+                            i += 1;
+                        }
+                        c => w.push(c),
+                    }
+                    i += 1;
+                }
+                i += 1;
+            }
+            b'\\' => {
+                let w = word.get_or_insert_default();
+                if let Some(&c) = s.get(i) {
+                    w.push(c);
+                    i += 1;
+                }
+            }
+            c => word.get_or_insert_default().push(c),
+        }
+    }
+    words.extend(word);
+    Some(words)
 }
 
 /// This luish's executable, for `--ssh` to copy to the server. It is kept
@@ -81,14 +220,17 @@ struct Image {
 
 /// The command `--ssh` runs on the server, in `sh -c '...'` for whatever
 /// the user's shell is: so on one line, with no `'`, no `!` (for csh) and
-/// no `\\` (for fish). It runs the copy (NAME) if it is there; else it writes `COPY` and `uname
+/// no `\\` (for fish). It is `SCRIPT_START`, `SCRIPT_RUN` and `SCRIPT_COPY`
+/// (the parts as `CopyMode` says), then `SCRIPT_END`.
+///
+/// It runs the copy (NAME) if it is there; else it writes `COPY` and `uname
 /// -sm`, and reads a count of bytes and that many bytes: the copy, which it
 /// checks runs (a build linked with a newer libc than the server's
 /// doesn't), and removes copies more than 30 days old. With 0 bytes, or a
 /// copy that can't run, it runs the `luish` on its `PATH` instead.
-const SCRIPT: &str = concat!(
-    "d=${XDG_CACHE_HOME:-$HOME/.cache}/luish/binaries; f=$d/NAME; ",
-    r#"if [ -x "$f" ]; then exec "$f" --serve; fi; "#,
+const SCRIPT_START: &str = "d=${XDG_CACHE_HOME:-$HOME/.cache}/luish/binaries; f=$d/NAME; ";
+const SCRIPT_RUN: &str = r#"if [ -x "$f" ]; then exec "$f" --serve; fi; "#;
+const SCRIPT_COPY: &str = concat!(
     r#"printf "\0luish-copy\0%s\n" "$(uname -sm)"; read n; "#,
     r#"case $n in [1-9]*) t=$f.$$; "#,
     r#"mkdir -p "$d" && head -c "$n" >"$t" && [ $(wc -c <"$t") = "$n" ] "#,
@@ -97,8 +239,9 @@ const SCRIPT: &str = concat!(
     r#"find "$d" -name "luish-*" -mtime +30 -exec rm -f {} +; "#,
     r#"mv -f "$t" "$f"; exec "$f" --serve; fi; "#,
     r#"rm -f "$t"; echo "luish: the copy of luish cannot run on this host" >&2;; "#,
-    "esac; exec luish --serve",
+    "esac; ",
 );
+const SCRIPT_END: &str = "exec luish --serve";
 
 impl Image {
     fn new() -> Image {
@@ -111,8 +254,14 @@ impl Image {
         }
     }
 
-    fn script(&self) -> Vec<u8> {
-        format!("sh -c '{}'", SCRIPT.replace("NAME", &self.name)).into_bytes()
+    fn script(&self, copy: CopyMode) -> Vec<u8> {
+        let (run, fetch) = match copy {
+            CopyMode::Auto => (SCRIPT_RUN, SCRIPT_COPY),
+            CopyMode::Never => (SCRIPT_RUN, ""),
+            CopyMode::Always => ("", SCRIPT_COPY),
+        };
+        let script = [SCRIPT_START, run, fetch, SCRIPT_END].concat();
+        format!("sh -c '{}'", script.replace("NAME", &self.name)).into_bytes()
     }
 
     /// Answers the script, which has written `uname -sm` (as `host`):
@@ -472,5 +621,76 @@ impl Client {
                 gone(self.pid)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Ssh, String> {
+        let args: Vec<Vec<u8>> = args.iter().map(|a| a.as_bytes().to_vec()).collect();
+        Ssh::parse(&args)
+    }
+
+    fn words(ws: &[&str]) -> Vec<Vec<u8>> {
+        ws.iter().map(|w| w.as_bytes().to_vec()).collect()
+    }
+
+    #[test]
+    fn ssh_options() {
+        let s = parse(&["-p", "22", "--luish-path", "~/l", "-o", "Port=3", "-oX=y", "h"]).unwrap();
+        assert_eq!(
+            s.cmd,
+            words(&["ssh", "-T", "-p", "22", "-o", "Port=3", "-o", "X=y", "h"])
+        );
+        assert_eq!((s.program, s.copy), (Some(b"~/l".to_vec()), CopyMode::Auto));
+        for rsh in [
+            &["-e", "ssh -p 2"][..],
+            &["-essh -p 2"],
+            &["--rsh=ssh -p 2"],
+            &["--rsh", "ssh -p 2"],
+            &["--ssh-command=ssh -p 2"],
+            &["--ssh-command", "ssh -p 2"],
+        ] {
+            let s = parse(&[rsh, &["h"]].concat()).unwrap();
+            assert_eq!(s.cmd, words(&["ssh", "-p", "2", "h"]), "{rsh:?}");
+        }
+        assert_eq!(parse(&["-o", "ssh.no_auto_copy", "h"]).unwrap().copy, CopyMode::Never);
+        assert_eq!(parse(&["-ossh.NoAutoCopy", "h"]).unwrap().copy, CopyMode::Never);
+        assert_eq!(
+            parse(&["-o", "ssh.no_auto_copy", "-o", "ssh.auto_copy", "h"])
+                .unwrap()
+                .copy,
+            CopyMode::Auto
+        );
+        let s = parse(&["-o", "ssh.no_auto_copy", "--copy-luish", "h"]).unwrap();
+        assert_eq!(s.copy, CopyMode::Always);
+        assert_eq!(s.cmd, words(&["ssh", "-T", "h"]));
+        for bad in [
+            &[][..],
+            &["--copy-luish"],
+            &["h", "-e"],
+            &["-e", "", "h"],
+            &["-e", "'ssh", "h"],
+            &["-o", "ssh.copy", "h"],
+            &["--luish-path=", "h"],
+            &["--copy-luish", "--luish-path=l", "h"],
+        ] {
+            assert!(parse(bad).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn rsh_words() {
+        let w = |s: &str| split_words(s.as_bytes());
+        assert_eq!(w(" a  b\tc "), Some(words(&["a", "b", "c"])));
+        assert_eq!(
+            w(r#"ssh -o 'A B' "C \"D\" \x" E\ F ''"#),
+            Some(words(&["ssh", "-o", "A B", r#"C "D" \x"#, "E F", ""]))
+        );
+        assert_eq!(w(""), Some(vec![]));
+        assert_eq!(w("a 'b"), None);
+        assert_eq!(w(r#"a "b\""#), None);
     }
 }

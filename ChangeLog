@@ -4,6 +4,10 @@ Unreleased
     * luish --ssh --luish-path=PROGRAM HOST: for luish not on HOST's PATH
     * luish --ssh: COLORTERM, TERM_PROGRAM and the locale reach HOST
     * luish --ssh copies itself to HOST (one copy per version)
+    * luish --ssh -e COMMAND (or --rsh=COMMAND, --ssh-command=COMMAND):
+      instead of ssh, as in rsync
+    * luish --ssh: -o ssh.no_auto_copy never copies luish, --copy-luish
+      always does
 
 Version 0.5.0 2026-10-05 by luispedro
     * Large scripts parse faster, with less memory
