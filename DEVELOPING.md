@@ -1183,7 +1183,10 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   is only for programs built with Click, and what doesn't look like candidates is ignored). The extension only registers the commands (a map from command to module, which the
   closures share); a completer imports its module, so each is compiled on its first Tab (5 to 10 ms; later ones take
   about 1 ms, plus the programs they run: 15 ms for `systemctl stop`, 30 ms for `cargo build --`) instead of at every
-  start (loading the plugin takes about 0.4 ms). xargs gets no plugin completer, as luish's own completer skips it as a
+  start (loading the plugin takes about 0.4 ms). `luish` has a completer of its own, as `--ssh` and `--remote` must come
+first: the words after `--ssh` are completed with ssh's options (`specs::ssh_client_opts`, without ssh's `-e`, which
+luish's `-e COMMAND` replaces), luish's own and hosts, and those after `--remote` as a command, with its spec. xargs gets
+no plugin completer, as luish's own completer skips it as a
   precommand. Rhai details it works around: a closure made in a `for` loop sees the loop variable's last value (the
   completer uses `words[0]`, which is the name it was registered for); a module's constants aren't visible to its
   functions (shared tables are functions); arrays are passed to functions by value; keywords (`export`, `module`,

@@ -23,7 +23,8 @@ let modules = #{
         "grep", "egrep", "fgrep", "diff", "cmp", "diff3", "sdiff", "tar", "make", "rsync", "man", "ssh", "scp",
         "sftp", "pkill", "pgrep", "killall",
     ],
-    shells: ["luish", "sh", "dash", "bash", "zsh"],
+    // (luish has a completer below)
+    shells: ["sh", "dash", "bash", "zsh"],
     // luish's built-ins (style and __luish_internal have completers below)
     builtins: [
         "alias", "unalias", "bindkey", "cd", "chdir", "pushd", "popd", "dirs", "echo", "fc", "hash", "jobs", "pwd",
@@ -147,6 +148,31 @@ sh::completer("__luish_internal", |words, i| {
 sh::completer("git", |words, i| {
     import "git" as git;
     git::complete(words, i)
+});
+
+// luish --ssh and --remote come first: the words after --ssh are ssh's,
+// and those after --remote a command, completed with its spec.
+sh::completer("luish", |words, i| {
+    import "lib" as lib;
+    import "shells" as shells;
+    if i >= 2 && words[1] == "--ssh" {
+        let s = shells::luish_ssh();
+        s.line = words;
+        return lib::complete(s, words.extract(1), i - 1);
+    }
+    if i >= 2 && words[1] == "--remote" {
+        if i == 2 {
+            import "kinds" as kinds;
+            return kinds::complete("commands", words[i], words);
+        }
+        let m = module_of[words[2]];
+        if m == () {
+            return ();
+        }
+        import m as specs;
+        return lib::complete(specs::spec(words[2]), words.extract(2), i - 2);
+    }
+    lib::complete(shells::luish(), words, i)
 });
 
 for cmd in module_of.keys() {

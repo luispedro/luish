@@ -208,6 +208,44 @@ status 0
 --- ssh -l roo
 root 
 status 0
+--- ssh -e
+-e 	set the escape character (default ~)
+status 0
+--- luish --ssh al
+alpha 
+status 0
+--- luish --ssh -p 22 me@be
+me@beta 
+status 0
+--- luish --ssh -l roo
+root 
+status 0
+--- luish --ssh -o Strict
+StrictHostKeyChecking=
+status 0
+--- luish --ssh -o ssh.
+ssh.no_auto_copy 	never copy luish to HOST
+status 0
+--- luish --ssh -e
+-e 	run COMMAND instead of ssh -T
+status 0
+--- luish --ssh --
+--copy-luish 	copy luish to HOST again, even if it is there
+--luish-path=	run PROGRAM on HOST instead of a copy of luish
+--rsh=	run COMMAND instead of ssh -T
+--ssh-command=	run COMMAND instead of ssh -T
+status 0
+--- luish --ssh alpha 
+status 1
+--- luish --remote ssh -T del
+delta 
+status 0
+--- luish --remote ssh -e
+-e 	set the escape character (default ~)
+status 0
+--- luish --remote no_such_command no
+notes.txt 
+status 0
 --- scp n
 notes.txt 
 status 0

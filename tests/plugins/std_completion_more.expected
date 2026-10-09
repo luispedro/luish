@@ -4,6 +4,10 @@ load 0
 --no-plugins 	make plugin load do nothing
 --no-rcs 	don't read any startup files
 status 0
+--- luish --s
+--ssh 	edit lines here and run them on a host
+--stdin 	read commands from standard input (ARGs are $1, $2...)
+status 0
 --- luish -o pipe
 pipefail 
 status 0

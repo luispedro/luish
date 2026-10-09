@@ -8,6 +8,8 @@ Unreleased
       instead of ssh, as in rsync
     * luish --ssh: -o ssh.no_auto_copy never copies luish, --copy-luish
       always does
+    * std.completion completes luish --ssh (ssh's options, luish's own,
+      hosts) and luish --remote CMD
 
 Version 0.5.0 2026-10-05 by luispedro
     * Large scripts parse faster, with less memory

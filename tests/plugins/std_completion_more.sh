@@ -21,6 +21,7 @@ w() {
 
 echo "=== shells"
 c 'luish --no-'
+c 'luish --s'
 c 'luish -o pipe'
 c 'luish -o glob.'
 c 'luish -c cmd '

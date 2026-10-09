@@ -101,11 +101,32 @@ fn luish() {
             -o NAME  set an option by name, as for setopt
             --no-rcs  don't read any startup files
             --no-plugins  make plugin load do nothing
+            --remote  edit lines here and run them in the shell that a command starts
+            --ssh  edit lines here and run them on a host
             --help  show the help and exit
             --version  show the version and exit
         ` + set_letters(),
         values: #{"-o": "shells:luish"},
         args_if: script_args(),
+    }
+}
+
+// `luish --ssh [OPTION...] HOST` (the words after --ssh): ssh's options and
+// luish's own, whose -e replaces ssh's (which would do nothing).
+fn luish_ssh() {
+    import "specs" as specs;
+    #{
+        opts: specs::ssh_opts() + specs::ssh_client_opts() + `
+            --luish-path=PROGRAM  run PROGRAM on HOST instead of a copy of luish
+            -e, --rsh=COMMAND, --ssh-command=COMMAND  run COMMAND instead of ssh -T
+            --copy-luish  copy luish to HOST again, even if it is there
+        `,
+        values: specs::ssh_client_values() + #{
+            "-e": "commands",
+            "--luish-path": "none",
+            "-o": specs::ssh_options() + [#{value: "ssh.no_auto_copy", desc: "never copy luish to HOST"}],
+        },
+        args: ["hosts", "none"],
     }
 }
 

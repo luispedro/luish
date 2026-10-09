@@ -1698,15 +1698,15 @@ fn ssh_values() {
     #{"-c": "none", "-J": "hosts", "-o": ssh_options()}
 }
 
-fn ssh() {
-    #{
-        opts: ssh_opts() + `
+// ssh's own options (not scp's or sftp's), but -e, which luish --ssh
+// gives another meaning (shells.rhai).
+fn ssh_client_opts() {
+    `
             -a  disable forwarding of the authentication agent connection
             -B BIND_INTERFACE  bind to the address of BIND_INTERFACE
             -b BIND_ADDRESS  use BIND_ADDRESS as the source address
             -D PORT  dynamic application-level port forwarding (SOCKS)
             -E LOG_FILE  append debug logs to LOG_FILE instead of standard error
-            -e ESCAPE_CHAR  set the escape character (default ~)
             -f  go to background just before command execution
             -G  print the configuration after evaluating Host and Match blocks, and exit
             -g  allow remote hosts to connect to local forwarded ports
@@ -1733,22 +1733,32 @@ fn ssh() {
             -x  disable X11 forwarding
             -Y  enable trusted X11 forwarding
             -y  send log information using the syslog system module
+    `
+}
+
+fn ssh_client_values() {
+    ssh_values() + #{
+        "-B": "none",
+        "-b": "none",
+        "-D": "none",
+        "-L": "none",
+        "-l": "users",
+        "-m": "none",
+        "-O": ["check", "forward", "cancel", "exit", "stop"],
+        "-p": "none",
+        "-Q": ["cipher", "cipher-auth", "mac", "kex", "key", "key-cert", "key-plain", "sig", "protocol-version"],
+        "-R": "none",
+        "-W": "none",
+        "-w": "none",
+    }
+}
+
+fn ssh() {
+    #{
+        opts: ssh_opts() + ssh_client_opts() + `
+            -e ESCAPE_CHAR  set the escape character (default ~)
         `,
-        values: ssh_values() + #{
-            "-B": "none",
-            "-b": "none",
-            "-D": "none",
-            "-e": "none",
-            "-L": "none",
-            "-l": "users",
-            "-m": "none",
-            "-O": ["check", "forward", "cancel", "exit", "stop"],
-            "-p": "none",
-            "-Q": ["cipher", "cipher-auth", "mac", "kex", "key", "key-cert", "key-plain", "sig", "protocol-version"],
-            "-R": "none",
-            "-W": "none",
-            "-w": "none",
-        },
+        values: ssh_client_values() + #{"-e": "none"},
         // The host, then the command to run there.
         args: ["hosts", "none"],
     }
