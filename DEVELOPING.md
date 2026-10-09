@@ -613,6 +613,20 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `-z` pushes onto a stack (`PUSHED` in `interactive/mod.rs`) that `read_line` pops to start a command line, after
   a `history.verify` refill. Tests: `builtins/print.sh` (zsh, through `$SH -i +m -c`, as the zsh reference runs
   natively there), `builtins/print_luish.sh`, `print_builtin` in `tests/interactive.rs`, unit tests in `print.rs`.
+- `vared` (`vared.rs`) is zsh's, a built-in only in shells started with `-i`, and `__luish_internal vared` anywhere.
+  Its options are parsed as `print`'s. It edits through `interactive::edit_value`, a `Request` with three fields that
+  the prompt's own requests leave on: `value` (the completer completes the line as if it followed `: `, so that the
+  first word is an argument; no highlighting, autosuggestions or terminal marks), `history` (off without `-h`: an
+  empty `ShellHistory`, sharing `search`, stands in while the line is read) and `eof` (off without `-e`:
+  `keys::set_eof`, and the `ViCursor` handler makes Ctrl-D on an empty line a no-op, since rustyline's `Eof` is also
+  what the end of the input gives, so reading again would loop). A shell that has no editor (`-ic`) sets one up on
+  first use, if stdin is a terminal; `vared` refuses while `SHELL` is set (from a completer). In the SSH mode the
+  request goes to the client like the prompt's. Arrays are joined and split as zsh's `bin_vared` and `spacesplit`
+  do (`join`, `split`): a non-blank separator at the end gives an empty element, unlike field splitting. Ctrl-C
+  returns `Flow::Error(130)` in an interactive shell where `INT` isn't trapped (traps only run between complete
+  commands, so a pending SIGINT would let `vared x || cmd` run `cmd`); otherwise it raises SIGINT and runs the trap
+  at once. Tests: `builtins/internal_vared.sh` (errors: the cases have no terminal), `vared_builtin` and
+  `remote_editing` in `tests/interactive.rs`, unit tests in `vared.rs`.
 - `local x` keeps the current value, as in dash (also an array's, and with `-a`).
 - `local -` (as in dash) pushes a copy of `Shell::options` on `Shell::local_options`, with the depth of `locals`
   of the call that made it (once per call), and `call_function` restores it on return, through
@@ -1542,6 +1556,7 @@ truncates when it relocates the package.
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
 | `jobs -i` | `jobs_menu` in `tests/interactive.rs`, unit tests in `interactive/jobmenu.rs`, `builtins/jobs_menu.sh` (no terminal: status 2, as dash) |
 | `print` | `builtins/print.sh` (zsh), `builtins/print_luish.sh`, `print_builtin` in `tests/interactive.rs` |
+| `vared` | `builtins/internal_vared.sh`, `vared_builtin` and `remote_editing` in `tests/interactive.rs` |
 | `clipcopy` | `builtins/internal_clipcopy.sh`, `clipcopy` in `tests/interactive.rs` |
 | `plugin` | `builtins/internal_plugin.sh`, `builtins/plugin.sh` (same as dash), `plugin_builtin` in `tests/interactive.rs` |
 | Hints for commands not found | `exec/not_found_hint.sh` |

@@ -13,6 +13,7 @@ Unreleased
       hosts) and luish --remote CMD
     * plugin.toml: [available] makes sources available, as
       config.toml's plugins.available
+    * vared: edit a variable with the line editor, as in zsh
 
 Version 0.5.0 2026-10-05 by luispedro
     * Large scripts parse faster, with less memory

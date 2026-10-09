@@ -973,6 +973,60 @@ fn clipcopy() {
 }
 
 #[test]
+fn vared_builtin() {
+    let mut sh = Pty::spawn_term("vared", "vt100");
+    std::fs::write(sh.path("vared-file"), "").unwrap();
+    sh.expect("$ ");
+    // Runs a command line that starts vared, and waits for vared's editor
+    // to show `shown` (input sent before the editor reads may be lost).
+    let start = |sh: &mut Pty, line: &str, shown: &str| {
+        sh.send(line);
+        sh.send("\n");
+        sh.expect("\x1b[?2004l\n\x1b[?2004h");
+        if !shown.is_empty() {
+            sh.expect(shown);
+        }
+    };
+    // Sends keys, and waits for `out` and then the next prompt.
+    let finish = |sh: &mut Pty, keys: &str, out: &str| -> String {
+        sh.send(keys);
+        let got = if out.is_empty() { String::new() } else { sh.expect(out) };
+        got + &sh.expect("\x1b[?2004h")
+    };
+    // An array's elements, with separators quoted, split again after.
+    start(
+        &mut sh,
+        r#"a=(x 'y z'); vared -p 'a> ' a; echo "${#a[@]}:${a[*]}""#,
+        r"a> x y\ z",
+    );
+    finish(&mut sh, " w\\ v\n", "\n3:x y z w v\n");
+    // An element; the first word completes as an argument.
+    start(&mut sh, r#"vared 'a[2]'; echo "<${a[2]}>""#, "w v");
+    finish(&mut sh, "\x15vared-f\t\n", "<vared-file >\n");
+    // Ctrl-D on an empty line: nothing without -e, status 1 with it.
+    start(&mut sh, r#"x=; vared x; echo "st=$? x=$x""#, "");
+    finish(&mut sh, "\x04ok\n", "st=0 x=ok\n");
+    start(&mut sh, r#"x=; vared -e x; echo "st=$? x=$x""#, "");
+    finish(&mut sh, "\x04", "st=1 x=\n");
+    // Ctrl-C leaves the variable and stops the command line.
+    start(&mut sh, "x=1; vared x; echo not-run", "1");
+    let got = finish(&mut sh, "2\x03", "");
+    let got = got + &finish(&mut sh, "echo \"x=$x\"\n", "\nx=1\n");
+    assert!(!got.contains("not-run"), "{got:?}");
+    // The history only with -h; the shell's own is kept.
+    start(&mut sh, r#"vared -c y; echo "y=$y""#, "");
+    finish(&mut sh, "\x1b[A\n", "y=\n");
+    start(&mut sh, r#"vared -hc z; echo "z=$z""#, "");
+    finish(&mut sh, "\x1b[A\x1b[A\n", "z=vared -c y; echo \"y=$y\"\n");
+    finish(&mut sh, "fc -ln -1\n", "\tvared -hc z; echo \"z=$z\"\n");
+    // -c with -A makes an associative array.
+    start(&mut sh, "vared -cA h; typeset -p h", "");
+    finish(&mut sh, "k v\\ w\n", "typeset -A h=(['k']='v w')\n");
+    sh.send("exit 0\n");
+    assert_eq!(sh.exit_status(), 0);
+}
+
+#[test]
 fn right_prompt() {
     let mut sh = Pty::spawn_term("rprompt", "vt100");
     sh.resize(20, 24);
@@ -2193,6 +2247,13 @@ fn remote_editing() {
     sh.send("x");
     sh.expect("\x1b[4mafile\x1b[0m \x1b[34m~\x1b[0m/afx");
     sh.send("\x03");
+    sh.expect("\x1b[?2004h");
+    // vared edits on the client, without the history (Up does nothing), and
+    // Tab completes the first word on the server as an argument.
+    sh.send("vared -c rv; echo \"<$rv>\"\n");
+    sh.expect("\x1b[?2004l\n\x1b[?2004h");
+    sh.send("\x1b[Aafi\t\n");
+    sh.expect("<afile >\n");
     sh.expect("\x1b[?2004h");
     sh.send("exit 0\n");
     assert_eq!(sh.exit_status(), 0);

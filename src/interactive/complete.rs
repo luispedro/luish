@@ -123,6 +123,9 @@ pub struct ShellHelper {
     pub keys: Arc<Mutex<super::keys::State>>,
     /// Show autosuggestions (`setopt autosuggest`).
     pub suggest: bool,
+    /// The line is a value (`vared`): its first word is completed as an
+    /// argument, not a command.
+    pub value: bool,
     /// The right prompt (`RPROMPT`).
     pub right: super::rprompt::Right,
     path_cache: RefCell<PathCache>,
@@ -1079,6 +1082,18 @@ impl ShellHelper {
         if let Some(remote) = self.remote_tab {
             return remote(before, after);
         }
+        if self.value {
+            // As the argument of a command.
+            let line = [b": ", before].concat();
+            return match self.tab_line(&line, after) {
+                Tab::Expand(start, text) => Tab::Expand(start.saturating_sub(2), text),
+                Tab::Matches(start, items) => Tab::Matches(start.saturating_sub(2), items),
+            };
+        }
+        self.tab_line(before, after)
+    }
+
+    fn tab_line(&self, before: &[u8], after: &[u8]) -> Tab {
         if let Some((start, text)) = self.expansion(before, after) {
             return Tab::Expand(start, text);
         }

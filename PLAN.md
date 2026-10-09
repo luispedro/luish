@@ -95,7 +95,7 @@ Still to build, in this order:
 2. **Lazy function parsing for the startup cache**, below.
 
 Not planned, because the history shows they aren't used or they are easy to rewrite in POSIX sh: zsh's
-two-argument `cd old new`, `vared`, `zmv`, `mmv`, `zed`, `zcalc`, `noglob`, zsh-history-substring-search, zsh-nvm,
+two-argument `cd old new`, `zmv`, `mmv`, `zed`, `zcalc`, `noglob`, zsh-history-substring-search, zsh-nvm,
 zplug, and `fpath`/`compinit`. Nor are zsh's hook functions (`chpwd`, `precmd` ... as shell functions, and the
 `*_functions` arrays): the zsh hook snippets of tools such as direnv, zoxide or mise use other zsh syntax too, and an
 extension's hook can call a shell function with `sh::run`. If compatibility is ever wanted, a std plugin can map the

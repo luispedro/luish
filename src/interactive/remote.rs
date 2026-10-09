@@ -85,6 +85,7 @@ pub fn serve_line(sh: &mut Shell, req: Request) -> Line {
     let commands = EDITOR.with_borrow_mut(|e| {
         let h = e.as_mut()?.helper_mut()?;
         h.names = req.names.clone();
+        h.value = req.value;
         let (generation, names) = h.path_commands(COMMANDS_SENT.get());
         COMMANDS_SENT.set(generation);
         names
@@ -476,7 +477,10 @@ fn encode_request(e: &mut Enc, req: &Request, history: Option<&Changes>, command
     e.u64(version).list(&changes, |e, (seq, w)| {
         e.str(seq).opt_str(*w);
     });
-    e.opt_str(req.start.as_deref());
+    e.opt_str(req.start.as_deref())
+        .bool(req.value)
+        .bool(req.history)
+        .bool(req.eof);
     match history {
         Some(h) => e.usize(h.first).bool(h.reset).list(&h.added, |e, t| {
             e.str(t);
@@ -508,6 +512,7 @@ fn decode_request(d: &mut Dec) -> Option<Request> {
     let changes = d.list(|d| Some((d.string()?, d.opt_string()?)))?;
     let keymap = super::keys::Keymap::from_wire(version, changes);
     let start = d.opt_string()?;
+    let (value, history, eof) = (d.bool()?, d.bool()?, d.bool()?);
     Some(Request {
         continuation,
         pending,
@@ -525,6 +530,9 @@ fn decode_request(d: &mut Dec) -> Option<Request> {
         wordchars,
         keymap,
         start,
+        value,
+        history,
+        eof,
     })
 }
 
@@ -683,6 +691,9 @@ mod tests {
             wordchars: Some("*?".into()),
             keymap: Default::default(),
             start: Some("echo".into()),
+            value: true,
+            history: false,
+            eof: true,
         };
         let changes = Changes {
             first: 3,
@@ -704,6 +715,7 @@ mod tests {
         let role = super::super::highlight::role::UNKNOWN;
         assert_eq!(got.colors.sgr(role), req.colors.sgr(role));
         assert_eq!(got.start.as_deref(), Some("echo"));
+        assert!(got.value && !got.history && got.eof);
         let c = decode_changes(&mut d).unwrap();
         assert_eq!((c.first, c.reset, c.added), (3, true, vec!["ls".to_string()]));
         assert_eq!(decode_list(&d.opt_bytes().unwrap().unwrap()).unwrap(), [b"ls".to_vec()]);

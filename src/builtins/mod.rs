@@ -15,6 +15,7 @@ mod read;
 pub(crate) mod style;
 pub(crate) mod test;
 mod trap;
+mod vared;
 mod vars;
 
 pub use vars::{quote_value, single_quote};
@@ -119,6 +120,7 @@ const INTERACTIVE: &[(&[u8], BuiltinFn)] = &[
     (b"plugin", crate::plugins::plugin),
     (b"print", print::print),
     (b"style", style::style),
+    (b"vared", vared::vared),
     (b"where", crate::vartrace::where_),
 ];
 

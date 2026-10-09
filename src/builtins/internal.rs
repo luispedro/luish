@@ -21,6 +21,7 @@ const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
     (b"print-git-rev-short", print_git_rev_short),
     (b"savestate", savestate),
     (b"style", style),
+    (b"vared", super::vared::vared),
     (b"where", crate::vartrace::where_),
 ];
 

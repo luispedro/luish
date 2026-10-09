@@ -657,6 +657,10 @@ show notifications, the plugin [`std/notify`](plugins.md) asks for one itself.
 `clipcopy` puts its input (or a file) on the clipboard through the terminal (OSC 52), which also works over ssh:
 `git rev-parse HEAD | clipcopy`. See `help clipcopy`.
 
+`vared NAME` edits the value of a variable with the line editor, as zsh's: `vared PATH`, or
+`vared -p 'Message: ' -c msg` to ask for one. An array's elements are separated by spaces, with a backslash before
+the spaces inside them. See `help vared`.
+
 ## History
 
 An interactive shell keeps the last `HISTSIZE` commands (1000 by default) in

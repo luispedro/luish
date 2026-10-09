@@ -13,7 +13,7 @@ pub mod escape;
 pub mod relay;
 
 /// Bumped whenever a message changes: both ends must speak the same.
-pub const VERSION: u32 = 2;
+pub const VERSION: u32 = 3;
 
 /// What the server writes before its hello, so that the client can skip
 /// what a remote startup file printed before luish started.

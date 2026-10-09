@@ -77,6 +77,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"unalias", page!("unalias")),
     (b"unset", page!("unset")),
     (b"unsetopt", page!("setopt")),
+    (b"vared", page!("vared")),
     (b"wait", page!("wait")),
     (b"where", page!("where")),
 ];

@@ -24,11 +24,14 @@
 //! - `accept-line-and-down-history` accepts the line and records the
 //!   position in the history (which the hinter notes at each redraw), so
 //!   that the next prompt starts with the entry after it.
+//! - Ctrl-D on an empty line ends the input, as in rustyline, unless
+//!   `vared` (without `-e`) turned that off with `set_eof`.
 //!
 //! The keymap is kept on the shell (`Keymap`, only the changes from the
 //! defaults), so that `savestate` can save it; the line editor gets a copy
 //! before each prompt when it has changed.
 
+use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::sync::{Arc, Mutex};
@@ -43,6 +46,17 @@ use super::history::Search;
 use super::menu::{self, Menu};
 use crate::options::Opt;
 use crate::shell::{ExecResult, Shell};
+
+thread_local! {
+    /// Whether Ctrl-D on an empty line ends the input.
+    static EOF: Cell<bool> = const { Cell::new(true) };
+}
+
+/// Sets whether Ctrl-D on an empty line ends the input (it does nothing
+/// otherwise), for the lines read from now on.
+pub fn set_eof(on: bool) {
+    EOF.set(on);
+}
 
 /// zsh's default `WORDCHARS`: the characters other than alphanumerics that
 /// are part of words.
@@ -1019,16 +1033,21 @@ impl ConditionalEventHandler for Dispatch {
 
 /// The keys that nothing else binds, which do what rustyline does: in vi
 /// mode, the cursor's shape follows the input mode they lead to. (Both
-/// handlers first look for the SSH mode's escapes.)
+/// handlers first look for the SSH mode's escapes.) Ctrl-D on an empty line
+/// does nothing if `set_eof` turned it off.
 struct ViCursor;
 
 impl ConditionalEventHandler for ViCursor {
     fn handle(&self, evt: &Event, _: RepeatCount, _: bool, ctx: &EventContext) -> Option<Cmd> {
         if let Event::KeySeq(keys) = evt
             && let [key] = keys.as_slice()
-            && let Some(cmd) = super::remote::escape_key(*key, ctx.line(), ctx.pos())
         {
-            return Some(cmd);
+            if let Some(cmd) = super::remote::escape_key(*key, ctx.line(), ctx.pos()) {
+                return Some(cmd);
+            }
+            if *key == KeyEvent::ctrl('D') && ctx.line().is_empty() && !EOF.get() {
+                return Some(Cmd::Noop);
+            }
         }
         if ctx.mode() == EditMode::Vi
             && let Event::KeySeq(keys) = evt

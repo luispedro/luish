@@ -1,0 +1,40 @@
+vared: not enough arguments
+status 1
+vared: too many arguments
+status 1
+vared: specify only one of -a and -A
+status 1
+vared: bad option: -z
+status 1
+vared: argument expected: -p
+status 1
+vared: -t: not supported
+status 1
+vared: -i: not supported
+status 1
+vared: no such keymap `vicmd'
+status 1
+vared: no such keymap `emacs'
+status 1
+vared: 1x: bad variable name
+status 1
+vared: read-only variable: r
+status 1
+vared: no such variable: nosuch
+status 1
+vared: no such variable: nosuch[1]
+status 1
+vared: can't access terminal
+status 1
+x=1
+vared: can't access terminal
+status 1
+new=unset
+vared: -A ignored
+vared: can't access terminal
+status 1
+vared: can't access terminal
+status 1
+typeset -a a=('p' 'q')
+status 127
+vared

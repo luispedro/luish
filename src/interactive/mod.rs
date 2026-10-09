@@ -566,8 +566,15 @@ pub struct Request {
     pub wordchars: Option<String>,
     pub keymap: keys::Keymap,
     /// The text to start the line with: a line whose history references
-    /// were expanded, with `history.verify`, or one that `print -z` pushed.
+    /// were expanded, with `history.verify`, one that `print -z` pushed, or
+    /// the value `vared` edits.
     pub start: Option<String>,
+    /// Whether the line is a value (`vared`) rather than a command, whether
+    /// the history can be used, and whether Ctrl-D on an empty line ends
+    /// the input (the last two are off for `vared` without `-h` or `-e`).
+    pub value: bool,
+    pub history: bool,
+    pub eof: bool,
 }
 
 /// Reads a line with the editor. `pending` is the text read so far of an
@@ -608,18 +615,13 @@ fn request(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Request {
         prompt = integration::mark_prompt(&prompt, continuation);
     }
     let (colors, highlight_on) = colors(sh);
-    // zsh's default leaves the last column free.
-    let indent = right.as_ref().map_or(1, |_| {
-        let v = sh.get_var(b"ZLE_RPROMPT_INDENT").unwrap_or_default();
-        std::str::from_utf8(&v).ok().and_then(|v| v.parse().ok()).unwrap_or(1)
-    });
     Request {
         continuation,
         pending: pending.to_vec(),
         prompt,
         plain,
+        indent: rprompt_indent(sh, right.as_ref()),
         right,
-        indent,
         transient: sh.opt(Opt::TransientRprompt),
         vi: sh.opt(Opt::Vi),
         // Not for the continuation lines of a command.
@@ -633,7 +635,82 @@ fn request(sh: &mut Shell, continuation: bool, pending: &[u8]) -> Request {
         start: REFILL
             .take()
             .or_else(|| (!continuation).then(|| PUSHED.with_borrow_mut(Vec::pop)).flatten()),
+        value: false,
+        history: true,
+        eof: true,
     }
+}
+
+/// The columns the right prompt leaves free at the right edge
+/// (`ZLE_RPROMPT_INDENT`): by default 1, as zsh leaves the last column free.
+fn rprompt_indent(sh: &Shell, right: Option<&crate::prompt::Prompt>) -> usize {
+    right.map_or(1, |_| {
+        let v = sh.get_var(b"ZLE_RPROMPT_INDENT").unwrap_or_default();
+        std::str::from_utf8(&v).ok().and_then(|v| v.parse().ok()).unwrap_or(1)
+    })
+}
+
+/// What `vared` gives the line editor.
+pub struct ValueEdit {
+    pub prompt: crate::prompt::Prompt,
+    pub right: Option<crate::prompt::Prompt>,
+    /// The text to start with.
+    pub text: String,
+    /// Whether the history can be used (`-h`), and whether Ctrl-D on an
+    /// empty line ends the editing (`-e`).
+    pub history: bool,
+    pub eof: bool,
+    pub vi: bool,
+}
+
+/// Edits a value with the line editor, for `vared`: not a command, so
+/// without highlighting, autosuggestions or the terminal's marks. The
+/// error is why the editor can't be used.
+pub fn edit_value(sh: &mut Shell, v: ValueEdit) -> Result<Line, &'static str> {
+    // While the editor reads a line, a completer runs commands.
+    if !SHELL.get().is_null() {
+        return Err("the line editor is in use");
+    }
+    let serving = remote::serving();
+    // A shell that reads no commands from the terminal (`-ic`) sets the
+    // editor up now.
+    let editor = EDITOR.with(|e| e.try_borrow().is_ok_and(|e| e.is_some()));
+    let editor = editor || (!serving && sys::isatty(0) && init_editor());
+    if !serving && !(editor && EDITS.get() && sys::isatty(0)) {
+        return Err("can't access terminal");
+    }
+    let plain = v.prompt.plain.map(|s| String::from_utf8_lossy(&s).into_owned());
+    let req = Request {
+        continuation: false,
+        pending: Vec::new(),
+        prompt: String::from_utf8_lossy(&v.prompt.text).into_owned(),
+        plain,
+        indent: rprompt_indent(sh, v.right.as_ref()),
+        right: v.right,
+        transient: sh.opt(Opt::TransientRprompt),
+        vi: v.vi,
+        suggest: false,
+        marks: false,
+        names: names(sh),
+        colors: colors(sh).0,
+        highlight_on: false,
+        wordchars: (sh.get_var(b"WORDCHARS")).map(|w| String::from_utf8_lossy(&w).into_owned()),
+        keymap: sh.keymap.clone(),
+        start: Some(v.text),
+        value: true,
+        history: v.history,
+        eof: v.eof,
+    };
+    if serving {
+        return Ok(remote::serve_line(sh, req));
+    }
+    SHELL.set(sh as *mut Shell);
+    let line = edit(req);
+    SHELL.set(std::ptr::null_mut());
+    if let Some(n) = EXIT.take() {
+        sh.exit(n);
+    }
+    Ok(line)
 }
 
 /// Reads a line with the editor, as `req` asks.
@@ -655,6 +732,9 @@ fn edit(req: Request) -> Line {
         wordchars,
         keymap,
         start: refill,
+        value,
+        history,
+        eof,
     } = req;
     EDITOR.with(|e| {
         let mut e = e.borrow_mut();
@@ -682,6 +762,7 @@ fn edit(req: Request) -> Line {
             h.highlight.colors = colors;
             h.highlight.on = highlight_on;
             h.suggest = suggest;
+            h.value = value;
             h.right.set(right.as_ref(), indent, transient);
             h.highlight.context.clear();
             h.highlight.context.extend_from_slice(&pending);
@@ -705,17 +786,28 @@ fn edit(req: Request) -> Line {
             .as_deref()
             .or(initial.as_ref().map(|(_, t)| t.as_str()))
             .unwrap_or("");
+        // Without the history, an empty one stands in for it.
+        let saved = (!history).then(|| {
+            let mut empty = ShellHistory::default();
+            empty.search = ed.history().search.clone();
+            std::mem::replace(ed.history_mut(), empty)
+        });
+        keys::set_eof(eof);
         integration::line_starts(marks && vi);
         let r = match &plain {
             Some(plain) => ed.readline_with_initial(&(plain, &text), (start, "")),
             None => ed.readline_with_initial(&text, (start, "")),
         };
         integration::line_done();
+        keys::set_eof(true);
         let down = keys.lock().ok().and_then(|mut k| k.down.take());
         if let (Ok(_), Some(i)) = (&r, down)
             && i + 1 < ed.history().len()
         {
             NEXT.set(Some(ed.history().event_at(i + 1)));
+        }
+        if let Some(h) = saved {
+            *ed.history_mut() = h;
         }
         match r {
             Ok(mut l) => {
