@@ -32,6 +32,8 @@ python = "3.13.*"
 sphinx = ">=8"
 myst-parser = ">=4"
 furo = "*"
+sphinx-copybutton = "*"
+sphinx-design = "*"
 
 [feature.docs.tasks]
 docs = "sphinx-build -W -b html docs docs/_build/html"

@@ -1,0 +1,93 @@
+/* The front page (index.md): a banner, the install command, and cards. */
+
+:root {
+  --luish-accent: #0f7b6c;
+  --luish-accent-2: #6d4bd8;
+  --luish-hero-bg: linear-gradient(135deg, #e6f6f2 0%, #efeafd 100%);
+  --luish-hero-border: #cfe7e1;
+}
+
+@media (prefers-color-scheme: dark) {
+  body:not([data-theme="light"]) {
+    --luish-accent: #3ccfb4;
+    --luish-accent-2: #a98bff;
+    --luish-hero-bg: linear-gradient(135deg, #12302b 0%, #241d3d 100%);
+    --luish-hero-border: #2c4a44;
+  }
+}
+
+body[data-theme="dark"] {
+  --luish-accent: #3ccfb4;
+  --luish-accent-2: #a98bff;
+  --luish-hero-bg: linear-gradient(135deg, #12302b 0%, #241d3d 100%);
+  --luish-hero-border: #2c4a44;
+}
+
+.luish-hero {
+  background: var(--luish-hero-bg);
+  border: 1px solid var(--luish-hero-border);
+  border-radius: 14px;
+  padding: 1.6rem 1.8rem 1.2rem;
+  margin: 0 0 2rem;
+}
+
+/* The front page's title: its section's id is the page title's slug. */
+section#luish > h1 {
+  font-size: 2.8em;
+  width: fit-content;
+  background: linear-gradient(90deg, var(--luish-accent), var(--luish-accent-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.luish-hero .luish-tagline {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+/* The install command: wrapped rather than scrolled, and its copy button always shown. */
+.luish-hero div.highlight pre {
+  font-size: 0.95em;
+  padding: 0.9em 3em 0.9em 1em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.luish-hero .copybtn {
+  opacity: 1;
+}
+
+.luish-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 1.2rem;
+}
+
+.luish-buttons p {
+  margin: 0;
+}
+
+
+/* The numbers under the banner. */
+.luish-stat .sd-card-title {
+  font-size: 1.8em;
+  color: var(--luish-accent);
+  margin-bottom: 0.2rem;
+}
+
+.luish-stat .sd-card-body {
+  text-align: center;
+}
+
+/* The highlights. */
+.luish-feature.sd-card {
+  border-top: 3px solid var(--luish-accent);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.luish-feature.sd-card:hover {
+  transform: translateY(-2px);
+}
