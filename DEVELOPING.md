@@ -1401,10 +1401,11 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
   drops them, counting them) until the line comes back, and answers `HELD`. Only then does the shell read what is
   left on its pty (`typeahead`, with `ICANON` off for a moment), sending it in the request. The relay puts in front
   of the request how many bytes of input it had written to the pty; the client keeps the input sent since the last
-  request and adds the bytes from there on. So keys typed after the command's output but before the prompt (half a
+  request and adds the bytes from there on, with `\r` as `\n` if the terminal's own modes have `ICRNL` (they came
+  raw; the pty's keys went through its `ICRNL`). So keys typed after the command's output but before the prompt (half a
   round trip over ssh) are neither lost nor read by the next command. A typed-ahead line ending in a newline runs
-  without editing (the client prints the prompt and the line); the rest starts the line (control characters are
-  dropped).
+  without editing (the client prints the prompt and the line); the rest starts the line (control characters and
+  escape sequences, such as an arrow key's, are dropped: `typed_text`).
 - **The line** (`interactive/mod.rs`): `read_line` is `request` (everything the editor needs from `Shell`, as the
   plain-data `Request`, with the side effects of a prompt) then `edit` (the editor, given a `Request`). In the
   server, `remote::serve_line` sends the request instead, with the history's changes (`ShellHistory::changes`: the
@@ -1460,10 +1461,10 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
   replacing a damaged copy, and another system's `uname` falling back to `luish` on `PATH`); `remote_escapes` (`~?`,
   `~~`, `~` with another key and `~.` in the editor; while `cat` runs; as a line with `TERM=dumb`; `~.` while a
   command runs); `remote_escape_suspend` (`~^Z` at the prompt and while `cat` runs, from a shell with job control,
-  with `-o ssh.escape_char`); and `remote_chaos` (commands, a large output, keys typed ahead, Tab and lookups, at chaos level 1), all in
+  with `-o ssh.escape_char`); and `remote_chaos` (commands, a large output, keys typed ahead, lines ended with `\r` sent together, Tab and lookups, at chaos level 1), all in
   `tests/interactive.rs`. `wait_for_remote_procs` finds jobs on the server's pty. Unit tests: frames, `MAGIC`,
   `forward` and `Enc`/`Dec` in `remote/mod.rs`, the order, delays and drops in `remote/chaos.rs`, a request and a Tab
-  reply round trip in `interactive/remote.rs`, `history::tests::copy`, `--ssh`'s options and `--rsh`'s
+  reply round trip and the keys typed ahead in `interactive/remote.rs`, `history::tests::copy`, `--ssh`'s options and `--rsh`'s
   words in `remote/client.rs`, and the escapes in keys typed in pieces in `remote/escape.rs`. The keys-typed-ahead steps fail about half the
   time without the hold (checked by disabling it), not every time: the window is a race.
 - Not yet: a redraw when a late lookup answer comes; Ctrl-C (and `~.`) while the client waits for Tab; anything for a

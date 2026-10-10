@@ -265,6 +265,7 @@ const ARGS: &[(&[u8], Args)] = &[
     (b"local", Args::Vars),
     (b"readonly", Args::Vars),
     (b"unset", Args::Unset),
+    (b"vared", Args::Vars),
     (b"where", Args::Vars),
     (b"hash", Args::Commands),
     (b"type", Args::Commands),
@@ -2019,6 +2020,7 @@ mod tests {
         assert_eq!(complete(&h, "sr"), ["src/"]);
         h.names.autocd = false;
         assert_eq!(complete(&h, "unset HO"), ["HOME ", "HOSTNAME "]);
+        assert_eq!(complete(&h, "vared -c HO"), ["HOME ", "HOSTNAME "]);
         assert_eq!(complete(&h, "export HOME=~/f"), ["HOME=~/file\\ one "]);
         assert_eq!(complete(&h, "type myf"), ["myfunc "]);
         assert_eq!(complete(&h, "help ech"), ["echo "]);

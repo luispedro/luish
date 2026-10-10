@@ -227,7 +227,7 @@ pub fn client_line(
     // Keys typed ahead: a whole line runs as it is, without editing; the
     // rest starts the line.
     let ahead = AHEAD.with_borrow_mut(|a| {
-        a.extend(typed.iter().filter(|&&c| c >= b' ' || c == b'\t' || c == b'\n'));
+        a.extend(typed_text(&typed));
         match a.iter().position(|&c| c == b'\n') {
             Some(i) => Err(a.drain(..=i).collect::<Vec<u8>>()),
             None => Ok(std::mem::take(a)),
@@ -267,6 +267,39 @@ pub fn client_line(
         };
         return Some(reply);
     }
+}
+
+/// The keys typed ahead that can start a line: text, Tab and newlines.
+/// Other control characters are dropped, and so are escape sequences
+/// whole (an arrow key's `ESC [ A`, `ESC O A`, or Alt and a key), so that
+/// what follows ESC doesn't end up in the line.
+fn typed_text(keys: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(keys.len());
+    let mut i = 0;
+    while i < keys.len() {
+        let c = keys[i];
+        i += 1;
+        match c {
+            0x1b => match keys.get(i) {
+                // CSI: parameters, up to a final byte.
+                Some(b'[') => {
+                    i += 1;
+                    while keys.get(i).is_some_and(|c| !(0x40..=0x7e).contains(c)) {
+                        i += 1;
+                    }
+                    i += 1;
+                }
+                // SS3 and a key.
+                Some(b'O') => i += 2,
+                Some(_) => i += 1,
+                None => {}
+            },
+            b'\t' | b'\n' => out.push(c),
+            _ if c >= b' ' && c != 0x7f => out.push(c),
+            _ => {}
+        }
+    }
+    out
 }
 
 /// The escape that the line `t` makes, on a terminal that the editor
@@ -720,6 +753,13 @@ mod tests {
         assert_eq!((c.first, c.reset, c.added), (3, true, vec!["ls".to_string()]));
         assert_eq!(decode_list(&d.opt_bytes().unwrap().unwrap()).unwrap(), [b"ls".to_vec()]);
         assert_eq!(d.bytes().unwrap(), b"x");
+    }
+
+    #[test]
+    fn typed_ahead() {
+        assert_eq!(typed_text(b"ls\x1b[A -l\x1b[1;5C\x1bOB\x1bb\t\x7f\x03\n"), b"ls -l\t\n");
+        assert_eq!(typed_text("é\x1b".as_bytes()), "é".as_bytes());
+        assert_eq!(typed_text(b"x\x1b[1;"), b"x");
     }
 
     #[test]

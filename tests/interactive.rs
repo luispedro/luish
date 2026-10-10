@@ -2186,6 +2186,12 @@ fn remote_chaos() {
         sh.send(&format!("true\necho second-$(({i}))\n"));
         sh.expect(&format!("second-{i}\n"));
     }
+    // With Enter as a terminal sends it, which the client gets raw when
+    // the keys come before the request.
+    for i in 100..106 {
+        sh.send(&format!("true\recho enter-$(({i}))\r"));
+        sh.expect(&format!("enter-{i}\n"));
+    }
     sh.send("cat >/dev/null; echo done\n");
     sh.wait_for_remote_procs(&["cat"]);
     sh.send("\x04echo typed-ahead\n");

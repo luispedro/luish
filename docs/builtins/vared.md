@@ -22,7 +22,9 @@ An array is shown as its elements separated by the first character of
 `IFS` (a space by default), with a backslash before each character of `IFS`
 and each backslash in them. The edited text is split back into elements at
 the characters of `IFS` that no backslash quotes; a backslash before any
-other character stays. An empty element is lost, as in zsh. An
+other character stays. Blanks around a separator count as one, so with
+blanks as the separators (as by default) an empty element is lost, as in
+zsh; between two other separators (`IFS=:`) it is kept. An
 associative array is shown as its keys and values in turn, and the edited
 text must have pairs of them.
 

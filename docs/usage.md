@@ -766,7 +766,7 @@ In an interactive shell, Tab starts completion.
   associative array, listed with their values;
 - `cd`, `pushd` and `rmdir` complete directories; for `cd` and `pushd`, when none in the current directory match,
   the directories in `CDPATH` complete instead (listed with the `CDPATH` directory they are in), as in zsh;
-- `export`, `local`, `readonly`, `unset`, `read` (except the prompt after `-p`), `getopts` (after the option
+- `export`, `local`, `readonly`, `unset`, `vared`, `where`, `read` (except the prompt after `-p`), `getopts` (after the option
   string) and `for` (then `in`) complete variable names (`unset -f` completes function names);
 - `alias` and `unalias` complete aliases;
 - `type`, `hash` and `which` complete command names, and `help` completes built-ins;

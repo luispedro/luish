@@ -661,10 +661,14 @@ impl Client {
                 let sent = std::mem::take(&mut self.sent);
                 let before = self.sent_before;
                 self.sent_before += sent.len() as u64;
-                // The keys from where the relay stopped passing them on.
+                // The keys from where the relay stopped passing them on,
+                // with Enter (`\r` in raw mode) a newline, as the terminal
+                // makes it in its own modes (and the pty in its).
+                let icrnl = self.saved.is_some_and(|t| t.c_iflag & libc::ICRNL != 0);
                 let unsent = |held_at: u64| {
                     let from = held_at.saturating_sub(before).min(sent.len() as u64);
-                    sent[from as usize..].to_vec()
+                    let keys = sent[from as usize..].iter();
+                    keys.map(|&c| if c == b'\r' && icrnl { b'\n' } else { c }).collect()
                 };
                 // (The terminal is in its own modes, to exit with.)
                 let reply = editor::client_line(&data, unsent, held, |a| self.escape(a, true))
