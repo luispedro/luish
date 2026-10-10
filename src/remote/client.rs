@@ -602,6 +602,25 @@ impl Client {
         self.send_input(&out);
     }
 
+    /// Passes on the keys that have come but weren't read yet, while the
+    /// terminal is raw: once it is back in its modes, those left would be
+    /// read as they came (Enter a `\r`, which doesn't end a line read
+    /// whole).
+    fn input_waiting(&mut self) {
+        let mut fds = [libc::pollfd {
+            fd: 0,
+            events: libc::POLLIN,
+            revents: 0,
+        }];
+        while super::poll(&mut fds, 0) {
+            let mut buf = [0u8; 16384];
+            match sys::read(0, &mut buf, false) {
+                Ok(n @ 1..) => self.input(&buf[..n]),
+                _ => self.end(Some(0)),
+            }
+        }
+    }
+
     fn send_input(&mut self, keys: &[u8]) {
         if keys.is_empty() {
             return;
@@ -656,6 +675,7 @@ impl Client {
     fn event(&mut self, e: Event) {
         match e {
             Some((msg::REQUEST, data)) => {
+                self.input_waiting();
                 self.cooked();
                 let held = self.escapes.line_read();
                 let sent = std::mem::take(&mut self.sent);
@@ -675,10 +695,12 @@ impl Client {
                     .unwrap_or_else(|| fail("the server sent a request this client can't read"));
                 // The command runs with the window's size.
                 self.send_size();
+                // Raw before the line goes, so that the keys typed once the
+                // command runs (as `~^Z`) don't meet the terminal's modes.
+                self.raw();
                 if !self.conn.send(msg::LINE, &reply.encode()) {
                     self.end(None);
                 }
-                self.raw();
             }
             Some((msg::EXIT, data)) => {
                 let status = Dec::new(&data).u32().unwrap_or(0);

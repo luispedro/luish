@@ -1402,10 +1402,13 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
   left on its pty (`typeahead`, with `ICANON` off for a moment), sending it in the request. The relay puts in front
   of the request how many bytes of input it had written to the pty; the client keeps the input sent since the last
   request and adds the bytes from there on, with `\r` as `\n` if the terminal's own modes have `ICRNL` (they came
-  raw; the pty's keys went through its `ICRNL`). So keys typed after the command's output but before the prompt (half a
-  round trip over ssh) are neither lost nor read by the next command. A typed-ahead line ending in a newline runs
-  without editing (the client prints the prompt and the line); the rest starts the line (control characters and
-  escape sequences, such as an arrow key's, are dropped: `typed_text`).
+  raw; the pty's keys went through its `ICRNL`). Before that, the client reads the keys still waiting on its terminal
+  (`input_waiting`), as its loop takes the request first: back in the terminal's modes they would stay raw, and a line
+  read whole (`TERM=dumb`) wouldn't end at their `\r`. It goes back to raw mode before sending the line, else `~^Z`
+  typed once the command runs could reach a terminal with `ISIG` on. So keys typed after the command's output but
+  before the prompt (half a round trip over ssh) are neither lost nor read by the next command. A typed-ahead line
+  ending in a newline runs without editing (the client prints the prompt and the line); the rest starts the line
+  (control characters and escape sequences, such as an arrow key's, are dropped: `typed_text`).
 - **The line** (`interactive/mod.rs`): `read_line` is `request` (everything the editor needs from `Shell`, as the
   plain-data `Request`, with the side effects of a prompt) then `edit` (the editor, given a `Request`). In the
   server, `remote::serve_line` sends the request instead, with the history's changes (`ShellHistory::changes`: the
