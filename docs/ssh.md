@@ -114,7 +114,7 @@ same ssh connection (so you log in once):
 
 ```console
 $ luish --ssh myserver
-luish: copying luish 0.5.0 to the server (5.6 MB)
+luish: copying luish 0.6.0 to the server (5.6 MB)
 ```
 
 The copy is kept on HOST as `~/.cache/luish/binaries/luish-VERSION-BUILD`
@@ -199,7 +199,7 @@ With `--remote`, nothing is copied: the `luish` at the other end must be the
 same version as yours, or the client stops with
 
 ```text
-luish: the server's luish (0.4.0) speaks another version of the protocol than this one (0.5.0)
+luish: the server's luish (0.6.0) speaks another version of the protocol than this one (0.7.0)
 ```
 
 ## Making it the way you log in

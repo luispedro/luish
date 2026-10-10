@@ -1,4 +1,4 @@
-Unreleased
+Version 0.6.0 2026-10-10 by luispedro
     * Bad glob qualifier errors name the word
     * luish --ssh HOST: edit command lines locally, run them on HOST
     * luish --ssh --luish-path=PROGRAM HOST: for luish not on HOST's PATH

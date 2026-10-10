@@ -1,7 +1,7 @@
 # luish, dash, bash and zsh
 
 This page compares luish with the three shells people most often choose between on Linux: dash (the usual `/bin/sh`
-on Debian and Ubuntu), bash and zsh. It describes luish 0.5.0 (October 2026), a young project that already
+on Debian and Ubuntu), bash and zsh. It describes luish 0.6.0 (October 2026), a young project that already
 replaces dash for scripts, and is meant to replace zsh as an interactive shell; [](../compatibility.md) has the details
 behind each claim here. Two further pages go into detail:
 [](language.md), on arrays, expansions, arithmetic, globbing and the rest of the language, and

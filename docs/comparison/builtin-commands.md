@@ -5,12 +5,12 @@ It complements [](index.md); [](../builtins.md) documents luish's own built-ins 
 
 The lists are those of dash 0.5.12 (Debian and Ubuntu's), bash 5.2 (`compgen -b`), zsh 5.9 (`${(k)builtins}`
 with no startup files, which includes the built-ins of modules zsh loads on demand, such as `zstyle` and the
-completion system's) and luish 0.5.0. zsh's other modules, loaded with `zmodload` (such as `zsh/files`, `zsh/datetime`
+completion system's) and luish 0.6.0. zsh's other modules, loaded with `zmodload` (such as `zsh/files`, `zsh/datetime`
 or `zsh/system`), add more, and bash can load more with `enable -f`; those are not listed.
 
 | | dash | bash | zsh | luish |
 |---|--:|--:|--:|--:|
-| Built-ins | 38 | 61 | 103 | 53, and 7 more in interactive shells |
+| Built-ins | 38 | 61 | 103 | 53, and 8 more in interactive shells |
 
 In the tables, ✓ marks a built-in, – its absence, and *i* a built-in that luish has only in interactive shells (and
 their subshells), so that scripts find the same commands as under dash; there, `__luish_internal NAME` runs it.
@@ -89,6 +89,7 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 | `print` | – | – | ✓ | *i* | zsh's, with its options except `-p` (no coprocesses) and `-S` |
 | `setopt`, `unsetopt` | – | – | ✓ | ✓ | zsh's names for the options luish has, and luish's grouped names (`history.share`) and `NAME=VALUE` settings |
 | `source` | – | ✓ | ✓ | ✓ | As in zsh: a name without `/` is looked for in the current directory first |
+| `vared` | – | – | ✓ | *i* | zsh's, without its widget options (`-i`, `-f`) and `-t` |
 
 ## Built-ins that luish lacks
 
@@ -133,7 +134,6 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 | `sched` | Run commands at a given time | None |
 | `ttyctl` | Freeze the terminal's settings | None |
 | `unfunction`, `unhash` | Remove functions, aliases or cached commands | `unset -f`, `unalias`, `hash -r` |
-| `vared` | Edit a variable in the line editor | None |
 | `whence`, `where`, `which` | Describe or find commands | `type`, `command -v`, `command -V`. luish's own `where` shows where variables were set |
 | `zcompile` | Compile scripts | None needed for startup files: the [startup cache](../usage.md#cached-startup-files) saves their effect |
 | `zformat`, `zparseopts`, `zregexparse` | Formatting and parsing helpers | `printf`, `getopts`, `[[ =~ ]]` |

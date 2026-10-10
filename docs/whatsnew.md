@@ -1,5 +1,47 @@
 # What's new
 
+## Version 0.6.0 (10 October 2026)
+
+This release brings remote shells whose line editor runs on your machine,
+zsh's `vared`, and sources that plugins can make available.
+
+**Remote shells that feel local.** `luish --ssh HOST` logs in to HOST with
+ssh and runs your commands there, but edits command lines on your machine:
+typing, moving in the line, the history, autosuggestions and the completion
+menu don't wait for the network, while Tab completion, the prompt and your
+startup files still come from HOST (see [](ssh.md)).
+
+- luish needn't be installed on HOST: `luish --ssh` copies itself there the
+  first time, in the same connection, and keeps one copy per version
+  (`-o ssh.no_auto_copy` never copies, `--copy-luish` always does, and
+  `--luish-path=PROGRAM` runs a luish already there).
+- Commands run on a terminal of their own on HOST, so full-screen programs,
+  job control, `^C`, `^Z` and window size changes work as over ssh; keys
+  typed while a command runs start the next line.
+- ssh's escapes `~.`, `~^Z`, `~?` and `~~` work as in ssh
+  (`-o ssh.escape_char` changes `~`).
+- `-e COMMAND` (or `--rsh=COMMAND`, `--ssh-command=COMMAND`) uses COMMAND
+  instead of `ssh -T`, as in rsync; `luish --remote COMMAND...` works over
+  any COMMAND that starts `luish --serve` at the other end.
+- Your terminal's variables (`TERM`, `COLORTERM`, `TERM_PROGRAM`) and your
+  locale (where HOST has none) reach HOST.
+- `std.completion` completes `luish --ssh` (ssh's options, luish's own and
+  hosts) and `luish --remote COMMAND`.
+
+**`vared`**, as in zsh, edits the value of a variable with the line editor:
+`vared PATH`, or `vared -p 'Message: ' -c msg` to ask for one (see
+`help vared`).
+
+**Plugins.** A plugin's `plugin.toml` can make sources available in its
+`[available]` table, as `config.toml`'s `plugins.available` does, so that a
+personal plugin can bring the sources of the plugins you load now and then
+to every machine (see
+[](plugins.md#making-sources-available-available)).
+
+**Other improvements.** A bad glob qualifier names the word it is in, as it
+may come from an expansion (`echo $PS1` with a prompt that ends in
+`%(...)`).
+
 ## Version 0.5.0 (5 October 2026)
 
 This release brings more of zsh's and bash's language, a way to find where

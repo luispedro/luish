@@ -17,4 +17,4 @@ run
 run
 Usage: luish [OPTION...] [SCRIPT [ARG...]]
 status 0
-luish 0.5.0 (REV)
+luish 0.6.0 (REV)
