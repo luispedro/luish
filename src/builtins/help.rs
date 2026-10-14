@@ -64,6 +64,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"set", page!("set")),
     (b"setopt", page!("setopt")),
     (b"shift", page!("shift")),
+    (b"shopt", page!("shopt")),
     (b"source", page!("dot")),
     (b"style", page!("style")),
     (b"test", page!("test")),

@@ -92,7 +92,8 @@ read -r first rest <<< "$line"             # a here-string: the word and a newli
   modifiers (`${x:t}`, `${BASH_SOURCE:A:h}`) and more.
 - [Special variables](#special-variables): `RANDOM`, `SECONDS`, `UID`, `pipestatus`, `path` and others.
 - `source` is `.`, and looks for a name without a `/` in the current directory first, as zsh does.
-- `shopt` and `zstyle` are not built-ins. For `shopt`, luish suggests the matching `setopt`.
+- `zstyle` is not a built-in. `shopt` sets the matching `setopt` option where luish has one (see
+  [`shopt`](builtins.md#shopt)).
 
 ## Special variables
 

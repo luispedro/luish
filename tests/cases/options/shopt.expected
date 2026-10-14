@@ -1,0 +1,114 @@
+status 0
+cd.auto
+glob.star
+globstar       	on
+autocd         	on
+status 0
+globstar       	off
+autocd         	on
+status 1
+shopt -u globstar
+shopt -s autocd
+status 0
+status 1
+status 0
+status 0
+shopt.sh: 12: shopt: extglob: not supported in luish
+    shopt -s extglob 2>&1; echo "status $?"
+status 1
+shopt.sh: 13: shopt: xpg_echo: not supported in luish
+    shopt -u xpg_echo 2>&1; echo "status $?"
+status 1
+shopt.sh: 15: shopt: cannot set and unset shell options simultaneously
+    shopt -su autocd 2>&1; echo "status $?"
+status 1
+shopt.sh: 16: shopt: bogus: invalid shell option name
+    shopt -s bogus autocd 2>&1; echo "status $?"
+status 1
+shopt.sh: 17: shopt: bogus: invalid shell option name
+    shopt bogus 2>&1; echo "status $?"
+status 1
+shopt.sh: 18: shopt: Illegal option -z
+    shopt -z 2>&1; echo "status $?"
+status 2
+pipefail        on
+set +o errexit
+set -o pipefail
+shopt.sh: 22: shopt: bogus: invalid option name
+    shopt -o pipefail bogus 2>&1; echo "status $?"
+pipefail       	on
+status 1
+pipefail       	off
+status 1
+autocd         	on
+assoc_expand_once	off
+cdable_vars    	off
+cdspell        	off
+checkhash      	off
+checkjobs      	off
+checkwinsize   	on
+cmdhist        	on
+compat31       	off
+compat32       	off
+compat40       	off
+compat41       	off
+compat42       	off
+compat43       	off
+compat44       	off
+complete_fullquote	off
+direxpand      	off
+dirspell       	off
+dotglob        	off
+execfail       	off
+expand_aliases 	on
+extdebug       	off
+extglob        	off
+extquote       	off
+failglob       	off
+force_fignore  	off
+globasciiranges	off
+globskipdots   	off
+globstar       	off
+gnu_errfmt     	off
+histappend     	on
+histreedit     	off
+histverify     	off
+hostcomplete   	off
+huponexit      	off
+inherit_errexit	off
+interactive_comments	on
+lastpipe       	off
+lithist        	off
+localvar_inherit	off
+localvar_unset 	off
+login_shell    	off
+mailwarn       	off
+no_empty_cmd_completion	off
+nocaseglob     	off
+nocasematch    	off
+noexpand_translation	off
+nullglob       	off
+patsub_replacement	off
+progcomp       	on
+progcomp_alias 	off
+promptvars     	on
+restricted_shell	off
+shift_verbose  	off
+sourcepath     	on
+varredir_close 	off
+xpg_echo       	on
+autocd         	on
+checkwinsize   	on
+cmdhist        	on
+expand_aliases 	on
+histappend     	on
+interactive_comments	on
+progcomp       	on
+promptvars     	on
+sourcepath     	on
+xpg_echo       	on
+shopt -u assoc_expand_once
+shopt -u cdable_vars
+shopt -u cdspell
+globstar       	off
+status 1

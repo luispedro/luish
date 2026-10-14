@@ -99,6 +99,8 @@ builtins! {
     (b"read", read::read, false),
     // Not POSIX: as in zsh.
     (b"setopt", vars::setopt, false),
+    // Not POSIX: as in bash.
+    (b"shopt", vars::shopt, false),
     (b"test", test::test, false),
     (b"true", colon, false),
     (b"type", misc::type_, false),

@@ -1,3 +1,6 @@
+Unreleased
+    * shopt, translated to setopt (globstar, autocd, histverify)
+
 Version 0.6.0 2026-10-10 by luispedro
     * Bad glob qualifier errors name the word
     * luish --ssh HOST: edit command lines locally, run them on HOST

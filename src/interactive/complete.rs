@@ -255,6 +255,8 @@ enum Args {
     /// Option names (those that are off for `setopt`, on for `unsetopt`),
     /// setting names, and filenames after `NAME=`.
     Setopt(bool),
+    /// bash's options, or after `-o` those of `set -o`.
+    Shopt,
 }
 
 const ARGS: &[(&[u8], Args)] = &[
@@ -287,6 +289,7 @@ const ARGS: &[(&[u8], Args)] = &[
     (b"bindkey", Args::Bindkey),
     (b"setopt", Args::Setopt(true)),
     (b"unsetopt", Args::Setopt(false)),
+    (b"shopt", Args::Shopt),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1414,6 +1417,15 @@ impl ShellHelper {
                         }
                         0
                     }
+                    Some(Args::Shopt) => {
+                        let opts = args.iter().take_while(|a| a.len() > 1 && a[0] == b'-' && *a != b"--");
+                        if opts.into_iter().any(|a| a.contains(&b'o')) {
+                            out.extend(crate::options::OPTIONS.iter().map(|o| Candidate::word(o.2.as_bytes())));
+                        } else {
+                            out.extend(crate::options::SHOPT.iter().map(|o| Candidate::word(o.0.as_bytes())));
+                        }
+                        0
+                    }
                     Some(Args::Dirs) => files(Files::Dirs, &mut out),
                     Some(Args::Cd) if w.text[w.split..].starts_with(b"~") => files(Files::Dirs, &mut out),
                     Some(Args::Cd) => {
@@ -1979,6 +1991,12 @@ mod tests {
         assert_eq!(complete(&h, "setopt history.no"), ["history.no_share "]);
         assert_eq!(complete(&h, "unsetopt history.no"), ["history.no_save_no_dups "]);
         assert_eq!(complete(&h, "setopt errex"), ["errexit "]);
+        assert_eq!(
+            complete(&h, "shopt -s glob"),
+            ["globasciiranges ", "globskipdots ", "globstar "]
+        );
+        assert_eq!(complete(&h, "shopt -so pipef"), ["pipefail "]);
+        assert_eq!(complete(&h, "shopt -s pipef"), Vec::<String>::new());
         assert_eq!(complete(&h, "setopt -p hi"), ["highlight ", "history "]);
         assert_eq!(
             complete(&h, "setopt -p "),

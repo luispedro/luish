@@ -187,7 +187,8 @@ associative arrays, `[[ ... ]]`, `function`, `let`, `typeset`,
 `${x/pattern/replacement}`, `${!name}` and zsh's `${(j:,:)a[@]}` flags (see
 [](usage.md#shell-language-extensions)).
 
-Code that uses `shopt` (luish suggests the matching `setopt`), `zstyle` or
+`shopt` sets luish's matching options (such as `glob.star` for `globstar`), and
+is an error for bash options luish doesn't have. Code that uses `zstyle` or
 zsh's other modules doesn't work yet. Arrays are indexed from 0, as in bash and
 in zsh's `sh` mode, not from 1 as in native zsh.
 

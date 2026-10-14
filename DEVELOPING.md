@@ -403,11 +403,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - Redirections: `n>&n` does nothing even if `n` is closed; `>&word` with a word that isn't a number or `-` is a fatal
   syntax error, as in dash. Tests: `exec/redirect_dup.sh`, `exec/redirect_big_fd.sh`.
 - A command that isn't found is reported by `report_not_found` (`exec/not_found.rs`), from all three places that
-  find out (`look_up_before_fork`, and `exec_error` after `posix_spawn` or `execve`), so the hint is the same whether
-  the shell spawns, forks or execs. After `NAME: not found` it looks `NAME` up in `FALLBACKS`, whose functions get the
-  command's words and may return a hint (`shopt` suggests `setopt`, translating the options luish knows). This is the
-  place for further suggestions (such as similar command names); it runs only for a missing command, so it costs
-  nothing otherwise. A name with `/` gets no hint. Test: `exec/not_found_hint.sh`.
+  find out (`look_up_before_fork`, and `exec_error` after `posix_spawn` or `execve`), so the message is the same
+  whether the shell spawns, forks or execs. This is the place for suggestions (such as similar command names); it
+  runs only for a missing command, so it costs nothing otherwise.
 - Exec errors other than EACCES give 127, as in Debian's dash (e.g. `ELOOP`). `wait_for` prints a message for deaths
   by signal except INT and PIPE.
 - `set -e`: as in dash, only simple commands, subshells and pipelines (and a compound command whose redirection
@@ -645,6 +643,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `tests/interactive.rs`.
 - `setopt -p GROUP`: an unknown group is status 1 (nothing set), a missing one or another option letter status 2. The
   completer completes group names after `-p`, and the group's names after `-p GROUP`.
+- `shopt` (bash's, a regular built-in everywhere, as `setopt`): `SHOPT` lists bash's options in bash's order, each
+  `Same(setting)` (set through `set_setting`, as `setopt` does), `On` (luish always does it: `-s` is a no-op, `-u` an
+  error) or `Off` (no such option: `-u` is a no-op, `-s` an error). `-o` takes `set -o`'s names through `set_setting`.
+  Messages and formats are bash's (`%-15s\t%s`, `shopt -s NAME`, `set +o NAME`). A unit test keeps `SHOPT` in step
+  with `shopt_options()` in `luish-std-plugins/completion/shells.rhai`. Test: `options/shopt.sh`.
 - Tests: `options/setopt.sh` (zsh), `options/setopt_list.sh`, `options/setopt_values.sh`, `options/setopt_group.sh`,
   `options/*`.
 
@@ -1563,7 +1566,7 @@ truncates when it relocates the package.
 | `vared` | `builtins/internal_vared.sh`, `vared_builtin` and `remote_editing` in `tests/interactive.rs` |
 | `clipcopy` | `builtins/internal_clipcopy.sh`, `clipcopy` in `tests/interactive.rs` |
 | `plugin` | `builtins/internal_plugin.sh`, `builtins/plugin.sh` (same as dash), `plugin_builtin` in `tests/interactive.rs` |
-| Hints for commands not found | `exec/not_found_hint.sh` |
+| `shopt` | `options/shopt.sh` |
 | `where`, startup caches with `vars.trace` | `misc/vartrace.sh`, `misc/vartrace_restore.sh`, `misc/vartrace_history.sh`, `misc/vartrace_startup.sh`, `tests/plugins/vartrace_prompt.sh` |
 
 ## dash as the reference

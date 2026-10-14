@@ -123,6 +123,87 @@ const ALIASES: &[(Opt, &str)] = &[
     (Opt::PushdSilent, "pushdsilent"),
 ];
 
+/// What luish does for one of bash's `shopt` options.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Shopt {
+    /// The setting of this name, which `shopt` sets as `setopt` does.
+    Same(&'static str),
+    /// Always on: luish behaves this way.
+    On,
+    /// Always off: luish has no such option.
+    Off,
+}
+
+/// bash's `shopt` options, in the order bash lists them, and what luish does
+/// for each.
+pub const SHOPT: &[(&str, Shopt)] = &[
+    ("autocd", Shopt::Same("cd.auto")),
+    ("assoc_expand_once", Shopt::Off),
+    ("cdable_vars", Shopt::Off),
+    ("cdspell", Shopt::Off),
+    ("checkhash", Shopt::Off),
+    ("checkjobs", Shopt::Off),
+    // The line editor follows the window's size.
+    ("checkwinsize", Shopt::On),
+    // A command of several lines is one history entry.
+    ("cmdhist", Shopt::On),
+    ("compat31", Shopt::Off),
+    ("compat32", Shopt::Off),
+    ("compat40", Shopt::Off),
+    ("compat41", Shopt::Off),
+    ("compat42", Shopt::Off),
+    ("compat43", Shopt::Off),
+    ("compat44", Shopt::Off),
+    ("complete_fullquote", Shopt::Off),
+    ("direxpand", Shopt::Off),
+    ("dirspell", Shopt::Off),
+    ("dotglob", Shopt::Off),
+    ("execfail", Shopt::Off),
+    // Aliases are expanded in scripts too, as in dash.
+    ("expand_aliases", Shopt::On),
+    ("extdebug", Shopt::Off),
+    ("extglob", Shopt::Off),
+    ("extquote", Shopt::Off),
+    ("failglob", Shopt::Off),
+    ("force_fignore", Shopt::Off),
+    ("globasciiranges", Shopt::Off),
+    // `.*` matches `.` and `..`, as in dash.
+    ("globskipdots", Shopt::Off),
+    ("globstar", Shopt::Same("glob.star")),
+    ("gnu_errfmt", Shopt::Off),
+    // The history file is appended to.
+    ("histappend", Shopt::On),
+    ("histreedit", Shopt::Off),
+    ("histverify", Shopt::Same("history.verify")),
+    ("hostcomplete", Shopt::Off),
+    ("huponexit", Shopt::Off),
+    ("inherit_errexit", Shopt::Off),
+    ("interactive_comments", Shopt::On),
+    ("lastpipe", Shopt::Off),
+    ("lithist", Shopt::Off),
+    ("localvar_inherit", Shopt::Off),
+    ("localvar_unset", Shopt::Off),
+    ("login_shell", Shopt::Off),
+    ("mailwarn", Shopt::Off),
+    ("no_empty_cmd_completion", Shopt::Off),
+    ("nocaseglob", Shopt::Off),
+    ("nocasematch", Shopt::Off),
+    ("noexpand_translation", Shopt::Off),
+    ("nullglob", Shopt::Off),
+    ("patsub_replacement", Shopt::Off),
+    // Completion plugins.
+    ("progcomp", Shopt::On),
+    ("progcomp_alias", Shopt::Off),
+    ("promptvars", Shopt::On),
+    ("restricted_shell", Shopt::Off),
+    ("shift_verbose", Shopt::Off),
+    // `.` looks for a name without `/` in `PATH`.
+    ("sourcepath", Shopt::On),
+    ("varredir_close", Shopt::Off),
+    // `echo` expands backslash escapes, as dash's does.
+    ("xpg_echo", Shopt::On),
+];
+
 /// The type of a setting that holds a value rather than being on or off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -282,7 +363,25 @@ impl Options {
 
 #[cfg(test)]
 mod tests {
-    use super::{EXTENDED, Kind, OPTIONS, Opt, Options, Setting, find_group, groups, inverted, is_setting_name};
+    use super::{
+        EXTENDED, Kind, OPTIONS, Opt, Options, SHOPT, Setting, Shopt, find_group, groups, inverted, is_setting_name,
+    };
+
+    /// The completion plugin of luish-std-plugins lists bash's `shopt`
+    /// options (for `bash -O`), which `shopt` takes.
+    #[test]
+    fn shopt_names() {
+        let shells = include_str!("../luish-std-plugins/completion/shells.rhai");
+        let list = shells.split("fn shopt_options() {").nth(1).unwrap();
+        let list = &list[..list.find(']').unwrap()];
+        let names: Vec<&str> = list.split('"').skip(1).step_by(2).collect();
+        assert_eq!(names, SHOPT.iter().map(|o| o.0).collect::<Vec<_>>());
+        for &(_, o) in SHOPT {
+            if let Shopt::Same(name) = o {
+                assert!(matches!(Options::find(name.as_bytes()), Some(Setting::Flag(_, true))));
+            }
+        }
+    }
 
     /// The completion plugin of luish-std-plugins lists the options that
     /// `luish -o` takes.

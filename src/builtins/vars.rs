@@ -1,9 +1,11 @@
-//! `export`, `readonly`, `unset`, `set`, `shift`, `local`, `typeset`.
+//! `export`, `readonly`, `unset`, `set`, `shift`, `local`, `typeset`, `setopt`, `shopt`.
 
 use super::illegal_number;
 use crate::exec::AssignValue;
 use crate::lexer::is_valid_name;
-use crate::options::{EXTENDED, Kind, OPTIONS, Opt, Options, Setting, VALUES, find_group, group_of, parse_bool};
+use crate::options::{
+    EXTENDED, Kind, OPTIONS, Opt, Options, SHOPT, Setting, Shopt, VALUES, find_group, group_of, parse_bool,
+};
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::vars::{Item, Special, Subscript, Transform, Value};
 
@@ -454,6 +456,110 @@ fn list_group(sh: &Shell, group: &str) -> i32 {
     lines.sort_unstable_by_key(|l| l.0);
     let out: Vec<u8> = lines.into_iter().flat_map(|l| l.1).collect();
     sh.out_status(&out)
+}
+
+/// `shopt` (not POSIX; as in bash): bash's options, set as `setopt` sets
+/// the luish setting that does the same. An option that luish always or
+/// never has can only be set that way. With `-o`, the names are those of
+/// `set -o`. Without `-s` or `-u`, or without names, it lists the options,
+/// as `NAME on`, or with `-p` as the commands that set them.
+pub fn shopt(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    let (mut on, mut both, mut print, mut quiet, mut set_o) = (None, false, false, false, false);
+    let mut i = 1;
+    while let Some(a) = argv.get(i).filter(|a| a.len() > 1 && a[0] == b'-') {
+        i += 1;
+        if a == b"--" {
+            break;
+        }
+        for &c in &a[1..] {
+            match c {
+                b's' | b'u' => {
+                    let s = c == b's';
+                    both |= on == Some(!s);
+                    on = Some(s);
+                }
+                b'p' => print = true,
+                b'q' => quiet = true,
+                b'o' => set_o = true,
+                _ => {
+                    sh.berr(&argv[0], format!("Illegal option -{}", c as char));
+                    return Ok(2);
+                }
+            }
+        }
+    }
+    if both {
+        sh.berr(&argv[0], "cannot set and unset shell options simultaneously");
+        return Ok(1);
+    }
+    let names = &argv[i..];
+    let text = |s: &[u8]| String::from_utf8_lossy(s).into_owned();
+    if let Some(on) = on.filter(|_| !names.is_empty()) {
+        let mut status = 0;
+        for n in names {
+            let r = match SHOPT.iter().find(|o| o.0.as_bytes() == &n[..]) {
+                _ if set_o => set_setting(sh, on, n),
+                Some(&(_, Shopt::Same(name))) => set_setting(sh, on, name.as_bytes()),
+                Some(&(_, fixed)) if (fixed == Shopt::On) == on => Ok(()),
+                Some(_) => Err(format!("{}: not supported in luish", text(n))),
+                None => Err(format!("{}: invalid shell option name", text(n))),
+            };
+            if let Err(msg) = r {
+                sh.berr(&argv[0], msg);
+                status = 1;
+            }
+        }
+        sh.set_jobctl(sh.opt(Opt::Monitor));
+        return Ok(status);
+    }
+    let state = |name: &[u8]| -> Option<bool> {
+        if set_o {
+            return state_of(sh, name);
+        }
+        match SHOPT.iter().find(|o| o.0.as_bytes() == name)?.1 {
+            Shopt::Same(s) => state_of(sh, s.as_bytes()),
+            fixed => Some(fixed == Shopt::On),
+        }
+    };
+    let all: Vec<&[u8]> = if !names.is_empty() {
+        names.iter().map(|n| &n[..]).collect()
+    } else if set_o {
+        OPTIONS.iter().map(|o| o.2.as_bytes()).collect()
+    } else {
+        SHOPT.iter().map(|o| o.0.as_bytes()).collect()
+    };
+    let mut status = 0;
+    let mut out = Vec::new();
+    for name in all {
+        let Some(is_on) = state(name) else {
+            let what = if set_o { "option name" } else { "shell option name" };
+            sh.berr(&argv[0], format!("{}: invalid {what}", text(name)));
+            status = 1;
+            continue;
+        };
+        if !names.is_empty() && !is_on {
+            status = 1;
+        }
+        if quiet || on.is_some_and(|on| on != is_on) {
+            continue;
+        }
+        let line = match (print, set_o) {
+            (true, true) => format!("set {}o {}\n", if is_on { '-' } else { '+' }, text(name)),
+            (true, false) => format!("shopt -{} {}\n", if is_on { 's' } else { 'u' }, text(name)),
+            (false, _) => format!("{:<15}\t{}\n", text(name), if is_on { "on" } else { "off" }),
+        };
+        out.extend_from_slice(line.as_bytes());
+    }
+    sh.out(&out);
+    Ok(status)
+}
+
+/// Whether the option named `name` (as `setopt` takes it) is on.
+fn state_of(sh: &Shell, name: &[u8]) -> Option<bool> {
+    match Options::find(name)? {
+        Setting::Flag(o, sense) => Some(sh.opt(o) == sense),
+        Setting::Value(..) => None,
+    }
 }
 
 /// One argument of `setopt` (`on`) or `unsetopt`: `NAME` or `NAME=VALUE`.

@@ -10,7 +10,7 @@ or `zsh/system`), add more, and bash can load more with `enable -f`; those are n
 
 | | dash | bash | zsh | luish |
 |---|--:|--:|--:|--:|
-| Built-ins | 38 | 61 | 103 | 53, and 8 more in interactive shells |
+| Built-ins | 38 | 61 | 103 | 54, and 8 more in interactive shells |
 
 In the tables, ✓ marks a built-in, – its absence, and *i* a built-in that luish has only in interactive shells (and
 their subshells), so that scripts find the same commands as under dash; there, `__luish_internal NAME` runs it.
@@ -88,6 +88,7 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 | `local` | ✓ | ✓ | ✓ | ✓ | Special, as in dash. Takes `typeset`'s options and arrays (`local a=(x y)`). Without a value, keeps the outer value, as in dash (in bash and zsh it starts unset or empty) |
 | `print` | – | – | ✓ | *i* | zsh's, with its options except `-p` (no coprocesses) and `-S` |
 | `setopt`, `unsetopt` | – | – | ✓ | ✓ | zsh's names for the options luish has, and luish's grouped names (`history.share`) and `NAME=VALUE` settings |
+| `shopt` | – | ✓ | – | ✓ | bash's, setting luish's options that do the same (`glob.star` for `globstar`); the options luish lacks can't be set |
 | `source` | – | ✓ | ✓ | ✓ | As in zsh: a name without `/` is looked for in the current directory first |
 | `vared` | – | – | ✓ | *i* | zsh's, without its widget options (`-i`, `-f`) and `-t` |
 
@@ -109,7 +110,6 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 | `bind` | readline key bindings | `bindkey`, or `[bindkey]` in `config.toml` |
 | `compgen`, `complete`, `compopt` | Programmable completion | Completers in Rhai, from [plugins](../plugins.md); `std.bash-completion` runs bash's completion scripts |
 | `mapfile`, `readarray` | Read lines into an array | A loop: `while IFS= read -r l; do a+=("$l"); done` |
-| `shopt` | bash's own options | `setopt`, for the options luish has (luish suggests the name for some, such as `globstar`) |
 
 ### zsh only
 

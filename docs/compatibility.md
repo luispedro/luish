@@ -100,7 +100,7 @@ instead.
 | `where` | Not a built-in (`not found`, status 127) | In interactive shells (and their subshells), and in any shell while `vars.trace` or `vars.trace_history` is on, a built-in that shows where variables were set (see [Tracing variables](usage.md#tracing-variables)). Otherwise not a built-in, as in dash; `__luish_internal where` does the same. zsh's `where` lists the commands a name finds instead, which luish doesn't have |
 | Startup caches with `vars.trace` | No startup caches | While variables are traced, the startup files run instead of being restored from the caches, so that where they set variables is recorded |
 | Error messages | `$0: LINE: message` | `FILE: LINE: message`, where `FILE` is the file of the code that failed (a file read with `.`, or the file a function was defined in), followed by the text of the failing line and the call stack: a line for each function call and file read with `.` that led there, with the text of the line it was called from (see [Error messages](usage.md#error-messages)) |
-| A command that isn't found | `NAME: not found` (status 127) | The same, followed by a hint for some commands of other shells: bash's `shopt` suggests `setopt` or `unsetopt` (as `in luish, use: setopt globstar` for `shopt -s globstar`) |
+| `shopt` | Not a built-in (`not found`, status 127) | bash's built-in: `shopt -s NAME` and `shopt -u NAME` set the luish option that does the same (`globstar` is `glob.star`, `autocd` is `cd.auto`, `histverify` is `history.verify`). bash's options that describe what luish always does (`histappend`, `expand_aliases`, `xpg_echo` ...) are always on, and the others always off; setting or unsetting one the other way is an error (status 1) |
 
 ## Known limitations
 

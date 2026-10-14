@@ -90,8 +90,8 @@ unchanged, about five times faster. luish has:
 - Process substitution, `pipefail`, and zsh's special variables (`RANDOM`, `SECONDS`, `EPOCHREALTIME`,
   `pipestatus`/`PIPESTATUS`, `path` ...).
 
-Brace expansion (`{a,b}`, `{1..10}`) needs `setopt expand.braces`. Not yet: `$'...'` strings, `select`, `coproc`, `shopt`
-and `extglob`, `mapfile`, `printf -v`, `local -n`, `${x^^}`, `wait -n`, the `ERR` trap, the `time` keyword, and
+Brace expansion (`{a,b}`, `{1..10}`) needs `setopt expand.braces`. Not yet: `$'...'` strings, `select`, `coproc`,
+`extglob`, `mapfile`, `printf -v`, `local -n`, `${x^^}`, `wait -n`, the `ERR` trap, the `time` keyword, and
 `((...))` and floating-point arithmetic. Where bash and zsh disagree, luish documents which it follows (usually zsh's `sh`
 emulation, sometimes bash).
 
