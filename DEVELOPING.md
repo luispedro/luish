@@ -1698,20 +1698,31 @@ code only they need is under `#[cfg(any(test, fuzzing))]` (`fuzzing` is set by c
 
 ## Conformance
 
-Last checked on 2026-09-26 (the scripts are not in the repository):
+Checked on 2026-09-26 (the scripts are not in the repository):
 
 - **autoconf**: GNU hello 2.12.1 and GNU sed 4.9 `configure` give the same output and `config.h` under luish (as
   `CONFIG_SHELL`) as under dash; both build and `make check` passes (sed: the same PASS/SKIP lists). To rerun: get
   them from ftp.gnu.org, run `CONFIG_SHELL=$L $L ./configure` next to a dash-configured copy, and diff the output,
   `config.h` and `make check` results.
-- **Oils spec tests** (`spec/*.test.sh` whose `compare_shells` include dash, 1620 cases): 43 differed, before the
-  extensions of 0.2.0 (arrays, `declare`, `[[` ...), so fewer may now: the deviations, bash-only features (arrays, `shopt`, `printf -v`/`%q`, `declare`), cases that differ only by
-  temporary directory names or timestamps, and the known limitations. To rerun: `git clone --depth 1
-  https://github.com/oils-for-unix/oils`, split `spec/*.test.sh` on `#### ` (skipping `## STDOUT:`...`## END`
-  blocks, which are expected output), keep files whose `## compare_shells:` includes dash, and run each case with
-  `sh -c` under dash and luish in a fresh temporary directory (env: `PATH`, `SH`, `TMP`, `HOME`, `REPO_ROOT`,
-  `LC_ALL=C.UTF-8`; stdin `/dev/null`; timeout 5 s), comparing stdout and status. `case $SH in dash)` in the cases
-  doesn't match when `SH` is a full path, so some cases meant to skip dash run anyway.
+- **Oils spec tests** (2026-10-14, with `scripts/oils-spec/`; the 138 `spec/*.test.sh` with a `## compare_shells:`
+  line, 2799 cases, run as Oils' own runner does):
+  - The 79 files that list dash (1620 cases): 1430 give dash's stdout and status. Of the 190 others, 84 are
+    extensions (dash fails, luish does as bash or zsh), 51 differ from a dash that succeeds but do as bash or zsh
+    (the deviations: `builtin`, `shopt`, `$LINENO`, `kill -l`, `++`, `[[`...), and 55 match none of the three: bash
+    features luish lacks (`(( ))`, `test -v`, `printf %q`, `${x@Q}`, `$'...'`, `ulimit --all`, `kill -L`, `wait
+    -n`, `mapfile`), arrays without holes, zsh's sh emulation where bash differs (quoted keys in `${A['k']}`), dash's
+    `^` in brackets also in `${x//[^a]/}`, and races in the cases. No crashes or timeouts.
+  - The 59 that don't list dash (1179 cases): 614 give bash's or zsh's output (or the expected one), and with
+    `-o expand.braces -o glob.star`, 64 of the 68 in the brace, globstar and glob-bash files do. The rest are features luish lacks: `(( ))`
+    and `for ((`, `extglob`, `GLOBIGNORE`, `DEBUG` and `ERR` traps, namerefs, `type -t/-p/-a`, most `read`
+    options, bash's `\u` prompts, `typeset NAME+=`, `typeset a[i]=x`, `$(<file)`, sparse arrays, characters
+    rather than bytes in `${x:i:n}` and patterns, `${x////c}` (bash reads the pattern as `/`), recursive arithmetic on
+    variables' values (dash's `Illegal number`), `[[ -v a[i] ]]`.
+  - Found and fixed: assignments before a command not seeing those before them, and in scripts read from standard
+    input, a first word with a newline (`p='a<newline>b'`) and an alias with a newline.
+
+  To rerun: `scripts/oils-spec/run.sh` (after `pixi run release`), which clones Oils into `target/oils`; see
+  `scripts/oils-spec/README.md` for the scripts and how to read their output.
 
 ## Performance
 

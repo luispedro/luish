@@ -22,8 +22,9 @@ work:
    narrow the menu; lazy function parsing of the startup cache.
 2. **Startup cost** (deferred by the user for now; see Performance in `DEVELOPING.md`): the dynamic loader's share,
    and parsing large files (the rc cache, `nvm.sh`) about twice as slowly as dash.
-3. **More conformance**: larger `configure` scripts (coreutils), other Oils files that don't list dash, the smoosh
-   and modernish suites.
+3. **More conformance**: larger `configure` scripts (coreutils), the smoosh and modernish suites. The Oils spec
+   tests (all files, see Conformance in `DEVELOPING.md`) point at bash features worth having: `(( ))` and `for ((`,
+   `$(<file)`, `typeset NAME+=value`, `[[ -v a[i] ]]` and `test -v`.
 4. **Completion polish** beyond those: group headings (as zsh's commands / files / ..., which needs a group on
    `Candidate`, also for plugins), `LS_COLORS` for files, fuzzy matching.
 5. **Plugins (Phase 11)**: time budgets for hooks, `plugin remove`, the example plugins of M5.
