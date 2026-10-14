@@ -4,32 +4,34 @@
 plugin system from Stage 2, and sketches of the later stages with the constraints they put on the design now. What
 is already built, and how, is in `DEVELOPING.md`; the user documentation is in `docs/`.
 
-## Status (2026-10-05)
+## Status (2026-10-14)
 
-Phases 0 to 10 (the POSIX shell and the interactive mode) are done. The open phases:
+Phases 0 to 10 (the POSIX shell and the interactive mode) and 13 (replacing zsh, milestone M4) are done. The open
+work:
 
 | Phase | Stage | Status |
 |---|---|---|
 | 11 Plugins | 2 | Started, because the daily driver's prompt and completion build on it |
-| 12 Conformance and performance | 1 | Under way |
-| 13 Replacing zsh | 1 | **Current focus** |
+| 12 Conformance and performance | 1 | Under way; what remains of Stage 1 |
+| 13's follow-ups | 1 | Completion and the startup cache, below |
+| SSH mode | 3 | Released in 0.6.0, see Stage 3 below |
 
 ### Next steps, in priority order
 
-1. **Phase 13, in its order**: the rest of the generic completion bridge (needs a design note first) and typing to
+1. **Phase 13's follow-ups, in their order**: the rest of the generic completion bridge (needs a design note first) and typing to
    narrow the menu; lazy function parsing of the startup cache.
 2. **Startup cost** (deferred by the user for now; see Performance in `DEVELOPING.md`): the dynamic loader's share,
-   and parsing large files (the rc cache, `nvm.sh`) about three times as slowly as dash.
+   and parsing large files (the rc cache, `nvm.sh`) about twice as slowly as dash.
 3. **More conformance**: larger `configure` scripts (coreutils), other Oils files that don't list dash, the smoosh
    and modernish suites.
-4. **Completion polish** beyond Phase 13: group headings (as zsh's commands / files / ..., which needs a group on
+4. **Completion polish** beyond those: group headings (as zsh's commands / files / ..., which needs a group on
    `Candidate`, also for plugins), `LS_COLORS` for files, fuzzy matching.
 5. **Plugins (Phase 11)**: time budgets for hooks, `plugin remove`, the example plugins of M5.
 
 ## Phase 11 — Plugin system (Stage 2)
 
 1. A plugin-agnostic `Builtin` trait, with the Rust built-ins moved onto it, so that extension and native built-ins
-   go through the same code path (extension built-ins are now a separate `CommandKind::Extension`):
+   go through the same code path (extension built-ins are a separate `CommandKind::Extension`):
 
    ```rust
    pub trait Builtin {
@@ -71,13 +73,9 @@ Still to do: the startup gap (deferred), larger `configure` scripts (coreutils) 
 and modernish suites, and `hyperfine` in CI (non-blocking) for startup and loop regressions, including `-c true` with
 and without the `plugins` feature. Optimisations only where profiling shows a need.
 
-## Phase 13 — Replacing zsh (Stage 1, current focus)
+## Phase 13's follow-ups — Completion and the startup cache (Stage 1)
 
-Stage 1 asks for a daily driver "at least as good as a basic zsh setup". This phase is what luish still lacks to
-replace the author's own zsh setup (`~/.zshrc` from home-manager plus zplug, and `~/.zshrc_local`), found by probing
-each item against luish and from about 670 commands of typed history.
-
-Still to build, in this order:
+What replacing the author's zsh setup showed to be missing, in this order:
 
 1. **Completion content**, the biggest gap by volume (zsh gets git, ssh, make, man, cargo ... from `compinit` and
    zsh-completions). The `completion` plugin in `luish-std-plugins/` covers git and about 230 common commands; still
@@ -94,17 +92,11 @@ Still to build, in this order:
      the matches instead of closing the menu.
 2. **Lazy function parsing for the startup cache**, below.
 
-Not planned, because the history shows they aren't used or they are easy to rewrite in POSIX sh: zsh's
-two-argument `cd old new`, `zmv`, `mmv`, `zed`, `zcalc`, `noglob`, zsh-history-substring-search, zsh-nvm,
-zplug, and `fpath`/`compinit`. Nor are zsh's hook functions (`chpwd`, `precmd` ... as shell functions, and the
-`*_functions` arrays): the zsh hook snippets of tools such as direnv, zoxide or mise use other zsh syntax too, and an
-extension's hook can call a shell function with `sh::run`. If compatibility is ever wanted, a std plugin can map the
-zsh names onto the hooks. The setup's terminal title in `chpwd` becomes a small extension.
-
-The user's config (`~/.config/luish/rc.d`) also needs porting: `setopt prompt.percent` and `PS1`, `CDPATH`,
-`setopt cd.auto`, the history settings (`setopt -p history file=~/.histfile size=1000 save_size=1000 share
-ignore_space reduce_blanks save_no_dups`), the remaining aliases (`..`, `...`, `ls`, `open`), and the functions
-rewritten in POSIX sh. That is configuration, not luish work, but each item above is checked by using it there.
+Not planned, because they aren't used or are easy to rewrite in POSIX sh: zsh's two-argument `cd old new`, `zmv`,
+`mmv`, `zed`, `zcalc`, `noglob`, zsh-history-substring-search, zsh-nvm, zplug, and `fpath`/`compinit`. Nor are zsh's
+hook functions (`chpwd`, `precmd` ... as shell functions, and the `*_functions` arrays): the zsh hook snippets of
+tools such as direnv, zoxide or mise use other zsh syntax too, and an extension's hook can call a shell function with
+`sh::run`. If compatibility is ever wanted, a std plugin can map the zsh names onto the hooks.
 
 ### Lazy function parsing
 
@@ -128,20 +120,17 @@ A deferred parse can fail only if the unparser doesn't round-trip, which is unit
 move a syntax error from startup to the first call. Until then, nvm can be loaded lazily, as zsh-nvm's lazy mode
 does: put the default node's `bin` on `PATH` and define `nvm() { unset -f nvm; . "$NVM_DIR/nvm.sh"; nvm "$@"; }`.
 
-**Done when:** the author uses luish as the login shell with the ported config, and the history of a week shows no
-command that had to be run in zsh.
-
 ## Milestones
 
-M1 (simple scripts), M2 (POSIX script engine) and M3 (real-world scripts) are done.
+M1 (simple scripts), M2 (POSIX script engine), M3 (real-world scripts) and M4 (a daily-driver interactive shell,
+replacing the author's zsh setup) are done.
 
 | Milestone | Stage | Phases | Definition of done | Status |
 |---|---|---|---|---|
-| M4: Daily-driver interactive shell | 1 | 10, 13 | Replaces the author's zsh setup (Phase 13) | Phase 13 in progress |
 | M5: Plugins | 2 | 11 | Extension built-ins and hooks; example plugins: a git-aware prompt, a `json` query built-in, command timing | Started |
 
-Stage 1 is complete at M4, plus startup that matches dash (Phase 12). Milestones for the rest of Stage 2 and for
-Stage 3 will be planned once Stage 1 is done.
+Stage 1 is complete once startup matches dash (Phase 12). Milestones for the rest of Stage 2 and for Stage 3 will
+be planned then.
 
 ## Later stages
 
@@ -183,14 +172,17 @@ shell tracks the current file as well as the line, for provenance and for error 
 
 The goal is to cache the *effects* of login scripts. With a warm cache, a new shell should start almost instantly,
 and many shells started at once (a desktop login can start 40) should not each run the scripts. The cache of
-`rc.d`, `login.d` and `__luish_cache` blocks is built (see `DEVELOPING.md`), with `__luish_internal check-cache` as
-a first, manual form of revalidation. The rest of the design is stale-while-revalidate: a shell starts from the
-cached state at once, reruns the scripts in the background, and applies any difference at a later prompt, so
-invalidation doesn't have to be perfect.
+`__luish_cache` blocks is built (see `DEVELOPING.md`), and of whole files of `rc.d` and `login.d` (and
+`config.toml`) under `setopt startup.auto_cache`, off by default since a whole file's entry can't list what it
+depends on. Invalidation rests on each block listing what it depends on, with `__luish_internal check-cache` to find
+what a key misses.
+
+Not to be done (decided 2026-10-14): stale-while-revalidate (rerunning the scripts in the background and merging
+the differences into running shells). With explicit blocks it isn't needed.
 
 Still to do:
 
-- A background run or `check-cache` warns about a cached block that prints (output happens only when the body runs).
+- `check-cache` warns about a cached block that prints (output happens only when the body runs).
 - While checking (so at no cost otherwise), record the inherited variables a block expands without listing them,
   and warn: `rc.d/20-nvm.lsh:2: the block reads SSH_CONNECTION, which is not in its key`.
 - `check-cache` checks only entries built in the environment the cache last recorded; recording each build's
@@ -200,48 +192,17 @@ Still to do:
 
 #### Later
 
-- **Parallel builds**: each file runs in its own forked child from the input state, and the results are merged in
-  byte order. This needs to know which files read what an earlier one wrote, so read tracking during builds, which
-  the chain of keys otherwise makes unnecessary. Colon-separated lists would be merged as edits (components added or
-  removed), so a read of `PATH` only within an assignment to `PATH` doesn't count as a dependency.
-- **Startup**: fork the background run first (from the inherited state); use each matching entry and run what has
-  none in the foreground; apply the changes, run the uncached parts, show the prompt.
-- **Background run**: stdin from `/dev/null`, its own session, captured output, a timeout; writes entries with
-  write-and-rename; skipped if another shell validated the cache recently (a minute) or is doing so now.
-- **Many shells at once**: building is guarded by `flock`; a shell that must build in the foreground waits for the
-  lock, then checks the cache again. Interactive shells stat the cache files before each prompt and merge newer ones.
-- **Merging into a running shell**: a three-way merge of the state the shell loaded, the new result, and the current
-  state. What hasn't changed since startup takes the new value, with a one-line note; conflicts are left alone and
-  reported, and a built-in shows and applies them. This happens before a prompt, like job notifications.
-- **Volatile values** (from `$(date)`, `$$`, `$RANDOM`) differ between two runs with the same key: reported once,
-  with the file and line from provenance, and left out of change notes.
+- **Many shells at once**: building guarded by `flock`, so that shells started together on a cold cache don't each
+  build it: a shell that must build waits for the lock, then checks the cache again. (Writing is already safe:
+  write-and-rename.)
 - **Parse cache**: parsed ASTs of sourced files, keyed by fingerprint and the alias table, for the uncached parts of
   startup files, `$ENV` and `luishrc`. Functions in the effect cache are parsed lazily (Phase 13).
 
 ### Stage 3: SSH client/server mode
 
-The line editor runs on the local client, so typing, moving in the line and the completion menu are instant, while
-commands, completion and everything else that needs the remote host's state run there. Started by the user's choice
-(2026-10-06) ahead of M4, as a walking skeleton; how it is built is in `DEVELOPING.md` (SSH mode).
-
-- **Transport**: any command whose stdin and stdout reach `luish --serve` on the other host: `luish --remote CMD...`,
-  with `luish --ssh HOST` for `ssh -T HOST luish --serve`. No daemon and no extra ports (unlike mosh's UDP), and
-  `luish --remote luish --serve` tests it all on one host.
-- **Server**: a relay process and the shell. The relay keeps the transport, opens a pty and forks the shell onto it
-  as a session leader, so commands, job control, Ctrl-C and Ctrl-Z work as in a local terminal and the executor is
-  unchanged. Only `interactive::read_line` differs: instead of running the editor, it sends a `Request` (all the
-  editor needs, as plain data: prompts, the `Names` snapshot, colours, keymap, history changes) and answers Tab and
-  file lookups until the line comes back.
-- **Client**: the same editor, given the `Request`. Tab is one round trip (the server runs the whole completer and
-  sends the matches; the client draws the menu). The highlighter gets the commands on `PATH` in the snapshot (when
-  they change) and asks for paths, waiting briefly; a late answer shows at the next redraw.
-- **History** stays on the server (its file, `fc`, `!!`); the client keeps a copy, updated with each `Request`, for
-  up-arrow, searches and autosuggestions.
-- **Pass-through**: while a command runs the client's terminal is raw and keys go to the pty as typed, with window
-  size changes; full-screen programs work as over `ssh -t`. Keys typed ahead are taken back from the pty to start
-  the next line.
-
-Still to do, after the skeleton:
+The line editor runs on the local client, while commands, completion and everything else that needs the remote
+host's state run on the server, over any transport such as `ssh -T` (no daemon, no extra ports). It is built and
+released (`DEVELOPING.md`, SSH mode). Still to do:
 
 - Redraw the line when a late lookup arrives (the highlighter's pending answers). rustyline's `ExternalPrinter`, the
   only way to wake its editor, would hold back keys that come in one read (`DEVELOPING.md`, SSH mode): this needs
@@ -256,5 +217,5 @@ Still to do, after the skeleton:
 |---|---|
 | An extension hanging or slowing the prompt | Ctrl-C interrupts extension code; hooks that run before the prompt get a time budget (Phase 11) |
 | Few people know Rhai, and it has no library ecosystem | Keep the API small, ship example extensions, provide what extensions need (commands, files, JSON) |
-| Scope creep into later stages | No Stage 2 or 3 features beyond what the daily driver needs until M4. Keep extensions that change behaviour behind options |
+| Scope creep into later stages | When goals conflict, the earlier stage wins (`GOALS.md`), and Stage 1's startup work (Phase 12) is still open. Keep extensions that change behaviour behind options |
 | Plugin support adding startup cost | Engine created on the first extension; feature flag; benchmark `-c true` with and without it |

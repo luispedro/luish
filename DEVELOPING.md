@@ -22,7 +22,7 @@ behaviour listed here must stay covered by the tests named with it.
 | Reference behaviour | dash (upstream for intent), then zsh beyond POSIX | See `docs/compatibility.md` |
 | Arrays | Always on (associative ones too, made with `typeset -A`), with ksh/bash syntax and zsh's sh-emulation semantics (from 0, `$a` is `${a[0]}`) | Their syntax is an error in dash (`a=(`, `${a[i]}`), so no POSIX script changes, except that `a[i]=x` and `x+=y` stop being command names. zsh's native forms (`$a[1]`, 1-based) would change the meaning of POSIX scripts. `zsh --emulate sh` is then a reference for tests |
 
-**Why Rhai.** The first plan used Python (through PyO3), dropped because linking libpython makes the dynamic loader
+**Why Rhai.** Not Python (through PyO3): linking libpython makes the dynamic loader
 map it at every startup and makes the login shell depend on the system Python; an initialized interpreter
 complicates forking without exec (the GIL, at-fork hooks, threads started by extensions) and signal handling; and a
 runaway or crashing extension can hang or kill the shell. Rhai's costs are strings that can only hold UTF-8 (see
@@ -68,7 +68,7 @@ src/
 ├── config.rs           # config.toml
 ├── vartrace.rs         # variable tracing (setopt vars.trace) and the `where` built-in
 ├── expand/             # mod.rs (driver, parameters, command substitution), arith.rs, split.rs, pattern.rs, glob.rs,
-│                       # qual.rs
+│                       # qual.rs (glob qualifiers), brace.rs (brace expansion), modify.rs (zsh's modifiers)
 ├── exec/               # mod.rs (lists, pipelines, compound commands), simple.rs (commands, lookup), fork.rs,
 │                       # redirect.rs, cond.rs (`[[ ... ]]`), procsubst.rs (`<(...)`, `>(...)`), not_found.rs
 │                       # (hints for commands of other shells)
@@ -77,11 +77,14 @@ src/
 ├── builtins/           # mod.rs (table, special vs regular), one file per built-in or small group; help.rs
 ├── interactive/        # mod.rs (REPL, rustyline helper), history.rs, histfile.rs, bang.rs (history expansion),
 │                       # complete.rs, menu.rs, keys.rs, highlight.rs, rprompt.rs (RPROMPT), firstrun.rs (the first-run menu),
-│                       # jobmenu.rs (jobs -i), remote.rs (the editor's side of the SSH mode)
+│                       # jobmenu.rs (jobs -i), remote.rs (the editor's side of the SSH mode), tty.rs (terminal
+│                       # queries), termcolors.rs (a scheme's terminal colours), integration.rs (OSC 7 and 133,
+│                       # the vi cursor)
 ├── remote/             # the SSH mode: mod.rs (protocol), relay.rs (`--serve`), client.rs (`--remote`, `--ssh`),
-│                       # chaos.rs (a bad network, for testing)
+│                       # escape.rs (ssh's ~ escapes), chaos.rs (a bad network, for testing)
 └── plugins/            # mod.rs (the `plugin` built-in), package.rs (config.toml's [plugins], plugin.toml,
-                        # plugins.lock), fetch.rs (git), add.rs (`plugin add`), rhai.rs, fs.rs, vcs.rs, bytes.rs
+                        # plugins.lock), fetch.rs (git), add.rs (`plugin add`), ui.rs (`plugin`'s output), rhai.rs,
+                        # capture_cache.rs (sh::capture_cached), fs.rs, vcs.rs, bytes.rs
 tests/
 ├── cases/              # differential cases (*.sh, with .expected/.status/.stdin where needed)
 ├── plugins/            # plugin cases (*.sh with .expected, .stderr)
@@ -144,7 +147,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   in `highlight.rs`.
 - Process substitution: `read_word` reads `<(` and `>(` anywhere in a word (a syntax error in dash, so it is always
   on, and only `<` and `>` pay for the check) as a `WordPart::ProcSubst`, as bash and zsh do (`--input=<(cmd)`, and
-  `2<(cmd)` is one word, not an fd number); `lex_token` sends a token that starts with one to `lex_word`. Not in
+  `2<(cmd)` is one word, not an fd number); `lex` sends a token that starts with one to `lex_word`. Not in
   `[[ x =~ ... ]]` (`regex_word`). The list is parsed as for `$(` (`read_subst_list`). Tests: `expand/procsubst*.sh`,
   unit tests in `unparse.rs`.
 - As in dash, a bad `${...}` (such as `${x^^}`) is an error only when expanded, and `$(` in a here-doc delimiter
@@ -407,8 +410,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   commands with redirections (as in dash). So `$!` is the command itself. Tests: `exec/exec_last.sh`,
   `exec/c_exec_last.sh`, `exec/async_pid.sh`.
 - Signals are blocked across `fork` while a signal is trapped or ignored, or the shell is interactive or doing job
-  control, until the child has reset its dispositions: a signal sent right after `fork` (`sleep &` then `kill %2`)
-  used to be lost.
+  control, until the child has reset its dispositions; otherwise a signal sent right after `fork` (`sleep &` then
+  `kill %2`) could be lost.
 - Redirections: `n>&n` does nothing even if `n` is closed; `>&word` with a word that isn't a number or `-` is a fatal
   syntax error, as in dash. Tests: `exec/redirect_dup.sh`, `exec/redirect_big_fd.sh`.
 - A command that isn't found is reported by `report_not_found` (`exec/not_found.rs`), from all three places that
@@ -513,7 +516,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   be a number.
 - A built-in whose output can't be written prints `name: I/O error` and its status gets bit 1 (dash's `evalbltin`).
   Test: `builtins/write_errors.sh`.
-- `set -x` doesn't trace commands run while `PS4` is expanded (`in_ps4`, dash's `inps4`), which used to loop forever.
+- `set -x` doesn't trace commands run while `PS4` is expanded (`in_ps4`, dash's `inps4`), which would loop forever.
   Test: `options/xtrace_ps4_subst.sh`.
 - `export`, `readonly`, `local`, `typeset`, `declare` and `setopt` expand assignment-like arguments as assignments, as dash 0.5.12 does,
   also through `command` and when the name comes from an expansion (`declaration_command` in `expand/mod.rs`).
@@ -525,7 +528,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - `cd.auto` (`autocd_target` in `exec/simple.rs`) costs nothing unless the option is on. Test: `builtins/autocd.sh`.
 - Directory stack (`dirstack.rs`, `Shell::dirstack`): `pushd` goes through `cd`'s code (`CDPATH`, `PWD`, `OLDPWD`,
   `chpwd`), but `-P` wins over `-L` as in zsh; only `-q`, `-L` and `-P` are options. Not implemented: zsh's
-  `PUSHD_MINUS`, `PUSHD_TO_HOME`, `DIRSTACKSIZE`, `cd +n` without `pushd.auto`, the `dirstack` array. Tests:
+  `PUSHD_MINUS`, `PUSHD_TO_HOME`, `DIRSTACKSIZE`, `cd +n` without `pushd.auto`. Tests:
   `builtins/dirstack.sh`, `builtins/dirstack_interactive.sh`, `builtins/auto_pushd.sh`, `builtins/pushd_silent.sh`,
   `builtins/popd_dir.sh`.
 - `unset` of a bad name is an error; `set -` turns off `-x` and `-v`; `.` of a directory reads nothing. Test:
@@ -669,7 +672,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   from the environment show as set by luish when it started. When tracing starts, each variable that is set gets a
   first record: `Environment` if it is exported with the value the environment had, else `Startup` or `Before`.
 - Zero cost while off: `vartrace` is an `Option<Box>`, and each place that changes a variable tests it and calls a
-  `#[cold]` function: `Shell::after_assign` (which `try_set_var` now goes through, so every assignment through
+  `#[cold]` function: `Shell::after_assign` (which `try_set_var` goes through, so every assignment through
   `Shell` is covered), `Shell::unset_var`, `Shell::save_var` and `Shell::restore_saved` (`local`, temporary
   assignments, typeset's local unset), arithmetic assignments (`arith.rs`, which change `Vars` directly), and
   `unset 'h[k]'`. `with_plugin_vars` and `bump_shlvl` aren't traced (the first is undone, the second runs before
@@ -689,7 +692,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   their changes are put back after the prompt (`restore_var` isn't traced).
 - `where` is in `builtins::INTERACTIVE`, and `Shell::builtin` also finds it while tracing (only after the main table
   missed, so lookups of other commands pay a test of `vartrace` only on that path). `__luish_internal where` is the
-  same everywhere. The old plugin case that named a plugin built-in `where` now uses `plugindir`.
+  same everywhere.
 - `where` prints each change as a `Line` (what was done, the value, where), on one line or, if that is wider than the
   terminal (80 columns when stdout isn't one), with the value and where on indented lines of their own; `-a` decides
   once per variable, so its numbered entries line up. Colours come from highlighting roles (`var`, `string`, `path`,
@@ -983,11 +986,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   the option, so turning it on and off keeps them. `login.d` goes by the option's value when it runs: from `rc.d` in an
   interactive shell, otherwise from `config::load_login`, which reads that option alone from `options`
   (`options(..., Some(Opt::StartupAutoCache))`, which skips the rest silently). The caching tests turn it on in their
-  `config.toml`. With the developer's own setup (`luish-extra/conda` and `luish-extra/nvm`, whose slow parts are
-  blocks), a warm `luish -i -c exit` took 49.9M instructions off and 47.7M on (callgrind; both mostly parse the
-  functions that the blocks restore, and off also resolves the plugins, about 6M), and 15.0 ms against 13.9 ms
-  (median wall time); conda's `$(command -v conda)`, outside its block, adds a fork when off unless its `root` option
-  is set. The recommended config (`firstrun::config_text`) leaves it out on purpose: a whole file's entry restores
+  `config.toml`. Off, a warm start costs about 5% more (it resolves the plugins; both mostly parse the functions
+  that the blocks restore), and conda's `$(command -v conda)`, outside its block, adds a fork unless its `root`
+  option is set. The recommended config (`firstrun::config_text`) leaves it out on purpose: a whole file's entry restores
   what its keys missed (a variable or file it read that isn't `PATH`, `HOME` or sourced), which is hard to debug,
   whereas a block lists what it depends on. Tests: `misc/startup_cache_off.sh`, `tests/plugins/startup_cache_off.sh`.
 - Replay renders the changes (`render`, removals first, aliases and what follows grouped in braces by
@@ -1029,7 +1030,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   neither file runs outside an interactive shell). Tests: `misc/startup_cache_blocks.sh`,
   `tests/plugins/startup_cache_blocks.sh`.
 - Not yet done (see `PLAN.md`, Stage 3): `commands=(...)`, warning about variables a block reads but doesn't list,
-  background revalidation, `flock` for many shells at once, and merging into running shells.
+  and `flock` for many shells at once. Background revalidation and merging into running shells won't be: blocks
+  list what they depend on instead.
 - `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. A key directly
   under `[options]` is a setting by its `setopt` name. The `alias` table defines regular aliases, and its `global` and
   `suffix` tables the other kinds (so a string named `global` or `suffix` is a regular alias, and TOML won't have both
@@ -1137,7 +1139,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   standard error (status 127). Standard input is /dev/null (a completer must never read the terminal); standard error
   is discarded, inherited, merged (`2>&1`) or read through a second pipe, the two read together with `poll`
   (`read_pipes`) so that a program filling one doesn't block. There is no way to set variables other than running
-  `env`. Shell code goes through `sh::capture_sh`, the earlier `sh::capture`; a string given to `sh::capture` is an
+  `env`. Shell code goes through `sh::capture_sh`; a string given to `sh::capture` is an
   error that names it. Test: `tests/plugins/capture.sh`.
 - **`sh::capture_cached`** is `sh::capture` with a cache in memory (`plugins/capture_cache.rs`, on the `Host`; an
   empty `HashMap`, so nothing until it is used), keyed on the arguments, where standard error goes, the current
@@ -1274,7 +1276,7 @@ no plugin completer, as luish's own completer skips it as a
   uncoloured. `load`, `unload` and `load -c` confirm (`Loaded`, `Reloaded`, `Unloaded`) only when `confirms`: an
   interactive shell, no frames (not in a function or a startup file) and a terminal on stdout; `plugin list-loaded`
   and `list-available` colour names and say when there are none only on a terminal. `plugin add` always says what it
-  added to `config.toml` (it was silent with `-y`). Tests: `plugins/git_packages.sh`, `add.sh` (plain text),
+  added to `config.toml`. Tests: `plugins/git_packages.sh`, `add.sh` (plain text),
   `plugin_feedback` in `tests/interactive.rs` (colours, `$NO_COLOR`, silent in functions), `ui::tests`. The lock is written only if its text
   changed (so the rc cache, which fingerprints it, stays valid). Messages about manifests of git plugins show
   `SOURCE:PATH/plugin.toml` rather than the data directory.
@@ -1627,7 +1629,7 @@ truncates when it relocates the package.
 - pixi task `outputs` caching ignores paths under `.pixi/`.
 - `tests/compare.rs` runs each case in a session of its own (`setsid`), so it has no controlling terminal. Under
   `pixi run`, `cargo test` is in the background group of the user's terminal, and a case that touched it (`luish -i`,
-  `set -m`) was stopped by SIGTTIN/SIGTTOU and left in state T. Now it gets ENOTTY, and a timeout kills the whole
+  `set -m`) would be stopped by SIGTTIN/SIGTTOU; in a session of its own it gets ENOTTY. A timeout kills the whole
   process group, not just the shell.
 - Plugin cases (`tests/plugins/`) get `$STD_PLUGINS`, the path of `luish-std-plugins`, and test completers with
   `__luish_internal complete LINE`, which needs no terminal. Its output has a space at the end of a match that ends
@@ -1688,15 +1690,14 @@ code only they need is under `#[cfg(any(test, fuzzing))]` (`fuzzing` is set by c
 
 ## Conformance
 
-Checked on 2026-09-26 (the scripts are not in the repository):
+Last checked on 2026-09-26 (the scripts are not in the repository):
 
 - **autoconf**: GNU hello 2.12.1 and GNU sed 4.9 `configure` give the same output and `config.h` under luish (as
   `CONFIG_SHELL`) as under dash; both build and `make check` passes (sed: the same PASS/SKIP lists). To rerun: get
   them from ftp.gnu.org, run `CONFIG_SHELL=$L $L ./configure` next to a dash-configured copy, and diff the output,
   `config.h` and `make check` results.
-- **Oils spec tests** (`spec/*.test.sh` whose `compare_shells` include dash, 1620 cases): 161 differed at first, 43
-  on 2026-09-26, before arrays, `declare`, `[[`, `function`, `let` and the rest of the extensions of 0.2.0 (so some
-  of the 43 no longer differ; not rerun since): the deviations, bash-only features (arrays, `shopt`, `printf -v`/`%q`, `declare`), cases that differ only by
+- **Oils spec tests** (`spec/*.test.sh` whose `compare_shells` include dash, 1620 cases): 43 differed, before the
+  extensions of 0.2.0 (arrays, `declare`, `[[` ...), so fewer may now: the deviations, bash-only features (arrays, `shopt`, `printf -v`/`%q`, `declare`), cases that differ only by
   temporary directory names or timestamps, and the known limitations. To rerun: `git clone --depth 1
   https://github.com/oils-for-unix/oils`, split `spec/*.test.sh` on `#### ` (skipping `## STDOUT:`...`## END`
   blocks, which are expected output), keep files whose `## compare_shells:` includes dash, and run each case with
@@ -1710,71 +1711,43 @@ The timings (script benchmarks against dash, bash, zsh and BusyBox, startup, and
 docs, `docs/performance.md`; update them there after rerunning `bench/run.sh` or the startup measurements. What
 follows is what they came from and what is left.
 
-Per external command, luish makes the same syscalls as dash (before `posix_spawn`, a loop running `/bin/true` 3000
-times took 2.42 s, then 1.80 s as in dash). Startup makes 66 syscalls to dash's 49 (56 without the `plugins`
-feature; it made 140 before `#![no_main]`, lazy signal-disposition lookup, and looking up the executable's path only
-when a script without `#!` needs it). The remaining startup gap (0.47 ms to dash's 0.30 ms per `-c true` in
-`docs/performance.md`) comes from the larger binary (4.8 MB) and its libraries, `libm` (for Rhai's floats),
-`libpthread` and `libgcc_s`: on 2026-10-01 `LD_DEBUG=statistics` put about 100k cycles in the dynamic loader to dash's
-50k (so only some 15 µs of the gap), and luish took 252 page faults to dash's 189. A command substitution takes 1.2
-times as long as in dash with the same system calls; `clone` itself costs more for the larger process. The `plugins`
-feature accounted for about 250 µs on 2026-09-26, accepted while it stays under 1 ms; on the virtual machine of the
-2026-09-29 tables a build without it started in the same time, within the noise. A
-static build (`-C target-feature=+crt-static`) started in 1.09 ms to the dynamic build's 1.5 ms, but static glibc
-looks users up (`~user`) through NSS modules loaded at run time.
+Per external command, luish makes the same syscalls as dash. Startup makes 66 syscalls to dash's 49 (56 without
+the `plugins` feature). The startup gap (0.47 ms to dash's 0.30 ms per `-c true` in `docs/performance.md`) comes
+from the larger binary (4.8 MB) and its libraries, `libm` (for Rhai's floats), `libpthread` and `libgcc_s`:
+`LD_DEBUG=statistics` puts about 100k cycles in the dynamic loader to dash's 50k (so only some 15 µs of the gap), and
+luish takes 252 page faults to dash's 189. A command substitution takes 1.2 times as long as in dash with the same
+system calls; `clone` itself costs more for the larger process. The `plugins` feature is accepted while its startup
+cost stays under 1 ms (it is within the noise). A static build is faster to start, but see Releases for why there
+is none.
 
 Binaries linked by pixi's toolchain (`pixi run release`) have an RPATH into the checkout's `.pixi` environment,
 added by conda-forge's gcc specs, so the loader first looks for each library there; it costs no measurable time. The
 release packages have it removed (`scripts/dist.sh`, below).
 
-Profiled with callgrind, the in-shell gap in the script benchmarks came from `$((...))` comparing the text with each
-of 35 operator strings, SipHash on every variable lookup, `${x#pat}` trying every prefix or suffix (and copying),
-`case` compiling literal patterns, and needless copies. Work inside the shell is now as fast as dash or faster; the
-fork-heavy scripts are within 15%, mostly startup and forks. Most of the remaining in-shell time is `malloc` and
-`free`, since expansion builds `Vec`s where dash uses its stack allocator.
+Work inside the shell is as fast as dash or faster; the fork-heavy scripts are within 15%, mostly startup and forks.
+Most of the remaining in-shell time is `malloc` and `free`, since expansion builds `Vec`s where dash uses its stack
+allocator.
 
 For small changes, instruction counts are steadier than timings: run a benchmark script under
 `valgrind --tool=callgrind` with a release build before and after, and compare "Collected" for the main process. To
 build the "before" without touching other worktrees, `git archive HEAD | tar x` into a temporary directory and build
-there with its own `CARGO_TARGET_DIR`. Arrays cost arith +1.2% and functions +1.8% this way (the `Value` match in
-`Vars::get`, the fast-path check in `expand_assigns`), parameter flags under 1% (the `flags` check on the `$x` fast
-path). New variable kinds or expansions must keep `Vars::get` and the `$x` fast path in `expand_param` this cheap.
-The `Arith` branch of `expand_part` deliberately doesn't call `arith_word`, which is slower out of line.
+there with its own `CARGO_TARGET_DIR`. New variable kinds or expansions must keep `Vars::get` and the `$x` fast path
+in `expand_param` cheap (arrays cost about 1% to 2% there, parameter flags under 1%). The `Arith` branch of
+`expand_part` deliberately doesn't call `arith_word`, which is slower out of line.
 
-Measured this way on 2026-09-29, the features added after 0.1.0 (from `76b9576`, where the tables in
-`docs/performance.md` had been made, to `138cf09`) had cost arith +4.1%, functions +7.9% and textproc +3.8%
-(strings got 3.8% faster). Most of functions was `local` becoming `declare` (shared with `typeset`): each variable
-went through the attribute and array-conversion code and two more `Vars::entry` lookups, and each `x="$1"`
-argument was copied into a new word by `split_assignment_with`, whose `ParamExp` had grown. `declare` now skips all
-that without attributes, `Vars::entry` looks the name up once when it inserts it, and `expand_plain_declaration`
-expands such arguments in place; `local a b=1 c="$1"` in a loop is now faster than at `76b9576`. `"$@"` and `"$*"`
-also no longer join the positional parameters into a string nobody uses (as they did at `76b9576` too). That left
-arith +3.7%, functions +0.9% and textproc +3.4%, spread thinly over the new features, each 0.5% or less: `pipestatus`
-in `run_pipeline` (about 11 instructions per pipeline), the stack checks in `run_list_exit` and `Arith::expr`, the
-array arms and the specials' check in `Vars::get` and `Vars::set`, the `typeset` transforms in `try_set_var`, and
-the parameter-flag split of `expand_param`, which is now a function call before its `expand_unflagged` (making it
-`#[inline]` gained nothing measurable). In timings (`bench/run.sh -r 20` with both builds) the two are within the
-noise on all four in-shell benchmarks, as are startup and the single-command loops.
-
-The `arrays` benchmark (`bench/scripts/arrays.sh`) found `${#a[@]}` and `${a[@]:i:n}` copying the whole array
-(`expand_array`), which made them quadratic in a loop over a growing array; see Arrays above. bash's slices are
-linear in the offset (its arrays are linked lists), which is why the benchmark slices arrays of a fixed size.
+The `arrays` benchmark (`bench/scripts/arrays.sh`) slices arrays of a fixed size, because bash's slices are linear
+in the offset (its arrays are linked lists).
 
 luish parses large files about twice as slowly as dash (`-n` of nvm's 144 KB `nvm.sh`: about 4 ms to dash's 2 ms,
 after startup), and touches about 3 MB of memory doing it (913 page faults to dash's 266). This makes sourcing
 `nvm.sh` without the startup cache slower than in dash, and slows the warm startup cache (the `-n` row of its table).
-The cost is mostly allocation: under callgrind, half of the parse was `malloc`, `free` and growing `Vec`s, and dhat
-(`valgrind --tool=dhat`, with `CARGO_PROFILE_RELEASE_DEBUG=true` for the call sites) counted 52,837 allocations for
-`nvm.sh`, whose AST is all live at once since the file is one `{ ... }`. A word's parts are a `Parts` (`ast.rs`),
-which keeps a single part inline: most words have one, and a `Vec` allocated room for four (128 bytes) for each.
-That took the parse from 52,837 allocations to 41,273, its peak heap from 3.5 MB to 2.6 MB and its instructions by
-11%, for about 0.5% more instructions in the script benchmarks (reading a word's parts checks which kind it is). As
-the single part is inline, a part can't hold a `Word` inline: `Arith` boxes it, and `DoubleQuoted` keeps a `Vec`.
-The lexer also copies each run of literal bytes in one go (`take_run`) instead of pushing them one at a time, which
-grew a long literal several times: 38,562 allocations and 7% fewer instructions again. The parser compares the next
-word with reserved words in place (`peek_literal` borrows it), where it copied each one: 30,936 allocations, and in
-all 20% fewer instructions than at first. What remains is mostly one allocation for each word's bytes, which only
-spans into the source would avoid, and the AST's nodes. See also lazy function parsing in `PLAN.md`.
+The cost is mostly allocation (dhat, `valgrind --tool=dhat` with `CARGO_PROFILE_RELEASE_DEBUG=true` for the call
+sites, counts about 31,000 allocations for `nvm.sh`, whose AST is all live at once since the file is one `{ ... }`).
+What has been done about it: a word's parts are a `Parts` (`ast.rs`), which keeps a single part inline, as most
+words have one (so a part can't hold a `Word` inline: `Arith` boxes it, and `DoubleQuoted` keeps a `Vec`); the lexer
+copies each run of literal bytes in one go (`take_run`); and the parser compares the next word with reserved words
+in place (`peek_literal`). What remains is mostly one allocation for each word's bytes, which only spans into the
+source would avoid, and the AST's nodes. See also lazy function parsing in `PLAN.md`.
 
 ## Releases
 
@@ -1817,8 +1790,8 @@ warnings.
   test suite except `builtins/kill_trap_signals.sh` (its real-time signals start at 35). It starts in about 0.7 ms
   (2.0 ms for the gnu build, whose time goes to the dynamic loader, and 1.6 ms for dash), but runs the in-shell
   benchmarks (arith, functions, strings, textproc) 1.2 to 1.7 times as slowly as dash, as musl's `malloc` is slow.
-  With mimalloc as the global allocator it was within 5% to 20% of dash (and started in 1.2 ms), at the cost of C
-  code in the build and a musl C compiler to build it.
+  mimalloc as the global allocator would bring it within 5% to 20% of dash, at the cost of C code in the build and
+  a musl C compiler to build it.
 
 `rust-version` in `Cargo.toml` is the oldest Rust that builds luish, for those who build it with their own
 toolchain (1.95, checked with `rustup run 1.95 cargo check --all-targets`; 1.94 lacks `if let` guards). Raise it

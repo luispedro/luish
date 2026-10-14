@@ -119,7 +119,8 @@ state on the `Shell` struct in `shell.rs`.
   so Rust's start-up doesn't run: SIGPIPE is left as inherited, closed fds 0 to 2 stay closed, and there is no stack
   overflow handler (`stack.rs` makes deep nesting an error instead). Whether a signal was ignored on entry is looked up lazily (`signals::ignored_on_entry`).
 - **Interactive mode** (`interactive/`) uses rustyline, kept behind its own module so the line editor stays separate
-  from the executor (a Stage 3 SSH mode depends on this). The completer (`interactive/complete.rs`) and the
+  from the executor, which the SSH mode (`remote/`, `interactive/remote.rs`) depends on: there the editor runs in
+  the client and the shell sends it a plain-data `Request`. The completer (`interactive/complete.rs`) and the
   syntax highlighter (`interactive/highlight.rs`) never see `Shell`: `read_line` hands them a `Names` snapshot (and
   the colours and pending text) before each prompt.
   The history store (`interactive/history.rs`) is luish's own rustyline `History`, so that `fc` gets stable event
