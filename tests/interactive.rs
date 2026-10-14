@@ -384,6 +384,23 @@ fn procs_in_group(pgrp: i32) -> Vec<String> {
     out
 }
 
+/// Writes an executable script. Another test's thread may fork while a
+/// file is open for writing here, and its child keeps the file open until
+/// it execs; running the script then fails with ETXTBSY ("Text file
+/// busy"). So a process of its own writes it.
+fn write_script(path: &Path, text: &str) {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("/bin/sh")
+        .args(["-c", "cat >\"$1\" && chmod 755 \"$1\"", "sh"])
+        .arg(path)
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(text.as_bytes()).unwrap();
+    assert!(child.wait().unwrap().success(), "writing {}", path.display());
+}
+
 fn assert_has(got: &str, want: &str) {
     assert!(got.contains(want), "expected {want:?} in:\n{got}");
 }
@@ -1342,7 +1359,6 @@ fn plugin_completer() {
 #[cfg(feature = "plugins")]
 #[test]
 fn cobra_completer() {
-    use std::os::unix::fs::PermissionsExt;
     let mut sh = Pty::spawn_term("cobra", "vt100");
     let plugin = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/examples/cobra.rhai")).unwrap();
     std::fs::write(
@@ -1352,7 +1368,7 @@ fn cobra_completer() {
     .unwrap();
     std::fs::create_dir(sh.path("bin")).unwrap();
     let frob = sh.path("bin/frob");
-    std::fs::write(
+    write_script(
         &frob,
         r#"#!/bin/sh
 [ "$1" = __complete ] || { echo "frob:$*"; exit; }
@@ -1363,9 +1379,7 @@ case $#:$1 in
 *) echo ':0' ;;
 esac
 "#,
-    )
-    .unwrap();
-    std::fs::set_permissions(&frob, std::fs::Permissions::from_mode(0o755)).unwrap();
+    );
     sh.expect("$ ");
     sh.send("PATH=$HOME/bin:$PATH; plugin load ./cobra.rhai; echo \"loaded $?\"\n");
     sh.expect("loaded 0\n");
@@ -1718,13 +1732,9 @@ fn share_history() {
 
 #[test]
 fn path_cache() {
-    use std::os::unix::fs::PermissionsExt;
     let mut sh = Pty::spawn("pathcache");
-    let install = |sh: &Pty, dir: &str| {
-        let file = sh.path(dir).join("tool");
-        std::fs::write(&file, format!("#!/bin/sh\necho from-{dir}\n")).unwrap();
-        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
-    };
+    let install =
+        |sh: &Pty, dir: &str| write_script(&sh.path(dir).join("tool"), &format!("#!/bin/sh\necho from-{dir}\n"));
     std::fs::create_dir(sh.path("a")).unwrap();
     std::fs::create_dir(sh.path("b")).unwrap();
     install(&sh, "b");
@@ -2136,8 +2146,7 @@ fn remote_escape_suspend() {
     sh.expect("$ ");
     let luish = env!("CARGO_BIN_EXE_luish");
     let ssh = sh.path("ssh");
-    std::fs::write(&ssh, "#!/bin/sh\nshift\nexec /bin/sh -c \"$*\"\n").unwrap();
-    std::fs::set_permissions(&ssh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    write_script(&ssh, "#!/bin/sh\nshift\nexec /bin/sh -c \"$*\"\n");
     sh.send(&format!(
         "PS1='r> ' {luish} --ssh -e {} -o ssh.escape_char=% --luish-path={luish} host\n",
         ssh.display()
@@ -2314,12 +2323,10 @@ fn remote_ssh() {
     std::fs::write(dir.join(".config/luish/luishrc"), "").unwrap();
     std::fs::create_dir(dir.join("bin")).unwrap();
     let ssh = dir.join("bin/ssh");
-    std::fs::write(
+    write_script(
         &ssh,
         "#!/bin/sh\nprintf '%s\\n' \"$@\" >\"$HOME/ssh-args\"\nshift 4\nexec /bin/sh -c \"$*\"\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(&ssh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    );
     std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_luish"), dir.join("server")).unwrap();
     let path = format!(
         "{}:{}",
@@ -2354,11 +2361,7 @@ fn remote_ssh_copy() {
     std::fs::create_dir_all(dir.join(".config/luish")).unwrap();
     std::fs::write(dir.join(".config/luish/luishrc"), "").unwrap();
     std::fs::create_dir(dir.join("bin")).unwrap();
-    let script = |name: &str, text: &str| {
-        let f = dir.join("bin").join(name);
-        std::fs::write(&f, text).unwrap();
-        std::fs::set_permissions(&f, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    };
+    let script = |name: &str, text: &str| write_script(&dir.join("bin").join(name), text);
     script("ssh", "#!/bin/sh\nshift 2\nexec /bin/sh -c \"$*\"\n");
     let cache = dir.join(".cache/luish/binaries");
     std::fs::create_dir_all(&cache).unwrap();
