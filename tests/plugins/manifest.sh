@@ -9,9 +9,13 @@
 # loads (only the entry of the file that loads it).
 C=$HOME/.config/luish
 P=$C/plugins
+# The startup cache is used with startup.auto_cache, which every config.toml
+# here adds.
+auto_cache() { printf '\n[options.startup]\nauto_cache = true\n' >> "$HOME/.config/luish/config.toml"; }
 mkdir -p "$C/rc.d" "$P/p" "$P/q" "$P/bad"
 run() { $SH -i -c "$1" 2>&1 | grep -v 'job control' | sed "s|$SH|luish|; s|$HOME|~|g"; }
 printf '[options]\nautosuggest = false\n[plugins.enabled]\np = "*"\n' > "$C/config.toml"
+auto_cache
 cat > "$P/p/plugin.toml" <<'X'
 description = "Aliases and key bindings."
 [dependencies]

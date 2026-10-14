@@ -130,6 +130,15 @@ luish's own options, all off by default:
 : As `vars.trace`, but keep the last 100 changes of every variable, with
   their values, for `where -a`.
 
+`startup.auto_cache`
+: Cache whole startup files (those of `rc.d` and `login.d`), and
+  `config.toml` with the plugins it enables, so that a new shell restores
+  what they did instead of running them. Off, they run in every shell, and
+  only their `__luish_cache` blocks are cached. It is read from
+  `config.toml` (where `[options.startup] auto_cache = true` sets it) before
+  `rc.d`, so setting it later has no effect until the next shell. See the
+  user documentation on cached startup files.
+
 The history options (see the user documentation on history):
 
 `history.ignore_space` (`histignorespace`)

@@ -48,6 +48,7 @@ pub enum Opt {
     NoTermIntegration,
     VarsTrace,
     VarsTraceHistory,
+    StartupAutoCache,
 }
 
 /// Option table: (option, letter, long name), in dash's order (with POSIX's
@@ -106,6 +107,7 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::NoTermIntegration, "terminal.no_integration"),
     (Opt::VarsTrace, "vars.trace"),
     (Opt::VarsTraceHistory, "vars.trace_history"),
+    (Opt::StartupAutoCache, "startup.auto_cache"),
 ];
 
 /// Other names of luish's own options: zsh's, and those they had before
@@ -475,6 +477,7 @@ mod tests {
                 "history",
                 "prompt",
                 "pushd",
+                "startup",
                 "terminal",
                 "vars"
             ]

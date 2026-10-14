@@ -7,6 +7,8 @@ export TZ=UTC
 # The entries of files are keyed on PATH: the same for every shell here.
 PATH=/usr/bin:/bin
 mkdir -p .config/luish/login.d .config/luish/rc.d bin
+# The startup cache is used with startup.auto_cache.
+printf '[options.startup]\nauto_cache = true\n' > .config/luish/config.toml
 cd .config/luish/login.d
 cat > 10-a.lsh <<'X'
 echo running 10-a
@@ -94,7 +96,9 @@ echo '# luish startup cache 1' > "$login"
 $SH -c '__luish_internal check-cache -q login; echo "status $?"' 2>&1 | report
 rm "$login"
 $SH -c '__luish_internal check-cache login; echo "status $?"' 2>&1 | report
-rm -r .config/luish/rc.d
+# Without config.toml too, as with it the cache of rc.d is used without the
+# directory.
+rm -r .config/luish/rc.d .config/luish/config.toml
 $SH -c '__luish_internal check-cache; echo "status $?"' 2>&1 | report
 rm -r .cache
 $SH -c '__luish_internal check-cache; echo "status $?"'

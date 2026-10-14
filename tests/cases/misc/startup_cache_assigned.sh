@@ -2,6 +2,8 @@
 # to the value they had when the cache was built, so that a shell started
 # without them gets them.
 mkdir -p .config/luish/rc.d
+# The startup cache is used with startup.auto_cache.
+printf '[options.startup]\nauto_cache = true\n' > .config/luish/config.toml
 cat > .config/luish/rc.d/a.lsh <<'X'
 export FOO=bar
 N=1

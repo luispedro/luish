@@ -37,6 +37,7 @@ prompt.transient_rprompt
 pushd.auto
 pushd.ignore_dups
 pushd.silent
+startup.auto_cache
 stdin
 terminal.no_integration
 vars.trace

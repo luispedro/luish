@@ -4,6 +4,8 @@
 # every time, apart from its blocks.
 PATH=/usr/bin:/bin
 mkdir -p .config/luish/login.d bin other
+# The startup cache is used with startup.auto_cache.
+printf '[options.startup]\nauto_cache = true\n' > .config/luish/config.toml
 cd .config/luish/login.d
 cat > 10-path.lsh <<'X'
 echo running 10-path

@@ -1,0 +1,41 @@
+--- off: the files run every time, the blocks once
+running rc a
+building rc block
+running rc uncached
+running login l
+building login block
+A=a B=b U=u L=l M=m
+running rc a
+running rc uncached
+running login l
+A=a B=b U=u L=l M=m
+rc: 0 files, 1 blocks
+login: 0 files, 1 blocks
+--- on: whole files are cached
+running rc a
+running rc uncached
+running login l
+A=a B=b U=u L=l M=m
+running rc uncached
+A=a B=b U=u L=l M=m
+rc: 2 files, 1 blocks
+login: 2 files, 1 blocks
+--- a login shell that is not interactive reads the option from config.toml
+A= B= U= L=l M=m
+A= B= U= L=l M=m
+--- off again: the entries of files are dropped, those of blocks kept
+running rc a
+running rc uncached
+running login l
+A=a B=b U=u L=l M=m
+running rc a
+running rc uncached
+running login l
+A=a B=b U=u L=l M=m
+rc: 0 files, 1 blocks
+login: 0 files, 1 blocks
+running login l
+A= B= U= L=l M=m
+--- in a login shell that is not interactive, only that option is read
+running login l
+startup.auto_cache

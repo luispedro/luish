@@ -7,6 +7,7 @@ mkdir -p "$C/rc.d" "$P/p"
 cat > "$C/config.toml" <<'X'
 [options]
 glob.star = true
+startup.auto_cache = true
 [plugins.enabled]
 p = "*"
 X
@@ -20,7 +21,7 @@ echo 2 > value
 $SH -c '__luish_internal check-cache -q' | sed '/^rc:/d; /generated/d'
 $SH -i -c 'echo "$p_var"' 2>&1 | grep -v 'job control'
 echo '--- config.toml changed'
-sed 's/true/false/' "$C/config.toml" > tmp
+sed 's/star = true/star = false/' "$C/config.toml" > tmp
 cat tmp > "$C/config.toml"
 $SH -c '__luish_internal check-cache -q' | sed '/^rc:/d; /generated/d; s|'"$HOME"'|~|'
 $SH -c '__luish_internal check-cache -q; echo "status $?"'

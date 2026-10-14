@@ -2,6 +2,8 @@
 # functions of a cached file keep their file when the cache restores them.
 umask 022
 mkdir -p .config/luish/rc.d
+# The startup cache is used with startup.auto_cache.
+printf '[options.startup]\nauto_cache = true\n' > .config/luish/config.toml
 cat > .config/luish/rc.d/a.lsh <<'X'
 echo "rc: ${BASH_SOURCE#"$HOME"/}"
 rcf() { echo "rcf: ${BASH_SOURCE#"$HOME"/}"; }

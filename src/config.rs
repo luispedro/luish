@@ -78,7 +78,7 @@
 //! read it.
 
 use crate::lexer::AliasKind;
-use crate::options::{Kind, Options, Setting, find_group};
+use crate::options::{Kind, Opt, Options, Setting, find_group};
 use crate::shell::Shell;
 use crate::sys;
 use toml_span::value::{Table, Value, ValueInner};
@@ -121,16 +121,17 @@ pub fn load(sh: &mut Shell, path: &[u8]) {
 }
 
 /// For a login shell that isn't interactive: only the `env` table, without
-/// `env.interactive`, and `path`.
+/// `env.interactive`, `path`, and the option `startup.auto_cache` (for
+/// `login.d`).
 pub fn load_login(sh: &mut Shell) {
     let Some(path) = path(sh) else {
         return;
     };
     let mut dirs = Dirs::default();
-    read(sh, &path, true, |sh, key, value, err| {
-        if let name @ ("env" | "path") = &*key.name {
-            environment(sh, name, value, false, &mut dirs, err);
-        }
+    read(sh, &path, true, |sh, key, value, err| match &*key.name {
+        name @ ("env" | "path") => environment(sh, name, value, false, &mut dirs, err),
+        "options" if value.as_table().is_some() => options(sh, value, err, Some(Opt::StartupAutoCache)),
+        _ => {}
     });
     dirs.apply(sh);
 }
@@ -290,7 +291,7 @@ fn shared_table(
 ) -> bool {
     match &*key.name {
         "options" => match value.as_table() {
-            Some(_) => options(sh, value, err),
+            Some(_) => options(sh, value, err, None),
             None => err(sh, value.span.start, "options: not a table"),
         },
         "alias" => match value.as_table() {
@@ -358,20 +359,29 @@ pub fn in_order(table: Table<'_>) -> Vec<(toml_span::value::Key<'_>, Value<'_>)>
 }
 
 /// The `options` table: one table per group, and settings by their own
-/// names.
-fn options(sh: &mut Shell, mut value: Value<'_>, err: &dyn Fn(&Shell, usize, &str)) {
+/// names. With `only`, the other settings are skipped, silently.
+fn options(sh: &mut Shell, mut value: Value<'_>, err: &dyn Fn(&Shell, usize, &str), only: Option<Opt>) {
     let ValueInner::Table(groups) = value.take() else {
         return;
     };
+    let wanted = |name: &str| match (only, Options::find(name.as_bytes())) {
+        (None, _) => true,
+        (Some(o), Some(Setting::Flag(f, _))) => o == f,
+        _ => false,
+    };
     for (key, mut value) in in_order(groups) {
         if value.as_table().is_none() {
-            if let Err(msg) = set(sh, &key.name, &value) {
+            if wanted(&key.name)
+                && let Err(msg) = set(sh, &key.name, &value)
+            {
                 err(sh, key.span.start, &msg);
             }
             continue;
         }
         let Some(group) = find_group(key.name.as_bytes()) else {
-            err(sh, key.span.start, &format!("no such group: {}", key.name));
+            if only.is_none() {
+                err(sh, key.span.start, &format!("no such group: {}", key.name));
+            }
             continue;
         };
         let ValueInner::Table(settings) = value.take() else {
@@ -379,7 +389,9 @@ fn options(sh: &mut Shell, mut value: Value<'_>, err: &dyn Fn(&Shell, usize, &st
         };
         for (key, value) in in_order(settings) {
             let name = format!("{group}.{}", key.name);
-            if let Err(msg) = set(sh, &name, &value) {
+            if wanted(&name)
+                && let Err(msg) = set(sh, &name, &value)
+            {
                 err(sh, key.span.start, &msg);
             }
         }

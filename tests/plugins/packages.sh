@@ -8,6 +8,9 @@
 # lock. (tests/plugins/git_packages.sh has git sources.)
 C=$HOME/.config/luish
 P=$C/plugins
+# The startup cache is used with startup.auto_cache, which every config.toml
+# here adds.
+auto_cache() { printf '\n[options.startup]\nauto_cache = true\n' >> "$HOME/.config/luish/config.toml"; }
 mkdir -p "$P/greet" "$HOME/src/coll/tool" "$HOME/src/coll/cyc1" "$HOME/src/coll/cyc2" "$HOME/src/one"
 run() { $SH -i -c "$1" 2>&1 | grep -v 'job control' | sed "s|$SH|luish|; s|$HOME|~|g"; }
 # In the plugin directory: greet needs helper, next to it, and the tool of
@@ -42,6 +45,7 @@ coll = { path = "~/src/coll" }
 greet = "*"
 coll.lib = "*"      # already loaded, as greet's dependency: loaded once
 X
+auto_cache
 echo '--- startup: dependencies first, each once'
 run '__luish_internal plugin list-loaded'
 echo '--- a later shell uses the cache (the extension is loaded again)'
@@ -74,6 +78,7 @@ one = { path = "~/src/one" }
 one = "*"
 t = { path = "~/src/coll", plugin = "tool" }
 X
+auto_cache
 run '__luish_internal plugin list-loaded'
 echo '--- an empty table is an entry, the same as "*" (and not an empty SOURCE.SUB)'
 cat > "$C/config.toml" <<'X'
@@ -84,6 +89,7 @@ helper = { }
 coll.lib = { }
 "coll/tool" = {}
 X
+auto_cache
 run '__luish_internal plugin list-loaded'
 echo '--- errors'
 cat > "$C/config.toml" <<'X'
@@ -106,9 +112,11 @@ nosuch = "*"
 nosrc.x = "*"
 helper = "*"
 X
+auto_cache
 run '__luish_internal plugin list-loaded'
 echo '--- SOURCE/NAME must be quoted in TOML'
 printf '[plugins.enabled]\ncoll/lib = "*"\n' > "$C/config.toml"
+auto_cache
 run '__luish_internal plugin list-loaded'
 echo '--- plugins of a collection are named SOURCE/NAME, so these differ'
 cat > "$C/config.toml" <<'X'
@@ -118,6 +126,7 @@ coll = { path = "~/src/coll" }
 helper = "*"
 coll.helper = "*"
 X
+auto_cache
 echo 'echo other helper' > "$HOME/src/coll/helper.lsh"
 run '__luish_internal plugin list-loaded'
 echo '--- the same name for two plugins: those of a source without a name are'
@@ -127,5 +136,6 @@ cat > "$C/config.toml" <<'X'
 lib = "*"
 t = { path = "~/src/coll", plugin = "tool" }
 X
+auto_cache
 echo 'echo local lib' > "$P/lib.lsh"
 run '__luish_internal plugin list-loaded'

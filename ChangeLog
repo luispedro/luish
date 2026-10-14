@@ -5,6 +5,8 @@ Unreleased
     * setopt glob.null, glob.dots, glob.fail, glob.fail_all (zsh's
       NULL_GLOB, GLOB_DOTS, NOMATCH, CSH_NULL_GLOB); shopt nullglob,
       dotglob, failglob
+    * Startup files and config.toml are no longer cached as a whole, only
+      their __luish_cache blocks, unless setopt startup.auto_cache is on
 
 Version 0.6.0 2026-10-10 by luispedro
     * Bad glob qualifier errors name the word

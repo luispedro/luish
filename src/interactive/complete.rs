@@ -2009,6 +2009,7 @@ mod tests {
                 "history ",
                 "prompt ",
                 "pushd ",
+                "startup ",
                 "terminal ",
                 "vars "
             ]

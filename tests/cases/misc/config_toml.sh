@@ -51,7 +51,11 @@ printf '[options]\nhistory = true\n[x]\n' > .config/luish/config.toml
 run 'setopt -p glob'
 echo '--- with rc.d: before it, and cached with it'
 mkdir .config/luish/rc.d
+# The cache is used with startup.auto_cache, which every config.toml from
+# here on adds.
+cached() { printf '\n[options.startup]\nauto_cache = true\n' >> .config/luish/config.toml; }
 printf '[options.glob]\nstar = true\nbogus = 1\n[options.history]\nsize = 50\n' > .config/luish/config.toml
+cached
 echo 'echo "rc.d sees star=$(setopt | grep -c glob.star) HISTSIZE=$HISTSIZE"; HISTSIZE=5' > .config/luish/rc.d/a.lsh
 show='setopt -p glob; echo "HISTSIZE=$HISTSIZE"'
 run "$show"
@@ -60,6 +64,7 @@ run "$show"
 run "$show"
 echo '--- a changed file is read again'
 printf '[options.glob]\nbare_qualifiers = true\n' > .config/luish/config.toml
+cached
 run "$show"
 run "$show"
 echo '--- and so is a removed one'
@@ -67,10 +72,12 @@ rm .config/luish/config.toml
 run "$show"
 echo '--- or a new one'
 printf '[options.cd]\nauto = true\n' > .config/luish/config.toml
+cached
 run 'setopt -p cd'
 run 'setopt -p cd'
 echo '--- a setting by its own name, directly under options'
 printf '[options]\nautosuggest = true\nglob.star = true\n' > .config/luish/config.toml
+cached
 run 'setopt -p editor; setopt -p glob'
 echo '--- aliases, with global and suffix ones in their own tables'
 cat > .config/luish/config.toml <<'X'
@@ -85,12 +92,14 @@ N = 1
 [alias.suffix]
 txt = "echo TXT"
 X
+cached
 show='alias -L; alias -Ls; ll U; ..; a.txt'
 run "$show"
 # From the cache.
 run "$show"
 # Without those tables, `global` and `suffix` can name regular aliases.
 printf '[alias]\nglobal = "echo g"\nsuffix = [1]\n' > .config/luish/config.toml
+cached
 run 'alias'
 echo '--- key bindings, by name or as sequences'
 cat > .config/luish/config.toml <<'Y'
@@ -102,6 +111,7 @@ Down = 3
 "Ctrl-Tab" = "undo"
 "^W" = "nosuch"
 Y
+cached
 show='bindkey -L Up; bindkey "^X^E"; bindkey Down'
 run "$show"
 # From the cache.

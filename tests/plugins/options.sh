@@ -7,6 +7,9 @@
 # the same options (after the defaults), also when it is loaded already.
 C=$HOME/.config/luish
 P=$C/plugins
+# The startup cache is used with startup.auto_cache, which every config.toml
+# here adds.
+auto_cache() { printf '\n[options.startup]\nauto_cache = true\n' >> "$HOME/.config/luish/config.toml"; }
 mkdir -p "$P/greet" "$HOME/src/coll/b" "$HOME/src/coll/a" "$HOME/src/coll/c" "$HOME/src/coll/needy"
 run() { $SH -i -c "$1" 2>&1 | grep -v 'job control' | sed "s|$SH|luish|; s|$HOME|~|g"; }
 cat > "$P/greet/plugin.toml" <<'X'
@@ -46,6 +49,7 @@ greet = { version = "*",
 coll.a = "*"
 coll.c = "*"         # gives b the same options as a: b loads once
 X
+auto_cache
 echo '--- startup: options, defaults, and the same options for b twice'
 run 'echo "after: ${LUISH_PLUGIN_OPTIONS-unset}"; greet'
 echo '--- the startup cache restores the options'
@@ -83,6 +87,7 @@ coll.b = { version = "1", options = { level = 1 } }
 "coll/a" = { options = { who = 1.5 } }
 "coll/c" = { options = [] }
 X
+auto_cache
 run ':'
 cat > "$HOME/src/coll/b/plugin.toml" <<'X'
 [plugin-options]
@@ -105,6 +110,7 @@ coll = { path = "~/src/coll" }
 bee = { path = "~/src/coll", plugin = "b", options = { level = 4 } }
 coll.needy = { options = { key = "k" } }
 X
+auto_cache
 run ':'
 echo '--- plugin sync checks the options of the enabled plugins only'
 cat > "$C/config.toml" <<'X'
@@ -113,6 +119,8 @@ coll = { path = "~/src/coll" }
 [plugins.enabled]
 coll.plain = "*"
 X
+auto_cache
 $SH -c '__luish_internal plugin sync -q; echo "status $?"'
 printf '[plugins.available]\ncoll = { path = "~/src/coll" }\n[plugins.enabled]\ncoll.needy = "*"\n' > "$C/config.toml"
+auto_cache
 $SH -c '__luish_internal plugin sync -q; echo "status $?"' 2>&1 | sed "s|$SH|luish|; s|$HOME|~|g"

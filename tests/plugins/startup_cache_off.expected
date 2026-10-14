@@ -1,0 +1,28 @@
+--- built, then restored
+p: init.lsh runs
+p: block built for a
+rc.d: P_VAR=a
+p: post-rc.lsh runs
+P_VAR=a
+p: init.lsh runs
+rc.d: P_VAR=a
+p: post-rc.lsh runs
+P_VAR=a
+--- its variable and its file rebuild it
+p: init.lsh runs
+p: block built for b
+rc.d: P_VAR=b
+p: post-rc.lsh runs
+P_VAR=b
+p: init.lsh runs
+p: block built for b
+rc.d: P_VAR=b1
+p: post-rc.lsh runs
+P_VAR=b1
+p: init.lsh runs
+rc.d: P_VAR=b1
+p: post-rc.lsh runs
+P_VAR=b1
+--- the cache has the block only
+3
+0

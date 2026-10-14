@@ -6,6 +6,9 @@
 # block that returns is saved neither on its own nor in the entry.
 C=$HOME/.config/luish
 P=$C/plugins
+# The startup cache is used with startup.auto_cache, which every config.toml
+# here adds.
+auto_cache() { printf '\n[options.startup]\nauto_cache = true\n' >> "$HOME/.config/luish/config.toml"; }
 mkdir -p "$P/p" "$P/q"
 # q, loaded first (p depends on it), assigns a variable that may have been
 # inherited with the same value: still saved, although p's block is built
@@ -23,6 +26,7 @@ __luish_cache env=(TOOL FAIL) files=("$HOME/dep") {
 X
 echo 'LIB=-lib1' > lib.lsh
 printf '[plugins.enabled]\np = "*"\n' > "$C/config.toml"
+auto_cache
 show() {
     $SH -i -c 'echo "P_VAR=$P_VAR SAME=$SAME"' 2>&1 | grep -v 'job control'
 }
@@ -46,6 +50,7 @@ echo '--- check-cache'
 TOOL=b $SH -c '__luish_internal check-cache rc' | sed '/^rc:/d; /generated/d'
 echo '--- loaded by a file of rc.d'
 printf '' > "$C/config.toml"
+auto_cache
 mkdir -p "$C/rc.d"
 echo 'plugin load p' > "$C/rc.d/p.lsh"
 TOOL=d show

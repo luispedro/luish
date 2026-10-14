@@ -3,6 +3,8 @@
 # running the shell files. Changing any of them makes the next shell run rc.d
 # again.
 mkdir -p .config/luish/rc.d .config/luish/plugins/p d
+# The startup cache is used with startup.auto_cache.
+printf '[options.startup]\nauto_cache = true\n' > .config/luish/config.toml
 echo '__luish_internal plugin load p q' > .config/luish/rc.d/plugins.lsh
 cd .config/luish/plugins
 cat > q.lsh <<'X'

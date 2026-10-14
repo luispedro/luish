@@ -14,6 +14,12 @@
 //! ([`KEEP`]), so that shells started in different environments don't
 //! evict each other's entries.
 //!
+//! Only the blocks are cached unless the option `startup.auto_cache` is on
+//! after `config.toml` (which sets it, and is then cached itself): without
+//! it, every file runs as `_uncached.lsh` does, and so do `config.toml`, the
+//! plugins it enables and their `post-rc.lsh` files, and the cache only
+//! keeps the entries of blocks (which needn't be nested, see below).
+//!
 //! - A file without a block (outside functions, [`has_block`]) is one
 //!   entry, keyed on its fingerprint, `PATH` and `HOME`, and the chain: a
 //!   hash of the ids, keys and changes of every entry before it in its
@@ -66,6 +72,7 @@ use crate::ast::{CacheBlock, Command, CompoundCommand, List};
 use crate::builtins::internal::BUILD_ID;
 use crate::hash::FastHasher;
 use crate::interactive::{run_file, source_file, to_path};
+use crate::options::Opt;
 use crate::shell::{ExecResult, Shell};
 use crate::state::{self, Change, Kind};
 use crate::sys;
@@ -699,16 +706,30 @@ pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8], config: Option<&[u8]>) {
             if let Some(rec) = &mut sh.sourced_files {
                 rec.push(c.to_vec());
             }
+            // Without `startup.auto_cache`, the entry isn't saved, and the
+            // plugins load below, outside it.
+            if !sh.opt(Opt::StartupAutoCache) {
+                return false;
+            }
             // Plugins that aren't installed are reported by every shell
             // until they are.
             incomplete = !crate::plugins::load_enabled(sh);
             !incomplete
         });
+        if !sh.opt(Opt::StartupAutoCache) {
+            with_run(sh, &mut run, |sh| incomplete = !crate::plugins::load_enabled(sh));
+        }
         run.incomplete = incomplete;
     }
+    // Off, every file runs as a mixed one does, without being looked at.
+    let auto = sh.opt(Opt::StartupAutoCache);
     for (file, fstamp) in &files {
         let path = join(dir, file);
         run.file = path.clone();
+        if !auto {
+            run_mixed(sh, &mut run, &path, None);
+            continue;
+        }
         let id = [b"file ", &file[..]].concat();
         let mut mixed = Vec::new();
         item(&mut mixed, b'm', fstamp.as_bytes());
@@ -738,11 +759,13 @@ pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8], config: Option<&[u8]>) {
             run.link(&id, &mixed, &[]);
         }
     }
-    if rc {
+    if rc && auto {
         cached(sh, &mut run, b"post-rc", None, |sh| {
             crate::plugins::post_rc_files(sh);
             true
         });
+    } else if rc {
+        with_run(sh, &mut run, crate::plugins::post_rc_files);
     }
     sh.in_rc = false;
     if check {
@@ -760,14 +783,16 @@ pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8], config: Option<&[u8]>) {
         run_mixed(sh, &mut run, &uncached, None);
     }
     // Entries for files that are gone, or for blocks no shell has used in a
-    // while.
+    // while; without `startup.auto_cache`, all but those for blocks.
     let now = sys::now();
     let before = run.cache.entries.len();
     run.cache.entries.retain(|e| {
         e.seen
             || match e.id.strip_prefix(b"file ") {
+                _ if e.id.starts_with(b"block ") => now - e.time < MAX_AGE,
+                _ if !auto => false,
                 Some(f) => files.iter().any(|(name, _)| name == f),
-                None => !e.id.starts_with(b"block ") || now - e.time < MAX_AGE,
+                None => true,
             }
     });
     run.changed |= run.cache.entries.len() != before;
@@ -778,12 +803,18 @@ pub fn run(sh: &mut Shell, dir: &[u8], name: &[u8], config: Option<&[u8]>) {
 /// Also used for `$ENV` and `luishrc` ([`begin_startup`]), whose own text
 /// always runs, like a mixed file's, with only their blocks cached.
 pub(crate) fn run_mixed(sh: &mut Shell, run: &mut Run, path: &[u8], text: Option<Vec<u8>>) {
-    let placeholder = Run::new(Cache::new(b""), None, false);
-    sh.startcache = Some(Box::new(std::mem::replace(run, placeholder)));
-    match text {
+    with_run(sh, run, |sh| match text {
         Some(t) => run_file(sh, path, &t),
         None => source_file(sh, path),
-    }
+    });
+}
+
+/// Runs `f` with the cache in `Shell::startcache`, so that the blocks that
+/// run meanwhile use it.
+fn with_run(sh: &mut Shell, run: &mut Run, f: impl FnOnce(&mut Shell)) {
+    let placeholder = Run::new(Cache::new(b""), None, false);
+    sh.startcache = Some(Box::new(std::mem::replace(run, placeholder)));
+    f(sh);
     if let Some(r) = sh.startcache.take() {
         *run = *r;
     }

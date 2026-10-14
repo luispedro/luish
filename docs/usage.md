@@ -915,7 +915,7 @@ across them with git or another tool.
 
 ## Cached startup files
 
-luish caches the effects of your startup files, so that a new shell can restore
+luish can cache the effects of your startup files, so that a new shell restores
 their result instead of running them, which is much faster when they run slow
 commands. The files go in two directories, each used only if it exists
 (they work like zsh's `.zshrc` and `.zlogin`):
@@ -929,11 +929,24 @@ commands. The files go in two directories, each used only if it exists
   exported variables such as `PATH`, which the programs and shells you start
   inherit.
 
-In each directory, the files whose names end in `.lsh` run in byte order. luish
-remembers what they did: the variables they set, exported or unset, and their
-functions, aliases, options, traps and `umask`. An interactive shell then reads
-`$ENV` and `luishrc`, which always run (they aren't in a directory), though
-their `__luish_cache` blocks are cached, as below.
+In each directory, the files whose names end in `.lsh` run in byte order. By
+default, they run in every shell, and only their `__luish_cache` blocks are
+cached (see [Caching part of a file](#caching-part-of-a-file)): put what is slow
+in a block. An interactive shell then reads `$ENV` and `luishrc`, which always
+run (they aren't in a directory), though their `__luish_cache` blocks are
+cached too.
+
+With the option `startup.auto_cache` on, luish also caches whole files, and
+`config.toml` with the plugins it enables: it remembers what they did (the
+variables they set, exported or unset, and their functions, aliases, options,
+traps and `umask`), and a new shell restores that instead of running them. Set
+it in `config.toml` (a login shell that isn't interactive reads it from there
+too, for `login.d`):
+
+```toml
+[options.startup]
+auto_cache = true
+```
 
 ```sh
 mkdir -p ~/.config/luish/login.d ~/.config/luish/rc.d
@@ -943,8 +956,8 @@ echo "alias ll='ls -l'" > ~/.config/luish/rc.d/aliases.lsh
 ```
 
 The caches are `~/.cache/luish/rc-HOST` and `~/.cache/luish/login-HOST` (or
-under `$XDG_CACHE_HOME`). Each file has its own entry, which a new shell uses
-as long as:
+under `$XDG_CACHE_HOME`). With `startup.auto_cache`, each file has its own
+entry, which a new shell uses as long as:
 
 - the file, and the files it reads with `.`, are unchanged (luish compares
   their size and modification time);
@@ -959,15 +972,18 @@ what they did. luish keeps a few entries for each file, so that shells started
 with different values of `PATH` each find theirs: `PATH=$HOME/bin:$PATH` adds
 to the `PATH` that the shell was started with.
 
+Without the option, these entries aren't kept, but those of blocks are, so
+turning it off and on again doesn't rebuild them.
+
 The cache directory holds nothing that can't be rebuilt: it can be removed at
 any time. luish marks it with a `CACHEDIR.TAG` file, so that backup tools that
 honour the [convention](https://bford.info/cachedir/) skip it.
 
 ### Caching part of a file
 
-A file with `__luish_cache` blocks isn't cached as a whole: it runs every
-time, except for its blocks, each cached on its own, with what it depends on
-listed:
+A file with `__luish_cache` blocks isn't cached as a whole, even with
+`startup.auto_cache`: it runs every time, except for its blocks, each cached
+on its own, with what it depends on listed:
 
 ```sh
 # ~/.config/luish/rc.d/nvm.lsh
@@ -998,16 +1014,18 @@ plugins they load with `plugin load`), each in a cache of its own since
 neither file is cached as a whole; elsewhere (in a script), and inside
 another block, the body just runs.
 
-A plugin can have blocks too. In a plugin that `config.toml` enables, or that
-a file of `rc.d` loads with `plugin load`, a block is cached on its own, and
-the entry that loads the plugin (that of `config.toml`, or of the file) also
-depends on what the block lists: when it changes, the entry runs again, but
-the plugin's block only if its own key changed. A block that ends with
+A plugin can have blocks too, cached on its own as any other. With
+`startup.auto_cache`, in a plugin that `config.toml` enables, or that a file
+of `rc.d` loads with `plugin load`, the entry that loads the plugin (that of
+`config.toml`, or of the file) also depends on what the block lists: when it
+changes, the entry runs again, but the plugin's block only if its own key
+changed. A block that ends with
 `return` (or fails) isn't saved, nor is the entry it ran in, so the next shell
 tries again.
 
-For code that should never be cached, use `_uncached.lsh`, which runs every
-time, after the other files of its directory:
+For code that should never be cached, even with `startup.auto_cache`, use
+`_uncached.lsh`, which runs every time, after the other files of its
+directory:
 
 - anything with side effects, such as starting `ssh-agent` or printing a message;
 - values that differ between shells, such as `GPG_TTY=$(tty)`;

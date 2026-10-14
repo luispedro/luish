@@ -7,11 +7,15 @@
 # the extensions again. Scripts run neither.
 C=$HOME/.config/luish
 P=$C/plugins
+# The startup cache is used with startup.auto_cache, which every config.toml
+# here adds.
+auto_cache() { printf '\n[options.startup]\nauto_cache = true\n' >> "$HOME/.config/luish/config.toml"; }
 mkdir -p "$C/rc.d" "$P/p" "$P/q" "$P/r"
 cat > "$C/config.toml" <<'X'
 [plugins.enabled]
 p = "*"
 X
+auto_cache
 echo 'echo "p init.lsh (rc.d has run: ${from_rc-no})"' > "$P/p/init.lsh"
 echo 'echo "p rc.lsh"' > "$P/p/rc.lsh"
 echo 'echo "p post-rc.lsh (rc.d has run: ${from_rc-no}, in $LUISH_PLUGIN_NAME)"; p_post=done' > "$P/p/post-rc.lsh"

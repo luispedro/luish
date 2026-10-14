@@ -5,6 +5,8 @@
 # without asking.
 umask 022
 mkdir -p .config/luish/login.d .config/luish/rc.d
+# The startup cache is used with startup.auto_cache.
+printf '[options.startup]\nauto_cache = true\n' > .config/luish/config.toml
 cd .config/luish/login.d
 cat > 10-a.lsh <<'X'
 echo running 10-a

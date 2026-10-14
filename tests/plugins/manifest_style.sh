@@ -5,6 +5,9 @@
 # scheme can give them. The startup cache keeps what they did.
 C=$HOME/.config/luish
 P=$C/plugins
+# The startup cache is used with startup.auto_cache, which every config.toml
+# here adds.
+auto_cache() { printf '\n[options.startup]\nauto_cache = true\n' >> "$HOME/.config/luish/config.toml"; }
 mkdir -p "$C/rc.d" "$P/theme"
 run() { $SH -i -c "$1" 2>&1 | grep -v 'job control' | sed "s|$SH|luish|; s|$HOME|~|g"; }
 cat > "$C/config.toml" <<'T'
@@ -14,6 +17,7 @@ theme = "*"
 colorscheme = "solar"
 command = "italic"
 T
+auto_cache
 cat > "$P/theme/plugin.toml" <<'T'
 description = "A theme."
 [colorscheme.solar]

@@ -972,6 +972,24 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - `_uncached.lsh` runs
   as a mixed file, after the cache is written (in case it exits); the cache is written again if its blocks built
   entries, or if unused entries were dropped, which is done last.
+- **`startup.auto_cache`** (off by default) is what makes files and `config.toml` entries: without it, only blocks
+  are cached. `config.toml` is still built as the `config` entry (`cached`), since the option is only known once its
+  options are applied, but the closure returns `false` (not saved) right after `config::load` if the option is off,
+  and `run` then loads the plugins outside it with the `Run` in `Shell::startcache` (`with_run`, which `run_mixed`
+  uses too), so that their blocks are top-level entries rather than nested ones. A replayed `config` entry turns the
+  option on itself (it is among its changes), and no entry is saved while it is off, so that a hit means it is on.
+  The files then run as mixed ones without being read or looked up (no `has_block`, no `m` record), the `post-rc.lsh`
+  files outside an entry, and the unused entries other than blocks' are dropped; block ids and keys don't depend on
+  the option, so turning it on and off keeps them. `login.d` goes by the option's value when it runs: from `rc.d` in an
+  interactive shell, otherwise from `config::load_login`, which reads that option alone from `options`
+  (`options(..., Some(Opt::StartupAutoCache))`, which skips the rest silently). The caching tests turn it on in their
+  `config.toml`. With the developer's own setup (`luish-extra/conda` and `luish-extra/nvm`, whose slow parts are
+  blocks), a warm `luish -i -c exit` took 49.9M instructions off and 47.7M on (callgrind; both mostly parse the
+  functions that the blocks restore, and off also resolves the plugins, about 6M), and 15.0 ms against 13.9 ms
+  (median wall time); conda's `$(command -v conda)`, outside its block, adds a fork when off unless its `root` option
+  is set. The recommended config (`firstrun::config_text`) leaves it out on purpose: a whole file's entry restores
+  what its keys missed (a variable or file it read that isn't `PATH`, `HOME` or sourced), which is hard to debug,
+  whereas a block lists what it depends on. Tests: `misc/startup_cache_off.sh`, `tests/plugins/startup_cache_off.sh`.
 - Replay renders the changes (`render`, removals first, aliases and what follows grouped in braces by
   `state::join`) and runs them without expanding aliases (`Shell::run_text`): the text was written after expansion,
   and aliases from earlier entries mustn't apply. On the warm path: a stat per file and per `files=` path and

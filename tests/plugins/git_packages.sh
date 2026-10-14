@@ -7,6 +7,9 @@
 export GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=a GIT_AUTHOR_EMAIL=a@b GIT_COMMITTER_NAME=a GIT_COMMITTER_EMAIL=a@b
 export GIT_AUTHOR_DATE='2026-01-01T00:00:00Z' GIT_COMMITTER_DATE='2026-01-01T00:00:00Z'
 C=$HOME/.config/luish
+# The startup cache is used with startup.auto_cache, which every config.toml
+# here adds.
+auto_cache() { printf '\n[options.startup]\nauto_cache = true\n' >> "$HOME/.config/luish/config.toml"; }
 mkdir -p "$C" luish/std/hello coll/plugins/x single
 run() { $SH -i -c "$1" 2>&1 | grep -v 'job control' | sed "s|$SH|luish|; s|$HOME|~|g"; }
 cmd() { $SH -c "$1" 2>&1 | sed "s|$SH|luish|; s|$HOME|~|g"; }
@@ -31,6 +34,7 @@ coll = { git = "file://$HOME/coll", subdir = "plugins/" }
 std.rhai-only = "*"
 single = { git = "file://$HOME/single", branch = "main" }
 X
+auto_cache
 echo '--- not installed: reported by every shell'
 run '__luish_internal plugin list-loaded'
 run '__luish_internal plugin list-loaded'
@@ -89,6 +93,7 @@ annotated = { git = "file://$HOME/single", tag = "v1a" }
 [plugins.enabled]
 tagged = { git = "file://$HOME/single", tag = "v1" }
 X
+auto_cache
 cmd '__luish_internal plugin sync; echo "status $?"'
 run 'true'
 cmd '__luish_internal plugin check; echo "status $?"'
@@ -98,6 +103,7 @@ cat > "$C/config.toml" <<X
 [plugins.enabled]
 pinned = { git = "file://$HOME/single", rev = "$first" }
 X
+auto_cache
 cmd '__luish_internal plugin sync; echo "status $?"'
 run 'true'
 cmd '__luish_internal plugin check; echo "status $?"'
@@ -107,6 +113,7 @@ cat > "$C/config.toml" <<X
 [plugins.enabled]
 gone = { git = "file://$HOME/nosuch" }
 X
+auto_cache
 # (git's own messages vary with its version.)
 $SH -c '__luish_internal plugin sync; echo "status $?"' 2>&1 | grep -e "^$SH" -e status | sed "s|$SH|luish|; s|$HOME|~|g"
 $SH -c '__luish_internal plugin check; echo "status $?"' 2>&1 | grep -e "^$SH" -e status | sed "s|$SH|luish|; s|$HOME|~|g"
