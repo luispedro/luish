@@ -500,6 +500,8 @@ pub fn shopt(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             let r = match SHOPT.iter().find(|o| o.0.as_bytes() == &n[..]) {
                 _ if set_o => set_setting(sh, on, n),
                 Some(&(_, Shopt::Same(name))) => set_setting(sh, on, name.as_bytes()),
+                Some(&(_, Shopt::Login)) if sh.login == on => Ok(()),
+                Some(&(_, Shopt::Login)) => Err(format!("can't change option: {}", text(n))),
                 Some(&(_, fixed)) if (fixed == Shopt::On) == on => Ok(()),
                 Some(_) => Err(format!("{}: not supported in luish", text(n))),
                 None => Err(format!("{}: invalid shell option name", text(n))),
@@ -518,6 +520,7 @@ pub fn shopt(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         }
         match SHOPT.iter().find(|o| o.0.as_bytes() == name)?.1 {
             Shopt::Same(s) => state_of(sh, s.as_bytes()),
+            Shopt::Login => Some(sh.login),
             fixed => Some(fixed == Shopt::On),
         }
     };

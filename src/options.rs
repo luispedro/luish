@@ -132,6 +132,9 @@ pub enum Shopt {
     On,
     /// Always off: luish has no such option.
     Off,
+    /// `login_shell`: whether the shell is a login shell, which can't be
+    /// changed.
+    Login,
 }
 
 /// bash's `shopt` options, in the order bash lists them, and what luish does
@@ -166,7 +169,8 @@ pub const SHOPT: &[(&str, Shopt)] = &[
     ("extquote", Shopt::Off),
     ("failglob", Shopt::Off),
     ("force_fignore", Shopt::Off),
-    ("globasciiranges", Shopt::Off),
+    // Ranges compare bytes, whatever the locale.
+    ("globasciiranges", Shopt::On),
     // `.*` matches `.` and `..`, as in dash.
     ("globskipdots", Shopt::Off),
     ("globstar", Shopt::Same("glob.star")),
@@ -177,13 +181,17 @@ pub const SHOPT: &[(&str, Shopt)] = &[
     ("histverify", Shopt::Same("history.verify")),
     ("hostcomplete", Shopt::Off),
     ("huponexit", Shopt::Off),
-    ("inherit_errexit", Shopt::Off),
+    // Command substitutions keep `set -e`, as in dash.
+    ("inherit_errexit", Shopt::On),
     ("interactive_comments", Shopt::On),
     ("lastpipe", Shopt::Off),
-    ("lithist", Shopt::Off),
+    // A command of several lines keeps its newlines in the history.
+    ("lithist", Shopt::On),
+    // Off, although `local` keeps the value (as in dash): `typeset` in a
+    // function starts unset, as in zsh.
     ("localvar_inherit", Shopt::Off),
     ("localvar_unset", Shopt::Off),
-    ("login_shell", Shopt::Off),
+    ("login_shell", Shopt::Login),
     ("mailwarn", Shopt::Off),
     ("no_empty_cmd_completion", Shopt::Off),
     ("nocaseglob", Shopt::Off),
@@ -196,7 +204,9 @@ pub const SHOPT: &[(&str, Shopt)] = &[
     ("progcomp_alias", Shopt::Off),
     ("promptvars", Shopt::On),
     ("restricted_shell", Shopt::Off),
-    ("shift_verbose", Shopt::Off),
+    // `shift` reports a count beyond the positional parameters, as dash's
+    // does.
+    ("shift_verbose", Shopt::On),
     // `.` looks for a name without `/` in `PATH`.
     ("sourcepath", Shopt::On),
     ("varredir_close", Shopt::Off),

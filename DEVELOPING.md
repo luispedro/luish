@@ -645,7 +645,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   completer completes group names after `-p`, and the group's names after `-p GROUP`.
 - `shopt` (bash's, a regular built-in everywhere, as `setopt`): `SHOPT` lists bash's options in bash's order, each
   `Same(setting)` (set through `set_setting`, as `setopt` does), `On` (luish always does it: `-s` is a no-op, `-u` an
-  error) or `Off` (no such option: `-u` is a no-op, `-s` an error). `-o` takes `set -o`'s names through `set_setting`.
+  error), `Off` (no such option: `-u` is a no-op, `-s` an error) or `Login` (`login_shell`, from `Shell::login`, set
+  in `main`: setting it to what it is is a no-op, the other way an error). `-o` takes `set -o`'s names through `set_setting`.
   Messages and formats are bash's (`%-15s\t%s`, `shopt -s NAME`, `set +o NAME`). A unit test keeps `SHOPT` in step
   with `shopt_options()` in `luish-std-plugins/completion/shells.rhai`. Test: `options/shopt.sh`.
 - Tests: `options/setopt.sh` (zsh), `options/setopt_list.sh`, `options/setopt_values.sh`, `options/setopt_group.sh`,

@@ -66,7 +66,7 @@ extglob        	off
 extquote       	off
 failglob       	off
 force_fignore  	off
-globasciiranges	off
+globasciiranges	on
 globskipdots   	off
 globstar       	off
 gnu_errfmt     	off
@@ -75,10 +75,10 @@ histreedit     	off
 histverify     	off
 hostcomplete   	off
 huponexit      	off
-inherit_errexit	off
+inherit_errexit	on
 interactive_comments	on
 lastpipe       	off
-lithist        	off
+lithist        	on
 localvar_inherit	off
 localvar_unset 	off
 login_shell    	off
@@ -93,7 +93,7 @@ progcomp       	on
 progcomp_alias 	off
 promptvars     	on
 restricted_shell	off
-shift_verbose  	off
+shift_verbose  	on
 sourcepath     	on
 varredir_close 	off
 xpg_echo       	on
@@ -101,10 +101,14 @@ autocd         	on
 checkwinsize   	on
 cmdhist        	on
 expand_aliases 	on
+globasciiranges	on
 histappend     	on
+inherit_errexit	on
 interactive_comments	on
+lithist        	on
 progcomp       	on
 promptvars     	on
+shift_verbose  	on
 sourcepath     	on
 xpg_echo       	on
 shopt -u assoc_expand_once
@@ -112,3 +116,15 @@ shopt -u cdable_vars
 shopt -u cdspell
 globstar       	off
 status 1
+inherit_errexit	on
+globasciiranges	on
+lithist        	on
+shift_verbose  	on
+status 0
+login_shell    	off
+status 1
+status 0
+shopt.sh: 34: shopt: can't change option: login_shell
+    shopt -s login_shell 2>&1; echo "status $?"
+status 1
+login 0

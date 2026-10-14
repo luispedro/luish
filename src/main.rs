@@ -271,6 +271,7 @@ fn run(mut args: Vec<Vec<u8>>) -> ! {
 
     let interactive = force_interactive || (stdin_mode && !command_mode && sys::isatty(0) && sys::isatty(2));
     sh.bump_shlvl(interactive);
+    sh.login = login;
     // `-o vars.trace`: from the start, so that what startup files set is
     // recorded (`vartrace.rs`).
     sh.update_var_trace(true);

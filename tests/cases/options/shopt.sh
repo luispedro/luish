@@ -26,3 +26,10 @@ shopt
 shopt -s
 shopt -u -p | head -3
 shopt -p >saved; shopt -s globstar; . ./saved; shopt globstar; echo "status $?"
+# Options that describe what luish (as dash) does are on.
+shopt inherit_errexit globasciiranges lithist shift_verbose; echo "status $?"
+# `login_shell` tells whether this is a login shell, and can't be changed.
+shopt login_shell; echo "status $?"
+shopt -u login_shell; echo "status $?"
+shopt -s login_shell 2>&1; echo "status $?"
+$SH --login --no-rcs -c 'shopt -q login_shell; echo "login $?"'

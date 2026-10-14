@@ -126,6 +126,9 @@ pub struct Shell {
     pub plugins: Option<Rc<crate::plugins::Host>>,
     /// `--no-plugins`: `plugin load` does nothing.
     pub no_plugins: bool,
+    /// A login shell (`-l`, or `$0` starting with `-`), for `shopt
+    /// login_shell`.
+    pub login: bool,
     /// Set while the startup files of `rc.d` run, with the plugins that
     /// `config.toml` enables: plugins then wait for the end of `rc.d` to run
     /// their `post-rc.lsh` and `post-rc` hooks (`plugins/mod.rs`).
@@ -216,6 +219,7 @@ impl Shell {
             sourced_files: None,
             plugins: None,
             no_plugins: false,
+            login: false,
             in_rc: false,
             check_cache: None,
             startcache: None,

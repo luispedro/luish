@@ -20,12 +20,13 @@ same in luish, as `setopt` does, and `shopt -u name` unsets it:
 : `history.verify`
 
 Some of bash's options describe what luish always does, so they are always
-on: `checkwinsize`, `cmdhist`, `expand_aliases`, `histappend`,
-`interactive_comments`, `progcomp`, `promptvars`, `sourcepath` and
-`xpg_echo`. The others are always off, as luish doesn't have them (such as
-`extglob`, `nullglob` and `dotglob`). Setting an option that is always on,
-or unsetting one that is always off, does nothing. The opposite is an
-error.
+on: `checkwinsize`, `cmdhist`, `expand_aliases`, `globasciiranges`,
+`histappend`, `inherit_errexit`, `interactive_comments`, `lithist`,
+`progcomp`, `promptvars`, `shift_verbose`, `sourcepath` and `xpg_echo`.
+`login_shell` is on in a login shell and off otherwise. The others are
+always off, as luish doesn't have them (such as `extglob`, `nullglob` and
+`dotglob`). Setting an option that is always on, or unsetting one that is
+always off, does nothing. The opposite is an error.
 
 `-s`
 : Set the options named (with names), or list those that are on.
