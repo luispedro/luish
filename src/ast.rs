@@ -446,6 +446,13 @@ pub enum WordPart {
     Param(Box<ParamExp>),
     /// `$(...)` and `` `...` ``, parsed eagerly.
     CmdSubst(Rc<List>),
+    /// `${ ...; }` and `${| ...; }` (mksh and bash): the list runs in the
+    /// shell itself, and the substitution is its output, or (`reply`) the
+    /// value of `REPLY` after it.
+    NoForkSubst {
+        reply: bool,
+        list: Rc<List>,
+    },
     /// `<(...)` (`output: false`) and `>(...)`: the word is the path of a
     /// pipe to the list's standard output, or from its standard input.
     ProcSubst {

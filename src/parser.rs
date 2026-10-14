@@ -914,14 +914,15 @@ impl Parser {
     }
 }
 
-/// Whether expanding the word can run a command (`$(...)`, `<(...)`).
+/// Whether expanding the word can run a command (`$(...)`, `${ ...; }`,
+/// `<(...)`).
 fn forks(w: &Word) -> bool {
     parts_fork(&w.0)
 }
 
 fn parts_fork(parts: &[WordPart]) -> bool {
     parts.iter().any(|p| match p {
-        WordPart::CmdSubst(_) | WordPart::ProcSubst { .. } => true,
+        WordPart::CmdSubst(_) | WordPart::NoForkSubst { .. } | WordPart::ProcSubst { .. } => true,
         WordPart::DoubleQuoted(parts) => parts_fork(parts),
         WordPart::Arith(w) => forks(w),
         WordPart::Array(items) => items

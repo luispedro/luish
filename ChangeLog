@@ -10,6 +10,8 @@ Unreleased
       dotglob, failglob
     * Startup files and config.toml are no longer cached as a whole, only
       their __luish_cache blocks, unless setopt startup.auto_cache is on
+    * ${ cmd; } and ${| cmd; }: command substitution without a subshell,
+      as in bash 5.3 and mksh
 
 Version 0.6.0 2026-10-10 by luispedro
     * Bad glob qualifier errors name the word

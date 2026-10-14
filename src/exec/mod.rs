@@ -513,13 +513,7 @@ impl Shell {
             Err(RedirError::Open(n)) => Ok(n),
             Err(e) => Err(e.into()),
         };
-        let depth = self.locals.len();
-        if let Some((_, saved)) = self.local_options.pop_if(|s| s.0 == depth) {
-            self.restore_options(&saved);
-        }
-        for (name, saved) in self.locals.pop().unwrap().into_iter().rev() {
-            self.restore_saved(name, saved, Some(&func.name));
-        }
+        self.pop_locals(Some(&func.name));
         self.pop_frame();
         self.lineno = call_line;
         self.func_depth -= 1;
@@ -529,6 +523,19 @@ impl Shell {
         match r {
             Err(Flow::Return(n)) => Ok(n),
             r => r,
+        }
+    }
+
+    /// Ends the innermost scope of local variables (and of `local -`), of a
+    /// call of `function` or of a `${ ...; }`.
+    #[inline(always)]
+    pub fn pop_locals(&mut self, function: Option<&Rc<[u8]>>) {
+        let depth = self.locals.len();
+        if let Some((_, saved)) = self.local_options.pop_if(|s| s.0 == depth) {
+            self.restore_options(&saved);
+        }
+        for (name, saved) in self.locals.pop().unwrap().into_iter().rev() {
+            self.restore_saved(name, saved, function);
         }
     }
 }

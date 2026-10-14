@@ -305,6 +305,13 @@ pub struct Parser {
     /// with what is inside them: without this, reading took time
     /// exponential in their nesting.
     subst_memo: Option<SubstMemo>,
+    /// Reading the list of a `${ ...; }`, whose `}` is a reserved word.
+    in_nofork: bool,
+    /// In a `${ ...; }`, where its start or the last operator that ends a
+    /// command (or newline) ends. A `}` after it (and blanks) is where a
+    /// reserved word can be, and ends the list even when more of the word
+    /// follows it (`"${ cmd; }"`), as in bash.
+    after_separator: usize,
 }
 
 /// Whether `read_braced_param` read a `${...}`, and the position, line and
@@ -387,6 +394,8 @@ impl Parser {
             param_memo: None,
             skim: false,
             subst_memo: None,
+            in_nofork: false,
+            after_separator: 0,
         }
     }
 
@@ -597,6 +606,26 @@ impl Parser {
         };
         let op = |p: &mut Parser, op: Op, len: usize| {
             p.pos += len;
+            // Not after `)` or a redirection.
+            if p.in_nofork
+                && matches!(
+                    op,
+                    Op::Pipe
+                        | Op::PipeAmp
+                        | Op::OrIf
+                        | Op::Amp
+                        | Op::AmpDisown
+                        | Op::AndIf
+                        | Op::Semi
+                        | Op::DSemi
+                        | Op::SemiAmp
+                        | Op::SemiPipe
+                        | Op::DSemiAmp
+                        | Op::LParen
+                )
+            {
+                p.after_separator = p.pos;
+            }
             Ok(mk(Tok::Op(op), p.pos))
         };
         match c {
@@ -607,7 +636,20 @@ impl Parser {
                 if !self.pending_heredocs.is_empty() {
                     self.read_heredoc_bodies()?;
                 }
+                if self.in_nofork {
+                    self.after_separator = self.pos;
+                }
                 Ok(mk(Tok::Newline, end))
+            }
+            b'}' if self.in_nofork
+                && (self.src.get(self.after_separator..start))
+                    .is_some_and(|s| s.iter().all(|&c| matches!(c, b' ' | b'\t' | b'\\' | b'\n'))) =>
+            {
+                self.pos += 1;
+                Ok(mk(
+                    Tok::Word(Word(Parts::One(WordPart::Literal(b"}".to_vec())))),
+                    self.pos,
+                ))
             }
             b'(' | b'|' if self.regex_word => self.lex_word(start, lineno),
             b'|' if self.at(1) == Some(b'|') => op(self, Op::OrIf, 2),
@@ -716,7 +758,7 @@ impl Parser {
                 b'<' | b'>' if !self.regex_word && self.at(1) == Some(b'(') => {
                     flush(&mut parts, &mut lit);
                     self.pos += 2;
-                    let list = self.read_subst_list()?;
+                    let list = self.read_subst_list(false)?;
                     parts.push(WordPart::ProcSubst {
                         output: c == b'>',
                         list,
@@ -1051,6 +1093,16 @@ impl Parser {
             }))
         };
         self.eat_bnl(0);
+        if let Some(c @ (b' ' | b'\t' | b'\n' | b'|')) = self.at(0) {
+            // `${ ...; }` and `${| ...; }` (mksh and bash): bad substitutions in dash.
+            if c == b'|' {
+                self.pos += 1;
+            }
+            return Ok(WordPart::NoForkSubst {
+                reply: c == b'|',
+                list: self.read_subst_list(true)?,
+            });
+        }
         if self.at(0) == Some(b'(') {
             // zsh's `${(flags)name...}`, a bad substitution in dash. The
             // rest is read as usual, but without `${#name}` and `${!name}`.
@@ -1523,21 +1575,29 @@ impl Parser {
 
     /// After `$(`: parse a nested command list up to the matching `)`.
     fn read_cmdsubst(&mut self) -> PResult<WordPart> {
-        self.read_subst_list().map(WordPart::CmdSubst)
+        self.read_subst_list(false).map(WordPart::CmdSubst)
     }
 
-    /// After `$(`, `<(` or `>(`: the list up to the matching `)`.
-    fn read_subst_list(&mut self) -> PResult<Rc<List>> {
+    /// After `$(`, `<(` or `>(`: the list up to the matching `)`. With
+    /// `brace`, after `${ ` or `${|`: the list up to its `}`.
+    fn read_subst_list(&mut self, brace: bool) -> PResult<Rc<List>> {
         debug_assert!(self.peeked.is_none());
         let outer_heredocs = std::mem::take(&mut self.pending_heredocs);
         let outer_alias_blank_end = self.alias_blank_end.take();
+        let outer_nofork = (self.in_nofork, self.after_separator);
+        (self.in_nofork, self.after_separator) = (brace, self.pos);
         let list = self.parse_compound_list().and_then(|list| {
             let t = self.next()?;
-            if t.tok != Tok::Op(Op::RParen) {
-                return self.unexpected(&t, Some(")"));
+            let end = match &t.tok {
+                Tok::Word(w) if brace => w.as_literal() == Some(b"}"),
+                tok => !brace && *tok == Tok::Op(Op::RParen),
+            };
+            if !end {
+                return self.unexpected(&t, Some(if brace { "}" } else { ")" }));
             }
             Ok(list)
         });
+        (self.in_nofork, self.after_separator) = outer_nofork;
         let list = match list {
             Ok(list) => list,
             Err(e) => {

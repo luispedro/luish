@@ -420,6 +420,10 @@ impl Shell {
                 let out = self.command_subst(list)?;
                 push_result(&out, quoted, f);
             }
+            WordPart::NoForkSubst { reply, list } => {
+                let out = self.nofork_subst(*reply, list)?;
+                push_result(&out, quoted, f);
+            }
             WordPart::ProcSubst { output, list } => {
                 let path = self.process_subst(*output, list)?;
                 f.push_quoted(&path);
@@ -1204,6 +1208,91 @@ impl Shell {
             out.pop();
         }
         Ok(out)
+    }
+
+    /// Runs `${ ...; }` or (`reply`) `${| ...; }` in the shell itself, as
+    /// bash does: as a function body, with local variables and `return`, but
+    /// with the caller's positional parameters. Returns the list's output
+    /// without trailing newlines, or the value of `REPLY` after it (which is
+    /// local to it, and starts unset).
+    #[inline(never)]
+    pub fn nofork_subst(&mut self, reply: bool, list: &List) -> EResult<Vec<u8>> {
+        // The output goes to a file rather than a pipe, which would fill up
+        // as nothing reads it until the list is done.
+        let capture = if reply {
+            None
+        } else {
+            let file = self.capture_file()?;
+            let saved = sys::dup_high(1).ok();
+            let _ = sys::dup2(file, 1);
+            Some((file, saved))
+        };
+        let saved_loop = std::mem::replace(&mut self.loop_depth, 0);
+        let call_line = self.lineno;
+        self.locals.push(Vec::new());
+        if reply {
+            let old = self.save_var(b"REPLY");
+            self.locals.last_mut().unwrap().push((b"REPLY".to_vec(), old));
+            self.restore_var(b"REPLY".to_vec(), None);
+            if self.vartrace.is_some() {
+                self.trace_unset(b"REPLY");
+            }
+        }
+        let r = self.run_list(list);
+        let value = if reply { self.get_var(b"REPLY") } else { None };
+        self.pop_locals(None);
+        self.lineno = call_line;
+        self.loop_depth = saved_loop;
+        let mut out = value.unwrap_or_default();
+        if let Some((file, saved)) = capture {
+            match saved {
+                Some(fd) => {
+                    let _ = sys::dup2(fd, 1);
+                    sys::close(fd);
+                }
+                None => sys::close(1),
+            }
+            let _ = sys::lseek(file, 0, libc::SEEK_SET);
+            let mut buf = [0u8; 4096];
+            while let Ok(n) = sys::read(file, &mut buf, false) {
+                if n == 0 {
+                    break;
+                }
+                out.extend_from_slice(&buf[..n]);
+            }
+            sys::close(file);
+            out.retain(|&b| b != 0);
+            while out.last() == Some(&b'\n') {
+                out.pop();
+            }
+        }
+        self.subst_status = Some(match r {
+            Ok(n) | Err(Flow::Return(n)) => n,
+            Err(e) => return Err(e),
+        });
+        Ok(out)
+    }
+
+    /// The file that `${ ...; }` writes its output to: in memory if the
+    /// system allows it, at fd 10 or above.
+    fn capture_file(&mut self) -> EResult<i32> {
+        let fd = match sys::memfd() {
+            Ok(fd) => fd,
+            Err(_) => {
+                let (fd, path) = self.temp_file(b"luish-subst-")?;
+                sys::unlink(&path);
+                fd
+            }
+        };
+        if fd >= 10 {
+            return Ok(fd);
+        }
+        let high = sys::dup_high(fd);
+        sys::close(fd);
+        high.map_err(|e| {
+            self.error(format!("Can't duplicate fd: {}", sys::strerror(e)));
+            Flow::Error(2)
+        })
     }
 }
 

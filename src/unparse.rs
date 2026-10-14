@@ -458,6 +458,7 @@ impl<'a> Printer<'a> {
                     self.param(pe, joins);
                 }
                 WordPart::CmdSubst(list) => self.cmdsubst(b"$(", list),
+                WordPart::NoForkSubst { reply, list } => self.nofork(*reply, list),
                 WordPart::ProcSubst { output, list } => self.cmdsubst(if *output { b">(" } else { b"<(" }, list),
                 WordPart::Arith(w) => {
                     self.w(b"$((");
@@ -622,9 +623,7 @@ impl<'a> Printer<'a> {
     }
 
     fn cmdsubst(&mut self, open: &[u8], list: &List) {
-        let mut p = Printer::new(self.indent + 1, self.aliases, self.globqual);
-        p.seq(list, false);
-        let text = p.finish_with(false);
+        let text = self.subst_text(list);
         if !text.contains(&b'\n') {
             // `$( (...) )`, not `$((`
             self.w(open);
@@ -635,17 +634,49 @@ impl<'a> Printer<'a> {
             self.w(b")");
             return;
         }
+        self.subst_lines(open, &text, b")");
+    }
+
+    /// `${ ...; }` or `${| ...; }`.
+    fn nofork(&mut self, reply: bool, list: &List) {
+        let open: &[u8] = if reply { b"${|" } else { b"${" };
+        let text = self.subst_text(list);
+        if text.contains(&b'\n') {
+            return self.subst_lines(open, &text, b"}");
+        }
+        self.w(open);
+        if text.is_empty() {
+            self.w(b" }");
+            return;
+        }
+        if !reply {
+            self.w(b" ");
+        }
+        self.w(&text);
+        // `&` ends the last command as `;` would.
+        self.w(if text.ends_with(b"&") { b" }" } else { b"; }" });
+    }
+
+    /// The text of the list of a substitution, one level further in.
+    fn subst_text(&self, list: &List) -> Vec<u8> {
+        let mut p = Printer::new(self.indent + 1, self.aliases, self.globqual);
+        p.seq(list, false);
+        p.finish_with(false)
+    }
+
+    /// A substitution whose text takes several lines.
+    fn subst_lines(&mut self, open: &[u8], text: &[u8], close: &[u8]) {
         // Written directly rather than with `nl`, which would write the
         // bodies of here-documents started before the substitution.
         self.w(open);
         self.w(b"\n");
         self.out.resize(self.out.len() + 4 * (self.indent + 1), b' ');
-        self.w(&text);
+        self.w(text);
         if text.last() != Some(&b'\n') {
             self.out.push(b'\n');
         }
         self.out.resize(self.out.len() + 4 * self.indent, b' ');
-        self.w(b")");
+        self.w(close);
     }
 }
 
@@ -734,7 +765,9 @@ fn part<V: LineVisitor>(p: &mut WordPart, v: &mut V) {
             v.parts(&mut inner);
             *ps = inner.into_vec();
         }
-        WordPart::CmdSubst(l) | WordPart::ProcSubst { list: l, .. } => walk_lines(std::rc::Rc::make_mut(l), v),
+        WordPart::CmdSubst(l) | WordPart::NoForkSubst { list: l, .. } | WordPart::ProcSubst { list: l, .. } => {
+            walk_lines(std::rc::Rc::make_mut(l), v)
+        }
         WordPart::Arith(w) => word(w, v),
         WordPart::Array(items) => {
             for item in items {
@@ -970,6 +1003,18 @@ mod tests {
         // A subshell first must not read as `<((`.
         round_trip("f() { cat <(( echo a )); }");
         assert!(round_trip("f() { while read x; do :; done < <(cmd); }").contains("< <(cmd)"));
+    }
+
+    #[test]
+    fn nofork_substitution() {
+        assert_eq!(
+            round_trip("f() { echo ${ a;}x \"${| REPLY=1;}\" ${ b & } ${ } ${| }; }"),
+            "f() {\n    echo ${ a; }x \"${|REPLY=1; }\" ${ b & } ${ } ${| }\n}\n"
+        );
+        assert_eq!(
+            round_trip("f() { x=${ a; if b; then c; fi; } y=${|\nREPLY=1\n}; }"),
+            "f() {\n    x=${\n        a\n        if b; then\n            c\n        fi\n    } y=${|REPLY=1; }\n}\n"
+        );
     }
 
     #[test]

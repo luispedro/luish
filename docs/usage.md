@@ -76,6 +76,7 @@ make |& less                               # pipe standard error too, as make 2>
 case $x in a) one;& b) two;| *) all;; esac # ;& runs the next body too, ;| (or ;;&) tries the next patterns
 firefox &!                                 # in the background, and disowned (also &|)
 read -r first rest <<< "$line"             # a here-string: the word and a newline on stdin
+n=${ printf '%03d' "$i"; }                 # command substitution in the shell, without forking a subshell
 ```
 
 - `[[ ... ]]` has `test`'s operators, `&&`, `||`, `!` and parentheses, patterns on the right of `==` and `!=`, `=~`
@@ -87,6 +88,15 @@ read -r first rest <<< "$line"             # a here-string: the word and a newli
   A redirection can take one too: `while read -r l; do ...; done < <(cmd)` (unlike `cmd | while ...`, the loop runs
   in the shell, so its variables stay), and `exec 3< <(cmd)` reads it later, from `<&3`. The word isn't split or
   globbed. It can be part of a word, as in bash and zsh: `prog --input=<(cmd)` passes `--input=/dev/fd/N`.
+- Command substitution in the shell itself, as in bash 5.3 and mksh: `${ list; }` is replaced by the output of
+  `list`, as `$(list)` is (trailing newlines removed, then split unless in double quotes), but `list` runs in the
+  shell rather than in a subshell, which saves a fork: `${ printf '%03d' "$i"; }` costs about as much as the
+  `printf` alone. So what it changes stays changed (`${ cd /tmp; pwd; }` leaves you in `/tmp`, and `exit` exits the
+  shell). It runs as a function body does: `local` makes variables local to it, and `return` ends it, but `$1`,
+  `$2`... are those of the caller. `${| list; }` captures nothing: it is replaced by the value of `REPLY` after the
+  list, trailing newlines included, and `REPLY` is local to it and starts unset (`${| REPLY=${x%.*}; }`). After
+  `${` must come a blank, a newline or `|`, and the `}` must be where a command could start: after `;`, `&` or a
+  newline (`${ echo a }` goes on, as `echo a }`).
 - [Arrays](#arrays), including associative ones, with `typeset`, `read -A` and zsh's parameter flags.
 - [Parameter expansion](#parameter-expansion): `${x:offset:length}`, `${x/pattern/replacement}`, `${!name}`, zsh's
   modifiers (`${x:t}`, `${BASH_SOURCE:A:h}`) and more.

@@ -479,7 +479,8 @@ impl Scan<'_> {
         let mut pattern = false;
         while i < s.len() {
             let c = s[i];
-            if Some(c) == end && !(pattern && c == b')') {
+            // The `}` of `${ ...; }` ends it only where a command can start.
+            if Some(c) == end && !(pattern && c == b')') && (c != b'}' || cmd) {
                 return i;
             }
             if after == After::Cond && matches!(c, b'<' | b'>' | b'(' | b')' | b'&' | b'|' | b'0'..=b'9') {
@@ -913,7 +914,7 @@ impl Scan<'_> {
             let c = s[j];
             if is_procsubst(s, j) {
                 w.expanded = true;
-                j = self.nested(j, 2, role::PROCESS);
+                j = self.nested(j, 2, role::PROCESS, b')');
                 continue;
             }
             if ends_word(c) || (c == b'`' && self.in_backquote) {
@@ -1032,7 +1033,8 @@ impl Scan<'_> {
                 }
                 (k, role::ARITH)
             }
-            (Some(b'('), _) => return self.nested(i, 2, role::SUBST),
+            (Some(b'('), _) => return self.nested(i, 2, role::SUBST, b')'),
+            (Some(b'{'), Some(b' ' | b'\t' | b'\n' | b'|')) => return self.nested(i, 3, role::SUBST, b'}'),
             (Some(b'{'), _) => {
                 let mut depth = 0;
                 let mut k = i + 1;
@@ -1102,13 +1104,13 @@ impl Scan<'_> {
     }
 
     /// Scans a nested list whose opening delimiter, `len` bytes long, is
-    /// at `i` (`$(`, `<(` or `>(`), up to its `)`.
-    fn nested(&mut self, i: usize, len: usize, r: Role) -> usize {
+    /// at `i` (`$(`, `<(`, `>(`, `${ ` or `${|`), up to its `close`.
+    fn nested(&mut self, i: usize, len: usize, r: Role, close: u8) -> usize {
         self.paint(i, i + len, r);
         let saved = std::mem::replace(&mut self.in_backquote, false);
-        let k = self.list(i + len, Some(b')'));
+        let k = self.list(i + len, Some(close));
         self.in_backquote = saved;
-        if self.s.get(k) == Some(&b')') {
+        if self.s.get(k) == Some(&close) {
             self.paint(k, k + 1, r);
             return k + 1;
         }
@@ -1804,6 +1806,12 @@ mod tests {
             "echo:command.builtin $(:subst.command ls:command.external ):subst.command `:subst.command \
              ls:command.external `:subst.command <(:subst.process ls:command.external ):subst.process \
              --in=:arg.option >(:subst.process cat:command.external ):subst.process"
+        );
+        // The `}` of `${ ...; }` only where a command can start.
+        assert_eq!(
+            roles("echo ${ ls }; } \"${|ls;}\""),
+            "echo:command.builtin ${ :subst.command ls:command.external  }:arg ;:op.control  :arg }:subst.command \
+             \":string.double ${|:subst.command ls:command.external ;:op.control }:subst.command \":string.double"
         );
         // `2<(` is a word, not a redirection of fd 2.
         assert_eq!(classes("cat < <(ls) 2<(ls)"), "ccc.r.$$cc$..$$cc$");

@@ -201,6 +201,13 @@ pub fn dup_high(fd: i32) -> Result<i32, i32> {
     if r < 0 { Err(errno()) } else { Ok(r) }
 }
 
+/// An anonymous file in memory, close-on-exec.
+pub fn memfd() -> Result<i32, i32> {
+    // SAFETY: a valid name, plain memfd_create.
+    let r = unsafe { libc::memfd_create(c"luish".as_ptr(), libc::MFD_CLOEXEC) };
+    if r < 0 { Err(errno()) } else { Ok(r) }
+}
+
 pub fn fd_is_open(fd: i32) -> bool {
     // SAFETY: plain fcntl.
     unsafe { libc::fcntl(fd, libc::F_GETFD) >= 0 }

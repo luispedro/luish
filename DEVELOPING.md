@@ -156,6 +156,17 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `2<(cmd)` is one word, not an fd number); `lex` sends a token that starts with one to `lex_word`. Not in
   `[[ x =~ ... ]]` (`regex_word`). The list is parsed as for `$(` (`read_subst_list`). Tests: `expand/procsubst*.sh`,
   unit tests in `unparse.rs`.
+- `${ list; }` and `${| list; }` (mksh and bash 5.3; bad substitutions in dash, so always on): `${` followed by a
+  blank, a newline or `|` (`read_braced_param_uncached`) is a `WordPart::NoForkSubst`, whose list `read_subst_list`
+  parses up to a `}` instead of a `)`. So the list must parse even where dash would only fail when expanding it.
+  As in bash the `}` is a reserved word, and ends the list where one can be even when more of the word follows
+  (`"${ cmd; }"`, `${ cmd;}.txt`): `lex` makes it a token of its own when only blanks come between it and the end
+  of the last separator (`after_separator`: `;`, `&`, `|`, `&&`, `||`, `(`, a newline, or the `${ ` itself), which
+  the lexer records only inside such a list (`in_nofork`, off again inside a `$(`), so other scripts don't pay for
+  it. zsh's version (in its development tree) differs: the `}` needs only a blank before it (braces inside must pair
+  up), and the output keeps all but
+  one trailing newline (all of them in double quotes) and isn't split; luish follows bash, so that it works as
+  `$(...)` does. Tests: `expand/nofork_subst.sh`, unit tests in `unparse.rs` and `highlight.rs`.
 - As in dash, a bad `${...}` (such as `${x^^}`) is an error only when expanded, and `$(` in a here-doc delimiter
   is a syntax error. Test: `parse/dash_lenient.sh`. `ParamOp::Bad` keeps the text up to the `}` as it was
   (`read_bad_param`): it is read as a word only to find the `}`. A subscript with no `]` before the `}`, or one
@@ -263,6 +274,15 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   errors, as in dash. Test: `expand/arith_quotes.sh`.
 - Command substitution drops NUL bytes (so does `read`) and sets `$?` only for commands of assignments alone (so
   `echo $(exit 3)$?` prints 0). Test: `expand/nul_bytes.sh`.
+- `${ list; }` (`nofork_subst`) runs in the shell, as bash's does: fd 1 goes to a new memfd (an unlinked temporary
+  file if `memfd_create` fails) at fd 10 or above, not a pipe, which would fill up while nothing reads it; fd 1 is
+  put back before anything else, `exit` and errors included, so an EXIT trap writes to the real stdout. A file is
+  never reused, since a background job inside keeps writing to it. Like a function call, it pushes a scope of
+  locals (`pop_locals`, shared with `call_function`) and resets `loop_depth`, and ends at `return`; unlike one, it
+  keeps the positional parameters and `OPTIND`, and pushes no frame. `${| list; }` captures nothing: it makes
+  `REPLY` local and unset, and its value is `REPLY` at the end, trailing newlines included. Both set `$?` as `$(...)`
+  does. Measured on a busy machine: 20 µs for `${ echo hi; }` (mostly the memfd's syscalls) and 2 µs for
+  `${| REPLY=hi; }`, against 380 µs for `$(echo hi)`. Test: `expand/nofork_subst.sh`.
 - Globbing: byte order, `.*` matches `.` and `..` (as in dash), `^` is not negation. A lone `[` without a matching
   `]` is not a pattern: treating it as one made every `[ ... ]` call `readdir` and loops 7× slower.
 - `expand.braces` (`brace.rs`): done in `expand_word_into` on the parsed word, not in the lexer, so that the option
@@ -1570,6 +1590,7 @@ truncates when it relocates the package.
 | `${a[i..j]}` | `expand/array_slices.sh` |
 | `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |
 | `${!x}`, `${!prefix@}` | `expand/indirect.sh` |
+| `${ list; }`, `${\| list; }` | `expand/nofork_subst.sh` |
 | Parameter flags, `${(o)a[@]}` | `expand/param_flags.sh` (zsh), `expand/param_flags_luish.sh` |
 | `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh`, `builtins/typeset_case.sh` (zsh), `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh`, `builtins/typeset_functions.sh` (zsh), `builtins/typeset_functions_luish.sh` |
 | `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
