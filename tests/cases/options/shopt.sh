@@ -33,3 +33,7 @@ shopt login_shell; echo "status $?"
 shopt -u login_shell; echo "status $?"
 shopt -s login_shell 2>&1; echo "status $?"
 $SH --login --no-rcs -c 'shopt -q login_shell; echo "login $?"'
+# `nullglob`, `dotglob` and `failglob` are `glob.null`, `glob.dots` and
+# `glob.fail`.
+shopt -s nullglob dotglob failglob; echo "status $?"; setopt
+shopt -u nullglob dotglob failglob; setopt

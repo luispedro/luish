@@ -36,11 +36,38 @@ impl Shell {
 
     /// Full expansion of command words: produces zero or more fields each.
     pub fn expand_words(&mut self, words: &[Word]) -> EResult<Vec<Vec<u8>>> {
-        let mut out = Vec::with_capacity(words.len());
-        for w in words {
-            self.expand_word_into(w, &mut out)?;
+        self.tallied(|sh| {
+            let mut out = Vec::with_capacity(words.len());
+            for w in words {
+                sh.expand_word_into(w, &mut out)?;
+            }
+            Ok(out)
+        })
+    }
+
+    /// Expands a list of words (a command's, `for`'s or an array's) with
+    /// `f`. Under `glob.fail_all` (zsh's `CSH_NULL_GLOB`), the patterns
+    /// that match nothing are removed, and it is an error if none of those
+    /// in the list matched.
+    fn tallied<T>(&mut self, f: impl FnOnce(&mut Self) -> EResult<T>) -> EResult<T> {
+        if !self.opt(Opt::GlobFailAll) {
+            return f(self);
         }
-        Ok(out)
+        // Saved, as a command substitution in a word may expand its own.
+        let outer = std::mem::take(&mut self.glob_tally);
+        let r = f(self);
+        let tally = std::mem::replace(&mut self.glob_tally, outer);
+        let r = r?;
+        if !tally.matched && !tally.unmatched.is_empty() {
+            let shown: Vec<String> = tally
+                .unmatched
+                .iter()
+                .map(|p| String::from_utf8_lossy(p).into_owned())
+                .collect();
+            self.error(format!("no matches found: {}", shown.join(" ")));
+            return Err(Flow::Error(1));
+        }
+        Ok(r)
     }
 
     /// Expands the words of a simple command. As in dash, the arguments of
@@ -50,6 +77,10 @@ impl Shell {
     /// So are those of `setopt`, whose names can have `.` in them.
     /// The command name is found by expanding the words one at a time.
     pub fn expand_command_words(&mut self, words: &[Word]) -> EResult<Vec<Vec<u8>>> {
+        self.tallied(|sh| sh.expand_command_words_into(words))
+    }
+
+    fn expand_command_words_into(&mut self, words: &[Word]) -> EResult<Vec<Vec<u8>>> {
         let mut out = Vec::with_capacity(words.len());
         let mut decl = None;
         let mut i = 0;
@@ -142,6 +173,10 @@ impl Shell {
     /// as a command word (giving any number of them), and `[key]=value` as
     /// an assignment.
     pub fn expand_items(&mut self, items: &[ArrayItem]) -> EResult<Vec<Item>> {
+        self.tallied(|sh| sh.expand_items_into(items))
+    }
+
+    fn expand_items_into(&mut self, items: &[ArrayItem]) -> EResult<Vec<Item>> {
         let mut out = Vec::with_capacity(items.len());
         let mut words = Vec::new();
         for item in items {
@@ -212,22 +247,43 @@ impl Shell {
         if has_meta(&field) {
             let opts = glob::GlobOpts {
                 globstar: self.opt(Opt::Globstar),
-                dots: false,
+                dots: self.opt(Opt::GlobDots),
             };
             let matches = glob::glob(&field, opts);
-            if !matches.is_empty() {
-                out.extend(matches);
-                return Ok(());
+            if matches.is_empty() {
+                return self.unmatched(bytes(&field), out);
             }
+            self.glob_tally.matched = true;
+            out.extend(matches);
+            return Ok(());
         }
         out.push(bytes(&field));
         Ok(())
     }
 
+    /// A pattern that matched nothing: left as it is (POSIX), removed
+    /// (`glob.null`, and `glob.fail_all` unless no pattern of the list
+    /// matches), or an error (`glob.fail`), in that order, as in zsh.
+    fn unmatched(&mut self, pattern: Vec<u8>, out: &mut Vec<Vec<u8>>) -> EResult<()> {
+        if self.opt(Opt::GlobNull) {
+            Ok(())
+        } else if self.opt(Opt::GlobFailAll) {
+            self.glob_tally.unmatched.push(pattern);
+            Ok(())
+        } else if self.opt(Opt::GlobFail) {
+            self.error(format!("no matches found: {}", String::from_utf8_lossy(&pattern)));
+            Err(Flow::Error(1))
+        } else {
+            out.push(pattern);
+            Ok(())
+        }
+    }
+
     /// A field ending in a glob qualifier, `pattern(q)` with the `(` at
     /// `open`: the pattern (even without `*`, `?` or `[`) is expanded, and
     /// the qualifier selects and changes the matches. Without matches the
-    /// field is left as it was, unless the qualifier has `N`. As in zsh,
+    /// field is as for a pattern without a qualifier (`unmatched`), unless
+    /// the qualifier has `N`, which removes it. As in zsh,
     /// the qualifier may come from an expansion.
     fn glob_qualified(&mut self, field: XField, open: usize, out: &mut Vec<Vec<u8>>) -> EResult<()> {
         let q = bytes(&field[open + 1..field.len() - 1]);
@@ -243,12 +299,15 @@ impl Shell {
         };
         let opts = glob::GlobOpts {
             globstar: self.opt(Opt::Globstar),
-            dots: qual.dots,
+            dots: qual.dots || self.opt(Opt::GlobDots),
         };
         match qual.apply(glob::glob(&field[..open], opts)) {
-            Some(matches) => out.extend(matches),
-            None if !qual.null => out.push(bytes(&field)),
-            None => {}
+            Some(matches) => {
+                self.glob_tally.matched = true;
+                out.extend(matches);
+            }
+            None if qual.null => {}
+            None => self.unmatched(bytes(&field), out)?,
         }
         Ok(())
     }

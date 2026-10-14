@@ -1,8 +1,10 @@
 # Extended globbing
 
 luish can expand filename patterns as zsh does: `**/` matches any number of directories, and a *glob qualifier* in
-parentheses after a pattern selects files by type, size, age and more, and can sort and change the result. Both are
-off by default, so that scripts behave as in other POSIX shells. Turn them on with:
+parentheses after a pattern selects files by type, size, age and more, and can sort and change the result. Options
+also decide what a pattern that matches nothing gives, and whether patterns match hidden files (see
+[below](#patterns-that-match-nothing-and-hidden-files)). All are off by default, so that scripts behave as in other
+POSIX shells. Turn the first two on with:
 
 ```sh
 setopt glob.star glob.bare_qualifiers
@@ -85,11 +87,41 @@ A bad qualifier is an error, with status 1, as in zsh: `*(Z)` gives `*(Z): bad g
 As in zsh with `globsubst`, the qualifier may come from an expansion, so `echo $PS1` fails if `PS1` ends in
 `%(...)`; quote the expansion (`echo "$PS1"`) to keep it literal.
 
+## Patterns that match nothing, and hidden files
+
+In POSIX shells, a pattern that matches no file is left as it is: `echo *.txt` prints `*.txt`. Three options change
+this, as zsh's options of the same names (and bash's) do:
+
+`glob.null` (zsh's `NULL_GLOB`, bash's `nullglob`)
+: The pattern is removed: `for f in *.txt` doesn't run its body when there are none, and `set -- *.txt` sets `$#`
+  to 0. The `N` qualifier does this for one pattern.
+
+`glob.fail` (zsh's `NOMATCH`, bash's `failglob`)
+: The pattern is an error (`no matches found`, status 1), so the command doesn't run. As for other expansion
+  errors, a script (or a subshell) exits; an interactive shell goes back to the prompt.
+
+`glob.fail_all` (zsh's `CSH_NULL_GLOB`)
+: The pattern is removed, as with `glob.null`, unless none of the patterns of the command (or of the words of `for`
+  or of an array) matches: then it is an error, as with `glob.fail`. So `rm *.o *.a` removes whichever there are,
+  and fails only if there are neither.
+
+If more than one is on, `glob.null` wins, then `glob.fail_all`, as in zsh (in bash, `failglob` wins over
+`nullglob`). They apply where patterns are expanded: the words of commands and `for`, and the elements of arrays. A
+quoted pattern is not a pattern, and assignments, `case`, `[[ ... ]]` and redirections don't expand patterns. With
+a qualifier, a pattern that matches nothing is as one without, unless the qualifier has `N`.
+
+`glob.dots` (zsh's `GLOB_DOTS`, bash's `dotglob`) makes patterns match names starting with `.` (but never `.` and
+`..`), as the `D` qualifier does: `*` lists hidden files too, and `**/` enters hidden directories. A pattern that
+starts with `.` matches them anyway, and `.*` also matches `.` and `..`, as in dash (not in zsh, nor in bash 5.2).
+
 ## Differences from zsh
 
 - `**/` needs `setopt glob.star`, and qualifiers need `setopt glob.bare_qualifiers` (zsh's `bareglobqual`; zsh has
   `**/` on by default, and qualifiers on outside its `sh` emulation).
-- If nothing matches, the pattern is left as it is, as with `setopt nonomatch` in zsh (and in other POSIX shells).
+- If nothing matches, the pattern is left as it is by default, as with `setopt nonomatch` in zsh (and in other POSIX
+  shells); `setopt glob.fail` is zsh's default.
+- With `glob.fail` or `glob.fail_all`, a pattern that matches nothing in `eval` exits a script, as other expansion
+  errors do (as in dash); in zsh, `eval` returns 1.
 - Subscripts count from 0, as in zsh's `sh` emulation (which sets `KSH_ARRAYS`); in its native mode they count from 1.
 - Not supported yet: the `e`, `+`, `f`, `F`, `Y` and `P` qualifiers, `(#q...)`, modifiers other than those above,
   and the extended patterns of zsh's `EXTENDED_GLOB` (`^`, `~`, `#`). Unknown sort keys and modifiers are errors

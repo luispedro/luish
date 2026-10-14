@@ -271,6 +271,15 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - `glob.star` (`glob.rs`): no hidden directories and no links (`***/` follows them, stopping at a link to a directory
   it is already in; zsh loops). Types come from `d_type` where available. Tests: `expand/globstar.sh` (zsh),
   `expand/globstar_off.sh`, `expand/globstar_loop.sh`.
+- `glob.null`, `glob.fail`, `glob.fail_all` and `glob.dots` (zsh's `NULL_GLOB`, `NOMATCH`, `CSH_NULL_GLOB` and
+  `GLOB_DOTS`): `glob_field` and `glob_qualified` hand a pattern that matched nothing (and, with a qualifier, has no
+  `N`) to `unmatched`, which keeps it, drops it or raises `Flow::Error(1)`, in zsh's order of precedence. For
+  `glob.fail_all`, `tallied` wraps the expansion of a list of words (`expand_words`, `expand_command_words`,
+  `expand_items`): `Shell::glob_tally` collects the patterns removed and whether any matched, saved and restored
+  around each list since a command substitution in a word expands its own. Without the option, `tallied` is a flag
+  test. `glob.dots` sets `GlobOpts::dots`, as `D` does. Tests: `expand/glob_null.sh`, `expand/glob_fail.sh`,
+  `expand/glob_fail_all.sh`, `expand/glob_dots.sh` (zsh, with `setopt` in the scripts), the end of
+  `expand/glob_qualifiers.sh`, `expand/glob_fail_eval.sh` (the deviation in `eval`).
 - Glob qualifiers (`qual.rs`): kept as text and recognized when a field ends in an unquoted `(...)` at glob time, so
   that, as in zsh's `sh` emulation, they can come from an expansion. Supported: file type, permission, owner,
   device, link count, size and time tests, `^ - , N D n`, `o`/`O` (`n L l a m c d N`), subscripts (from 0), `M`,
@@ -1514,6 +1523,7 @@ truncates when it relocates the package.
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |
 | `**/` | `expand/globstar.sh` (zsh), `expand/globstar_off.sh` (dash), `expand/globstar_loop.sh` |
+| `glob.null`, `glob.dots`, `glob.fail`, `glob.fail_all` | `expand/glob_null.sh`, `expand/glob_dots.sh`, `expand/glob_fail.sh`, `expand/glob_fail_all.sh` (zsh), `expand/glob_qualifiers.sh` (zsh), `expand/glob_fail_eval.sh` (`eval` exits), `options::tests::grouped_names` |
 | Glob qualifiers | `expand/glob_qualifiers.sh`, `expand/glob_qualifier_errors.sh` (zsh `+o shglob -o bareglobqual +o ksharrays`), `expand/glob_qualifier_error_message.sh`, `builtins/internal_savestate_globqual.sh` |
 | A directory as a command | `builtins/autocd.sh` (zsh) |
 | `bindkey` | `builtins/bindkey.sh` (same as dash), `builtins/internal_bindkey.sh`, `line_editor_keys` in `tests/interactive.rs` |

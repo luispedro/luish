@@ -26,6 +26,10 @@ pub enum Opt {
     TransientRprompt,
     Globstar,
     Bareglobqual,
+    GlobNull,
+    GlobDots,
+    GlobFail,
+    GlobFailAll,
     BraceExpand,
     Autocd,
     HistIgnoreSpace,
@@ -80,6 +84,10 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::TransientRprompt, "prompt.transient_rprompt"),
     (Opt::Globstar, "glob.star"),
     (Opt::Bareglobqual, "glob.bare_qualifiers"),
+    (Opt::GlobNull, "glob.null"),
+    (Opt::GlobDots, "glob.dots"),
+    (Opt::GlobFail, "glob.fail"),
+    (Opt::GlobFailAll, "glob.fail_all"),
     (Opt::BraceExpand, "expand.braces"),
     (Opt::Autocd, "cd.auto"),
     (Opt::HistIgnoreSpace, "history.ignore_space"),
@@ -107,6 +115,13 @@ const ALIASES: &[(Opt, &str)] = &[
     (Opt::TransientRprompt, "transientrprompt"),
     (Opt::Globstar, "globstar"),
     (Opt::Bareglobqual, "bareglobqual"),
+    // zsh's `NULL_GLOB` and bash's `nullglob` (names are compared without
+    // `_`).
+    (Opt::GlobNull, "nullglob"),
+    (Opt::GlobDots, "globdots"),
+    // Also so that `nonomatch` is its inverse, not that of `match`.
+    (Opt::GlobFail, "nomatch"),
+    (Opt::GlobFailAll, "cshnullglob"),
     (Opt::BraceExpand, "braceexpand"),
     (Opt::Autocd, "autocd"),
     (Opt::HistIgnoreSpace, "histignorespace"),
@@ -160,14 +175,14 @@ pub const SHOPT: &[(&str, Shopt)] = &[
     ("complete_fullquote", Shopt::Off),
     ("direxpand", Shopt::Off),
     ("dirspell", Shopt::Off),
-    ("dotglob", Shopt::Off),
+    ("dotglob", Shopt::Same("glob.dots")),
     ("execfail", Shopt::Off),
     // Aliases are expanded in scripts too, as in dash.
     ("expand_aliases", Shopt::On),
     ("extdebug", Shopt::Off),
     ("extglob", Shopt::Off),
     ("extquote", Shopt::Off),
-    ("failglob", Shopt::Off),
+    ("failglob", Shopt::Same("glob.fail")),
     ("force_fignore", Shopt::Off),
     // Ranges compare bytes, whatever the locale.
     ("globasciiranges", Shopt::On),
@@ -197,7 +212,7 @@ pub const SHOPT: &[(&str, Shopt)] = &[
     ("nocaseglob", Shopt::Off),
     ("nocasematch", Shopt::Off),
     ("noexpand_translation", Shopt::Off),
-    ("nullglob", Shopt::Off),
+    ("nullglob", Shopt::Same("glob.null")),
     ("patsub_replacement", Shopt::Off),
     // Completion plugins.
     ("progcomp", Shopt::On),
@@ -432,6 +447,13 @@ mod tests {
         assert_eq!(Options::find(b"no_history.share"), None);
         assert_eq!(Options::find(b"share_history"), flag(Opt::ShareHistory, true));
         assert_eq!(Options::find(b"glob.star"), flag(Opt::Globstar, true));
+        // zsh's names, as `setopt` takes them, and bash's `nullglob`.
+        assert_eq!(Options::find(b"NULL_GLOB"), flag(Opt::GlobNull, true));
+        assert_eq!(Options::find(b"nullglob"), flag(Opt::GlobNull, true));
+        assert_eq!(Options::find(b"glob.no_null"), flag(Opt::GlobNull, false));
+        assert_eq!(Options::find(b"nomatch"), flag(Opt::GlobFail, true));
+        assert_eq!(Options::find(b"NO_NOMATCH"), flag(Opt::GlobFail, false));
+        assert_eq!(Options::find(b"csh_null_glob"), flag(Opt::GlobFailAll, true));
         assert_eq!(
             Options::find(b"history.file"),
             Some(Setting::Value(b"HISTFILE", Kind::Text))

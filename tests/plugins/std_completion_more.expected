@@ -13,6 +13,10 @@ pipefail
 status 0
 --- luish -o glob.
 glob.bare_qualifiers 
+glob.dots 
+glob.fail 
+glob.fail_all 
+glob.null 
 glob.star 
 status 0
 --- luish -c cmd 

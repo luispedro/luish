@@ -128,3 +128,9 @@ shopt.sh: 34: shopt: can't change option: login_shell
     shopt -s login_shell 2>&1; echo "status $?"
 status 1
 login 0
+status 0
+cd.auto
+glob.dots
+glob.fail
+glob.null
+cd.auto

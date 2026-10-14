@@ -38,6 +38,10 @@ qq2
 dep
 p extension
 unsetopt glob.bare_qualifiers
+unsetopt glob.dots
+unsetopt glob.fail
+unsetopt glob.fail_all
+unsetopt glob.null
 unsetopt glob.star
 status 0
 --- not if the extension fails

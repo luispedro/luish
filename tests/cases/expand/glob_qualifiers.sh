@@ -70,3 +70,10 @@ mkdir -p o/p/q; touch o/1 o/p/2 o/p/q/3
 echo depth: o/**/*(.od) / o/**/*(.Od)
 echo recursive: **/*(/) / **/*(D/) / **/f*(*)
 
+
+# With glob.null, glob.fail and glob.dots: a qualified pattern that
+# matches nothing is as one without a qualifier, unless it has `N`.
+(setopt NULL_GLOB; echo null: nothing*(/) end)
+(setopt NOMATCH; echo nomatch: nothing*(/); echo not reached); echo "nomatch: status $?"
+(setopt NOMATCH; echo nomatch with N: nothing*(N/) end)
+(setopt GLOB_DOTS; echo dots: *(/) / *(D/))

@@ -25,6 +25,10 @@ unsetopt history.save_no_dups
 setopt history.share
 unsetopt history.verify
 unsetopt glob.bare_qualifiers
+unsetopt glob.dots
+unsetopt glob.fail
+unsetopt glob.fail_all
+unsetopt glob.null
 unsetopt glob.star
 setopt_group.sh: 23: setopt: no such option: history.bogus
     setopt -p history bogus errexit share=maybe 2>&1; echo "status $?"

@@ -119,8 +119,10 @@ All four have POSIX's `*`, `?` and `[...]`. luish sorts matches by bytes, where 
 | Glob qualifiers, `*(/)`, `*(.om[0])` | – | – | ✓ | *opt* | luish: `setopt glob.bare_qualifiers`; most of zsh's qualifiers (see [](../globbing.md)) |
 | ksh's patterns, `@(a\|b)`, `!(x)` | – | *opt* | *opt* | – | bash: `shopt -s extglob`; zsh: `setopt ksh_glob` |
 | zsh's patterns, `(a\|b)`, `^x`, `x~y`, `x#` | – | – | ✓ | – | `^`, `~` and `#` need `setopt extended_glob` |
-| No match gives nothing (`nullglob`) | – | *opt* | *opt* | – | zsh also has a qualifier, `*(N)`, which luish has |
-| Matching dot files (`dotglob`) | – | *opt* | *opt* | – | zsh's `*(D)` qualifier, which luish has |
+| No match gives nothing (`nullglob`) | – | *opt* | *opt* | *opt* | luish: `setopt glob.null`; also a qualifier, `*(N)` (zsh and luish) |
+| No match is an error (`failglob`) | – | *opt* | ✓ | *opt* | zsh: `NOMATCH`, on by default (off in its `sh` emulation); luish: `setopt glob.fail` |
+| Error only if no pattern matches (`CSH_NULL_GLOB`) | – | – | *opt* | *opt* | luish: `setopt glob.fail_all` |
+| Matching dot files (`dotglob`) | – | *opt* | *opt* | *opt* | luish: `setopt glob.dots`; also a qualifier, `*(D)` (zsh and luish) |
 
 ## Redirections and pipes
 

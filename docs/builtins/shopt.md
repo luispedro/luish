@@ -13,19 +13,31 @@ same in luish, as `setopt` does, and `shopt -u name` unsets it:
 `autocd`
 : `cd.auto`
 
+`dotglob`
+: `glob.dots`
+
+`failglob`
+: `glob.fail`
+
 `globstar`
 : `glob.star`
 
 `histverify`
 : `history.verify`
 
+`nullglob`
+: `glob.null`
+
+When both `nullglob` and `failglob` are on, `nullglob` wins, as in zsh (in
+bash, `failglob` does).
+
 Some of bash's options describe what luish always does, so they are always
 on: `checkwinsize`, `cmdhist`, `expand_aliases`, `globasciiranges`,
 `histappend`, `inherit_errexit`, `interactive_comments`, `lithist`,
 `progcomp`, `promptvars`, `shift_verbose`, `sourcepath` and `xpg_echo`.
 `login_shell` is on in a login shell and off otherwise. The others are
-always off, as luish doesn't have them (such as `extglob`, `nullglob` and
-`dotglob`). Setting an option that is always on, or unsetting one that is
+always off, as luish doesn't have them (such as `extglob` and
+`nocaseglob`). Setting an option that is always on, or unsetting one that is
 always off, does nothing. The opposite is an error.
 
 `-s`

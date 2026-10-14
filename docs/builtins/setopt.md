@@ -58,6 +58,22 @@ luish's own options, all off by default:
   `*(/)` (directories) or `*(.om[0])` (the newest file). See the
   documentation on extended globbing.
 
+`glob.null` (`nullglob`)
+: A pattern that matches no file is removed, rather than left as it is.
+
+`glob.dots` (`globdots`)
+: Patterns match names that start with `.` (but not `.` and `..`), and
+  `**/` enters hidden directories.
+
+`glob.fail` (`nomatch`)
+: A pattern that matches no file is an error (`no matches found`), as
+  zsh's `NOMATCH` and bash's `failglob`.
+
+`glob.fail_all` (`cshnullglob`)
+: Patterns that match no file are removed, but it is an error if none of
+  the patterns of a command matches. `glob.null` wins over it, and it
+  wins over `glob.fail`.
+
 `expand.braces` (`braceexpand`)
 : Brace expansion, as in bash and zsh: `f/{a,b}` is `f/a f/b`, and
   `{1..3}` is `1 2 3` (also `{01..10}`, `{10..1..3}`, `{a..e}` and

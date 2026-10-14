@@ -29,6 +29,16 @@ pub enum Flow {
 
 pub type ExecResult = Result<i32, Flow>;
 
+/// What the patterns in the words being expanded matched, for
+/// `glob.fail_all`.
+#[derive(Default)]
+pub struct GlobTally {
+    /// The patterns that matched nothing (and were removed).
+    pub unmatched: Vec<Vec<u8>>,
+    /// Whether a pattern matched.
+    pub matched: bool,
+}
+
 /// A shell function.
 #[derive(Clone)]
 pub struct Function {
@@ -129,6 +139,9 @@ pub struct Shell {
     /// A login shell (`-l`, or `$0` starting with `-`), for `shopt
     /// login_shell`.
     pub login: bool,
+    /// The patterns that matched nothing in the words being expanded, for
+    /// `glob.fail_all` (`Shell::tallied`).
+    pub glob_tally: GlobTally,
     /// Set while the startup files of `rc.d` run, with the plugins that
     /// `config.toml` enables: plugins then wait for the end of `rc.d` to run
     /// their `post-rc.lsh` and `post-rc` hooks (`plugins/mod.rs`).
@@ -220,6 +233,7 @@ impl Shell {
             plugins: None,
             no_plugins: false,
             login: false,
+            glob_tally: GlobTally::default(),
             in_rc: false,
             check_cache: None,
             startcache: None,
