@@ -1,4 +1,7 @@
 Unreleased
+    * Fix: a=1 b=$a cmd gives b the value 1 (as in dash)
+    * Fix: scripts on standard input lost a first word spanning lines
+      (p='a<newline>b') and the lines of aliases after the first
     * shopt, translated to setopt (globstar, autocd, histverify)
     * shopt: inherit_errexit, globasciiranges, lithist, shift_verbose on;
       login_shell set in login shells

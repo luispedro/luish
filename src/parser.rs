@@ -46,7 +46,17 @@ impl Parser {
     pub fn parse_next(&mut self, aliases: &Rc<AliasMap>) -> PResult<Option<List>> {
         self.aliases = aliases.clone();
         loop {
-            match self.peek()?.tok {
+            let from = self.pos;
+            let tok = match self.peek() {
+                Ok(t) => &t.tok,
+                Err(e) => {
+                    // A first word that goes on past the input (`p='a`, its
+                    // quote closed on a later line) starts a command too.
+                    self.started = !self.only_blank_from(from);
+                    return Err(e);
+                }
+            };
+            match tok {
                 Tok::Newline => {
                     self.next()?;
                 }
@@ -61,6 +71,23 @@ impl Parser {
             Tok::Newline | Tok::Eof => Ok(Some(list)),
             _ => self.unexpected(&t, None),
         }
+    }
+
+    /// Whether the input from `i` has only blanks, newlines, line
+    /// continuations and comments.
+    fn only_blank_from(&self, mut i: usize) -> bool {
+        while let Some(&c) = self.src.get(i) {
+            match c {
+                b' ' | b'\t' | b'\n' => i += 1,
+                b'\\' if self.src.get(i + 1) == Some(&b'\n') => i += 2,
+                b'#' => match self.src[i..].iter().position(|&c| c == b'\n') {
+                    Some(n) => i += n,
+                    None => return true,
+                },
+                _ => return false,
+            }
+        }
+        true
     }
 
     /// Parses all the input into a single list (used for backquotes).

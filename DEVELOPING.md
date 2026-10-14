@@ -128,6 +128,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   recorded in `active_aliases` as NUL plus its suffix, so it can't clash with a name. New parsers share one empty
   table (`NO_ALIASES`), so an `eval` doesn't allocate one. The completer's `Scan` mirrors these rules. Tests:
   `parse/alias_global.sh` (zsh), `parse/alias_suffix.sh` (zsh), unit tests in `complete.rs`.
+- Incremental input (`run_incremental`): an attempt that ends in incomplete input with only blank lines and comments
+  read (`Parser::started` false) drops them; a first word that runs past the input (`p='a`, closed on a later line)
+  counts as started. A list that ends inside the text of an alias with a newline (`alias a='x<newline>y'`) leaves the
+  rest of that text: `Parser::alias_rest` gives it, and the aliases still being expanded, for the next attempt's
+  buffer, and that text isn't added to the history again. Tests: `parse/stdin_multiline_assign.sh`,
+  `parse/stdin_alias_newline.sh`.
 - Function bodies may be any command (`f() echo hi`), as in dash.
 - `case` arms may end with `;&` (run the next body too), `;|` or bash's `;;&` (try the next arms' patterns), as in
   zsh and bash (syntax errors in dash): `Op::SemiAmp`, `Op::SemiPipe`, `Op::DSemiAmp`, recorded as `CaseArm::term`
@@ -383,7 +389,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   and joins the fields of `"$@"` with spaces (bash, zsh); with a newline added, it goes through `heredoc_fd` like a
   here-document's body. Tests: `exec/here_string.sh` (zsh), `parse/here_string_error.sh`.
 - Assignments before regular built-ins, functions and external commands are made in the shell (as in dash), so a
-  read-only variable is an error of the shell. Tests: `exec/readonly_assign.sh`.
+  read-only variable is an error of the shell. Each is expanded after the ones before it are made
+  (`with_temp_assigns`), so `a=1 b=$a cmd` gives `b` the value 1. Tests: `exec/readonly_assign.sh`,
+  `exec/prefix_assign_order.sh`.
 - Command cache: (file, index in `PATH`), trusted without a stat; `with_command_path` retries later `PATH` entries on
   ENOENT (dash's `shellexec`). `cd` drops entries from relative directories. A search makes one `stat` per directory
   and an `access` only for a regular file. The shell looks commands up before forking, so the cache lasts and a

@@ -250,6 +250,13 @@ pub(crate) enum Ctx {
     DQuote,
 }
 
+/// Where a parser stopped inside the text of an alias (`Parser::alias_rest`).
+pub struct AliasRest {
+    pub text: Vec<u8>,
+    pub active: Vec<(Vec<u8>, usize)>,
+    pub consumed: usize,
+}
+
 pub struct Parser {
     pub(crate) src: Vec<u8>,
     pub(crate) pos: usize,
@@ -387,6 +394,32 @@ impl Parser {
     /// changes the length of `src`, so this corrects for it).
     pub fn consumed(&self) -> usize {
         (self.pos as isize - self.splice_delta) as usize
+    }
+
+    /// If parsing stopped inside the text of an alias (one with a newline,
+    /// `alias a='x<newline>y'`), the rest of the text from where it
+    /// stopped, the aliases still being expanded (with their ends counted
+    /// from there), and the bytes of the original input up to the end of
+    /// the alias. A fresh parser over this text, given those aliases, goes
+    /// on where this one stopped.
+    pub fn alias_rest(&self) -> Option<AliasRest> {
+        let end = self
+            .active_aliases
+            .iter()
+            .map(|&(_, e)| e)
+            .filter(|&e| e > self.pos)
+            .max()?;
+        let active = self
+            .active_aliases
+            .iter()
+            .filter(|&&(_, e)| e > self.pos)
+            .map(|(n, e)| (n.clone(), e - self.pos))
+            .collect();
+        Some(AliasRest {
+            text: self.src[self.pos..].to_vec(),
+            active,
+            consumed: (end as isize - self.splice_delta) as usize,
+        })
     }
 
     /// True if only blanks and newlines are left (comments count as

@@ -145,7 +145,7 @@ impl Shell {
             let _ = self.redirect(&cmd.redirs, false)?;
             // `exec 3< <(cmd)`: the descriptors outlive the command.
             self.detach_procsubs(procsubs);
-            let assigns = self.expand_assigns(cmd, true)?;
+            let assigns = self.expand_assigns(cmd)?;
             self.trace(2, &assigns, &argv);
             return Ok(0);
         }
@@ -159,23 +159,21 @@ impl Shell {
         r
     }
 
-    /// Expands the assignments of `cmd`. With `now` (no command, or a
-    /// special built-in), each takes effect before the next is expanded,
-    /// and they are only returned for `set -x`.
-    fn expand_assigns(&mut self, cmd: &SimpleCommand, now: bool) -> EResult {
-        let keep = !now || self.opt(Opt::Xtrace);
+    /// Makes the assignments of `cmd` (with no command, or a special
+    /// built-in), each before the next is expanded, and returns them for
+    /// `set -x` when it is on.
+    fn expand_assigns(&mut self, cmd: &SimpleCommand) -> EResult {
+        let keep = self.opt(Opt::Xtrace);
         let mut assigns = Vec::with_capacity(if keep { cmd.assigns.len() } else { 0 });
         for a in &cmd.assigns {
             // The common case, `name=value`.
-            if now && !keep && a.index.is_none() && !a.append && a.array().is_none() {
+            if !keep && a.index.is_none() && !a.append && a.array().is_none() {
                 let v = self.expand_word_str(&a.value)?;
                 self.set_var(&a.name, v)?;
                 continue;
             }
             let x = self.expand_assign(a)?;
-            if !now {
-                assigns.push(x);
-            } else if keep {
+            if keep {
                 self.assign(x.clone())?;
                 assigns.push(x);
             } else {
@@ -250,7 +248,7 @@ impl Shell {
         err_fd: i32,
     ) -> ExecResult {
         if argv.is_empty() {
-            let assigns = self.expand_assigns(cmd, true)?;
+            let assigns = self.expand_assigns(cmd)?;
             self.trace(err_fd, &assigns, &argv);
             return Ok(self.subst_status.unwrap_or(0));
         }
@@ -268,23 +266,30 @@ impl Shell {
             argv = vec![b"cd".to_vec(), b"--".to_vec(), dir];
             kind = CommandKind::Builtin(builtins::cd::cd);
         }
-        let special = matches!(kind, CommandKind::Special(_));
-        let assigns = self.expand_assigns(cmd, special)?;
-        self.trace(err_fd, &assigns, &argv);
-        if special && argv[0] == b"exec" {
-            // As in dash, `exec` exports its assignments to the command.
-            for a in &cmd.assigns {
-                self.vars.entry(&a.name).exported = true;
-            }
-        }
         match kind {
-            CommandKind::Special(f) => self.call_builtin(f, &argv),
-            CommandKind::Function(body) => self.with_temp_assigns(assigns, |sh| sh.call_function(&body, &argv)),
-            CommandKind::Builtin(f) => self.with_temp_assigns(assigns, |sh| sh.call_builtin(f, &argv)),
-            CommandKind::Extension => self.with_temp_assigns(assigns, |sh| crate::plugins::run_builtin(sh, &argv)),
+            CommandKind::Special(f) => {
+                let assigns = self.expand_assigns(cmd)?;
+                self.trace(err_fd, &assigns, &argv);
+                if argv[0] == b"exec" {
+                    // As in dash, `exec` exports its assignments to the command.
+                    for a in &cmd.assigns {
+                        self.vars.entry(&a.name).exported = true;
+                    }
+                }
+                self.call_builtin(f, &argv)
+            }
+            CommandKind::Function(body) => {
+                self.with_temp_assigns(cmd, &argv, err_fd, |sh| sh.call_function(&body, &argv))
+            }
+            CommandKind::Builtin(f) => self.with_temp_assigns(cmd, &argv, err_fd, |sh| sh.call_builtin(f, &argv)),
+            CommandKind::Extension => {
+                self.with_temp_assigns(cmd, &argv, err_fd, |sh| crate::plugins::run_builtin(sh, &argv))
+            }
             // As in dash, the assignments are made (temporarily) in the shell,
             // so that an error in one is the shell's.
-            CommandKind::External => self.with_temp_assigns(assigns, |sh| sh.run_external(cmd, &argv, no_fork)),
+            CommandKind::External => {
+                self.with_temp_assigns(cmd, &argv, err_fd, |sh| sh.run_external(cmd, &argv, no_fork))
+            }
         }
     }
 
@@ -399,12 +404,32 @@ impl Shell {
         r.map_err(|e| self.exec_error(argv, e))
     }
 
-    /// Runs `f` with variable assignments that only last for its duration.
-    fn with_temp_assigns(&mut self, assigns: Vec<Assignment>, f: impl FnOnce(&mut Shell) -> ExecResult) -> ExecResult {
-        let mut saved = Vec::with_capacity(assigns.len());
+    /// Runs `f` with the assignments of `cmd` made only for its duration.
+    /// Each is expanded after the ones before it are made, as in dash
+    /// (`a=1 b=$a cmd`), and they are traced with `argv` once all are made.
+    fn with_temp_assigns(
+        &mut self,
+        cmd: &SimpleCommand,
+        argv: &[Vec<u8>],
+        err_fd: i32,
+        f: impl FnOnce(&mut Shell) -> ExecResult,
+    ) -> ExecResult {
+        let mut saved = Vec::with_capacity(cmd.assigns.len());
+        let mut traced = Vec::new();
+        let xtrace = self.opt(Opt::Xtrace);
         let mut r = None;
         let mut dirstack = None;
-        for a in assigns {
+        for a in &cmd.assigns {
+            let a = match self.expand_assign(a) {
+                Ok(a) => a,
+                Err(e) => {
+                    r = Some(Err(e));
+                    break;
+                }
+            };
+            if xtrace {
+                traced.push(a.clone());
+            }
             let n = a.name.clone();
             // An array assigned to `path` sets `PATH`, and to `dirstack` the
             // directory stack.
@@ -434,7 +459,10 @@ impl Shell {
                 break;
             }
         }
-        let r = r.unwrap_or_else(|| f(self));
+        let r = r.unwrap_or_else(|| {
+            self.trace(err_fd, &traced, argv);
+            f(self)
+        });
         for (n, old) in saved.into_iter().rev() {
             self.restore_saved(n, old, None);
         }

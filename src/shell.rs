@@ -887,14 +887,33 @@ impl Shell {
         let mut lineno = 1u32;
         let mut eof = false;
         let mut continuation = false;
+        // The text of an alias at the start of `buf`, left over from the
+        // last command (which ended inside it), and the aliases being
+        // expanded there.
+        let mut alias_text = 0;
+        let mut active = Vec::new();
         loop {
             let mut p = Parser::new(buf.clone(), lineno, eof);
             let aliases = self.aliases.clone();
             p.bareglobqual = self.opt(Opt::Bareglobqual);
+            p.active_aliases.clone_from(&active);
             match p.parse_next(&aliases) {
                 Ok(Some(list)) => {
-                    let used = p.consumed().min(buf.len());
-                    let text: Vec<u8> = buf.drain(..used).collect();
+                    let rest = p.alias_rest();
+                    let used = rest
+                        .as_ref()
+                        .map_or_else(|| p.consumed(), |r| r.consumed)
+                        .min(buf.len());
+                    let mut text: Vec<u8> = buf.drain(..used).collect();
+                    text.drain(..alias_text.min(text.len()));
+                    (alias_text, active) = match rest {
+                        Some(r) => {
+                            let n = r.text.len().saturating_sub(buf.len());
+                            buf = r.text;
+                            (n, r.active)
+                        }
+                        None => (0, Vec::new()),
+                    };
                     lineno = p.lineno;
                     continuation = false;
                     self.job_warning = if self.job_warning == 2 { 1 } else { 0 };
@@ -920,6 +939,7 @@ impl Shell {
                         // only blank lines and comments so far
                         lineno += buf.iter().filter(|&&c| c == b'\n').count() as u32;
                         buf.clear();
+                        (alias_text, active) = (0, Vec::new());
                         continuation = false;
                     }
                     if !continuation {
@@ -938,6 +958,7 @@ impl Shell {
                                 Expanded::Drop => {
                                     lineno += buf.iter().filter(|&&c| c == b'\n').count() as u32;
                                     buf.clear();
+                                    (alias_text, active) = (0, Vec::new());
                                     continuation = false;
                                     continue;
                                 }
@@ -954,6 +975,7 @@ impl Shell {
                         Line::Interrupted => {
                             lineno += buf.iter().filter(|&&c| c == b'\n').count() as u32;
                             buf.clear();
+                            (alias_text, active) = (0, Vec::new());
                             continuation = false;
                             self.last_status = 128 + libc::SIGINT;
                         }
@@ -978,6 +1000,7 @@ impl Shell {
                     input.command_done(2);
                     lineno += buf.iter().filter(|&&c| c == b'\n').count() as u32;
                     buf.clear();
+                    (alias_text, active) = (0, Vec::new());
                     continuation = false;
                 }
             }
