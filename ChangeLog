@@ -1,4 +1,5 @@
 Unreleased
+    * test and [ accept == (as in zsh and bash)
     * Fix: a=1 b=$a cmd gives b the value 1 (as in dash)
     * Fix: scripts on standard input lost a first word spanning lines
       (p='a<newline>b') and the lines of aliases after the first

@@ -532,7 +532,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - Ported from dash nearly verbatim, so compare with dash's source before "fixing": `test`'s parser, `getopts`,
   `umask`, `ulimit`, `kill`, `describe_command` (`command -v`/`-V`, `type`), `single_quote` (output of `set`,
   `export -p`, `alias`, `trap`), `number()` (strtoimax, 0..INT_MAX, for `exit`, `return`, `shift`, `kill`, `wait`).
+  `test` also accepts `==` for `=` (zsh, bash), which its parser treats exactly as `=`.
   Tests: `builtins/test_parse.sh` (every expression of up to four arguments from a set of tokens),
+  `builtins/test_double_equals.sh` (zsh),
   `builtins/test_newer.sh` (`-nt` and `-ot` with a missing file),
   `builtins/getopts_dash.sh`, `builtins/umask_modes.sh`, `builtins/ulimit_dash.sh`, `builtins/command_describe.sh`,
   `builtins/quoting_output.sh`.

@@ -38,10 +38,11 @@ fn is_unary(op: &[u8]) -> bool {
 }
 
 fn is_binary(op: &[u8]) -> bool {
-    matches!(
-        op,
-        b"=" | b"!=" | b"<" | b">" | b"-eq" | b"-ne" | b"-gt" | b"-ge" | b"-lt" | b"-le" | b"-nt" | b"-ot" | b"-ef"
-    )
+    matches!(op, b"=" | b"==" | b"!=" | b"<" | b">")
+        || matches!(
+            op,
+            b"-eq" | b"-ne" | b"-gt" | b"-ge" | b"-lt" | b"-le" | b"-nt" | b"-ot" | b"-ef"
+        )
 }
 
 fn file_type(path: &[u8], kind: u32) -> bool {
@@ -103,7 +104,8 @@ pub(crate) fn mtime(path: &[u8]) -> Option<(i64, i64)> {
 
 pub(crate) fn binary(a: &[u8], op: &[u8], b: &[u8]) -> TResult {
     Ok(match op {
-        b"=" => a == b,
+        // `==` as in zsh and bash (an error in dash).
+        b"=" | b"==" => a == b,
         b"!=" => a != b,
         b"<" => a < b,
         b">" => a > b,

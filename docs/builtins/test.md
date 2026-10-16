@@ -35,7 +35,8 @@ an error. With one argument, the expression is true if it is not empty.
 : `string` is not empty; is empty.
 
 `s1 = s2`, `s1 != s2`, `s1 < s2`, `s1 > s2`
-: The strings are equal; different; sorted before; sorted after.
+: The strings are equal; different; sorted before; sorted after. `==` is
+  the same as `=`, as in zsh and bash.
 
 `n1 -eq n2`
 : The integers are equal. Also `-ne`, `-lt`, `-le`, `-gt` and `-ge`.
