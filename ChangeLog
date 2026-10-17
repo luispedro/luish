@@ -1,4 +1,6 @@
 Unreleased
+    * Rhai extensions: no size limits on lists and maps (building a long
+      list is no longer quadratic); a warning if a call uses a lot of memory
     * setopt vars.trace_after_startup: trace variables from the first prompt
     * test and [ accept == (as in zsh and bash)
     * Fix: a=1 b=$a cmd gives b the value 1 (as in dash)

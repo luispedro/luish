@@ -31,6 +31,9 @@ cached with the startup files). It registers functions with the [`sh` module](#t
 until the plugin is unloaded (`plugin unload`) or loaded again. Loading the first extension costs about a millisecond,
 once (see [](performance.md#commands-in-rhai)).
 
+Strings, arrays and maps have no size limit. If a call into an extension raises the shell's peak memory use by more
+than 256 MiB, luish warns, naming the plugin; deep recursion is an error.
+
 `sh::plugin_dir()` gives the plugin's directory at any time, also in hooks. For a single-file plugin it is the
 directory of the file. `sh::plugin_options()` gives the options the plugin was loaded with (see [Plugin
 options](plugins.md#plugin-options-plugin-options)); a plugin loaded with `-c` has none.

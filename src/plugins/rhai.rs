@@ -73,6 +73,10 @@ pub enum Script<'a> {
 /// How long a completer may run.
 const COMPLETE_BUDGET: Duration = Duration::from_secs(2);
 
+/// How much a call into extension code may raise the shell's peak memory
+/// use (in KiB) before luish warns.
+const MEMORY_WARNING: u64 = 256 << 10;
+
 pub struct Host {
     /// Created when the first Rhai code is loaded.
     engine: OnceCell<Engine>,
@@ -133,9 +137,27 @@ pub(super) fn error<T>(msg: impl Into<String>) -> RhaiResult<T> {
 fn enter<R>(sh: &mut Shell, id: u32, f: impl FnOnce() -> R) -> Result<R, Flow> {
     let prev_sh = SHELL.replace(sh as *mut Shell);
     let prev_id = CURRENT.replace(id);
+    // Only the outermost call is measured, so that a nested one (through
+    // `sh::run`) isn't reported twice.
+    let rss = prev_sh.is_null().then(sys::max_rss);
     let r = f();
     SHELL.set(prev_sh);
     CURRENT.set(prev_id);
+    if let Some(before) = rss {
+        let after = sys::max_rss();
+        if after.saturating_sub(before) > MEMORY_WARNING {
+            let name = match &sh.plugins {
+                Some(h) => h.plugins.borrow().iter().find(|p| p.id == id).map(|p| p.name.clone()),
+                None => None,
+            };
+            let name = name.map_or("plugin run".into(), |n| String::from_utf8_lossy(&n).into_owned());
+            sh.error(format!(
+                "warning: {name}: memory use grew by {} MiB in extension code (peak {} MiB)",
+                (after - before) >> 10,
+                after >> 10
+            ));
+        }
+    }
     match EXIT.take() {
         Some(n) => Err(Flow::Exit(n)),
         None => Ok(r),
@@ -847,14 +869,11 @@ fn new_engine() -> Engine {
             None
         }
     });
-    // A buggy extension gets an error rather than exhausting the stack or
-    // memory.
-    engine
-        .set_max_call_levels(64)
-        .set_max_expr_depths(64, 32)
-        .set_max_string_size(64 << 20)
-        .set_max_array_size(1 << 20)
-        .set_max_map_size(1 << 20);
+    // A buggy extension gets an error rather than exhausting the stack.
+    // There are no size limits: with any of them set, Rhai measures the
+    // whole container after each change, which makes building a list
+    // quadratic. `enter` warns about memory use instead.
+    engine.set_max_call_levels(64).set_max_expr_depths(64, 32);
     engine
 }
 

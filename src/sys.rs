@@ -83,6 +83,17 @@ pub fn now() -> i64 {
     unsafe { libc::time(std::ptr::null_mut()) as i64 }
 }
 
+/// The process's peak resident set size so far, in KiB.
+#[cfg(feature = "plugins")]
+pub fn max_rss() -> u64 {
+    // SAFETY: getrusage only writes to the struct it is given.
+    unsafe {
+        let mut ru: libc::rusage = std::mem::zeroed();
+        libc::getrusage(libc::RUSAGE_SELF, &mut ru);
+        ru.ru_maxrss as u64
+    }
+}
+
 pub fn getcwd() -> Option<Vec<u8>> {
     use std::os::unix::ffi::OsStrExt;
     std::env::current_dir().ok().map(|p| p.as_os_str().as_bytes().to_vec())

@@ -1123,6 +1123,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   halves its load-time relocations. Floats are kept, although they make the executable depend on `libm`.
 - The `sh` functions reach `Shell` through a pointer set for the length of each call into Rhai. Calls are re-entrant
   (`sh::run`), so no `&mut Shell` borrow can be held across a call into Rhai or back into the shell.
+- Rhai's engine limits call levels and expression depth, but not data sizes: with any of `set_max_string_size`,
+  `set_max_array_size` or `set_max_map_size` set, Rhai walks the whole container after every mutating call
+  (`calc_data_sizes`), which made building a list quadratic (20,000 pushes took 454 ms rather than 10 ms). Instead,
+  `enter` compares the peak RSS (`getrusage`, two syscalls per outermost call) before and after, and warns when a
+  call raised it by more than 256 MiB (`MEMORY_WARNING`). It is a high-water mark, so only growth beyond the
+  previous peak is seen, and a runaway loop is only stopped by Ctrl-C (or a completer's time limit). Test:
+  `tests/plugins/memory.sh`.
 - Completers run with `Shell::jobctl` taken out (so their commands aren't jobs and don't save the editor's raw modes)
   and `$?` kept; they are stopped after 2 s (checked every 1024 operations). An error is printed (after a newline,
   in interactive shells, to leave the command line) and the line redrawn by returning the word itself as the only

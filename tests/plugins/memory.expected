@@ -1,0 +1,4 @@
+list: 0
+grow: 0
+warning: m: memory use grew by N MiB in extension code (peak N MiB)
+again: 0
