@@ -90,6 +90,12 @@ status 0
 --- __luish_internal print -N
 -N 	separate and end the arguments with NUL bytes
 status 0
+--- __luish_internal d
+default-config 	print the recommended config.toml
+status 0
+--- __luish_internal default-config -
+--extra 	add the luish-extra plugins
+status 0
 === options, and luish's own arguments
 --- cd -
 -L 	follow the path as given (logical)

@@ -36,6 +36,8 @@ c '__luish_internal st'
 c '__luish_internal style -c default-d'
 c '__luish_internal check-cache '
 c '__luish_internal print -N'
+c '__luish_internal d'
+c '__luish_internal default-config -'
 echo "=== options, and luish's own arguments"
 c 'cd -'
 c 'cd s'

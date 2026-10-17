@@ -416,6 +416,7 @@ fn internal_commands() {
         check-cache  check the startup caches
         clipcopy  put text on the clipboard
         complete  print what Tab offers for a line
+        default-config  print the recommended config.toml
         function-file  set where a function was defined
         help  show the help of built-ins
         list-completions  list the commands that plugins complete
@@ -443,6 +444,7 @@ fn internal(words, i) {
             sub,
             i - 1,
         ),
+        "default-config" => lib::complete(#{opts: "--extra  add the luish-extra plugins"}, sub, i - 1),
         "complete" | "list-completions" | "print-git-rev" | "print-git-rev-short" | "savestate" => [],
         _ => (),
     }
