@@ -701,6 +701,10 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   the bits directly, and `main` calls `update_var_trace(true)` after `bump_shlvl`, so that variables that didn't come
   from the environment show as set by luish when it started. When tracing starts, each variable that is set gets a
   first record: `Environment` if it is exported with the value the environment had, else `Startup` or `Before`.
+- `vars.trace_after_startup` turns tracing on as the other two do, except while `Shell::starting` (from just before
+  `update_var_trace(true)` in `main` until the startup files have run, when `main` calls `end_startup`), so that
+  startup runs untraced, with its caches. Variables set by then get a first record `DuringStartup`. Test:
+  `misc/vartrace_after_startup.sh`.
 - Zero cost while off: `vartrace` is an `Option<Box>`, and each place that changes a variable tests it and calls a
   `#[cold]` function: `Shell::after_assign` (which `try_set_var` goes through, so every assignment through
   `Shell` is covered), `Shell::unset_var`, `Shell::save_var` and `Shell::restore_saved` (`local`, temporary
@@ -1629,7 +1633,7 @@ truncates when it relocates the package.
 | `clipcopy` | `builtins/internal_clipcopy.sh`, `clipcopy` in `tests/interactive.rs` |
 | `plugin` | `builtins/internal_plugin.sh`, `builtins/plugin.sh` (same as dash), `plugin_builtin` in `tests/interactive.rs` |
 | `shopt` | `options/shopt.sh` |
-| `where`, startup caches with `vars.trace` | `misc/vartrace.sh`, `misc/vartrace_restore.sh`, `misc/vartrace_history.sh`, `misc/vartrace_startup.sh`, `tests/plugins/vartrace_prompt.sh` |
+| `where`, startup caches with `vars.trace` | `misc/vartrace.sh`, `misc/vartrace_restore.sh`, `misc/vartrace_history.sh`, `misc/vartrace_startup.sh`, `misc/vartrace_after_startup.sh`, `tests/plugins/vartrace_prompt.sh` |
 
 ## dash as the reference
 

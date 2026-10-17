@@ -20,10 +20,12 @@ EDITOR was set to "vi" in ~/.my-script.sh:123, in function setup
 
 A variable can also have come from the environment (`was inherited from
 the environment`), been set by luish as it started (such as `IFS` and
-`PS1`), or been set before tracing began. After a function with the
-variable `local` returns, or after a command with a temporary assignment
-(`X=1 cmd`), `where` shows where the value put back was set. `path` is
-`PATH`. Without names, `where` shows every variable that is set.
+`PS1`), been set during startup (when tracing started after it, with
+`vars.trace_after_startup`), or been set before tracing began. After a
+function with the variable `local` returns, or after a command with a
+temporary assignment (`X=1 cmd`), `where` shows where the value put back
+was set. `path` is `PATH`. Without names, `where` shows every variable
+that is set.
 
 `-a`
 : Show every change recorded, oldest first and numbered, with the values

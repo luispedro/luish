@@ -18,10 +18,11 @@
 //!
 //! When tracing starts, each variable that is set gets a first record: from
 //! the environment (if it still has the value it had there), set by luish
-//! as it started (for tracing turned on by `luish -o vars.trace`), or set
-//! before tracing began. While tracing is on, the startup caches aren't used
-//! (`startcache::Run::lookup`), so that what the startup files set is
-//! recorded at their lines.
+//! as it started (for tracing turned on by `luish -o vars.trace`), set
+//! during startup (for tracing that starts after it, with
+//! `vars.trace_after_startup`), or set before tracing began. While tracing
+//! is on, the startup caches aren't used (`startcache::Run::lookup`), so
+//! that what the startup files set is recorded at their lines.
 
 use std::collections::VecDeque;
 use std::rc::Rc;
@@ -86,6 +87,9 @@ enum What {
     Environment,
     /// Set by luish as it started, before tracing started with it.
     Startup,
+    /// Set as luish started or by its startup files, for tracing that
+    /// started after them (`vars.trace_after_startup`).
+    DuringStartup,
     /// Set before tracing started.
     Before,
 }
@@ -113,9 +117,24 @@ impl Shell {
     /// where the variables that didn't come from the environment were set
     /// by luish.
     pub fn update_var_trace(&mut self, at_startup: bool) {
-        let on = self.opt(Opt::VarsTrace) || self.opt(Opt::VarsTraceHistory);
+        self.update_trace(if at_startup { What::Startup } else { What::Before });
+    }
+
+    /// Marks the end of startup, when `vars.trace_after_startup` starts
+    /// tracing.
+    pub fn end_startup(&mut self) {
+        self.starting = false;
+        self.update_trace(What::DuringStartup);
+    }
+
+    /// Starts or stops tracing, as the options say; variables set before it
+    /// starts get a first record `before` (unless from the environment).
+    fn update_trace(&mut self, before: What) {
+        let after_startup = self.opt(Opt::VarsTraceAfterStartup);
+        let on = (self.opt(Opt::VarsTrace) || self.opt(Opt::VarsTraceHistory) || after_startup)
+            && !(after_startup && self.starting);
         if on && self.vartrace.is_none() {
-            self.vartrace = Some(Box::new(self.start_trace(at_startup)));
+            self.vartrace = Some(Box::new(self.start_trace(before)));
         } else if !on {
             self.vartrace = None;
         }
@@ -124,7 +143,7 @@ impl Shell {
     /// Sets an option, starting or stopping tracing if it is one of its own.
     pub fn set_option(&mut self, o: Opt, on: bool) {
         self.options.set(o, on);
-        if matches!(o, Opt::VarsTrace | Opt::VarsTraceHistory) {
+        if matches!(o, Opt::VarsTrace | Opt::VarsTraceHistory | Opt::VarsTraceAfterStartup) {
             self.update_var_trace(false);
         }
     }
@@ -141,7 +160,7 @@ impl Shell {
         self.set_jobctl(self.opt(Opt::Monitor));
     }
 
-    fn start_trace(&self, at_startup: bool) -> VarTrace {
+    fn start_trace(&self, before: What) -> VarTrace {
         use std::os::unix::ffi::OsStrExt;
         let env: HashMap<Vec<u8>, Vec<u8>> = std::env::vars_os()
             .map(|(k, v)| (k.as_bytes().to_vec(), v.as_bytes().to_vec()))
@@ -151,8 +170,7 @@ impl Shell {
             let value = var.value.as_ref().unwrap();
             let what = match value {
                 Value::Str(s) if var.exported && env.get(name) == Some(s) => What::Environment,
-                _ if at_startup => What::Startup,
-                _ => What::Before,
+                _ => before.clone(),
             };
             let event = Event {
                 what,
@@ -515,6 +533,11 @@ fn describe<'a>(
             head.plain(b" was set");
             to(&mut head, b" to");
             tail.plain(b"by luish when it started");
+        }
+        What::DuringStartup => {
+            head.plain(b" was set");
+            to(&mut head, b" to");
+            tail.plain(b"during startup");
         }
         What::Before => {
             head.plain(b" was set");

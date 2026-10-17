@@ -156,6 +156,9 @@ pub struct Shell {
     /// Where variables were set, while `vars.trace` or `vars.trace_history`
     /// is on (`vartrace.rs`).
     pub vartrace: Option<Box<crate::vartrace::VarTrace>>,
+    /// While the shell starts, until its startup files have run: variables
+    /// aren't traced yet with `vars.trace_after_startup`.
+    pub starting: bool,
 }
 
 impl Shell {
@@ -238,6 +241,7 @@ impl Shell {
             check_cache: None,
             startcache: None,
             vartrace: None,
+            starting: false,
         }
     }
 

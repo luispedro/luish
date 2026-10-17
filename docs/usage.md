@@ -317,8 +317,10 @@ Tracing costs nothing while it is off. While it is on, assignments are slower (a
 assignments takes about a fifth longer with `vars.trace`, a third with `vars.trace_history`), and the [startup caches](#cached-startup-files) aren't used, so that
 the startup files run and what they set is recorded at their lines. Turn it on with `-o` on the command line to trace
 the startup files; with `setopt`, only what is set from then on is recorded (a variable set before shows as set
-before tracing began). Values that a plugin's `prompt-vars` sets for the prompt are put back after it, and aren't
-recorded. Tracing in a subshell stays in that subshell.
+before tracing began). To trace only what is set at the prompt, without slowing startup, set
+`vars.trace_after_startup` in a startup file (or `config.toml`), or with `-o`: tracing then starts once the startup
+files have run, and what they set shows as set during startup. Values that a plugin's `prompt-vars` sets for the
+prompt are put back after it, and aren't recorded. Tracing in a subshell stays in that subshell.
 
 ## Getting help
 

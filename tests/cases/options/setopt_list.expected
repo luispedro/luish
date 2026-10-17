@@ -41,6 +41,7 @@ startup.auto_cache
 stdin
 terminal.no_integration
 vars.trace
+vars.trace_after_startup
 vars.trace_history
 verbose
 vi

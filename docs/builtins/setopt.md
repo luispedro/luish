@@ -130,6 +130,13 @@ luish's own options, all off by default:
 : As `vars.trace`, but keep the last 100 changes of every variable, with
   their values, for `where -a`.
 
+`vars.trace_after_startup`
+: As `vars.trace` (or `vars.trace_history`, if it is on too), but only
+  once the startup files have run: set in them or with `-o`, tracing
+  starts before the first command, as if `setopt vars.trace` were typed
+  at the first prompt. Startup is as fast as without tracing, with its
+  caches, and what it set shows as set during startup.
+
 `startup.auto_cache`
 : Cache whole startup files (those of `rc.d` and `login.d`), and
   `config.toml` with the plugins it enables, so that a new shell restores

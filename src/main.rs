@@ -274,6 +274,7 @@ fn run(mut args: Vec<Vec<u8>>) -> ! {
     sh.login = login;
     // `-o vars.trace`: from the start, so that what startup files set is
     // recorded (`vartrace.rs`).
+    sh.starting = true;
     sh.update_var_trace(true);
     if interactive {
         sh.interactive = true;
@@ -321,6 +322,8 @@ fn run(mut args: Vec<Vec<u8>>) -> ! {
             startcache::check_not_reached(&mut sh);
         }
     }
+    // `vars.trace_after_startup`: tracing starts now.
+    sh.end_startup();
     if interactive {
         interactive::load_history(&sh);
     }

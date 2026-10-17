@@ -48,6 +48,7 @@ pub enum Opt {
     NoTermIntegration,
     VarsTrace,
     VarsTraceHistory,
+    VarsTraceAfterStartup,
     StartupAutoCache,
 }
 
@@ -107,6 +108,7 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::NoTermIntegration, "terminal.no_integration"),
     (Opt::VarsTrace, "vars.trace"),
     (Opt::VarsTraceHistory, "vars.trace_history"),
+    (Opt::VarsTraceAfterStartup, "vars.trace_after_startup"),
     (Opt::StartupAutoCache, "startup.auto_cache"),
 ];
 

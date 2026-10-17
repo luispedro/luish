@@ -1,0 +1,14 @@
+built
+1
+EDITOR was set to "vi" during startup
+CACHED was set to "1" during startup
+PATH was set to "/rc/bin:/usr/bin:/bin" during startup
+X was set to "1" in the -c command, line 1
+EDITOR was set to "vi" during startup
+[1 - current state] PATH was set to "/rc/bin:/usr/bin:/bin" during startup
+off
+[1] Y was set to "1" in the -c command, line 1
+[2 - current state] Y was set to "2" in the -c command, line 1
+
+[1 - current state] EDITOR was set to "vi" during startup
+Z was set to "1" in ~/s.sh:1
