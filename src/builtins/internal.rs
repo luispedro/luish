@@ -15,6 +15,7 @@ const SUBCOMMANDS: &[(&[u8], Subcommand)] = &[
     (b"default-config", default_config),
     (b"function-file", function_file),
     (b"help", help),
+    (b"list-completions", list_completions),
     (b"plugin", plugin),
     (b"print", print),
     (b"print-git-rev", print_git_rev),
@@ -94,6 +95,25 @@ fn complete(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         0 if matches.is_empty() => Ok(1),
         n => Ok(n),
     }
+}
+
+/// `list-completions`: prints the commands that loaded plugins provide
+/// completers for, sorted, one per line, each followed by a tab and the
+/// plugin's name.
+fn list_completions(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    if let Err(e) = no_args(sh, argv) {
+        return Ok(e);
+    }
+    let mut completers = crate::plugins::completers(sh);
+    completers.sort();
+    let mut out = Vec::new();
+    for (command, plugin) in &completers {
+        out.extend_from_slice(command);
+        out.push(b'\t');
+        out.extend_from_slice(plugin);
+        out.push(b'\n');
+    }
+    Ok(sh.out_status(&out))
 }
 
 /// `help`: the `help` built-in, which is also available here in shells that

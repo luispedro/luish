@@ -1418,8 +1418,8 @@ no plugin completer, as luish's own completer skips it as a
   concurrent syncs, `login.lsh`.
 - Tests: `tests/plugins/*` (packages: `packages.sh` for local sources, `nested.sh` for sub-collections,
   `git_packages.sh` for git ones with
-  `file://` repositories, `add.sh`, `post_rc.sh`, `manifest.sh`; completers through `__luish_internal complete`:
-  `complete.sh`, and `std_completion.sh` and `std_completion_more.sh` for `luish-std-plugins/completion`, found through
+  `file://` repositories, `add.sh`, `post_rc.sh`, `manifest.sh`; completers through `__luish_internal complete`
+  (and `list-completions`): `complete.sh`, and `std_completion.sh` and `std_completion_more.sh` for `luish-std-plugins/completion`, found through
   `$STD_PLUGINS`, the latter with stand-ins for the programs it runs), `builtins/plugin.sh`, `builtins/internal_plugin.sh`, unit
   tests for the byte conversion, `git status` parsing and (with a stand-in completer) in `complete.rs`, and
   `plugin_builtin`, `plugin_completer`, `cobra_completer`, `git_completion` and `bash_completion_bridge` (skipped

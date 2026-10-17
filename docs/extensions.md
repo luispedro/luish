@@ -298,6 +298,9 @@ $ __luish_internal complete 'git sw'
 switch 	Switch branches
 ```
 
+`__luish_internal list-completions` lists the commands that have completers,
+each with the plugin that provides it.
+
 Commands that a completer runs are not jobs: like those of `$(...)`, they can't
 be stopped with Ctrl-Z, and Ctrl-C does not reach them (the terminal is in the
 line editor's mode). Their output goes to the terminal, over the command

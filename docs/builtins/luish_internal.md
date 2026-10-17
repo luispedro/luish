@@ -8,6 +8,7 @@ __luish_internal complete line
 __luish_internal default-config [--extra]
 __luish_internal function-file name file [lines [dir]]
 __luish_internal help [name...]
+__luish_internal list-completions
 __luish_internal plugin subcommand [arg...]
 __luish_internal print [arg...]
 __luish_internal print-git-rev
@@ -65,6 +66,12 @@ take names that scripts might use for something else.
 
 `help`
 : Show help for built-in commands (see `help help`).
+
+`list-completions`
+: Print the commands that the extensions of loaded plugins provide
+  completers for, sorted, one per line: the command (`-default-` for the
+  completer of commands that have none of their own), then a tab and the
+  name of the plugin.
 
 `plugin`
 : Load, list, unload and fetch plugins (see `help plugin`).

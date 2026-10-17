@@ -6,3 +6,5 @@ complete.sh: 44: __luish_internal complete: missing line
     __luish_internal complete
 complete.sh: 46: __luish_internal complete: too many arguments: b
     __luish_internal complete a b
+complete.sh: 64: __luish_internal list-completions: too many arguments: x
+    __luish_internal list-completions x

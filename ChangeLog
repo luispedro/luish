@@ -1,4 +1,5 @@
 Unreleased
+    * __luish_internal list-completions: the commands plugins complete
     * Rhai extensions: no size limits on lists and maps (building a long
       list is no longer quadratic); a warning if a call uses a lot of memory
     * setopt vars.trace_after_startup: trace variables from the first prompt

@@ -40,3 +40,13 @@ status 0
 status 0
 status 2
 status 2
+--- list-completions
+-default-	other
+frob	frob
+zap	other
+status 0
+-default-	other
+zap	other
+status 0
+status 0
+status 2

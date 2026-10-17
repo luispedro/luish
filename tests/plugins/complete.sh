@@ -45,3 +45,21 @@ __luish_internal complete
 echo "status $?"
 __luish_internal complete a b
 echo "status $?"
+# `__luish_internal list-completions` lists the commands with completers,
+# sorted, each with its plugin.
+cat > other.rhai <<'R'
+sh::completer("zap", |words, i| ());
+sh::completer("-default-", |words, i| ());
+R
+__luish_internal plugin load ./other.rhai
+echo "--- list-completions"
+__luish_internal list-completions
+echo "status $?"
+__luish_internal plugin unload frob
+__luish_internal list-completions
+echo "status $?"
+__luish_internal plugin unload other
+__luish_internal list-completions
+echo "status $?"
+__luish_internal list-completions x
+echo "status $?"

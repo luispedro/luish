@@ -1480,6 +1480,23 @@ impl Host {
         self.completers.borrow().iter().map(|c| c.0.clone()).collect()
     }
 
+    /// The commands that have completers, each with the name of the plugin
+    /// whose extension registered it.
+    pub fn completers(&self) -> Vec<(Vec<u8>, Vec<u8>)> {
+        let plugins = self.plugins.borrow();
+        let plugin = |id| {
+            plugins
+                .iter()
+                .find(|p| p.id == id)
+                .map_or_else(Vec::new, |p| p.name.clone())
+        };
+        self.completers
+            .borrow()
+            .iter()
+            .map(|c| (c.0.clone(), plugin(c.1.plugin)))
+            .collect()
+    }
+
     /// Runs the completer for `words[0]`, or else the default completer, if
     /// there is one, with the words of the command and the index of the one
     /// being completed. An error is reported on a line of its own, below

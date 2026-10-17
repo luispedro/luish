@@ -418,6 +418,7 @@ fn internal_commands() {
         complete  print what Tab offers for a line
         function-file  set where a function was defined
         help  show the help of built-ins
+        list-completions  list the commands that plugins complete
         plugin  load and manage plugins
         print  print arguments
         print-git-rev  print the current git revision
@@ -442,7 +443,7 @@ fn internal(words, i) {
             sub,
             i - 1,
         ),
-        "complete" | "print-git-rev" | "print-git-rev-short" | "savestate" => [],
+        "complete" | "list-completions" | "print-git-rev" | "print-git-rev-short" | "savestate" => [],
         _ => (),
     }
 }

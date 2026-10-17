@@ -78,6 +78,10 @@ impl Host {
         match *self {}
     }
 
+    fn completers(&self) -> Vec<(Vec<u8>, Vec<u8>)> {
+        match *self {}
+    }
+
     pub fn has_builtin(&self, _: &[u8]) -> bool {
         match *self {}
     }
@@ -197,6 +201,12 @@ pub fn prompt(sh: &mut Shell, right: bool) -> Result<Option<(Prompt, Option<Prom
 /// The commands for which extensions provide completers.
 pub fn completer_names(sh: &Shell) -> Vec<Vec<u8>> {
     sh.plugins.as_ref().map_or_else(Vec::new, |host| host.completer_names())
+}
+
+/// The commands for which extensions provide completers, each with the
+/// name of the plugin that provides it.
+pub fn completers(sh: &Shell) -> Vec<(Vec<u8>, Vec<u8>)> {
+    sh.plugins.as_ref().map_or_else(Vec::new, |host| host.completers())
 }
 
 /// The names of the built-ins that extensions registered.
