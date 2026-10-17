@@ -1,4 +1,5 @@
 Unreleased
+    * Tab completes vared's options, and __luish_internal vared like vared
     * Tab completes __luish_internal default-config
     * __luish_internal list-completions: the commands plugins complete
     * Rhai extensions: no size limits on lists and maps (building a long

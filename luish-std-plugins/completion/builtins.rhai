@@ -221,6 +221,21 @@ fn spec(cmd) {
             `,
             values: #{"-p": "none"},
         },
+        "vared" => #{
+            opts: `
+                -c  create the variable if it is unset
+                -a  with -c, make the variable an array
+                -A  with -c, make the variable an associative array
+                -p PROMPT  show PROMPT before the value
+                -r RPROMPT  show RPROMPT at the right edge
+                -h  let the history be used
+                -e  make Ctrl-D on an empty line give up
+                -g  ignored, as luish gives no warnings to quiet
+                -M KEYMAP  edit with these keys
+                -m KEYMAP  vi's command mode keys (only vicmd)
+            `,
+            values: #{"-p": "none", "-r": "none", "-M": ["emacs", "viins", "main"], "-m": ["vicmd"]},
+        },
         "umask" => #{opts: "-S  show the mask in symbolic form", args: ["none"]},
         "unset" => #{
             opts: `
@@ -426,6 +441,7 @@ fn internal_commands() {
         print-git-rev-short  print the current git revision, short
         savestate  save the shell's state
         style  show or change the styles
+        vared  edit a variable's value
         where  show where variables were set
     `
 }
@@ -438,7 +454,7 @@ fn internal(words, i) {
     let sub = words.extract(1);
     switch words[1] {
         "style" => style(sub, i - 1),
-        "bindkey" | "print" => lib::complete(spec(words[1]), sub, i - 1),
+        "bindkey" | "print" | "vared" => lib::complete(spec(words[1]), sub, i - 1),
         "check-cache" => lib::complete(
             #{opts: "-q, --quiet  show only the caches that were rebuilt", args: [["rc", "login", "startup"]]},
             sub,

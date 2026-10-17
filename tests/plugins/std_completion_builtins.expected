@@ -96,6 +96,29 @@ status 0
 --- __luish_internal default-config -
 --extra 	add the luish-extra plugins
 status 0
+--- __luish_internal va
+vared 	edit a variable's value
+status 0
+--- __luish_internal vared -M 
+emacs 
+main 
+viins 
+status 0
+--- vared -m 
+vicmd 
+status 0
+--- vared -
+-A 	with -c, make the variable an associative array
+-M 	edit with these keys
+-a 	with -c, make the variable an array
+-c 	create the variable if it is unset
+-e 	make Ctrl-D on an empty line give up
+-g 	ignored, as luish gives no warnings to quiet
+-h 	let the history be used
+-m 	vi's command mode keys (only vicmd)
+-p 	show PROMPT before the value
+-r 	show RPROMPT at the right edge
+status 0
 === options, and luish's own arguments
 --- cd -
 -L 	follow the path as given (logical)

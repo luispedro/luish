@@ -789,6 +789,8 @@ In an interactive shell, Tab starts completion.
 - `setopt` completes the options that are off and `unsetopt` those that are on,
   as in zsh.
 - `plugin load` completes the plugins in the plugin directory, and `plugin unload` the loaded ones.
+- the arguments of a subcommand of `__luish_internal` complete as those of the built-in of the same name
+  (`__luish_internal vared` as `vared`).
 
 Plugins, through their extensions, can provide completion for other commands
 (see [Completing a command's arguments](extensions.md#completing-a-commands-arguments)). Aliases are followed: if `g` is an alias for

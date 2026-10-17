@@ -29,7 +29,7 @@ let modules = #{
     builtins: [
         "alias", "unalias", "bindkey", "cd", "chdir", "pushd", "popd", "dirs", "echo", "fc", "hash", "jobs", "pwd",
         "read", "umask", "unset", "export", "readonly", "local", "typeset", "declare", "print", "ulimit", "test",
-        "[", "set",
+        "[", "set", "vared",
     ],
     tools: [
         "find", "fd", "fdfind", "locate", "plocate", "mlocate", "sed", "awk", "nawk", "mawk", "gawk", "jq",

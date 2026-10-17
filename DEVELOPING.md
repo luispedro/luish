@@ -1289,7 +1289,9 @@ no plugin completer, as luish's own completer skips it as a
   `src/options.rs` checks that `shells.rhai` lists all the options `luish -o` takes.
 - `luish-std-plugins/completion/builtins.rhai`: specs for luish's built-ins, with the options only where luish
   completes the other arguments itself (`ARGS` in `complete.rs`): a completer's `()` (the kind `files`) falls back to
-  luish's completion, so `cd s` still gets `CDPATH` and `unset -f` functions. `style` and `__luish_internal` have
+  luish's completion, so `cd s` still gets `CDPATH` and `unset -f` functions (and luish looks up the subcommand of
+  `__luish_internal` in `ARGS`, so `__luish_internal vared` gets variables; test:
+  `builtins/internal_complete_subcommand.sh`). `style` and `__luish_internal` have
   completers of their own: names, values and schemes come from `__luish_internal style` (which, unlike `style`,
   exists in non-interactive shells too) run with `sh::capture_sh`, so a subshell has the shell's styles and
   schemes. `print` is a Rhai keyword, so it can't name a function. Test:
@@ -1630,7 +1632,7 @@ truncates when it relocates the package.
 | Command cache | `path_cache` in `tests/interactive.rs` |
 | Command-line options | `options/command_line.sh` |
 | Running out of stack | `exec/stack_guard.sh`, `exec/recursion_limit.sh` (same as dash) |
-| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `tests/plugins/default_config.sh`, `builtins/internal_complete_expand.sh`, `builtins/internal_complete_subscript.sh`, `tests/plugins/complete.sh` |
+| `__luish_internal` | `builtins/internal_savestate.sh`, `builtins/internal_git_rev.sh`, `tests/plugins/default_config.sh`, `builtins/internal_complete_expand.sh`, `builtins/internal_complete_subscript.sh`, `builtins/internal_complete_subcommand.sh`, `tests/plugins/complete.sh` |
 | Startup files | `misc/startup_cache.sh`, `misc/startup_cache_assigned.sh`, `misc/startup_cache_blocks.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `misc/config_toml_env.sh`, `tests/plugins/startup_cache_check.sh`, `tests/plugins/startup_cache_blocks.sh`, `tests/plugins/startup_cache_nested.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |

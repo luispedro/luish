@@ -1,0 +1,22 @@
+--- vared ZZ
+ZZone 
+ZZtwo 
+status 0
+--- __luish_internal vared ZZ
+ZZone 
+ZZtwo 
+status 0
+--- __luish_internal vared -c ZZ
+ZZone 
+ZZtwo 
+status 0
+--- __luish_internal where ZZ
+ZZone 
+ZZtwo 
+status 0
+--- __luish_internal help ech
+echo 
+status 0
+--- __luish_internal savestate ZZ
+ZZfile 
+status 0

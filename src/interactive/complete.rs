@@ -1275,8 +1275,12 @@ impl ShellHelper {
                 0
             }
             Kind::Arg => {
-                let cmd = w.words.first().map_or(&b""[..], |c| &c[..]);
-                let args = w.words.get(1..).unwrap_or(&[]);
+                let mut cmd = w.words.first().map_or(&b""[..], |c| &c[..]);
+                let mut args = w.words.get(1..).unwrap_or(&[]);
+                // `__luish_internal vared ...` as `vared ...`.
+                if let (b"__luish_internal", [sub, rest @ ..]) = (cmd, args) {
+                    (cmd, args) = (sub, rest);
+                }
                 let words = |names: &[Vec<u8>], out: &mut Vec<Candidate>| {
                     out.extend(names.iter().map(|v| Candidate::word(v)));
                     0
