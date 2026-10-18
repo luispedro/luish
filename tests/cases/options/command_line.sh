@@ -28,4 +28,4 @@ ENV=$HOME/env.sh $SH -i --login -c 'echo run' </dev/null 2>/dev/null
 ENV=$HOME/env.sh $SH -i --login --no-rcs -c 'echo run' </dev/null 2>/dev/null
 $SH --help | sed -n 1p
 $SH --help >/dev/null -c 'echo not run'; echo "status $?"
-$SH --version | sed 's/(.*)/(REV)/'
+$SH --version | sed -E 's/^luish [0-9]+\.[0-9]+\.[0-9]+(-[a-z]+)? \(.*\)$/luish VERSION (REV)/'
