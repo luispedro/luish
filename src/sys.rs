@@ -431,13 +431,49 @@ pub fn own_home_dir() -> Option<Vec<u8>> {
 
 /// The name of the user with the real user id.
 pub fn user_name() -> Option<Vec<u8>> {
+    user_name_of(getuid())
+}
+
+/// The name of the user with id `uid`.
+pub fn user_name_of(uid: u32) -> Option<Vec<u8>> {
     // SAFETY: getpwuid returns a pointer to static storage or null.
     unsafe {
-        let pw = libc::getpwuid(libc::getuid());
+        let pw = libc::getpwuid(uid);
         if pw.is_null() {
             return None;
         }
         Some(CStr::from_ptr((*pw).pw_name).to_bytes().to_vec())
+    }
+}
+
+/// The name of the group with id `gid`.
+pub fn group_name_of(gid: u32) -> Option<Vec<u8>> {
+    // SAFETY: getgrgid returns a pointer to static storage or null.
+    unsafe {
+        let gr = libc::getgrgid(gid);
+        if gr.is_null() {
+            return None;
+        }
+        Some(CStr::from_ptr((*gr).gr_name).to_bytes().to_vec())
+    }
+}
+
+/// `uname(2)`: the system's name, node name, release, version and machine.
+pub fn uname() -> Option<[Vec<u8>; 5]> {
+    // SAFETY: uname fills the buffer, whose fields it NUL-terminates.
+    unsafe {
+        let mut u: libc::utsname = std::mem::zeroed();
+        if libc::uname(&mut u) != 0 {
+            return None;
+        }
+        let f = |field: &[libc::c_char]| CStr::from_ptr(field.as_ptr()).to_bytes().to_vec();
+        Some([
+            f(&u.sysname),
+            f(&u.nodename),
+            f(&u.release),
+            f(&u.version),
+            f(&u.machine),
+        ])
     }
 }
 

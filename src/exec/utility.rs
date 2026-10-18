@@ -1,8 +1,8 @@
-//! `basename`, `dirname`, `expr` and `seq` run in the shell, without a
-//! process, when they are the system's (`PATH` finds them in `/usr/bin` or
-//! `/bin`) and the arguments are ones whose result POSIX specifies (for
-//! `expr`, arithmetic and comparisons of integers) or, for `seq`, on which
-//! coreutils, uutils and busybox agree. Anything else (options, the
+//! `basename`, `dirname`, `expr`, `seq`, `id` and `uname` run in the shell,
+//! without a process, when they are the system's (`PATH` finds them in
+//! `/usr/bin` or `/bin`) and the arguments are ones whose result POSIX
+//! specifies (for `expr`, arithmetic and comparisons of integers), and on
+//! which coreutils, uutils and busybox agree. Anything else (options, the
 //! cases POSIX leaves to the implementation, a `basename` of one's own
 //! earlier in `PATH`) runs the utility itself, so nothing changes but the
 //! time taken: `type` and `command -v` still show the file.
@@ -21,7 +21,7 @@ use crate::shell::{Flow, Shell};
 use crate::sys;
 
 fn is_utility(name: &[u8]) -> bool {
-    matches!(name, b"basename" | b"dirname" | b"expr" | b"seq")
+    matches!(name, b"basename" | b"dirname" | b"expr" | b"seq" | b"id" | b"uname")
 }
 
 /// What `argv` prints and its status, or `None` if
@@ -33,6 +33,8 @@ fn output(argv: &[Vec<u8>]) -> Option<(Vec<u8>, i32)> {
     match &name[..] {
         b"expr" => return expr(args),
         b"seq" => return seq(args),
+        b"id" => return id(args).map(|o| (o, 0)),
+        b"uname" => return uname(args).map(|o| (o, 0)),
         _ => {}
     }
     if args.first().is_some_and(|a| a == b"--") {
@@ -227,6 +229,71 @@ impl Expr<'_> {
         }
         std::str::from_utf8(a).ok()?.parse().ok()
     }
+}
+
+/// The option letters of `args`, each argument being `-` and letters from
+/// `allowed`, or `None` (an operand, `--`, a long option, another letter).
+fn option_letters(args: &[Vec<u8>], allowed: &[u8]) -> Option<Vec<u8>> {
+    let mut letters = Vec::new();
+    for a in args {
+        let l = a.strip_prefix(b"-").filter(|l| !l.is_empty())?;
+        if !l.iter().all(|c| allowed.contains(c)) {
+            return None;
+        }
+        letters.extend_from_slice(l);
+    }
+    Some(letters)
+}
+
+/// `id -u` or `id -g`, with `-n` (the name) or `-r` (the real id). Not
+/// without either (the groups' order differs between implementations), nor
+/// with a user, nor for an id without a name (an error).
+fn id(args: &[Vec<u8>]) -> Option<Vec<u8>> {
+    let letters = option_letters(args, b"ugnr")?;
+    let has = |c| letters.contains(&c);
+    let real = has(b'r');
+    let mut out = match (has(b'u'), has(b'g'), has(b'n')) {
+        (true, false, false) => if real { sys::getuid() } else { sys::geteuid() }
+            .to_string()
+            .into_bytes(),
+        (false, true, false) => if real { sys::getgid() } else { sys::getegid() }
+            .to_string()
+            .into_bytes(),
+        (true, false, true) => sys::user_name_of(if real { sys::getuid() } else { sys::geteuid() })?,
+        (false, true, true) => sys::group_name_of(if real { sys::getgid() } else { sys::getegid() })?,
+        _ => return None,
+    };
+    out.push(b'\n');
+    Some(out)
+}
+
+/// `uname` with any of `-s`, `-n`, `-r`, `-v` and `-m` (`-s` without
+/// any), each once (uutils rejects a repeated one), printed in that order.
+/// Not `-o`, `-p`, `-i` or `-a`, whose output differs between
+/// implementations.
+fn uname(args: &[Vec<u8>]) -> Option<Vec<u8>> {
+    let mut letters = option_letters(args, b"snrvm")?;
+    let n = letters.len();
+    letters.sort_unstable();
+    letters.dedup();
+    if letters.len() != n {
+        return None;
+    }
+    if letters.is_empty() {
+        letters.push(b's');
+    }
+    let fields = sys::uname()?;
+    let mut out = Vec::new();
+    for (c, field) in b"snrvm".iter().zip(fields) {
+        if letters.contains(c) {
+            if !out.is_empty() {
+                out.push(b' ');
+            }
+            out.extend(field);
+        }
+    }
+    out.push(b'\n');
+    Some(out)
 }
 
 /// The built-ins that `$(...)` can run without a subshell, as they change
@@ -567,6 +634,49 @@ mod tests {
             "1000000000000000",
         ] {
             assert_eq!(seq(args), None, "{args}");
+        }
+    }
+
+    #[test]
+    fn id_uname() {
+        let run = |args: &str| {
+            let argv: Vec<Vec<u8>> = args.split(' ').map(|a| a.into()).collect();
+            output(&argv).map(|(o, _)| String::from_utf8(o).unwrap())
+        };
+        let uid = format!("{}\n", sys::geteuid());
+        assert_eq!(run("id -u").as_ref(), Some(&uid));
+        assert_eq!(run("id -r -u").as_ref(), Some(&uid));
+        assert_eq!(run("id -gr"), Some(format!("{}\n", sys::getgid())));
+        for args in [
+            "id",
+            "id -G",
+            "id -n",
+            "id -r",
+            "id -ug",
+            "id -u root",
+            "id -- -u",
+            "id -uz",
+            "id --user",
+        ] {
+            assert_eq!(run(args), None, "{args}");
+        }
+        let [sysname, _, _, _, machine] = sys::uname().unwrap();
+        let s = String::from_utf8(sysname).unwrap();
+        let m = String::from_utf8(machine).unwrap();
+        assert_eq!(run("uname"), Some(format!("{s}\n")));
+        assert_eq!(run("uname -m -s"), Some(format!("{s} {m}\n")));
+        assert_eq!(run("uname -ms"), Some(format!("{s} {m}\n")));
+        for args in [
+            "uname -a",
+            "uname -o",
+            "uname -p",
+            "uname -i",
+            "uname -s -s",
+            "uname --",
+            "uname x",
+            "uname -",
+        ] {
+            assert_eq!(run(args), None, "{args}");
         }
     }
 }

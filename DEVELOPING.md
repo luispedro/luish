@@ -521,6 +521,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   utility's own time dominates, and a loop in the shell couldn't be interrupted). The utility runs for options (`--`
   included), `+1`, fractions and exponents. The utilities' `output` is all they print, so `seq 5 1` prints
   nothing. Test: `builtins/seq.sh`.
+- `id` and `uname` run in the shell the same way, in the forms on which coreutils, uutils and busybox agree:
+  `id -u` or `id -g` with `-n` (the name, from `getpwuid`/`getgrgid`; the utility runs for an id without one, which
+  is an error) and `-r` (the real id; the effective one otherwise), in any grouping (`option_letters`), and
+  `uname` with any of `-s -n -r -v -m`, each once (uutils rejects a repeated one), printed in that order from
+  `uname(2)`. The utility runs for a user operand, `--`, long options, `id` without `-u` or `-g` (`id -G` and plain
+  `id` order the groups differently in busybox), and `uname -a`, `-o`, `-p` and `-i` (`-p` and `-i` are
+  `unknown` in uutils and busybox, the machine in Debian's coreutils). Test: `builtins/id_uname.sh`.
 - `$(...)` of a built-in that only prints runs in the shell too (`subst_in_place`, with the same conditions on the
   words and options): `echo`, `printf`, `pwd`, `command -v`/`-V` (with `-p` or not, but not `command` running a
   command) and `type`, when the name finds the built-in (not a function). Its output goes to `Shell::captured`,

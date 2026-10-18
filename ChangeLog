@@ -1,4 +1,6 @@
 Unreleased
+    * id -u, id -g (-n, -r) and uname (-s -n -r -v -m), also in $(...),
+      run without starting a process
     * seq with integers, also in $(...), runs without starting a process
     * expr with integers, also in $(...), runs without starting a process
     * $(echo ...), $(printf ...), $(pwd), $(command -v ...) and
