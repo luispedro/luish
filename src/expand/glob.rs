@@ -33,6 +33,121 @@ pub fn glob(pat: &[XChar], opts: GlobOpts) -> Vec<Vec<u8>> {
     g.out
 }
 
+/// The paths that `pattern` matches in the directory `dir` (taken as it
+/// is; the current directory if empty), relative to it and sorted, for
+/// plugins (`sh::glob`). The shell's patterns, with fixed options rather
+/// than the user's: braces are expanded, a trailing `(...)` is a glob
+/// qualifier, `**/` matches directories, a pattern that matches nothing
+/// gives nothing, and hidden files match only with `D` or a leading `.`
+/// (never `.` and `..`). A backslash quotes the next character. The error
+/// is that of a bad qualifier.
+///
+/// Patterns without a `/` (all of the braces' alternatives) read the
+/// directory once, and match each name against all of them; their
+/// qualifiers look up only the files whose `d_type` isn't enough.
+#[cfg(feature = "plugins")]
+pub fn glob_in(dir: &[u8], pattern: &[u8]) -> Result<Vec<Vec<u8>>, String> {
+    use super::qual::Qualifiers;
+    use crate::ast::{Parts, Word, WordPart};
+
+    let mut chars = Vec::with_capacity(pattern.len());
+    let mut i = 0;
+    while i < pattern.len() {
+        let quoted = pattern[i] == b'\\' && i + 1 < pattern.len();
+        i += quoted as usize;
+        chars.push(XChar { b: pattern[i], quoted });
+        i += 1;
+    }
+    let qual = match super::qualifier_start(&chars) {
+        Some(open) => {
+            let q = Qualifiers::parse(&bytes(&chars[open + 1..chars.len() - 1]))?;
+            chars.truncate(open);
+            q
+        }
+        None => Qualifiers::default(),
+    };
+    // Brace expansion takes quoted characters as parts of their own.
+    let mut parts = Vec::new();
+    for c in &chars {
+        match (c.quoted, parts.last_mut()) {
+            (true, _) => parts.push(WordPart::Escaped(c.b)),
+            (false, Some(WordPart::Literal(s))) => s.push(c.b),
+            (false, _) => parts.push(WordPart::Literal(vec![c.b])),
+        }
+    }
+    fn to_chars(w: &Word) -> Vec<XChar> {
+        let mut out = Vec::new();
+        for p in w.0.iter() {
+            let (s, quoted): (&[u8], bool) = match p {
+                WordPart::Literal(s) => (s, false),
+                WordPart::Tilde(user) => {
+                    out.push(XChar { b: b'~', quoted: false });
+                    (user, false)
+                }
+                WordPart::SingleQuoted(s) => (s, true),
+                WordPart::Escaped(c) => (std::slice::from_ref(c), true),
+                _ => (&[], false),
+            };
+            out.extend(s.iter().map(|&b| XChar { b, quoted }));
+        }
+        out
+    }
+    let mut word = Word(Parts::new());
+    for p in parts {
+        word.0.push(p);
+    }
+    let mut text = |w: &Word| Ok::<_, std::convert::Infallible>(bytes(&to_chars(w)));
+    let patterns: Vec<Vec<XChar>> = match super::brace::expand(&word, &mut text) {
+        Ok(Some(words)) => words.iter().map(to_chars).collect(),
+        _ => vec![chars],
+    };
+
+    let mut prefix = dir.to_vec();
+    if !prefix.is_empty() && !prefix.ends_with(b"/") {
+        prefix.push(b'/');
+    }
+    let strip = prefix.len();
+    let dot_entry = |name: &[u8]| name == b"." || name == b"..";
+    let entries = if patterns.iter().any(|p| p.iter().any(|c| c.b == b'/')) {
+        let quoted_prefix: Vec<XChar> = prefix.iter().map(|&b| XChar { b, quoted: true }).collect();
+        let opts = GlobOpts {
+            globstar: true,
+            dots: qual.dots,
+        };
+        let mut paths = Vec::new();
+        for p in &patterns {
+            paths.extend(glob(&[&quoted_prefix[..], p].concat(), opts));
+        }
+        paths.retain(|p| !dot_entry(p.rsplit(|&c| c == b'/').next().unwrap_or(p)));
+        paths.sort();
+        paths.dedup();
+        paths.into_iter().map(|p| (p, libc::DT_UNKNOWN)).collect()
+    } else {
+        let matchers: Vec<(Pattern, bool)> = patterns
+            .iter()
+            .map(|p| {
+                let pattern = Pattern::new(p);
+                let dot_ok = qual.dots || pattern.starts_with_dot();
+                (pattern, dot_ok)
+            })
+            .collect();
+        let mut entries: Vec<(Vec<u8>, u8)> = sys::read_dir_typed(dir)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(name, _)| {
+                !dot_entry(name)
+                    && matchers
+                        .iter()
+                        .any(|(p, dot_ok)| (name[0] != b'.' || *dot_ok) && p.matches(name))
+            })
+            .map(|(name, d_type)| ([&prefix[..], &name[..]].concat(), d_type))
+            .collect();
+        entries.sort();
+        entries
+    };
+    Ok(qual.apply_typed(entries, strip).unwrap_or_default())
+}
+
 /// Whether a component is `**` or `***`, unquoted.
 fn is_globstar(comp: &[XChar]) -> bool {
     (comp.len() == 2 || comp.len() == 3) && comp.iter().all(|c| c.b == b'*' && !c.quoted)

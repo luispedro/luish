@@ -597,6 +597,15 @@ fn candidates(r: Dynamic, word: &[u8]) -> RhaiResult<Option<(usize, Vec<Candidat
     Ok(Some((prefix, out)))
 }
 
+/// `sh::glob(pattern, dir)`: the paths that `pattern` matches in `dir`,
+/// relative to it (`expand::glob::glob_in`).
+fn glob(pattern: &str, dir: &str) -> RhaiResult<rhai::Array> {
+    match crate::expand::glob::glob_in(&to_shell(dir)?, &to_shell(pattern)?) {
+        Ok(paths) => Ok(paths.iter().map(|p| Dynamic::from(to_str(p))).collect()),
+        Err(msg) => error(format!("glob: {pattern}: bad glob qualifier: {msg}")),
+    }
+}
+
 fn sh_module() -> Module {
     let mut m = Module::new();
     m.set_native_fn("hook", |kind: &str, f: FnPtr| {
@@ -683,6 +692,8 @@ fn sh_module() -> Module {
             .collect();
         Ok(Pattern::new(&p).matches(&to_bytes(s)))
     });
+    m.set_native_fn("glob", |pattern: &str| glob(pattern, ""));
+    m.set_native_fn("glob", glob);
     m.set_native_fn("getvar", |name: &str| {
         with_shell(|sh| Ok(sh.get_var(&to_bytes(name)).map_or(Dynamic::UNIT, |v| to_str(&v).into())))
     });

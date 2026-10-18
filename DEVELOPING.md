@@ -1201,6 +1201,16 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   backslash escapes, as in `case $s in $p)`). std uses it instead of matching patterns itself (ssh's `Include`, which
   also skips files that start with `.` unless the pattern does, as globbing does). Tests: `tests/plugins/matches.sh`,
   the ssh cases of `tests/plugins/std_completion.sh`.
+- **`sh::glob`** is `expand::glob::glob_in`: the pattern's backslashes quote (as `Escaped` parts, so that brace
+  expansion leaves `\{` alone), a trailing qualifier is cut off first (`qualifier_start`), then `brace::expand` gives
+  the alternatives. If none has a `/`, `sys::read_dir_typed` reads `dir` once and each name is matched against all of
+  them (one sorted list, where the shell sorts each alternative's matches on its own). Otherwise each alternative is
+  globbed with `dir` as a quoted prefix. `Qualifiers::apply_typed` looks up only the files whose `d_type` isn't
+  enough (`type_suffices`: unknown type, a symbolic link with `-`, a sort by size or time, `T`), giving the others a
+  zeroed `stat` with only the type. Options are fixed (globstar, braces and null on; `glob.dots` ignored), so that a
+  completer doesn't depend on the user's. The 30 alternatives of `*.{fa,fasta,fna,fas,ffn,faa}{,.gz,.bz2,.xz,.zst}(.)`
+  over 600 files take about 0.3 ms, against 4.4 ms for the shell's globbing (a readdir per alternative and a stat
+  per match). Test: `tests/plugins/glob.sh`.
 - **`sh::expand_prompt`** is `prompt::expand`, as `print -P` uses it: `%` sequences only, whatever
   `prompt.percent` is (parameters are the extension's to expand). Test: `tests/plugins/expand_prompt.sh`.
 - **`fs::realpath`** is `realpath(3)` (Rust's `canonicalize`): physical, so `..` after a symbolic link is the target's

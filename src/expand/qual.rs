@@ -350,19 +350,62 @@ impl Qualifiers {
     /// empty list instead.
     pub fn apply(&self, paths: Vec<Vec<u8>>) -> Option<Vec<Vec<u8>>> {
         let now = sys::now();
-        let mut files: Vec<File> = paths
+        let files = paths
             .into_iter()
-            .filter_map(|path| {
-                let lst = sys::lstat(&path)?;
-                let st = if lst.st_mode & libc::S_IFMT == libc::S_IFLNK {
-                    sys::stat(&path).unwrap_or(lst)
-                } else {
-                    lst
-                };
-                Some(File { path, lst, st })
-            })
-            .filter(|f| self.alts.is_empty() || self.alts.iter().any(|alt| alt.iter().all(|t| f.passes(t, now))))
+            .filter_map(File::new)
+            .filter(|f| self.selects(f, now))
             .collect();
+        self.finish(files, 0)
+    }
+
+    /// As `apply`, for paths with their `d_type` (from `readdir`, sorted
+    /// by path), and giving each path without its first `strip` bytes
+    /// (before the modifiers). A file isn't looked up when its type is all
+    /// that the qualifiers need (`type_suffices`).
+    #[cfg(feature = "plugins")]
+    pub fn apply_typed(&self, entries: Vec<(Vec<u8>, u8)>, strip: usize) -> Option<Vec<Vec<u8>>> {
+        let now = sys::now();
+        let files = entries
+            .into_iter()
+            .filter_map(|(path, d_type)| match mode_of(d_type) {
+                Some(mode) if self.type_suffices(d_type) => Some(File::of_type(path, mode)),
+                _ => File::new(path),
+            })
+            .filter(|f| self.selects(f, now))
+            .collect();
+        self.finish(files, strip)
+    }
+
+    /// Whether a file of the type `d_type` needs no lookup: the tests are
+    /// of its type, and of the type of a symbolic link's target only if it
+    /// isn't one, the sort keys are names, and marks don't need more.
+    #[cfg(feature = "plugins")]
+    fn type_suffices(&self, d_type: u8) -> bool {
+        let link = d_type == libc::DT_LNK;
+        mode_of(d_type).is_some()
+            && self
+                .alts
+                .iter()
+                .flatten()
+                .all(|t| matches!(t.kind, TestKind::Type(_) | TestKind::Device) && !(t.follow && link))
+            && self
+                .sort
+                .iter()
+                .all(|&(k, _, _)| matches!(k, Key::Name | Key::Depth | Key::Unsorted))
+            && match self.mark {
+                Mark::None => true,
+                Mark::Dirs => !(self.mark_follow && link),
+                Mark::Types => false,
+            }
+    }
+
+    fn selects(&self, f: &File, now: i64) -> bool {
+        self.alts.is_empty() || self.alts.iter().any(|alt| alt.iter().all(|t| f.passes(t, now)))
+    }
+
+    /// Sorts, slices, marks and modifies the selected `files`, without the
+    /// first `strip` bytes of their paths.
+    fn finish(&self, mut files: Vec<File>, strip: usize) -> Option<Vec<Vec<u8>>> {
         if self.numeric {
             files.sort_by(|a, b| numeric_cmp(&a.path, &b.path));
         }
@@ -402,6 +445,7 @@ impl Qualifiers {
                         Mark::Types => Some(type_char(st)),
                     };
                     let mut p = f.path;
+                    p.drain(..strip);
                     for &m in &self.mods {
                         p = modify::apply(&p, m);
                     }
@@ -495,6 +539,21 @@ struct File {
     st: libc::stat,
 }
 
+/// The file type (`S_IFMT` bits) of a `d_type`, `None` if unknown.
+#[cfg(feature = "plugins")]
+fn mode_of(d_type: u8) -> Option<u32> {
+    Some(match d_type {
+        libc::DT_DIR => libc::S_IFDIR,
+        libc::DT_REG => libc::S_IFREG,
+        libc::DT_LNK => libc::S_IFLNK,
+        libc::DT_FIFO => libc::S_IFIFO,
+        libc::DT_SOCK => libc::S_IFSOCK,
+        libc::DT_BLK => libc::S_IFBLK,
+        libc::DT_CHR => libc::S_IFCHR,
+        _ => return None,
+    })
+}
+
 fn time_of(st: &libc::stat, t: Time) -> i64 {
     match t {
         Time::Access => st.st_atime,
@@ -504,6 +563,27 @@ fn time_of(st: &libc::stat, t: Time) -> i64 {
 }
 
 impl File {
+    /// The file at `path`, `None` if there is none.
+    fn new(path: Vec<u8>) -> Option<File> {
+        let lst = sys::lstat(&path)?;
+        let st = if lst.st_mode & libc::S_IFMT == libc::S_IFLNK {
+            sys::stat(&path).unwrap_or(lst)
+        } else {
+            lst
+        };
+        Some(File { path, lst, st })
+    }
+
+    /// A file of which only the type (`mode`) is known: the rest of its
+    /// `stat` is zero.
+    #[cfg(feature = "plugins")]
+    fn of_type(path: Vec<u8>, mode: u32) -> File {
+        // SAFETY: `stat` is plain data, for which zero is valid.
+        let mut st: libc::stat = unsafe { std::mem::zeroed() };
+        st.st_mode = mode;
+        File { path, lst: st, st }
+    }
+
     fn passes(&self, t: &Test, now: i64) -> bool {
         let st = if t.follow { &self.st } else { &self.lst };
         let mode = st.st_mode;
