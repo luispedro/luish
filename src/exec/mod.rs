@@ -13,6 +13,7 @@ pub use procsubst::ProcSub;
 #[cfg(feature = "plugins")]
 pub use simple::shell_quote;
 pub use simple::{AssignValue, CommandKind};
+pub use utility::Subst;
 
 use std::rc::Rc;
 

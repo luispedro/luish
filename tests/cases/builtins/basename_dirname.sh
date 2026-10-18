@@ -66,3 +66,17 @@ x=$(basename "${nope?gone}" 2>/dev/null); echo "error $? [$x]"
 x=$(basename "${v=set}"); echo "assign [$x] [${v-unset}]"
 i=0; x=$(basename "$((i += 1))"); echo "arith [$x] $i"
 x=$(basename "$(echo a/b)"); echo "nested [$x]"
+
+# A `$(...)` in the words runs once, and can't change the shell, also when
+# the utility has to run or isn't the system's.
+x=$(basename "$(dirname "$(dirname /p/q/r/s)")"); echo "nested twice [$x]"
+x=$(basename "$(echo run >> log; echo a/b)"); echo "once [$x] $(wc -l < log)"
+x=$(basename -a "$(echo run >> log; echo c/d)" "$(echo e/f)"); echo "utility [$x] $(wc -l < log)"
+x=$(basename "$(exit 3)"); echo "empty $? [$x]"
+false; x=$(dirname "$(false)"/x); echo "status $? [$x]"
+x=$(basename "$(y=1; cd /; echo a/$y)"); echo "subshell [$x] [${y-unset}] $([ "$PWD" != / ] && echo here)"
+x=$(expr "$(echo 2)" + "$(echo 3)"); echo "expr [$x]"
+x=$(basename "${y-$(echo run >> log; echo g/h)}"); echo "default [$x] $(wc -l < log)"
+PATH=$PWD/bin:$PATH
+x=$(dirname "$(echo run >> log; echo /a/b)"); echo "own [$x] $(wc -l < log)"
+PATH=$p

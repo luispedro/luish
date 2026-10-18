@@ -81,10 +81,11 @@ n=${ printf '%03d' "$i"; }                 # command substitution in the shell, 
 
 - `basename`, `dirname`, `expr` (for arithmetic and comparisons of integers), `seq` (for integers), `id -u`, `id -g` and
   `uname` run inside the shell, without starting a process, when they are the system's (in `/usr/bin` or `/bin`) and
-  given plain arguments; so does `$(basename "$f")`, without a subshell, when its words are only quotes and variables.
+  given plain arguments; so does `$(basename "$f")`, without a subshell, when its words are only quotes, variables
+  and other command substitutions (`$(basename "$(dirname "$f")")`).
   The result is the same as the utility's (anything unusual, such as an option, runs the utility itself), and `type
   basename` still names the file. `$(echo ...)`, `$(printf ...)`, `$(pwd)`, `$(command -v ...)` and `$(type ...)` also
-  run without a subshell under the same conditions.
+  run without a subshell under the same conditions, but without command substitutions in their words.
 - `[[ ... ]]` has `test`'s operators, `&&`, `||`, `!` and parentheses, patterns on the right of `==` and `!=`, `=~`
   for regular expressions (which sets `MATCH`, `match` and `BASH_REMATCH`) and `-v NAME` for a set variable.
 - Process substitution: `<(list)` is the path of a pipe (`/dev/fd/N`) that gives what the list writes, so a command

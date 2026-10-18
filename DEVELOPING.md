@@ -500,12 +500,18 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   earlier in `PATH` and `PATH=` see the file as before. `run_external` tries this first (the name is compared before
   anything else); not when stdout is a pipe or socket (one `fstat`), as a reader that went away should kill the
   utility with SIGPIPE, not the shell. `command_subst` also does `$(basename ...)` without a subshell
-  (`subst_utility`) when the list is that one command, without assignments or redirections, its words can't have
+  (`subst_in_place`) when the list is that one command, without assignments or redirections, its words can't have
   side effects or fail (`pure`: quotes, `~`, and parameters without subscripts or flags, plain or with `#`, `##`,
   `%`, `%%` or `${#x}`; not `$RANDOM`, which would move the shell's generator, nor `$LINENO`), and neither
   `set -x`, `set -u`, the `glob.fail` options nor a CHLD trap is on. Its lookup doesn't add to the command cache,
-  as the subshell's wouldn't. 2000 rounds of `$(basename "$f" .txt)` and `$(dirname "$f")` take 0.06 s, to
-  dash's 5.6 s. Test: `builtins/basename_dirname.sh`, unit tests in `exec/utility.rs`.
+  as the subshell's wouldn't. A utility's words may also hold a `$(...)`, as in `$(basename "$(dirname "$f")")`
+  (`bench/scripts/build.sh`): it can't change the shell either, since it runs in place itself or in a subshell of its
+  own, but it must run only once. So whether `PATH` finds the system's utility is decided before the words are
+  expanded, and if the arguments then need the utility (an option, a result left to the implementation),
+  `subst_in_place` returns the command with its expanded words single-quoted (`Subst::Expanded`), which the subshell
+  runs instead. Not for the built-ins below, nor `${ ...; }`, which runs in the shell. 2000 rounds of
+  `$(basename "$f" .txt)` and `$(dirname "$f")` take 0.06 s, to dash's 5.6 s. Test: `builtins/basename_dirname.sh`,
+  unit tests in `exec/utility.rs`.
 - `expr` (third in `$(...)` in the system's scripts, as in `i=$(expr $i + 1)`) runs in the shell the same way, for
   integers only (`expr` in `utility.rs`): operands `-?[0-9]+` in `i64`, parentheses, `* / %`, `+ -` and the six
   comparisons, by POSIX's precedence and all left associative (`1 < 2 < 3` is 1, as in coreutils, uutils and

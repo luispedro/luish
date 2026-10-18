@@ -12,6 +12,11 @@
 //! `type`), with no redirection but `2>/dev/null`, and nothing in the words
 //! can have a side effect or fail
 //! ([`in_place_call`]): the result is then what the subshell would print.
+//! A utility's words may also hold a `$(...)` (`$(basename "$(dirname
+//! "$f")")`), which can't change the shell either, as it runs in place
+//! itself or in a subshell of its own. Such words are expanded only once:
+//! if the utility has to run after all, the subshell gets them expanded
+//! ([`Subst::Expanded`]).
 
 use super::simple::CommandKind;
 use crate::ast::*;
@@ -304,8 +309,9 @@ const PRINTERS: &[&[u8]] = &[b"echo", b"printf", b"pwd", b"command", b"type"];
 /// The command of a `$(...)` that can run without a subshell: a lone
 /// utility or built-in that only prints, with no assignments and no
 /// redirection but `2>/dev/null` (which a utility run in the shell doesn't
-/// need), whose words expand without side effects.
-fn in_place_call(list: &List) -> Option<(&SimpleCommand, &[u8])> {
+/// need), whose words expand without side effects but for a utility's
+/// `$(...)`. The `bool` says whether there is one.
+fn in_place_call(list: &List) -> Option<(&SimpleCommand, &[u8], bool)> {
     let [cc] = &list[..] else { return None };
     let pipeline = &cc.list.first;
     if cc.async_ || !cc.list.rest.is_empty() || pipeline.negated {
@@ -318,9 +324,37 @@ fn in_place_call(list: &List) -> Option<(&SimpleCommand, &[u8])> {
     let [WordPart::Literal(name)] = &first.0[..] else {
         return None;
     };
-    let known = is_utility(name) || PRINTERS.contains(&&name[..]);
-    let simple = known && sc.assigns.is_empty() && sc.redirs.iter().all(quiet);
-    (simple && rest.iter().all(|w| pure(&w.0))).then_some((sc, name))
+    let utility = is_utility(name);
+    let known = utility || PRINTERS.contains(&&name[..]);
+    if !known || !sc.assigns.is_empty() || !sc.redirs.iter().all(quiet) {
+        return None;
+    }
+    let mut nested = false;
+    let mut substs = utility.then_some(&mut nested);
+    let pure = rest.iter().all(|w| pure(&w.0, &mut substs));
+    pure.then_some((sc, name, nested))
+}
+
+/// The list of `$(sc)` with `argv`, its words expanded, quoted instead.
+fn expanded(sc: &SimpleCommand, argv: Vec<Vec<u8>>) -> List {
+    let words = argv
+        .into_iter()
+        .map(|a| Word(Parts::One(WordPart::SingleQuoted(a))))
+        .collect();
+    let sc = SimpleCommand { words, ..sc.clone() };
+    let pipeline = Pipeline {
+        negated: false,
+        cmds: vec![Command::Simple(sc)],
+    };
+    let list = AndOrList {
+        first: pipeline,
+        rest: Vec::new(),
+    };
+    vec![CompleteCommand {
+        list,
+        async_: false,
+        disown: false,
+    }]
 }
 
 /// Whether a redirection is `2>/dev/null`, which can't fail or have side
@@ -344,10 +378,18 @@ fn describes(argv: &[Vec<u8>]) -> bool {
 /// Whether expanding `parts` has no side effects, and can't fail unless
 /// `set -u` or a `glob.fail` option is on. `$RANDOM` changes the generator,
 /// and `$LINENO` is the line of the substitution's command in a subshell.
-fn pure(parts: &[WordPart]) -> bool {
+/// With `substs`, a `$(...)` is allowed too, and noted there.
+fn pure(parts: &[WordPart], substs: &mut Option<&mut bool>) -> bool {
     parts.iter().all(|p| match p {
         WordPart::Literal(_) | WordPart::SingleQuoted(_) | WordPart::Escaped(_) | WordPart::Tilde(_) => true,
-        WordPart::DoubleQuoted(inner) => pure(inner),
+        WordPart::DoubleQuoted(inner) => pure(inner, substs),
+        WordPart::CmdSubst(_) => match substs {
+            Some(seen) => {
+                **seen = true;
+                true
+            }
+            None => false,
+        },
         WordPart::Param(pe) => {
             let name = match &pe.name {
                 ParamName::Var(n) => n != b"RANDOM" && n != b"LINENO",
@@ -359,7 +401,7 @@ fn pure(parts: &[WordPart]) -> bool {
                 ParamOp::RemoveSmallestSuffix(w)
                 | ParamOp::RemoveLargestSuffix(w)
                 | ParamOp::RemoveSmallestPrefix(w)
-                | ParamOp::RemoveLargestPrefix(w) => pure(&w.0),
+                | ParamOp::RemoveLargestPrefix(w) => pure(&w.0, substs),
                 _ => false,
             };
             name && op && pe.index.is_none() && pe.flags.is_none()
@@ -368,24 +410,43 @@ fn pure(parts: &[WordPart]) -> bool {
     })
 }
 
+/// What [`Shell::subst_in_place`] made of a `$(...)`.
+pub enum Subst {
+    /// It ran in place: its output.
+    Output(Vec<u8>),
+    /// It needs a subshell.
+    Subshell,
+    /// It needs a subshell, which is to run this list instead: the command
+    /// with its words expanded, as they were already.
+    Expanded(List),
+}
+
 impl Shell {
-    /// What `argv` prints and its status, if it is a utility run in the
-    /// shell (see the module's documentation). `remember` records the
+    /// Whether `PATH` finds the system's `name`, a utility that can run in
+    /// the shell (see the module's documentation). `remember` records the
     /// command in the cache (`hash`), as running it would; a subshell's
     /// lookup doesn't.
-    fn utility_output(&mut self, argv: &[Vec<u8>], remember: bool) -> Option<(Vec<u8>, i32)> {
-        let name = &argv[0];
-        let out = output(argv)?;
+    fn system_utility(&mut self, name: &[u8], remember: bool) -> bool {
         let path = match self.hash.get(name) {
             Some((p, _)) => p.clone(),
-            None if remember => self.find_in_path(name)?.0,
-            None => match crate::path::search(&self.get_var(b"PATH").unwrap_or_default(), name)? {
-                (p, _, true) => p,
-                _ => return None,
+            None if remember => match self.find_in_path(name) {
+                Some((p, _)) => p,
+                None => return false,
+            },
+            None => match crate::path::search(&self.get_var(b"PATH").unwrap_or_default(), name) {
+                Some((p, _, true)) => p,
+                _ => return false,
             },
         };
-        let dir = path.strip_suffix(&name[..])?;
-        (dir == b"/usr/bin/" || dir == b"/bin/").then_some(out)
+        let dir = path.strip_suffix(name);
+        dir.is_some_and(|d| d == b"/usr/bin/" || d == b"/bin/")
+    }
+
+    /// What `argv` prints and its status, if it is a utility run in the
+    /// shell (see [`Shell::system_utility`]).
+    fn utility_output(&mut self, argv: &[Vec<u8>], remember: bool) -> Option<(Vec<u8>, i32)> {
+        let out = output(argv)?;
+        self.system_utility(&argv[0], remember).then_some(out)
     }
 
     /// Runs `argv`, an external command, in the shell if it is a utility
@@ -411,9 +472,9 @@ impl Shell {
     /// The value of `$(list)` if it can run without a subshell (see
     /// [`in_place_call`]).
     #[inline(never)]
-    pub fn subst_in_place(&mut self, list: &List) -> Result<Option<Vec<u8>>, Flow> {
-        let Some((sc, name)) = in_place_call(list) else {
-            return Ok(None);
+    pub fn subst_in_place(&mut self, list: &List) -> Result<Subst, Flow> {
+        let Some((sc, name, nested)) = in_place_call(list) else {
+            return Ok(Subst::Subshell);
         };
         let opts = [Opt::Xtrace, Opt::Nounset, Opt::GlobFail, Opt::GlobFailAll];
         // A subshell's exit runs a CHLD trap.
@@ -421,30 +482,36 @@ impl Shell {
             .as_ref()
             .is_some_and(|a| !a.is_empty());
         if chld || opts.into_iter().any(|o| self.opt(o)) {
-            return Ok(None);
+            return Ok(Subst::Subshell);
         }
         let kind = self.lookup_command(name, true);
         let utility = match kind {
             CommandKind::External if is_utility(name) => true,
             CommandKind::Builtin(_) if !is_utility(name) => false,
-            _ => return Ok(None),
+            _ => return Ok(Subst::Subshell),
         };
+        // Words with a `$(...)` are expanded once, so whether the utility
+        // is the system's is decided first.
+        if nested && !self.system_utility(name, false) {
+            return Ok(Subst::Subshell);
+        }
         let argv = self.expand_command_words(&sc.words)?;
         let (mut out, status) = match kind {
             CommandKind::Builtin(f) if !utility => {
                 if argv[0] == b"command" && !describes(&argv) {
-                    return Ok(None);
+                    return Ok(Subst::Subshell);
                 }
                 let Ok(saved) = self.redirect(&sc.redirs, true) else {
-                    return Ok(None);
+                    return Ok(Subst::Subshell);
                 };
                 let r = self.captured_builtin(f, &argv, sc.lineno);
                 self.restore_redirs(saved);
                 r
             }
-            _ => match self.utility_output(&argv, false) {
-                Some(r) => r,
-                None => return Ok(None),
+            _ => match output(&argv) {
+                Some(r) if nested || self.system_utility(name, false) => r,
+                _ if nested => return Ok(Subst::Expanded(expanded(sc, argv))),
+                _ => return Ok(Subst::Subshell),
             },
         };
         out.retain(|&b| b != 0);
@@ -452,7 +519,7 @@ impl Shell {
             out.pop();
         }
         self.subst_status = Some(status);
-        Ok(Some(out))
+        Ok(Subst::Output(out))
     }
 
     /// Runs a built-in that only prints, as a subshell would: returns its

@@ -11,6 +11,7 @@ pub mod qual;
 pub mod split;
 
 use crate::ast::*;
+use crate::exec::Subst;
 use crate::options::Opt;
 use crate::shell::{Flow, Shell};
 use crate::sys;
@@ -1170,9 +1171,15 @@ impl Shell {
     /// Runs `$(...)` in a subshell and returns its output without trailing
     /// newlines.
     pub fn command_subst(&mut self, list: &List) -> EResult<Vec<u8>> {
-        if let Some(out) = self.subst_in_place(list)? {
-            return Ok(out);
-        }
+        let expanded;
+        let list = match self.subst_in_place(list)? {
+            Subst::Output(out) => return Ok(out),
+            Subst::Subshell => list,
+            Subst::Expanded(l) => {
+                expanded = l;
+                &expanded
+            }
+        };
         let (r, w) = match sys::pipe() {
             Ok(p) => p,
             Err(e) => {
