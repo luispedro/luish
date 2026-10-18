@@ -1,7 +1,8 @@
-//! `basename` and `dirname` run in the shell, without a process, when they
-//! are the system's (`PATH` finds them in `/usr/bin` or `/bin`) and the
-//! arguments are ones whose result POSIX specifies. Anything else (options,
-//! the cases POSIX leaves to the implementation, a `basename` of one's own
+//! `basename`, `dirname` and `expr` run in the shell, without a process,
+//! when they are the system's (`PATH` finds them in `/usr/bin` or `/bin`)
+//! and the arguments are ones whose result POSIX specifies (for `expr`,
+//! arithmetic and comparisons of integers). Anything else (options, the
+//! cases POSIX leaves to the implementation, a `basename` of one's own
 //! earlier in `PATH`) runs the utility itself, so nothing changes but the
 //! time taken: `type` and `command -v` still show the file.
 //!
@@ -19,25 +20,30 @@ use crate::shell::{Flow, Shell};
 use crate::sys;
 
 fn is_utility(name: &[u8]) -> bool {
-    name == b"basename" || name == b"dirname"
+    name == b"basename" || name == b"dirname" || name == b"expr"
 }
 
-/// What `argv` prints (without the newline), or `None` if the utility
-/// has to decide: an option (GNU's `getopt` takes one after an operand
-/// too), a wrong number of operands, or a result up to the implementation.
-fn output(argv: &[Vec<u8>]) -> Option<Vec<u8>> {
+/// What `argv` prints (without the newline) and its status, or `None` if
+/// the utility has to decide: an option (GNU's `getopt` takes one after an
+/// operand too), a wrong number of operands, or a result up to the
+/// implementation.
+fn output(argv: &[Vec<u8>]) -> Option<(Vec<u8>, i32)> {
     let (name, mut args) = argv.split_first()?;
+    if name == b"expr" {
+        return expr(args);
+    }
     if args.first().is_some_and(|a| a == b"--") {
         args = &args[1..];
     } else if args.iter().any(|a| a.starts_with(b"-")) {
         return None;
     }
-    match (&name[..], args) {
+    let out = match (&name[..], args) {
         (b"basename", [s]) => basename(s, b""),
         (b"basename", [s, suffix]) => basename(s, suffix),
         (b"dirname", [s]) => dirname(s),
         _ => None,
-    }
+    };
+    out.map(|o| (o, 0))
 }
 
 fn trim_slashes(s: &[u8]) -> &[u8] {
@@ -75,6 +81,100 @@ fn dirname(s: &[u8]) -> Option<Vec<u8>> {
     };
     let dir = trim_slashes(&s[..i]);
     Some(if dir.is_empty() { b"/" } else { dir }.to_vec())
+}
+
+/// `expr` with integers only: `-?[0-9]+` operands, parentheses, `*`, `/`,
+/// `%`, `+`, `-` and the comparisons, by POSIX's precedence (all left
+/// associative). Anything else is the utility's: strings (compared by
+/// collation), `:`, `|` and `&` (whose values are strings), GNU's
+/// keywords, `+5` (an integer to some), a first argument starting with `-`
+/// (busybox rejects `--`), overflow (coreutils uses big numbers), division
+/// by zero, and a lone operand, which is printed as it is (`007`).
+fn expr(args: &[Vec<u8>]) -> Option<(Vec<u8>, i32)> {
+    if args.first()?.starts_with(b"-") {
+        return None;
+    }
+    let mut e = Expr {
+        args,
+        pos: 0,
+        applied: false,
+    };
+    let v = e.compare()?;
+    (e.pos == args.len() && e.applied).then(|| (v.to_string().into_bytes(), (v == 0) as i32))
+}
+
+struct Expr<'a> {
+    args: &'a [Vec<u8>],
+    pos: usize,
+    /// Whether an operator was applied, so the value is a number.
+    applied: bool,
+}
+
+impl Expr<'_> {
+    /// Takes the next argument if it is one of `ops`.
+    fn op(&mut self, ops: &[&'static [u8]]) -> Option<&'static [u8]> {
+        let a = self.args.get(self.pos)?;
+        let op = *ops.iter().find(|o| **o == &a[..])?;
+        self.pos += 1;
+        self.applied = true;
+        Some(op)
+    }
+
+    fn compare(&mut self) -> Option<i64> {
+        let mut v = self.sum()?;
+        while let Some(op) = self.op(&[b"=", b"!=", b"<", b"<=", b">", b">="]) {
+            let w = self.sum()?;
+            v = i64::from(match op {
+                b"=" => v == w,
+                b"!=" => v != w,
+                b"<" => v < w,
+                b"<=" => v <= w,
+                b">" => v > w,
+                _ => v >= w,
+            });
+        }
+        Some(v)
+    }
+
+    fn sum(&mut self) -> Option<i64> {
+        let mut v = self.product()?;
+        while let Some(op) = self.op(&[b"+", b"-"]) {
+            let w = self.product()?;
+            v = if op == b"+" { v.checked_add(w) } else { v.checked_sub(w) }?;
+        }
+        Some(v)
+    }
+
+    fn product(&mut self) -> Option<i64> {
+        let mut v = self.primary()?;
+        while let Some(op) = self.op(&[b"*", b"/", b"%"]) {
+            let w = self.primary()?;
+            v = match op {
+                b"*" => v.checked_mul(w),
+                b"/" => v.checked_div(w),
+                _ => v.checked_rem(w),
+            }?;
+        }
+        Some(v)
+    }
+
+    fn primary(&mut self) -> Option<i64> {
+        let a = self.args.get(self.pos)?;
+        self.pos += 1;
+        if a == b"(" {
+            let v = self.compare()?;
+            if self.args.get(self.pos)? != b")" {
+                return None;
+            }
+            self.pos += 1;
+            return Some(v);
+        }
+        let digits = a.strip_prefix(b"-").unwrap_or(a);
+        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        std::str::from_utf8(a).ok()?.parse().ok()
+    }
 }
 
 /// The built-ins that `$(...)` can run without a subshell, as they change
@@ -150,10 +250,11 @@ fn pure(parts: &[WordPart]) -> bool {
 }
 
 impl Shell {
-    /// What `argv` prints if it is `basename` or `dirname` run in the shell
-    /// (see the module's documentation). `remember` records the command in
-    /// the cache (`hash`), as running it would; a subshell's lookup doesn't.
-    fn utility_output(&mut self, argv: &[Vec<u8>], remember: bool) -> Option<Vec<u8>> {
+    /// What `argv` prints and its status, if it is a utility run in the
+    /// shell (see the module's documentation). `remember` records the
+    /// command in the cache (`hash`), as running it would; a subshell's
+    /// lookup doesn't.
+    fn utility_output(&mut self, argv: &[Vec<u8>], remember: bool) -> Option<(Vec<u8>, i32)> {
         let name = &argv[0];
         let out = output(argv)?;
         let path = match self.hash.get(name) {
@@ -168,8 +269,8 @@ impl Shell {
         (dir == b"/usr/bin/" || dir == b"/bin/").then_some(out)
     }
 
-    /// Runs `argv`, an external command, in the shell if it is `basename`
-    /// or `dirname` (see the module's documentation), and returns its
+    /// Runs `argv`, an external command, in the shell if it is a utility
+    /// that can run there (see the module's documentation), and returns its
     /// status. Not when standard output is a pipe: if nothing reads it, it
     /// is the utility that SIGPIPE should kill, not the shell.
     pub fn run_utility(&mut self, argv: &[Vec<u8>]) -> Option<i32> {
@@ -180,10 +281,10 @@ impl Shell {
         if kind == libc::S_IFIFO || kind == libc::S_IFSOCK {
             return None;
         }
-        let mut out = self.utility_output(argv, true)?;
+        let (mut out, status) = self.utility_output(argv, true)?;
         out.push(b'\n');
         if sys::write_all(1, &out) {
-            return Some(0);
+            return Some(status);
         }
         self.berr(&argv[0], "write error");
         Some(1)
@@ -224,7 +325,7 @@ impl Shell {
                 r
             }
             _ => match self.utility_output(&argv, false) {
-                Some(out) => (out, 0),
+                Some(r) => r,
                 None => return Ok(None),
             },
         };
@@ -266,7 +367,7 @@ mod tests {
 
     fn run(args: &[&str]) -> Option<String> {
         let argv: Vec<Vec<u8>> = args.iter().map(|a| a.as_bytes().to_vec()).collect();
-        output(&argv).map(|o| String::from_utf8(o).unwrap())
+        output(&argv).map(|(o, _)| String::from_utf8(o).unwrap())
     }
 
     #[test]
@@ -328,6 +429,52 @@ mod tests {
             &["dirname", "a", "b"],
         ] {
             assert_eq!(run(args), None, "{args:?}");
+        }
+    }
+
+    #[test]
+    fn expr() {
+        let e = |args: &str| {
+            let argv: Vec<Vec<u8>> = std::iter::once("expr")
+                .chain(args.split(' '))
+                .map(|a| a.into())
+                .collect();
+            output(&argv).map(|(o, status)| (String::from_utf8(o).unwrap(), status))
+        };
+        for (args, want, status) in [
+            ("1 + 2 * 3", "7", 0),
+            ("( 1 + 2 ) * 3", "9", 0),
+            ("7 - 7", "0", 1),
+            ("7 / -2", "-3", 0),
+            ("0 + -7 % 2", "-1", 0),
+            ("1 + -1", "0", 1),
+            ("007 + 0", "7", 0),
+            ("2 < 10", "1", 0),
+            ("1 < 2 < 3", "1", 0),
+            ("10 = 010", "1", 0),
+            ("1 + 1 != 2", "0", 1),
+        ] {
+            assert_eq!(e(args), Some((want.to_string(), status)), "{args}");
+        }
+        for args in [
+            "007",
+            "( 1 )",
+            "-1 + 1",
+            "-- 1 + 1",
+            "+1 + 1",
+            "a = a",
+            "1 : 1",
+            "1 | 2",
+            "1 & 2",
+            "1 / 0",
+            "1 % 0",
+            "9223372036854775807 + 1",
+            "( 1 + 2",
+            "1 + 2 )",
+            "1 +",
+            "1 + 2 3",
+        ] {
+            assert_eq!(e(args), None, "{args}");
         }
     }
 }

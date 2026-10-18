@@ -506,6 +506,14 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `set -x`, `set -u`, the `glob.fail` options nor a CHLD trap is on. Its lookup doesn't add to the command cache,
   as the subshell's wouldn't. 2000 rounds of `$(basename "$f" .txt)` and `$(dirname "$f")` take 0.06 s, to
   dash's 5.6 s. Test: `builtins/basename_dirname.sh`, unit tests in `exec/utility.rs`.
+- `expr` (third in `$(...)` in the system's scripts, as in `i=$(expr $i + 1)`) runs in the shell the same way, for
+  integers only (`expr` in `utility.rs`): operands `-?[0-9]+` in `i64`, parentheses, `* / %`, `+ -` and the six
+  comparisons, by POSIX's precedence and all left associative (`1 < 2 < 3` is 1, as in coreutils, uutils and
+  busybox). The status is 1 for a result of 0, so `set -e` sees it. The utility runs for everything else: strings
+  (compared by collation), `:`, `|` and `&` (whose values are strings, so `expr 007 \| 1` prints `007`), GNU's
+  keywords, `+5` (an integer to uutils and busybox, not to POSIX), a first argument starting with `-` (busybox
+  rejects `--`, which coreutils skips), overflow (coreutils and uutils use big numbers, busybox wraps), division by
+  zero, and an expression with no operator (printed as it is: `expr 007`). Test: `builtins/expr.sh`.
 - `$(...)` of a built-in that only prints runs in the shell too (`subst_in_place`, with the same conditions on the
   words and options): `echo`, `printf`, `pwd`, `command -v`/`-V` (with `-p` or not, but not `command` running a
   command) and `type`, when the name finds the built-in (not a function). Its output goes to `Shell::captured`,
