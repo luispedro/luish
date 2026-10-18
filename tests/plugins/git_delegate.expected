@@ -1,4 +1,5 @@
 --- git z
+zg 	alias for 'zz get'
 zz 
 status 0
 --- git zz 

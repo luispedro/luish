@@ -33,11 +33,12 @@ fn git_lines(g, args) {
 }
 
 // git's commands, but not its plumbing, with their descriptions, as
-// `git help -a` lists them, and the aliases.
+// `git help -a` lists them, and the aliases. The aliases come from `git
+// config`, as only some versions of git list the repository's own ones.
 fn commands(g) {
     let out = [];
     let section = "";
-    for line in git_lines(["env", "LC_ALL=C"] + g, ["help", "-a"]) {
+    for line in git_lines(["env", "LC_ALL=C"] + g, ["help", "-a", "--no-aliases"]) {
         if !line.starts_with("   ") {
             if line != "" {
                 section = line;
@@ -55,10 +56,13 @@ fn commands(g) {
         }
         let desc = s.sub_string(sp);
         desc.trim();
-        if section == "Command aliases" {
-            desc = `alias for '${desc}'`;
-        }
         out.push(#{value: s.sub_string(0, sp), desc: desc});
+    }
+    for line in git_lines(g, ["config", "--get-regexp", "^alias\\."]) {
+        let sp = line.index_of(' ');
+        if sp > 6 {
+            out.push(#{value: line.sub_string(6, sp - 6), desc: `alias for '${line.sub_string(sp + 1)}'`});
+        }
     }
     out
 }

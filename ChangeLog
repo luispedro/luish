@@ -1,4 +1,6 @@
 Unreleased
+    * Tab after git offers the repository's own aliases with every git
+      version
     * The recommended configuration (first run, install script) has
       luish-extra, glob.star, expand.braces, cd.auto, pushd.auto,
       highlight.paths and more history options
