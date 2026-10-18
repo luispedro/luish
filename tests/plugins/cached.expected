@@ -1,0 +1,37 @@
+plain 1
+plain 1
+other 2
+plain 1
+b 3
+b 3
+-- files
+file 4
+file 4
+file 5
+file 5
+files 6
+files 6
+files 7
+file 8
+file 8
+-- 0 is never kept
+zero 9
+zero 10
+-- named functions and modules
+named 11
+named 11
+2
+2
+-- a copy
+3
+3
+-- an error is not kept
+caught boom 13
+caught boom 14
+-- loading a plugin again drops its values
+plain 15
+b 3
+-- errors
+cached: the time to keep the value is negative: -1
+cached: the array of files must hold strings
+runs: 15

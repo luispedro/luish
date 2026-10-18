@@ -21,6 +21,8 @@ mod rhai;
 #[cfg(feature = "plugins")]
 mod ui;
 #[cfg(feature = "plugins")]
+mod value_cache;
+#[cfg(feature = "plugins")]
 mod vcs;
 
 #[cfg(feature = "plugins")]

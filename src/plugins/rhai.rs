@@ -14,10 +14,13 @@ use std::os::unix::ffi::OsStrExt;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, Position, Scope, Shared};
+use rhai::{
+    AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, NativeCallContext, Position, Scope, Shared,
+};
 
 use super::bytes::{to_bytes, to_str};
 use super::capture_cache::{self, CaptureCache};
+use super::value_cache::{self, ValueCache};
 use super::{HookArg, HookKind, Loading, OptValue, PluginOptions};
 use crate::expand::{pattern::Pattern, split::XChar};
 use crate::interactive::{Candidate, Completion, DEFAULT_COMPLETER, Suffix};
@@ -96,6 +99,8 @@ pub struct Host {
     modules: RefCell<HashMap<Vec<u8>, Shared<Module>>>,
     /// What `sh::capture_cached` ran.
     captures: RefCell<CaptureCache>,
+    /// What `sh::cached` computed.
+    values: RefCell<ValueCache>,
 }
 
 thread_local! {
@@ -478,6 +483,44 @@ fn capture_cached(ttl: i64, argv: rhai::Array, stderr: &str) -> RhaiResult<rhai:
     })
 }
 
+/// `sh::cached(key, ttl, files, f)`: what `f()` returned for `key` (in the
+/// running plugin) less than `ttl` seconds ago, if the files `files` are as
+/// they were then, or else what it returns now (`value_cache.rs`).
+fn cached(ctx: NativeCallContext, key: &str, ttl: i64, files: rhai::Array, f: FnPtr) -> RhaiResult<Dynamic> {
+    if ttl < 0 {
+        return error(format!("cached: the time to keep the value is negative: {ttl}"));
+    }
+    let mut paths = Vec::with_capacity(files.len());
+    for file in files {
+        match file.into_immutable_string() {
+            Ok(s) => paths.push(to_shell(&s)?),
+            Err(_) => return error("cached: the array of files must hold strings"),
+        }
+    }
+    if ttl == 0 {
+        return f.call_within_context(&ctx, ());
+    }
+    let host = with_shell(|sh| host(sh))?;
+    let plugin = CURRENT.get();
+    let now = Instant::now();
+    if let Some(v) = host.values.borrow().get(plugin, key, &paths, now, value_cache::stamp) {
+        return Ok(v);
+    }
+    // (Before `f` runs, so that a change while it does is seen next time.)
+    let files = paths
+        .into_iter()
+        .map(|p| {
+            let s = value_cache::stamp(&p);
+            (p, s)
+        })
+        .collect();
+    let v: Dynamic = f.call_within_context(&ctx, ())?;
+    host.values
+        .borrow_mut()
+        .insert(plugin, key.into(), ttl as u64, files, v.clone(), now);
+    Ok(v)
+}
+
 /// `#{status, out}`, and `err` if there is one, with NUL bytes and trailing
 /// newlines removed, as `$(...)` removes them.
 fn captured(status: i32, out: Vec<u8>, err: Option<Vec<u8>>) -> rhai::Map {
@@ -646,6 +689,10 @@ fn sh_module() -> Module {
         capture_cached(ttl, argv, "discard")
     });
     m.set_native_fn("capture_cached", capture_cached);
+    m.set_native_fn("cached", |ctx: NativeCallContext, key: &str, ttl: i64, f: FnPtr| {
+        cached(ctx, key, ttl, rhai::Array::new(), f)
+    });
+    m.set_native_fn("cached", cached);
     m.set_native_fn("which", |name: &str| {
         let name = to_shell(name)?;
         with_shell(|sh| Ok(sh.which(&name).map_or(Dynamic::UNIT, |p| to_str(&p).into())))
@@ -900,6 +947,7 @@ impl Host {
             running: RefCell::new(Vec::new()),
             modules: RefCell::new(HashMap::new()),
             captures: RefCell::default(),
+            values: RefCell::default(),
         }
     }
 
@@ -1189,6 +1237,7 @@ impl Host {
         self.hooks.borrow_mut().retain(|h| h.1.plugin != id);
         self.completers.borrow_mut().retain(|c| c.1.plugin != id);
         self.builtins.borrow_mut().retain(|b| b.1.plugin != id);
+        self.values.borrow_mut().remove_plugin(id);
     }
 
     /// Unloads a plugin by name. Returns false if it isn't loaded.

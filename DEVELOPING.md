@@ -84,7 +84,8 @@ src/
 │                       # escape.rs (ssh's ~ escapes), chaos.rs (a bad network, for testing)
 └── plugins/            # mod.rs (the `plugin` built-in), package.rs (config.toml's [plugins], plugin.toml,
                         # plugins.lock), fetch.rs (git), add.rs (`plugin add`), ui.rs (`plugin`'s output), rhai.rs,
-                        # capture_cache.rs (sh::capture_cached), fs.rs, vcs.rs, bytes.rs
+                        # capture_cache.rs (sh::capture_cached), value_cache.rs (sh::cached), fs.rs, vcs.rs,
+                        # bytes.rs
 tests/
 ├── cases/              # differential cases (*.sh, with .expected/.status/.stdin where needed)
 ├── plugins/            # plugin cases (*.sh with .expected, .stderr)
@@ -1197,6 +1198,16 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   name is a word of the command line that isn't an option or an assignment (`invalidate`): too many may go, which only
   costs a run. std's `lib::help_of` (`-h` scraping) keeps its output 300 s. Tests: the unit tests in
   `capture_cache.rs`, `tests/plugins/capture_cached.sh`, `capture_cached_invalidation` in `tests/interactive.rs`.
+- **`sh::cached`** keeps what a closure returned (`plugins/value_cache.rs`, on the `Host`, empty until used), by
+  plugin (`CURRENT`, so a module function caches for the plugin that calls it) and key. A hit needs the entry younger
+  than `ttl` (not clamped: the files are what usually invalidate it) and the same list of files, each with the same
+  device, inode, size and mtime (in ns) as when the value was computed, or still missing; the stamps are taken before
+  `f` runs, so a change while it runs is seen at the next call. A hit returns a clone, which copies arrays and maps
+  (strings are shared), so that changing the result doesn't change the entry: about 1 ms for 3000 maps of three
+  fields (release build), against 5.6 ms to build them in Rhai. Shared values would avoid it if it ever matters. `f` is called with `FnPtr::call_within_context`, with no borrow of the cache held, so it can
+  call `sh::cached` again; an error isn't kept. Bounded as `capture_cached` (32 MiB, 4096 entries), with sizes
+  estimated by walking the value (text, plus 16 bytes per element, to a depth of 64). A plugin's entries go when it is
+  unloaded or loaded again (`Host::remove`). Tests: the unit tests in `value_cache.rs`, `tests/plugins/cached.sh`.
 - **`sh::which`** is `Shell::which` (`path.rs`): the `PATH` search that running a command does (`find_in_path`, so
   the `hash` table and an empty entry meaning `.` apply), without its fallback to a file that can't be executed, and,
   for a remembered command that is gone, the search again (as `with_command_path` tries the later directories); a name
