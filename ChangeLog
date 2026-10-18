@@ -1,4 +1,6 @@
 Unreleased
+    * $(echo ...), $(printf ...), $(pwd), $(command -v ...) and
+      $(type ...) run without a subshell
     * basename and dirname, also in $(...), run without starting a process
     * Tab after git offers the repository's own aliases with every git
       version

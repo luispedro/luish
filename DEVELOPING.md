@@ -506,6 +506,15 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `set -x`, `set -u`, the `glob.fail` options nor a CHLD trap is on. Its lookup doesn't add to the command cache,
   as the subshell's wouldn't. 2000 rounds of `$(basename "$f" .txt)` and `$(dirname "$f")` take 0.06 s, to
   dash's 5.6 s. Test: `builtins/basename_dirname.sh`, unit tests in `exec/utility.rs`.
+- `$(...)` of a built-in that only prints runs in the shell too (`subst_in_place`, with the same conditions on the
+  words and options): `echo`, `printf`, `pwd`, `command -v`/`-V` (with `-p` or not, but not `command` running a
+  command) and `type`, when the name finds the built-in (not a function). Its output goes to `Shell::captured`,
+  which `Shell::out` appends to (these built-ins write only through it), so there are no system calls at all;
+  NUL bytes and trailing newlines are dropped as for `$(...)`, the status is the substitution's, and `LINENO` is
+  the command's while it runs, for error messages. `command -v` and `type` add what they find in `PATH` to the
+  cache, which a subshell would lose, so the names that weren't in it are removed after. One redirection is
+  allowed, `2>/dev/null` (a literal word), for `$(command -v x 2>/dev/null)`; it is made and undone as for any
+  built-in. Test: `expand/subst_in_place.sh`.
 
 ### Jobs (`jobs.rs`, `builtins/jobs.rs`)
 

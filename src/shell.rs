@@ -112,6 +112,9 @@ pub struct Shell {
     /// Position inside a group of options for `getopts`.
     /// Writing a built-in's output failed (checked after it returns).
     pub out_failed: std::cell::Cell<bool>,
+    /// Where a built-in's output goes instead of stdout while `$(...)`
+    /// runs it without a subshell (`exec/utility.rs`).
+    pub captured: std::cell::RefCell<Option<Vec<u8>>>,
     /// `PS4` is being expanded for `set -x` (dash's `inps4`).
     pub in_ps4: bool,
     /// The logical current directory (dash's `curdir`), kept by `cd` and
@@ -231,6 +234,7 @@ impl Shell {
             styles: Default::default(),
             in_ps4: false,
             out_failed: std::cell::Cell::new(false),
+            captured: std::cell::RefCell::new(None),
             in_exit_trap: false,
             sourced_files: None,
             plugins: None,

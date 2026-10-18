@@ -171,10 +171,13 @@ impl Shell {
         })
     }
 
-    /// Writes built-in output to stdout.
     /// Writes built-in output to stdout. A failure is reported after the
     /// built-in returns (see [`Shell::call_builtin`]).
     pub fn out(&self, s: &[u8]) -> bool {
+        if let Some(buf) = self.captured.borrow_mut().as_mut() {
+            buf.extend_from_slice(s);
+            return true;
+        }
         let ok = sys::write_all(1, s);
         if !ok {
             self.out_failed.set(true);

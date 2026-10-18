@@ -5,12 +5,15 @@
 //! earlier in `PATH`) runs the utility itself, so nothing changes but the
 //! time taken: `type` and `command -v` still show the file.
 //!
-//! `$(basename ...)` and `$(dirname ...)` are also done without a subshell
-//! when nothing in the words can have a side effect or fail
-//! ([`utility_call`]): the result is then what the subshell would print.
+//! `$(...)` runs without a subshell when it is one of those utilities or a
+//! built-in that only prints (`echo`, `printf`, `pwd`, `command -v`,
+//! `type`), with no redirection but `2>/dev/null`, and nothing in the words
+//! can have a side effect or fail
+//! ([`in_place_call`]): the result is then what the subshell would print.
 
 use super::simple::CommandKind;
 use crate::ast::*;
+use crate::builtins::BuiltinFn;
 use crate::options::Opt;
 use crate::shell::{Flow, Shell};
 use crate::sys;
@@ -74,10 +77,16 @@ fn dirname(s: &[u8]) -> Option<Vec<u8>> {
     Some(if dir.is_empty() { b"/" } else { dir }.to_vec())
 }
 
+/// The built-ins that `$(...)` can run without a subshell, as they change
+/// nothing in the shell. `command` only with `-v` or `-V`, and it and `type`
+/// add to the command cache (`hash`), which is undone.
+const PRINTERS: &[&[u8]] = &[b"echo", b"printf", b"pwd", b"command", b"type"];
+
 /// The command of a `$(...)` that can run without a subshell: a lone
-/// `basename` or `dirname` with neither assignments nor redirections, whose
-/// words expand without side effects.
-fn utility_call(list: &List) -> Option<&SimpleCommand> {
+/// utility or built-in that only prints, with no assignments and no
+/// redirection but `2>/dev/null` (which a utility run in the shell doesn't
+/// need), whose words expand without side effects.
+fn in_place_call(list: &List) -> Option<(&SimpleCommand, &[u8])> {
     let [cc] = &list[..] else { return None };
     let pipeline = &cc.list.first;
     if cc.async_ || !cc.list.rest.is_empty() || pipeline.negated {
@@ -90,8 +99,27 @@ fn utility_call(list: &List) -> Option<&SimpleCommand> {
     let [WordPart::Literal(name)] = &first.0[..] else {
         return None;
     };
-    let simple = is_utility(name) && sc.assigns.is_empty() && sc.redirs.is_empty();
-    (simple && rest.iter().all(|w| pure(&w.0))).then_some(sc)
+    let known = is_utility(name) || PRINTERS.contains(&&name[..]);
+    let simple = known && sc.assigns.is_empty() && sc.redirs.iter().all(quiet);
+    (simple && rest.iter().all(|w| pure(&w.0))).then_some((sc, name))
+}
+
+/// Whether a redirection is `2>/dev/null`, which can't fail or have side
+/// effects (`$(command -v x 2>/dev/null)` is common).
+fn quiet(r: &Redirect) -> bool {
+    let RedirTarget::Word(Word(target)) = &r.target else {
+        return false;
+    };
+    let null = matches!(&target[..], [WordPart::Literal(t)] if t == b"/dev/null");
+    r.fd == Some(2) && r.kind == RedirKind::Out && null
+}
+
+/// Whether `command`'s arguments only describe commands: `-v` or `-V`,
+/// possibly with `-p`.
+fn describes(argv: &[Vec<u8>]) -> bool {
+    argv.get(1).is_some_and(|a| {
+        a.len() > 1 && a[0] == b'-' && a[1..].iter().all(|c| b"vVp".contains(c)) && a[1..].iter().any(|&c| c != b'p')
+    })
 }
 
 /// Whether expanding `parts` has no side effects, and can't fail unless
@@ -161,11 +189,11 @@ impl Shell {
         Some(1)
     }
 
-    /// The value of `$(list)` if it is `basename` or `dirname` that can run
-    /// without a subshell (see [`utility_call`]).
+    /// The value of `$(list)` if it can run without a subshell (see
+    /// [`in_place_call`]).
     #[inline(never)]
-    pub fn subst_utility(&mut self, list: &List) -> Result<Option<Vec<u8>>, Flow> {
-        let Some(sc) = utility_call(list) else {
+    pub fn subst_in_place(&mut self, list: &List) -> Result<Option<Vec<u8>>, Flow> {
+        let Some((sc, name)) = in_place_call(list) else {
             return Ok(None);
         };
         let opts = [Opt::Xtrace, Opt::Nounset, Opt::GlobFail, Opt::GlobFailAll];
@@ -176,21 +204,59 @@ impl Shell {
         if chld || opts.into_iter().any(|o| self.opt(o)) {
             return Ok(None);
         }
-        let WordPart::Literal(name) = &sc.words[0].0[0] else {
-            return Ok(None);
+        let kind = self.lookup_command(name, true);
+        let utility = match kind {
+            CommandKind::External if is_utility(name) => true,
+            CommandKind::Builtin(_) if !is_utility(name) => false,
+            _ => return Ok(None),
         };
-        if !matches!(self.lookup_command(name, true), CommandKind::External) {
-            return Ok(None);
-        }
         let argv = self.expand_command_words(&sc.words)?;
-        let Some(mut out) = self.utility_output(&argv, false) else {
-            return Ok(None);
+        let (mut out, status) = match kind {
+            CommandKind::Builtin(f) if !utility => {
+                if argv[0] == b"command" && !describes(&argv) {
+                    return Ok(None);
+                }
+                let Ok(saved) = self.redirect(&sc.redirs, true) else {
+                    return Ok(None);
+                };
+                let r = self.captured_builtin(f, &argv, sc.lineno);
+                self.restore_redirs(saved);
+                r
+            }
+            _ => match self.utility_output(&argv, false) {
+                Some(out) => (out, 0),
+                None => return Ok(None),
+            },
         };
+        out.retain(|&b| b != 0);
         while out.last() == Some(&b'\n') {
             out.pop();
         }
-        self.subst_status = Some(0);
+        self.subst_status = Some(status);
         Ok(Some(out))
+    }
+
+    /// Runs a built-in that only prints, as a subshell would: returns its
+    /// output and status, and forgets the commands it added to the cache.
+    fn captured_builtin(&mut self, f: BuiltinFn, argv: &[Vec<u8>], lineno: u32) -> (Vec<u8>, i32) {
+        let fresh: Vec<Vec<u8>> = (argv[1..].iter())
+            .filter(|a| !self.hash.contains_key(*a))
+            .cloned()
+            .collect();
+        let outer = self.captured.replace(Some(Vec::new()));
+        let line = std::mem::replace(&mut self.lineno, lineno);
+        let r = self.call_builtin(f, argv);
+        self.lineno = line;
+        let out = self.captured.replace(outer).unwrap_or_default();
+        for name in &fresh {
+            self.hash.remove(name);
+        }
+        let status = match r {
+            Ok(n) => n,
+            Err(Flow::Exit(n) | Flow::Error(n) | Flow::Return(n)) => n,
+            Err(Flow::Break(_) | Flow::Continue(_)) => self.last_status,
+        };
+        (out, status)
     }
 }
 
