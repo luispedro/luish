@@ -1827,10 +1827,10 @@ docs, `docs/performance.md`; update them there after rerunning `bench/run.sh` or
 follows is what they came from and what is left.
 
 Per external command, luish makes the same syscalls as dash. Startup makes 66 syscalls to dash's 49 (56 without
-the `plugins` feature). The startup gap (0.47 ms to dash's 0.30 ms per `-c true` in `docs/performance.md`) comes
+the `plugins` feature). The startup gap (0.51 ms to dash's 0.31 ms per `-c true` in `docs/performance.md`) comes
 from the larger binary (4.8 MB) and its libraries, `libm` (for Rhai's floats), `libpthread` and `libgcc_s`:
 `LD_DEBUG=statistics` puts about 100k cycles in the dynamic loader to dash's 50k (so only some 15 µs of the gap), and
-luish takes 252 page faults to dash's 189. A command substitution takes 1.2 times as long as in dash with the same
+luish takes 252 page faults to dash's 189. A command substitution takes 1.3 times as long as in dash with the same
 system calls; `clone` itself costs more for the larger process. The `plugins` feature is accepted while its startup
 cost stays under 1 ms (it is within the noise). A static build is faster to start, but see Releases for why there
 is none.
