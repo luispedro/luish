@@ -514,6 +514,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   keywords, `+5` (an integer to uutils and busybox, not to POSIX), a first argument starting with `-` (busybox
   rejects `--`, which coreutils skips), overflow (coreutils and uutils use big numbers, busybox wraps), division by
   zero, and an expression with no operator (printed as it is: `expr 007`). Test: `builtins/expr.sh`.
+- `seq` (not POSIX, but common in `for i in $(seq 1 $n)`) runs in the shell the same way, in its one-, two- and
+  three-operand forms, when coreutils, uutils and busybox agree (`seq` in `utility.rs`): integers `-?[0-9]+` below
+  10^15 in magnitude (busybox counts in doubles), a non-zero increment (zero is an error in coreutils and an endless
+  loop in busybox), not `-0` (which coreutils prints as `-0`), and at most 100,000 lines (`SEQ_MAX`: past that the
+  utility's own time dominates, and a loop in the shell couldn't be interrupted). The utility runs for options (`--`
+  included), `+1`, fractions and exponents. The utilities' `output` is all they print, so `seq 5 1` prints
+  nothing. Test: `builtins/seq.sh`.
 - `$(...)` of a built-in that only prints runs in the shell too (`subst_in_place`, with the same conditions on the
   words and options): `echo`, `printf`, `pwd`, `command -v`/`-V` (with `-p` or not, but not `command` running a
   command) and `type`, when the name finds the built-in (not a function). Its output goes to `Shell::captured`,

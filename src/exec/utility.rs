@@ -1,7 +1,8 @@
-//! `basename`, `dirname` and `expr` run in the shell, without a process,
-//! when they are the system's (`PATH` finds them in `/usr/bin` or `/bin`)
-//! and the arguments are ones whose result POSIX specifies (for `expr`,
-//! arithmetic and comparisons of integers). Anything else (options, the
+//! `basename`, `dirname`, `expr` and `seq` run in the shell, without a
+//! process, when they are the system's (`PATH` finds them in `/usr/bin` or
+//! `/bin`) and the arguments are ones whose result POSIX specifies (for
+//! `expr`, arithmetic and comparisons of integers) or, for `seq`, on which
+//! coreutils, uutils and busybox agree. Anything else (options, the
 //! cases POSIX leaves to the implementation, a `basename` of one's own
 //! earlier in `PATH`) runs the utility itself, so nothing changes but the
 //! time taken: `type` and `command -v` still show the file.
@@ -20,17 +21,19 @@ use crate::shell::{Flow, Shell};
 use crate::sys;
 
 fn is_utility(name: &[u8]) -> bool {
-    name == b"basename" || name == b"dirname" || name == b"expr"
+    matches!(name, b"basename" | b"dirname" | b"expr" | b"seq")
 }
 
-/// What `argv` prints (without the newline) and its status, or `None` if
+/// What `argv` prints and its status, or `None` if
 /// the utility has to decide: an option (GNU's `getopt` takes one after an
 /// operand too), a wrong number of operands, or a result up to the
 /// implementation.
 fn output(argv: &[Vec<u8>]) -> Option<(Vec<u8>, i32)> {
     let (name, mut args) = argv.split_first()?;
-    if name == b"expr" {
-        return expr(args);
+    match &name[..] {
+        b"expr" => return expr(args),
+        b"seq" => return seq(args),
+        _ => {}
     }
     if args.first().is_some_and(|a| a == b"--") {
         args = &args[1..];
@@ -43,7 +46,10 @@ fn output(argv: &[Vec<u8>]) -> Option<(Vec<u8>, i32)> {
         (b"dirname", [s]) => dirname(s),
         _ => None,
     };
-    out.map(|o| (o, 0))
+    out.map(|mut o| {
+        o.push(b'\n');
+        (o, 0)
+    })
 }
 
 fn trim_slashes(s: &[u8]) -> &[u8] {
@@ -100,7 +106,53 @@ fn expr(args: &[Vec<u8>]) -> Option<(Vec<u8>, i32)> {
         applied: false,
     };
     let v = e.compare()?;
-    (e.pos == args.len() && e.applied).then(|| (v.to_string().into_bytes(), (v == 0) as i32))
+    (e.pos == args.len() && e.applied).then(|| (format!("{v}\n").into_bytes(), (v == 0) as i32))
+}
+
+/// `seq LAST`, `seq FIRST LAST` and `seq FIRST INCREMENT LAST`, with
+/// integers below 10^15 in magnitude (busybox counts in doubles) and at
+/// most [`SEQ_MAX`] lines. The utility runs for anything else: options
+/// (`--` included), `+1`, `-0` (which coreutils prints as `-0`), an
+/// increment of zero (an error in coreutils, an endless loop in busybox),
+/// fractions and exponents.
+fn seq(args: &[Vec<u8>]) -> Option<(Vec<u8>, i32)> {
+    let n: Vec<i64> = args.iter().map(|a| seq_number(a)).collect::<Option<_>>()?;
+    let (first, step, last) = match n[..] {
+        [last] => (1, 1, last),
+        [first, last] => (first, 1, last),
+        [first, step, last] => (first, step, last),
+        _ => return None,
+    };
+    if step == 0 {
+        return None;
+    }
+    let count = if (last - first).signum() == -step.signum() {
+        0
+    } else {
+        (last - first) / step + 1
+    };
+    if count > SEQ_MAX {
+        return None;
+    }
+    let mut out = Vec::new();
+    for i in 0..count {
+        out.extend_from_slice(format!("{}\n", first + i * step).as_bytes());
+    }
+    Some((out, 0))
+}
+
+/// The most lines `seq` prints in the shell: past that, the utility's own
+/// time counts for more than starting it, and a loop in the shell couldn't
+/// be interrupted.
+const SEQ_MAX: i64 = 100_000;
+
+fn seq_number(a: &[u8]) -> Option<i64> {
+    let digits = a.strip_prefix(b"-").unwrap_or(a);
+    if digits.is_empty() || digits.len() > 15 || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let n: i64 = std::str::from_utf8(a).ok()?.parse().ok()?;
+    (n != 0 || a[0] != b'-').then_some(n)
 }
 
 struct Expr<'a> {
@@ -281,8 +333,7 @@ impl Shell {
         if kind == libc::S_IFIFO || kind == libc::S_IFSOCK {
             return None;
         }
-        let (mut out, status) = self.utility_output(argv, true)?;
-        out.push(b'\n');
+        let (out, status) = self.utility_output(argv, true)?;
         if sys::write_all(1, &out) {
             return Some(status);
         }
@@ -367,7 +418,7 @@ mod tests {
 
     fn run(args: &[&str]) -> Option<String> {
         let argv: Vec<Vec<u8>> = args.iter().map(|a| a.as_bytes().to_vec()).collect();
-        output(&argv).map(|(o, _)| String::from_utf8(o).unwrap())
+        output(&argv).map(|(o, _)| String::from_utf8(o).unwrap().trim_end_matches('\n').to_string())
     }
 
     #[test]
@@ -439,7 +490,7 @@ mod tests {
                 .chain(args.split(' '))
                 .map(|a| a.into())
                 .collect();
-            output(&argv).map(|(o, status)| (String::from_utf8(o).unwrap(), status))
+            output(&argv).map(|(o, status)| (String::from_utf8(o).unwrap().trim_end_matches('\n').to_string(), status))
         };
         for (args, want, status) in [
             ("1 + 2 * 3", "7", 0),
@@ -475,6 +526,47 @@ mod tests {
             "1 + 2 3",
         ] {
             assert_eq!(e(args), None, "{args}");
+        }
+    }
+
+    #[test]
+    fn seq() {
+        let seq = |args: &str| {
+            let argv: Vec<Vec<u8>> = std::iter::once("seq")
+                .chain(args.split(' '))
+                .map(|a| a.into())
+                .collect();
+            output(&argv).map(|(o, _)| String::from_utf8(o).unwrap().replace('\n', " "))
+        };
+        for (args, want) in [
+            ("3", "1 2 3 "),
+            ("0", ""),
+            ("-2", ""),
+            ("2 4", "2 3 4 "),
+            ("4 2", ""),
+            ("3 3", "3 "),
+            ("01 03", "1 2 3 "),
+            ("5 -2 1", "5 3 1 "),
+            ("1 2 6", "1 3 5 "),
+            ("1 -1 3", ""),
+            ("-3 -1", "-3 -2 -1 "),
+            ("1 100000", &(1..=100_000).map(|i| format!("{i} ")).collect::<String>()),
+        ] {
+            assert_eq!(seq(args).as_deref(), Some(want), "{args}");
+        }
+        for args in [
+            "",
+            "1 2 3 4",
+            "1 0 3",
+            "-0 2",
+            "+1 3",
+            "-- 1 3",
+            "1.5",
+            "1e3",
+            "1 100001",
+            "1000000000000000",
+        ] {
+            assert_eq!(seq(args), None, "{args}");
         }
     }
 }

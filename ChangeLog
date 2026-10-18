@@ -1,4 +1,5 @@
 Unreleased
+    * seq with integers, also in $(...), runs without starting a process
     * expr with integers, also in $(...), runs without starting a process
     * $(echo ...), $(printf ...), $(pwd), $(command -v ...) and
       $(type ...) run without a subshell
