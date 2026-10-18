@@ -1873,21 +1873,21 @@ docs, `docs/performance.md`; update them there after rerunning `bench/run.sh` or
 follows is what they came from and what is left.
 
 Per external command, luish makes the same syscalls as dash. Startup makes 66 syscalls to dash's 49 (56 without
-the `plugins` feature). The startup gap (0.51 ms to dash's 0.31 ms per `-c true` in `docs/performance.md`) comes
+the `plugins` feature). The startup gap (0.52 ms to dash's 0.32 ms per `-c true` in `docs/performance.md`) comes
 from the larger binary (4.8 MB) and its libraries, `libm` (for Rhai's floats), `libpthread` and `libgcc_s`:
 `LD_DEBUG=statistics` puts about 100k cycles in the dynamic loader to dash's 50k (so only some 15 µs of the gap), and
-luish takes 252 page faults to dash's 189. A command substitution takes 1.3 times as long as in dash with the same
-system calls; `clone` itself costs more for the larger process. The `plugins` feature is accepted while its startup
-cost stays under 1 ms (it is within the noise). A static build is faster to start, but see Releases for why there
-is none.
+luish takes 252 page faults to dash's 189. A command substitution that forks takes 1.4 times as long as in dash with
+the same system calls; `clone` itself costs more for the larger process. The `plugins` feature is accepted while its
+startup cost stays under 1 ms (it is within the noise). A static build is faster to start, but see Releases for why
+there is none.
 
 Binaries linked by pixi's toolchain (`pixi run release`) have an RPATH into the checkout's `.pixi` environment,
 added by conda-forge's gcc specs, so the loader first looks for each library there; it costs no measurable time. The
 release packages have it removed (`scripts/dist.sh`, below).
 
-Work inside the shell is as fast as dash or faster; the fork-heavy scripts are within 15%, mostly startup and forks.
-Most of the remaining in-shell time is `malloc` and `free`, since expansion builds `Vec`s where dash uses its stack
-allocator.
+Work inside the shell is as fast as dash or faster; `configure` takes 5% longer, mostly startup and forks, and `build`
+half as long, as `basename` and `dirname` run in the shell. Most of the remaining in-shell time is `malloc` and
+`free`, since expansion builds `Vec`s where dash uses its stack allocator.
 
 For small changes, instruction counts are steadier than timings: run a benchmark script under
 `valgrind --tool=callgrind` with a release build before and after, and compare "Collected" for the main process. To

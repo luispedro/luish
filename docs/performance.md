@@ -24,62 +24,70 @@ benchmark print the same output for it.
 | build | A make-like build that runs `$SH -c` for each object: fork, exec and shell startup |
 | arrays | Not POSIX: sorting, a sieve, word counts, grouping, matrices, a search and slices, in indexed and associative arrays |
 
-The script and startup measurements on this page were made on 2026-10-18, with the release build of luish at git
-revision `8ade1b0` (`pixi run release`), on a laptop with an Intel Core i7-1260P (4 performance cores of 2 threads each,
+The script and startup measurements on this page were made on 2026-10-19, with the release build of luish at git
+revision `5fb90d0` (`pixi run release`), on a laptop with an Intel Core i7-1260P (4 performance cores of 2 threads each,
 and 8 slower efficiency cores) running Ubuntu 26.04, in its performance power profile. Every measurement ran pinned to
-the same performance core (`taskset -c 3`), one shell and one benchmark at a time, after a minute's pause to let the
-processor cool, with the desktop running. The other shells are Ubuntu's dash 0.5.12, bash 5.3 (`--posix`) and BusyBox
-1.37.0 (`busybox sh`, from the `busybox-static` package), and zsh 5.9 (`--emulate sh`) from conda-forge, as pinned in
-luish's `pixi.toml`. Two complete runs of the script benchmarks gave times within 3% of each other for dash and luish
-(luish's ratios within 0.03), and within 5% for the other shells.
+the same performance core (`taskset -c 3`), one shell and one benchmark at a time, after a pause to let the processor
+cool (a minute for the scripts, 30 seconds for the startup rows), with the desktop running. The other shells are
+Ubuntu's dash 0.5.12, bash 5.3 (`--posix`) and BusyBox 1.37.0 (`busybox sh`, from the `busybox-static` package), and
+zsh 5.9 (`--emulate sh`) from conda-forge, as pinned in luish's `pixi.toml`. Two complete runs of the script
+benchmarks gave times within 6% of each other for dash and luish (within 3% except dash's `configure` and luish's
+`arrays`; luish's ratios within 0.06, and 0.02 except `configure`), and within 9% for the other shells.
 
 Seconds (and the ratio to dash; lower is faster), mean of 40 runs (two runs of `bench/run.sh -r 20`):
 
 | Benchmark | dash | luish | bash | zsh | busybox |
 |---|---|---|---|---|---|
-| arith | 0.203 (1.00) | 0.133 (0.65) | 0.531 (2.61) | 0.338 (1.66) | 0.276 (1.35) |
-| functions | 0.117 (1.00) | 0.107 (0.92) | 0.651 (5.59) | 0.474 (4.07) | 0.150 (1.29) |
-| strings | 0.160 (1.00) | 0.150 (0.94) | 0.522 (3.28) | 0.419 (2.63) | 0.223 (1.39) |
-| textproc | 0.122 (1.00) | 0.122 (1.00) | 0.316 (2.58) | 0.377 (3.07) | 0.186 (1.52) |
-| configure | 0.640 (1.00) | 0.680 (1.06) | 0.838 (1.31) | 0.785 (1.23) | 0.295 (0.46)\* |
-| build | 0.899 (1.00) | 0.947 (1.05) | 1.004 (1.12) | 1.002 (1.11) | 0.132 (0.15)\* |
+| arith | 0.213 (1.00) | 0.140 (0.65) | 0.571 (2.68) | 0.349 (1.64) | 0.295 (1.38) |
+| functions | 0.126 (1.00) | 0.113 (0.90) | 0.679 (5.41) | 0.497 (3.96) | 0.155 (1.24) |
+| strings | 0.165 (1.00) | 0.127 (0.77) | 0.541 (3.28) | 0.430 (2.61) | 0.233 (1.41) |
+| textproc | 0.128 (1.00) | 0.130 (1.01) | 0.332 (2.59) | 0.390 (3.05) | 0.192 (1.50) |
+| configure | 0.676 (1.00) | 0.712 (1.05) | 0.879 (1.30) | 0.807 (1.19) | 0.300 (0.44)\* |
+| build | 0.909 (1.00) | 0.513 (0.56) | 1.030 (1.13) | 1.019 (1.12) | 0.137 (0.15)\* |
 
-The first four run mostly inside the shell, where luish is as fast as dash, or faster. The next two spend most of
-their time starting programs, which luish does with the same system calls as dash; they take 5% to 6% longer, mostly
-because luish itself starts more slowly and a command substitution costs more (below), and `build` starts a new shell
-for each file it compiles. Ubuntu 26.04's `cat`, `basename` and other basic utilities are those of the Rust
-coreutils, which start in about 1.3 ms (to 0.4 ms for `/bin/true`), so these two take about twice as long for every
-shell as they did under Ubuntu 24.04, and the shell's own share of their time is smaller.
+The first four run mostly inside the shell, where luish is as fast as dash, or faster. In `strings`, luish runs
+`$(printf ...)` without a subshell (see [Shell language extensions](usage.md#shell-language-extensions)), so it forks
+23 times to dash's 195. The next two spend most of their time starting programs. `configure` starts the same
+programs in both shells, with the same system calls, and takes 5% longer, mostly because luish itself starts more
+slowly and a command substitution that forks costs more (below). `build` takes little more than half as long: luish
+runs `basename` and `dirname` in the shell, where dash starts the utility, so it starts 490 programs to dash's 834
+(it still starts a new shell for each file it compiles). Ubuntu 26.04's `cat`, `basename` and other basic utilities
+are those of the Rust coreutils, which start in about 1.3 ms (to 0.4 ms for `/bin/true`), so these two take about
+twice as long for every shell as they did under Ubuntu 24.04, and each program a script doesn't have to start saves
+more.
 
 \* BusyBox's times for `configure` and `build` don't measure the same work: the static BusyBox runs its own versions
 of `sed`, `cat`, `basename`, `dirname`, `rm` and other utilities in the shell's process instead of running the
-system's programs (`build` runs 204 programs under it, to 834 under dash), and as a static program it starts faster.
-This counts for more with the slower utilities of Ubuntu 26.04.
+system's programs (`build` runs 204 programs under it, to 834 under dash and 490 under luish), and as a static
+program it starts faster. This counts for more with the slower utilities of Ubuntu 26.04.
 
 `arrays` uses what zsh and bash scripts use beyond POSIX (arrays, associative arrays, `[[ ... ]]`,
 `${x//pattern/replacement}`, `${x:offset:length}`), so dash and BusyBox can't run it. Its ratios are to luish:
 
 | Benchmark | luish | bash | zsh |
 |---|---|---|---|
-| arrays | 0.113 (1.00) | 0.491 (4.36) | 0.527 (4.68) |
+| arrays | 0.113 (1.00) | 0.496 (4.39) | 0.536 (4.75) |
 
 ## Startup and single commands
 
-Mean of 1000 runs for the first two rows and of 20 for the others, each shell run with a cleared environment
-(only `PATH`, `HOME` and `LC_ALL=C`):
+Mean of 1000 runs for the first two rows and of 20 for the others (with hyperfine), each shell run with a cleared
+environment (only `PATH`, `HOME` set to an empty directory, and `LC_ALL=C`):
 
 | Benchmark | dash | luish | bash | zsh |
 |---|--:|--:|--:|--:|
-| `sh -c true` | 0.31 ms | 0.51 ms | 0.49 ms | 0.60 ms |
-| `sh -c /bin/true` | 0.59 ms | 0.75 ms | 0.75 ms | 0.85 ms |
-| `while` loop, 100,000 iterations of `$((i+1))` | 79 ms | 42 ms | 177 ms | 158 ms |
-| Loop running `/bin/true` 3000 times | 0.88 s | 0.90 s | 1.18 s | 1.30 s |
-| Loop running `x=$(echo hi)` 3000 times | 0.23 s | 0.30 s | 0.49 s | 0.38 s |
+| `sh -c true` | 0.32 ms | 0.52 ms | 0.52 ms | 0.73 ms |
+| `sh -c /bin/true` | 0.61 ms | 0.78 ms | 0.78 ms | 0.99 ms |
+| `while` loop, 100,000 iterations of `$((i+1))` | 81 ms | 42 ms | 175 ms | 137 ms |
+| Loop running `/bin/true` 3000 times | 0.90 s | 0.90 s | 1.20 s | 1.34 s |
+| Loop running `x=$(f)` 3000 times, `f` a function that runs `echo hi` | 0.23 s | 0.32 s | 0.52 s | 0.44 s |
+| Loop running `x=$(echo hi)` 3000 times | 0.23 s | 0.002 s | 0.50 s | 0.39 s |
 
 Starting luish takes about 0.2 ms longer than dash, as luish is a larger program (5.8 MB, with the plugin support
 built in): it loads more libraries and touches more memory (180 page faults to dash's 100). Starting a program costs
-about the same as in dash. A command substitution takes about 1.3 times as long as in dash: it makes the same system
-calls, but forking a larger process costs more.
+about the same as in dash. A command substitution that forks takes about 1.4 times as long as in dash: it makes the
+same system calls, but forking a larger process costs more. One that is only `echo`, `printf`, `pwd`, `command -v`
+or `type` with plain words (or `basename`, `dirname`, `expr`, `seq`, `id` or `uname`, see
+[Shell language extensions](usage.md#shell-language-extensions)) doesn't fork at all, and takes about 1% as long.
 
 ## Interactive startup
 
