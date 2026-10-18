@@ -1142,6 +1142,17 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   in interactive shells, to leave the command line) and the line redrawn by returning the word itself as the only
   candidate. `fc` sees no history while a completer runs (the editor is
   borrowed).
+- A completer hands the line over by returning `#{delegate: WORDS, index: I}` (`Answer::Delegate`): `complete_chain`
+  then runs the completer of `WORDS[0]` (or `-default-`) in a loop, rather than letting completers call each other,
+  so the engine isn't re-entered and the `completers` borrow is never held across a call. The 2 s budget covers the
+  chain, each completer runs as its own plugin (`enter`), and an error (a bad map, or a command already in the chain,
+  or more than `MAX_DELEGATIONS` hand-overs) is reported for the completer that handed over. With `dir`, the
+  directory changes for the rest of the chain (`Cwd`: `chdir` and `Shell::curdir`, then `fchdir` back to the
+  directory opened before); a `dir` that can't be entered gives no candidates, and a `()` there is answered with
+  that directory's files (`files`, through `glob_in`), since the editor's own filenames would be those of the
+  shell's directory. std's git completer hands over a command whose `git-CMD` is in `PATH` (or an alias for one),
+  with the directory of its `-C` options. Tests: `tests/plugins/complete_delegate.sh`,
+  `tests/plugins/git_delegate.sh`.
 - `prompt-vars`: the variables the step changed are found by comparing with a snapshot of all variables
   (`Vars::changes_since`) and put back after the prompt is built; no snapshot is taken if nothing has a
   `prompt-vars` hook or file. `prompt-rewrite` hooks that take a parameter are found by looking up the function in

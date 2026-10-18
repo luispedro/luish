@@ -3,7 +3,8 @@
 // options of its commands (which git lists itself), and, depending on the
 // command, branches, tags, remotes, stashes, worktrees and the files that
 // the command can act on (modified files for `git add`, staged ones for
-// `git restore --staged`, ...).
+// `git restore --staged`, ...). A command that is a program of its own
+// (`git annex` is `git-annex`) is handed over to that program's completer.
 //
 // git runs with the options of the command line that choose the repository
 // (`-C DIR`, `--git-dir=DIR`, ...), so that `alias g='git -C ~/src'` works.
@@ -399,6 +400,38 @@ fn arguments(g, cmd, args, cur, depth) {
     }
 }
 
+// The program that runs a command that isn't git's own, such as `git
+// annex` (`git-annex` in PATH), with the words that an alias for it adds
+// (`alias.ag = annex get`), or () for a command of git's.
+fn program(g, cmd) {
+    let words = [cmd];
+    if sh::which("git-" + cmd) == () {
+        let v = git_lines(g, ["config", "--get", "alias." + cmd]);
+        if v.is_empty() || v[0].starts_with("!") {
+            return ();
+        }
+        words = v[0].split();
+        if words.is_empty() || sh::which("git-" + words[0]) == () {
+            return ();
+        }
+    }
+    words[0] = "git-" + words[0];
+    words
+}
+
+// The directory that the `-C` options of `g` (git and its options) choose,
+// relative to the current one, or "" for the current one.
+fn directory(g) {
+    let dir = "";
+    for k in 0..g.len() {
+        if g[k] == "-C" && k + 1 < g.len() {
+            let d = g[k + 1];
+            dir = if d.starts_with("/") || dir == "" { d } else { dir + "/" + d };
+        }
+    }
+    dir
+}
+
 // The command an alias stands for, or the command itself.
 fn resolve(g, cmd) {
     alias_of(g, cmd) ?? cmd
@@ -445,6 +478,17 @@ fn complete(words, i) {
     }
     let cmd = words[j];
     let args = words.extract(j + 1, i - j - 1);
+    // A command that is a program of its own is completed by the
+    // completer of that program, in the directory of `-C`.
+    let p = program(g, cmd);
+    if p != () {
+        let line = #{delegate: p + args + words.extract(i), index: p.len() + args.len()};
+        let dir = directory(g);
+        if dir != "" {
+            line.dir = dir;
+        }
+        return line;
+    }
     if cur.starts_with("-") && args.index_of("--") < 0 {
         if cur.contains("=") {
             return option_value(cur);

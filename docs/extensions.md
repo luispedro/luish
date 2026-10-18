@@ -284,6 +284,24 @@ if words[i].starts_with("--format=") {
 }
 ```
 
+A completer can also hand the line over to the completer of another command,
+for a command that runs another (`git annex` runs `git-annex`; `uv run CMD`) or
+that is better completed as another: it returns a map with `delegate`, the
+words of the line to complete, starting with that command's name, and `index`,
+the word being completed in them, which must be the same word. That command's
+completer (or the `-default-` one, or else luish's filenames) answers instead,
+within the same time limit. With `dir`, a directory (relative to the current
+one, and taken as it is: no `~`), it runs there, as for `git -C DIR`; its `()`
+then gives the files of that directory. Handing the line back to a completer
+already in the chain is an error.
+
+```rhai
+// `git annex ...` is completed as `git-annex ...`.
+if words[1] == "annex" {
+    return #{delegate: ["git-annex"] + words.extract(2), index: i - 1};
+}
+```
+
 The completer registered for `-default-` (as in zsh's `compdef`) is called for
 the commands that have no completer of their own and whose arguments luish
 doesn't complete itself.

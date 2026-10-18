@@ -73,8 +73,11 @@ pub enum Script<'a> {
     Code(&'a [u8]),
 }
 
-/// How long a completer may run.
+/// How long a completer may run (with those it hands the line over to).
 const COMPLETE_BUDGET: Duration = Duration::from_secs(2);
+
+/// How many times a completer may hand the line over to another one.
+const MAX_DELEGATIONS: usize = 4;
 
 /// How much a call into extension code may raise the shell's peak memory
 /// use (in KiB) before luish warns.
@@ -581,6 +584,56 @@ fn builtin_status(v: Dynamic) -> Result<i32, String> {
     } else {
         Err(format!("returned {}, not a status", v.type_name()))
     }
+}
+
+/// What a completer answered: candidates (as `candidates` gives them), or
+/// another command line to complete with its own completer, in the
+/// directory `dir` if it is given.
+enum Answer {
+    Candidates(Option<(usize, Vec<Candidate>)>),
+    Delegate {
+        words: Vec<Vec<u8>>,
+        index: usize,
+        dir: Option<Vec<u8>>,
+    },
+}
+
+/// Converts what a completer returned for the word `word`: a map with
+/// `delegate` (the words of a command line) and `index` (the word being
+/// completed in it, which must be `word`) hands the line over to the
+/// completer of its first word, and anything else gives candidates.
+fn answer(r: Dynamic, word: &[u8]) -> RhaiResult<Answer> {
+    let Some(m) = r
+        .read_lock::<rhai::Map>()
+        .filter(|m| m.contains_key("delegate"))
+        .map(|m| m.clone())
+    else {
+        return candidates(r, word).map(Answer::Candidates);
+    };
+    let string = |d: Dynamic| d.into_immutable_string().map(|s| to_bytes(&s));
+    let words = match m["delegate"].clone().try_cast::<rhai::Array>() {
+        Some(a) => a.into_iter().map(string).collect::<Result<Vec<_>, _>>(),
+        None => Err("not an array"),
+    };
+    let Ok(words) = words else {
+        return error("a completer's delegate must be an array of strings");
+    };
+    if words.first().is_none_or(|w| w.is_empty()) {
+        return error("a completer's delegate must start with a command name");
+    }
+    let index = m.get("index").and_then(|i| i.as_int().ok());
+    let index = match index.and_then(|i| usize::try_from(i).ok()) {
+        Some(i) if i >= 1 && i < words.len() && words[i] == word => i,
+        _ => return error("a completer's index must be that of the word being completed in its delegate"),
+    };
+    let dir = match m.get("dir") {
+        None => None,
+        Some(d) => match string(d.clone()) {
+            Ok(d) if !d.is_empty() => Some(d),
+            _ => return error("a completer's dir must be a directory name"),
+        },
+    };
+    Ok(Answer::Delegate { words, index, dir })
 }
 
 /// Converts what a completer returned for the word `word`: `()` for the
@@ -1559,37 +1612,159 @@ impl Host {
 
     /// Runs the completer for `words[0]`, or else the default completer, if
     /// there is one, with the words of the command and the index of the one
-    /// being completed. An error is reported on a line of its own, below
-    /// the command line in an interactive shell. `$?` is kept.
+    /// being completed. A completer may hand the line over to the completer
+    /// of another command (`git annex` to that of `git-annex`), which runs
+    /// in the same time budget. An error is reported on a line of its own,
+    /// below the command line in an interactive shell. `$?` is kept.
     pub fn complete(&self, sh: &mut Shell, words: &[Vec<u8>], index: usize) -> Result<Completion, Flow> {
-        let cb = {
-            let completers = self.completers.borrow();
-            let find = |name: &[u8]| completers.iter().find(|c| c.0 == name);
-            match find(&words[0]).or_else(|| find(DEFAULT_COMPLETER)) {
-                Some(c) => c.1.clone(),
-                None => return Ok(Completion::Default),
-            }
-        };
-        let array: rhai::Array = words.iter().map(|w| to_str(w).into()).collect();
-        let args = (array, index as i64);
         let saved = sh.last_status;
         let deadline = DEADLINE.replace(Some(Instant::now() + COMPLETE_BUDGET));
-        let r = enter(sh, cb.plugin, || cb.f.call::<Dynamic>(self.engine(), &cb.ast, args));
+        let r = self.complete_chain(sh, words.to_vec(), index);
         DEADLINE.set(deadline);
         sh.last_status = saved;
-        match r?.and_then(|r| candidates(r, &words[index])) {
-            Ok(Some((prefix, c))) => Ok(Completion::Candidates(prefix, c)),
-            Ok(None) => Ok(Completion::Default),
-            Err(e) => {
-                // Below the command line (not for `__luish_internal
-                // complete` in a script).
-                if sh.opt(crate::options::Opt::Interactive) {
-                    sys::write_all(2, b"\n");
+        r
+    }
+
+    fn complete_chain(&self, sh: &mut Shell, mut words: Vec<Vec<u8>>, mut index: usize) -> Result<Completion, Flow> {
+        let mut seen: Vec<Vec<u8>> = Vec::new();
+        let mut cwd = None;
+        let r = loop {
+            let cb = {
+                let completers = self.completers.borrow();
+                let find = |name: &[u8]| completers.iter().find(|c| c.0 == name);
+                match find(&words[0]).or_else(|| find(DEFAULT_COMPLETER)) {
+                    Some(c) => c.1.clone(),
+                    None => break Ok(Completion::Default),
                 }
-                Self::report(sh, &cb.path, &e);
-                Ok(Completion::Failed)
+            };
+            let array: rhai::Array = words.iter().map(|w| to_str(w).into()).collect();
+            let args = (array, index as i64);
+            let r = match enter(sh, cb.plugin, || cb.f.call::<Dynamic>(self.engine(), &cb.ast, args)) {
+                Ok(r) => r,
+                Err(flow) => break Err(flow),
+            };
+            seen.push(words[0].clone());
+            let r = r.and_then(|r| answer(r, &words[index])).and_then(|a| match a {
+                Answer::Delegate { words: w, .. } if seen.contains(&w[0]) || seen.len() > MAX_DELEGATIONS => {
+                    error(format!("delegates to {} in a loop", to_str(&w[0])))
+                }
+                a => Ok(a),
+            });
+            match r {
+                Ok(Answer::Candidates(Some((prefix, c)))) => break Ok(Completion::Candidates(prefix, c)),
+                // luish's filenames would be those of the shell's directory.
+                Ok(Answer::Candidates(None)) if cwd.is_some() => break Ok(files(&words[index])),
+                Ok(Answer::Candidates(None)) => break Ok(Completion::Default),
+                Ok(Answer::Delegate {
+                    words: w,
+                    index: i,
+                    dir,
+                }) => {
+                    if let Some(dir) = dir {
+                        if cwd.is_none() {
+                            cwd = Some(Cwd::save(sh));
+                        }
+                        if !Cwd::enter(sh, &dir) {
+                            break Ok(Completion::Candidates(0, Vec::new()));
+                        }
+                    }
+                    (words, index) = (w, i);
+                }
+                Err(e) => {
+                    // Below the command line (not for `__luish_internal
+                    // complete` in a script).
+                    if sh.opt(crate::options::Opt::Interactive) {
+                        sys::write_all(2, b"\n");
+                    }
+                    Self::report(sh, &cb.path, &e);
+                    break Ok(Completion::Failed);
+                }
+            }
+        };
+        if let Some(c) = cwd {
+            c.restore(sh);
+        }
+        r
+    }
+}
+
+/// The files that complete `word` in the current directory, with a `/`
+/// after the name of a directory, for a completer that was handed the line
+/// over in another directory and answered `()`. Names that start with `.`
+/// only if the word does, as luish completes filenames.
+fn files(word: &[u8]) -> Completion {
+    if word.starts_with(b"~") {
+        return Completion::Candidates(0, Vec::new());
+    }
+    let slash = word.iter().rposition(|&c| c == b'/').map_or(0, |k| k + 1);
+    let (dir, rest) = word.split_at(slash);
+    let mut pattern = Vec::new();
+    for &c in rest {
+        if b"\\*?[]{}()<>|#^~,!".contains(&c) {
+            pattern.push(b'\\');
+        }
+        pattern.push(c);
+    }
+    pattern.extend_from_slice(if rest.starts_with(b".") { b"*(D-M)" } else { b"*(-M)" });
+    let names = crate::expand::glob::glob_in(if dir.is_empty() { b"." } else { dir }, &pattern).unwrap_or_default();
+    let candidates = names
+        .iter()
+        .map(|n| {
+            let mut c = Candidate::word(n);
+            if n.ends_with(b"/") {
+                c.suffix = Suffix::None;
+            }
+            c
+        })
+        .collect();
+    Completion::Candidates(slash, candidates)
+}
+
+/// The current directory before a completer that was handed the line over
+/// ran in another (`dir`), to go back to: the directory itself, open, and
+/// the logical name that `cd` keeps.
+struct Cwd {
+    fd: Option<i32>,
+    curdir: Option<Vec<u8>>,
+}
+
+impl Cwd {
+    fn save(sh: &Shell) -> Cwd {
+        Cwd {
+            fd: sys::open(b".", libc::O_RDONLY | libc::O_DIRECTORY, 0).ok(),
+            curdir: sh.curdir.clone(),
+        }
+    }
+
+    /// Makes `dir` (relative to the current directory) the current
+    /// directory, if it can.
+    fn enter(sh: &mut Shell, dir: &[u8]) -> bool {
+        let abs = if dir.starts_with(b"/") {
+            crate::builtins::cd::canonicalize(dir)
+        } else {
+            let cwd = sh.curdir.clone().or_else(sys::getcwd).unwrap_or_else(|| b"/".to_vec());
+            crate::builtins::cd::canonicalize(&[cwd.as_slice(), b"/", dir].concat())
+        };
+        if sys::chdir(&abs).is_err() {
+            return false;
+        }
+        sh.curdir = Some(abs);
+        true
+    }
+
+    fn restore(self, sh: &mut Shell) {
+        match self.fd {
+            Some(fd) => {
+                let _ = sys::fchdir(fd);
+                sys::close(fd);
+            }
+            None => {
+                if let Some(d) = &self.curdir {
+                    let _ = sys::chdir(d);
+                }
             }
         }
+        sh.curdir = self.curdir;
     }
 }
 

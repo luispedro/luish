@@ -1,0 +1,20 @@
+complete_delegate.sh: 52: ./wrap.rhai: Runtime error: delegates to loop1 in a loop
+    __luish_internal complete "$1"
+  in function c, called at complete_delegate.sh:74
+      c 'loop1 x'
+complete_delegate.sh: 52: ./wrap.rhai: Runtime error: a completer's index must be that of the word being completed in its delegate
+    __luish_internal complete "$1"
+  in function c, called at complete_delegate.sh:75
+      c 'bad index y'
+complete_delegate.sh: 52: ./wrap.rhai: Runtime error: a completer's delegate must start with a command name
+    __luish_internal complete "$1"
+  in function c, called at complete_delegate.sh:76
+      c 'bad empty y'
+complete_delegate.sh: 52: ./wrap.rhai: Runtime error: a completer's delegate must be an array of strings
+    __luish_internal complete "$1"
+  in function c, called at complete_delegate.sh:77
+      c 'bad words y'
+complete_delegate.sh: 52: ./wrap.rhai: Runtime error: a completer's dir must be a directory name
+    __luish_internal complete "$1"
+  in function c, called at complete_delegate.sh:78
+      c 'bad dir y'

@@ -493,6 +493,16 @@ pub fn chdir(path: &[u8]) -> Result<(), i32> {
     }
 }
 
+#[cfg(feature = "plugins")]
+pub fn fchdir(fd: i32) -> Result<(), i32> {
+    // SAFETY: plain fchdir.
+    if unsafe { libc::fchdir(fd) } < 0 {
+        Err(errno())
+    } else {
+        Ok(())
+    }
+}
+
 pub fn umask(mask: u32) -> u32 {
     // SAFETY: plain umask.
     unsafe { libc::umask(mask as libc::mode_t) as u32 }

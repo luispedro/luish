@@ -1,0 +1,38 @@
+--- git z
+zz 
+status 0
+--- git zz 
+zz:\[\"git-zz\",\ \"\"]:1 
+status 0
+--- git zz a b
+zz:\[\"git-zz\",\ \"a\",\ \"b\"]:2 
+status 0
+--- git zz a --to=o
+--to=origin 
+status 0
+--- git zz a b --
+zz:\[\"git-zz\",\ \"a\",\ \"b\",\ \"--\"]:3 
+status 0
+--- git zg 
+zz:\[\"git-zz\",\ \"get\",\ \"\"]:2 
+status 0
+--- git -C sub zz here
+here:sub 
+status 0
+--- git -C sub -C deeper zz here
+here:deeper 
+status 0
+--- git --no-pager -C sub zz here
+here:sub 
+status 0
+--- git ww 
+afile 
+sub/
+status 0
+--- git ww s
+sub/
+status 0
+--- git st --sh
+--short 
+--show-stash 
+status 0

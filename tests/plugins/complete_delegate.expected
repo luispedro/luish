@@ -1,0 +1,60 @@
+--- wrap 
+inner 
+other 
+status 0
+--- wrap inner a 
+inner:\[\"inner\",\ \"a\",\ \"\"]:2 
+status 0
+--- wrap inner a b
+inner:\[\"inner\",\ \"a\",\ \"b\"]:2 
+status 0
+--- wrap inner --to=o
+--to=origin 
+status 0
+=== in another directory, then back
+--- wrap -C d inner here
+here:d 
+status 0
+--- wrap -C d inner files 
+dfile 
+inner/
+status 0
+--- wrap -C d inner files df
+dfile 
+status 0
+--- wrap -C . inner files w
+wrap.rhai 
+status 0
+--- wrap -C d inner files inner/
+inner/deep 
+status 0
+--- wrap -C d inner d
+inner:\[\"inner\",\ \"d\"]:1 
+status 0
+--- wrap -C d/inner/.. inner here
+here:d 
+status 0
+--- wrap -C /no/such/dir inner here
+status 1
+back in the starting directory
+--- wrap -C d inner here
+here:d 
+status 0
+=== a command without a completer: filenames
+--- wrap other a
+afile 
+status 0
+--- wrap inner files a
+afile 
+status 0
+=== errors
+--- loop1 x
+status 1
+--- bad index y
+status 1
+--- bad empty y
+status 1
+--- bad words y
+status 1
+--- bad dir y
+status 1
