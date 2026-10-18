@@ -6,6 +6,7 @@ mod not_found;
 mod procsubst;
 pub mod redirect;
 mod simple;
+mod utility;
 
 pub use fork::{ForkKind, report_signaled, signal_description};
 pub use procsubst::ProcSub;

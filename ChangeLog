@@ -1,4 +1,5 @@
 Unreleased
+    * basename and dirname, also in $(...), run without starting a process
     * Tab after git offers the repository's own aliases with every git
       version
     * The recommended configuration (first run, install script) has

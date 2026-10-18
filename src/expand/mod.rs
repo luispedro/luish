@@ -1170,6 +1170,9 @@ impl Shell {
     /// Runs `$(...)` in a subshell and returns its output without trailing
     /// newlines.
     pub fn command_subst(&mut self, list: &List) -> EResult<Vec<u8>> {
+        if let Some(out) = self.subst_utility(list)? {
+            return Ok(out);
+        }
         let (r, w) = match sys::pipe() {
             Ok(p) => p,
             Err(e) => {

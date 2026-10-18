@@ -491,6 +491,21 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   levels of `( ... )` with 8 MB of stack, a debug build about 600, and a debug build runs out before 1000 function
   calls (so `exec/recursion_limit.sh` raises `ulimit -s`). Tests: `exec/recursion_limit.sh`,
   `exec/stack_guard.sh`.
+- `basename` and `dirname` (`exec/utility.rs`; the two commands most often in `$(...)` in the system's scripts)
+  run in the shell when `PATH` finds them in `/usr/bin` or `/bin` and the result is one POSIX specifies: no
+  options (GNU's `getopt` takes one after an operand too, so any argument starting with `-` counts, except a
+  leading `--`), the right number of operands, and none of the results POSIX leaves to the implementation (an empty
+  string, `//`, and for `dirname` anything starting with exactly `//`, which busybox keeps and coreutils doesn't).
+  Anything else runs the utility. They aren't built-ins: `type`, `command -v`, functions, a command of one's own
+  earlier in `PATH` and `PATH=` see the file as before. `run_external` tries this first (the name is compared before
+  anything else); not when stdout is a pipe or socket (one `fstat`), as a reader that went away should kill the
+  utility with SIGPIPE, not the shell. `command_subst` also does `$(basename ...)` without a subshell
+  (`subst_utility`) when the list is that one command, without assignments or redirections, its words can't have
+  side effects or fail (`pure`: quotes, `~`, and parameters without subscripts or flags, plain or with `#`, `##`,
+  `%`, `%%` or `${#x}`; not `$RANDOM`, which would move the shell's generator, nor `$LINENO`), and neither
+  `set -x`, `set -u`, the `glob.fail` options nor a CHLD trap is on. Its lookup doesn't add to the command cache,
+  as the subshell's wouldn't. 2000 rounds of `$(basename "$f" .txt)` and `$(dirname "$f")` take 0.06 s, to
+  dash's 5.6 s. Test: `builtins/basename_dirname.sh`, unit tests in `exec/utility.rs`.
 
 ### Jobs (`jobs.rs`, `builtins/jobs.rs`)
 

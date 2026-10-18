@@ -79,6 +79,10 @@ read -r first rest <<< "$line"             # a here-string: the word and a newli
 n=${ printf '%03d' "$i"; }                 # command substitution in the shell, without forking a subshell
 ```
 
+- `basename` and `dirname` run inside the shell, without starting a process, when they are the system's (in
+  `/usr/bin` or `/bin`) and given plain arguments; so does `$(basename "$f")`, without a subshell, when its words
+  are only quotes and variables. The result is the same as the utility's (anything unusual, such as an option, runs
+  the utility itself), and `type basename` still names the file.
 - `[[ ... ]]` has `test`'s operators, `&&`, `||`, `!` and parentheses, patterns on the right of `==` and `!=`, `=~`
   for regular expressions (which sets `MATCH`, `match` and `BASH_REMATCH`) and `-v NAME` for a set variable.
 - Process substitution: `<(list)` is the path of a pipe (`/dev/fd/N`) that gives what the list writes, so a command

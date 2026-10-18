@@ -125,6 +125,14 @@ pub fn stat(path: &[u8]) -> Option<libc::stat> {
     }
 }
 
+pub fn fstat(fd: i32) -> Option<libc::stat> {
+    // SAFETY: valid output buffer.
+    unsafe {
+        let mut st: libc::stat = std::mem::zeroed();
+        (libc::fstat(fd, &mut st) == 0).then_some(st)
+    }
+}
+
 pub fn lstat(path: &[u8]) -> Option<libc::stat> {
     let c = cstr(path);
     // SAFETY: valid path and output buffer.
