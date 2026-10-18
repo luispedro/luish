@@ -1994,9 +1994,14 @@ fn first_run() {
     assert_has(&text, "\n[options.prompt]\npercent = true\n");
     assert_has(
         &text,
-        "\n[options.history]\nexpand = true\n# file = \"~/.local/state/luish/history\"",
+        "\ninc_append = true\n# share = true   # see the commands of the other shells as they run\n\
+         # file = \"~/.local/state/luish/history\"",
     );
     assert_has(&text, "\n[plugins.enabled]\nstd.completion = \"*\"");
+    assert_has(
+        &text,
+        "\nextra = { gh = \"luispedro/luish-extra\", release = \"luish\" }\n",
+    );
     sh4.send("exit\n");
     assert_eq!(sh4.exit_status(), 0);
 }

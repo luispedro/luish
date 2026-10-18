@@ -13,16 +13,15 @@ If you've used a shell before, you should feel at home, luish should feel much l
 ## The first run
 
 If you installed luish with the [install script](installation.md#from-a-release) and let it write the configuration,
-there is nothing to do here: it wrote the recommended configuration below, with
-[luish-extra](plugins.md#more-completion-luish-extra) for more completion and colour schemes.
+there is nothing to do here: it wrote the [recommended configuration](#the-recommended-configuration).
 
 The first time luish starts in a terminal (when `~/.config/luish/` is missing or empty), it shows a menu (Up and
 Down choose, Enter confirms; or press an item's number):
 
-1. **Write the recommended configuration** to `config.toml`: Tab completion from the standard plugins (see below),
-   suggestions from the history as you type, zsh's `%` sequences in prompts, and history expansion (`!!`, `!$`,
-   `^old^new`). luish then runs `plugin sync` to
-   fetch the plugins.
+1. **Write the [recommended configuration](#the-recommended-configuration)** to `config.toml`: Tab completion
+   from the standard plugins (see below) and from [luish-extra](plugins.md#more-completion-luish-extra), its colour
+   schemes, suggestions from the history as you type, and the conveniences of zsh and bash listed below. luish then
+   runs `plugin sync` to fetch the plugins.
 2. **Write an empty configuration**: the recommended one, all commented out to turn on later, so that the menu isn't
    shown again.
 3. **Add a personal plugin**, as [`plugin add`](plugins.md) takes it: a GitHub repository (`OWNER/REPO` or its URL),
@@ -31,6 +30,20 @@ Down choose, Enter confirms; or press an item's number):
 4. **Just start for now**, writing nothing: the menu is shown again next time (as it is after Ctrl-C or Esc).
 
 The rest of this page describes the files, to write or extend them yourself.
+
+### The recommended configuration
+
+Without a configuration, every luish option is off, so luish behaves as dash does (as `set -o` and `setopt` show).
+The recommended configuration turns on what most people expect from zsh or bash. It applies only to interactive
+shells: luish reads `config.toml` only when it is interactive (a login shell reads only its `[env]`
+and `[path]` tables), so scripts and `sh -c` keep POSIX's behaviour. This is the file it writes:
+
+```{literalinclude} default-config.toml
+:language: toml
+```
+
+The `bash-completion` line is commented out if bash-completion isn't installed, and `file` shows where the history
+is saved on your system. `__luish_internal default-config` prints the file for your system.
 
 ## Where the configuration goes
 

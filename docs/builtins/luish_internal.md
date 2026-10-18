@@ -49,9 +49,10 @@ take names that scripts might use for something else.
 
 `default-config`
 : Print the recommended `config.toml`, as luish offers to write it the
-  first time it runs. With `--extra`, also add the luish-extra plugins
-  (completion for more commands, and colour schemes), as the install
-  script writes it.
+  first time it runs and as the install script writes it, with the
+  luish-extra plugins (completion for more commands, and colour
+  schemes). `--extra`, which used to add them, is accepted and does
+  nothing.
 
 `function-file`
 : Record that the function `name` was defined in `file`, which is then

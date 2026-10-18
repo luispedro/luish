@@ -1,0 +1,58 @@
+# luish's configuration: see https://luish.readthedocs.io/en/latest/getting-started.html
+# (written by luish). These settings apply only to interactive shells, not to scripts.
+
+# Suggest the rest of the line from the history, in grey; Right or End accepts it.
+[options.editor]
+autosuggest = true
+
+# zsh's % sequences in prompts: PS1='%~ %# ' shows the directory, then % (# for root).
+[options.prompt]
+percent = true
+
+# Underline the arguments that name existing files as you type.
+[options.highlight]
+paths = true
+
+# **/ matches any number of directories: ls **/*.rs
+[options.glob]
+star = true
+
+# Brace expansion: cp f{,.bak} copies f to f.bak, and {1..3} is 1 2 3.
+[options.expand]
+braces = true
+
+# A directory's name alone changes to it.
+[options.cd]
+auto = true
+
+# cd remembers where it has been: dirs -v lists the directories, cd -2 goes back two.
+[options.pushd]
+auto = true
+ignore_dups = true
+silent = true
+
+# !! for the previous command, !$ for its last word, ^old^new to run it with old replaced by new;
+# a command typed with a space first isn't saved; each command is saved as soon as it runs.
+[options.history]
+expand = true
+ignore_space = true
+reduce_blanks = true
+inc_append = true
+# share = true   # see the commands of the other shells as they run
+# file = "~/.local/state/luish/history"   # the default
+
+# The plugins: plugin sync fetches them, and plugin update updates them.
+[plugins.enabled]
+std.completion = "*"         # Tab completion for about 230 commands, and git
+std.bash-completion = "*"    # completion from bash-completion for the others
+extra.complete.all = "*"     # completion for about 270 more commands: science, bioinformatics, ...
+extra.themes = "*"           # colour schemes: style -c lists them, style -c NAME tries one
+
+# luish-extra, under the name extra, at the newest release for this version of luish:
+# https://github.com/luispedro/luish-extra
+[plugins.available]
+extra = { gh = "luispedro/luish-extra", release = "luish" }
+
+# A colour scheme from extra.themes, as a pair: luish takes the one that fits the terminal's background.
+# [style]
+# colorscheme = { dark = "gruvbox-dark", light = "gruvbox-light" }

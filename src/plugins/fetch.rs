@@ -110,12 +110,70 @@ fn refspec(at: &GitRef) -> String {
         GitRef::Branch(b) => format!("refs/heads/{b}"),
         GitRef::Tag(t) => format!("refs/tags/{t}"),
         GitRef::Rev(r) => r.clone(),
+        // (Turned into its tag by `concrete` first.)
+        GitRef::Release(_) => "HEAD".into(),
     }
 }
 
-/// Fetches the newest commit of `at` (a branch, a tag, `HEAD`) from `url`,
+/// The tag that `release = "luish"` takes at `url` for luish `minor`
+/// (`X.Y`), with its commit: of the tags `vX.Y` and `vX.Y.N` (only digits),
+/// the newest whose `X.Y` isn't newer than `minor`.
+pub fn release_tag(sh: &mut Shell, url: &str, minor: &str) -> Result<(String, String), String> {
+    let out = git(sh, b"/", &["ls-remote", "--tags", url, "refs/tags/v*"])?;
+    newest_release(&String::from_utf8_lossy(&out), minor).ok_or_else(|| {
+        format!("no release for luish {minor} at {url} (a tag v{minor} or v{minor}.N, or for an older luish)")
+    })
+}
+
+/// [`release_tag`] on the output of `git ls-remote --tags`.
+fn newest_release(out: &str, minor: &str) -> Option<(String, String)> {
+    let version = |v: &str| match v.split('.').count() {
+        2 | 3 if !v.contains('-') => super::package::parse_version(v),
+        _ => None,
+    };
+    let max = version(minor)?;
+    let mut best: Option<([u64; 3], &str, &str)> = None;
+    for line in out.lines() {
+        let Some((commit, r)) = line.split_once('\t') else {
+            continue;
+        };
+        let (tag, peeled) = match r.strip_suffix("^{}") {
+            Some(t) => (t, true),
+            None => (r, false),
+        };
+        let Some(v) = tag.strip_prefix("refs/tags/v").and_then(version) else {
+            continue;
+        };
+        if !is_hash(commit) || v[..2] > max[..2] {
+            continue;
+        }
+        let tag = &tag["refs/tags/".len()..];
+        match &mut best {
+            // An annotated tag's commit is on its peeled line.
+            Some((bv, bt, bc)) if *bv == v && *bt == tag => {
+                if peeled {
+                    *bc = commit;
+                }
+            }
+            Some((bv, _, _)) if *bv >= v => {}
+            _ => best = Some((v, tag, commit)),
+        }
+    }
+    best.map(|(_, t, c)| (t.to_string(), c.to_string()))
+}
+
+/// `at`, with `release` turned into its tag.
+fn concrete(sh: &mut Shell, url: &str, at: &GitRef) -> Result<GitRef, String> {
+    match at {
+        GitRef::Release(minor) => Ok(GitRef::Tag(release_tag(sh, url, minor)?.0)),
+        at => Ok(at.clone()),
+    }
+}
+
+/// Fetches the newest commit of `at` (a branch, a tag, a release, `HEAD`) from `url`,
 /// and gives its hash.
 pub fn resolve(sh: &mut Shell, url: &str, at: &GitRef) -> Result<String, String> {
+    let at = &concrete(sh, url, at)?;
     let dir = repository(sh, url)?;
     git(
         sh,
@@ -130,9 +188,12 @@ pub fn resolve(sh: &mut Shell, url: &str, at: &GitRef) -> Result<String, String>
     }
 }
 
-/// The newest commit of `at` (a branch, a tag, `HEAD`) at `url`, from `git
+/// The newest commit of `at` (a branch, a tag, a release, `HEAD`) at `url`, from `git
 /// ls-remote`, which neither fetches nor needs the bare repository.
 pub fn remote_commit(sh: &mut Shell, url: &str, at: &GitRef) -> Result<String, String> {
+    if let GitRef::Release(minor) = at {
+        return Ok(release_tag(sh, url, minor)?.1);
+    }
     let name = refspec(at);
     let peeled = format!("{name}^{{}}");
     let out = git(sh, b"/", &["ls-remote", url, &name, &peeled])?;
@@ -169,7 +230,8 @@ pub fn extract(sh: &mut Shell, data: &[u8], url: &str, at: &GitRef, commit: &str
     if !have(sh) {
         let fetched = git(sh, &dir, &["fetch", "-q", "--no-tags", "--depth", "1", url, commit]);
         if fetched.is_err() || !have(sh) {
-            git(sh, &dir, &["fetch", "-q", "--no-tags", url, &refspec(at)])?;
+            let at = concrete(sh, url, at)?;
+            git(sh, &dir, &["fetch", "-q", "--no-tags", url, &refspec(&at)])?;
         }
         if !have(sh) {
             return Err(format!("{url} has no commit {commit}"));
@@ -226,7 +288,7 @@ fn show(p: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_hash, repo_key};
+    use super::{is_hash, newest_release, repo_key};
 
     #[test]
     fn keys() {
@@ -237,6 +299,26 @@ mod tests {
         assert!(repo_key("git@host:a/b.git").starts_with("b-"));
         assert!(repo_key("/").starts_with("repo-"));
         assert!(repo_key("file:///tmp/..").starts_with("repo-"));
+    }
+
+    #[test]
+    fn releases() {
+        let (a, b, c, d) = ("a".repeat(40), "b".repeat(40), "c".repeat(40), "d".repeat(40));
+        let out = format!(
+            "{a}\trefs/tags/v0.6.2\n{b}\trefs/tags/v0.7\n{c}\trefs/tags/v0.7.1\n{d}\trefs/tags/v0.7.1^{{}}\n\
+             {a}\trefs/tags/v0.8.0\n{a}\trefs/tags/v0.7.9-rc1\n{a}\trefs/tags/v0.7.x\n{a}\trefs/tags/v1\n"
+        );
+        let got = |minor| newest_release(&out, minor);
+        // The newest for 0.7, with an annotated tag's commit.
+        assert_eq!(got("0.7"), Some(("v0.7.1".into(), d.clone())));
+        // An older one when there is none for this version.
+        assert_eq!(got("0.6"), Some(("v0.6.2".into(), a.clone())));
+        assert_eq!(got("0.9"), Some(("v0.8.0".into(), a.clone())));
+        assert_eq!(got("0.5"), None);
+        assert_eq!(
+            newest_release(&format!("{b}\trefs/tags/v0.7\n"), "0.7"),
+            Some(("v0.7".into(), b))
+        );
     }
 
     #[test]

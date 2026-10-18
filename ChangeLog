@@ -1,4 +1,9 @@
 Unreleased
+    * The recommended configuration (first run, install script) has
+      luish-extra, glob.star, expand.braces, cd.auto, pushd.auto,
+      highlight.paths and more history options
+    * Plugin sources: release = "luish" takes the newest tag vX.Y.N for
+      this version of luish
     * Rhai extensions: sh::glob(pattern, dir) lists files with the shell's
       patterns, braces and glob qualifiers
     * std completion lists files faster (with sh::glob); for plugins,

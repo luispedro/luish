@@ -36,7 +36,7 @@ z = { gh = "bob/luish-z" }     # a source of its own
 | `gh = "OWNER/REPO"` | A repository on GitHub, the same as `git = "https://github.com/OWNER/REPO.git"` |
 | `git = "URL"` | A git repository: any URL that `git fetch` accepts, including `file://` and SSH ones |
 | `path = "DIR"` | A local file or directory, used where it is. A leading `~` is the home directory, and a relative path is relative to the file that has it |
-| `branch`, `tag`, `rev` | At most one, for `gh` and `git`: which commit to use. `rev` is a full commit hash. By default, the repository's default branch (its `HEAD`) |
+| `branch`, `tag`, `rev`, `release` | At most one, for `gh` and `git`: which commit to use. `rev` is a full commit hash. `release = "luish"` takes the newest tag for this version of luish (see below). By default, the repository's default branch (its `HEAD`) |
 | `subdir = "DIR"` | Where in the repository (or `path`) the plugin or collection is |
 | `plugin = "NAME"` | In `plugins.enabled`: which plugin of a collection (`SUB/NAME` in a sub-collection). By default the one with the entry's name, or the only one |
 
@@ -138,7 +138,7 @@ Update available: smarty-prompt 8a1c0de..3f00c2d (smarty-prompt)
 1 of 2 git sources can be updated (run plugin update)
 ```
 
-A source pinned with `rev` never has anything newer. The exit status is 0
+A source pinned with `rev` never has anything newer, and one with `tag` only if the tag moves. The exit status is 0
 unless a source couldn't be checked. All three commands take `-q` (or
 `--quiet`): `plugin sync` and `plugin update` then print only errors, and
 `plugin check` only the sources that can be updated or aren't installed.
@@ -268,17 +268,25 @@ Or, by hand, in `config.toml` (then run `plugin sync`):
 
 ```toml
 [plugins.available]
-extra = { gh = "luispedro/luish-extra" }
+extra = { gh = "luispedro/luish-extra", release = "luish" }
 
 [plugins.enabled]
 extra.complete.all = "*"        # or only some: extra.complete.bio = "*", ...
 ```
 
-The plugins depend on `std.completion`, whose engine they use, so luish loads it too.
+The plugins depend on `std.completion`, whose engine they use, so luish loads it too. The
+[recommended configuration](getting-started.md#the-recommended-configuration) has these lines.
+
+`release = "luish"` takes the newest release of luish-extra made for your version of luish, so that it never needs a
+newer luish than yours (`plugin add` takes the repository's default branch, which may). luish-extra's releases are
+tags `vX.Y.N`: the `N`th release for luish `X.Y`. luish takes the newest tag for its own `X.Y`, or if there is none,
+for the newest older `X.Y`; pre-releases (`v0.7.0-rc1`) and tags for newer versions are skipped. `plugin update`
+moves to a newer release, and after luish is upgraded, `plugin sync` takes the releases for the new version. Any
+repository can be used in this way, if its tags follow this scheme.
 
 Adding the whole repository needs luish 0.4.0 or newer, which has sub-collections; with luish 0.3.0, add its
-`complete` directory instead (see its README). Unlike `std`, it is not tied to the version of luish, so `plugin update`
-updates it. Its [README](https://github.com/luispedro/luish-extra#readme) lists every command it completes.
+`complete` directory instead (see its README). `release` needs luish 0.7.0 or newer. Its
+[README](https://github.com/luispedro/luish-extra#readme) lists every command it completes.
 
 ## Plugin formats
 

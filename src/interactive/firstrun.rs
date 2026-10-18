@@ -1,8 +1,8 @@
 //! The first run (DEVELOPING.md): an interactive shell on a terminal whose
 //! configuration directory (`$XDG_CONFIG_HOME/luish`) is missing or empty
 //! offers to write `config.toml` there, before reading it: the recommended
-//! settings (the standard plugins, autosuggestions, `prompt.percent`,
-//! `history.expand` and `history.file`, commented out, at its default), the same file with
+//! settings (the standard plugins and luish-extra, autosuggestions, and
+//! options from zsh; `history.file`, commented out, at its default), the same file with
 //! everything commented out (so the question isn't asked again), a
 //! minimal file with only a personal plugin (as `plugin add` takes it), or
 //! nothing (so the question is asked again), in a menu.
@@ -40,13 +40,12 @@ fn with_tilde(sh: &Shell, path: &[u8]) -> String {
 
 /// The text of `config.toml`: the recommended settings, commented out
 /// unless `on`. `history` is the default history file, shown commented
-/// out, `bash_completion` whether to enable std.bash-completion, and
-/// `extra` whether to add luish-extra, with its completion and themes.
-fn config_text(history: &str, bash_completion: bool, on: bool, extra: bool) -> String {
+/// out, and `bash_completion` whether to enable std.bash-completion.
+fn config_text(history: &str, bash_completion: bool, on: bool) -> String {
     let history = crate::config::toml_str(history);
     let mut lines = vec![
         "# luish's configuration: see https://luish.readthedocs.io/en/latest/getting-started.html".to_string(),
-        "# (written by luish).".into(),
+        "# (written by luish). These settings apply only to interactive shells, not to scripts.".into(),
     ];
     if !on {
         lines.push("# Remove the # at the start of a line to use it.".into());
@@ -62,38 +61,59 @@ fn config_text(history: &str, bash_completion: bool, on: bool, extra: bool) -> S
         "=[options.prompt]",
         "=percent = true",
         "",
-        "# !! for the previous command, !$ for its last word, ^old^new to run it with old replaced by new.",
+        "# Underline the arguments that name existing files as you type.",
+        "=[options.highlight]",
+        "=paths = true",
+        "",
+        "# **/ matches any number of directories: ls **/*.rs",
+        "=[options.glob]",
+        "=star = true",
+        "",
+        "# Brace expansion: cp f{,.bak} copies f to f.bak, and {1..3} is 1 2 3.",
+        "=[options.expand]",
+        "=braces = true",
+        "",
+        "# A directory's name alone changes to it.",
+        "=[options.cd]",
+        "=auto = true",
+        "",
+        "# cd remembers where it has been: dirs -v lists the directories, cd -2 goes back two.",
+        "=[options.pushd]",
+        "=auto = true",
+        "=ignore_dups = true",
+        "=silent = true",
+        "",
+        "# !! for the previous command, !$ for its last word, ^old^new to run it with old replaced by new;",
+        "# a command typed with a space first isn't saved; each command is saved as soon as it runs.",
         "=[options.history]",
         "=expand = true",
+        "=ignore_space = true",
+        "=reduce_blanks = true",
+        "=inc_append = true",
+        "# share = true   # see the commands of the other shells as they run",
         &format!("# file = {history}   # the default"),
     ];
-    let mut plugins = vec![
+    let plugins = [
         "",
-        match extra {
-            false => "# The standard plugins: plugin sync fetches them, and plugin update updates them.",
-            true => "# The plugins: plugin sync fetches them, and plugin update updates them.",
-        },
+        "# The plugins: plugin sync fetches them, and plugin update updates them.",
         "=[plugins.enabled]",
         "=std.completion = \"*\"         # Tab completion for about 230 commands, and git",
         match bash_completion {
             true => "=std.bash-completion = \"*\"    # completion from bash-completion for the others",
             false => "# std.bash-completion = \"*\"  # completion from bash-completion (which isn't installed)",
         },
+        "=extra.complete.all = \"*\"     # completion for about 270 more commands: science, bioinformatics, ...",
+        "=extra.themes = \"*\"           # colour schemes: style -c lists them, style -c NAME tries one",
+        "",
+        "# luish-extra, under the name extra, at the newest release for this version of luish:",
+        "# https://github.com/luispedro/luish-extra",
+        "=[plugins.available]",
+        "=extra = { gh = \"luispedro/luish-extra\", release = \"luish\" }",
+        "",
+        "# A colour scheme from extra.themes, as a pair: luish takes the one that fits the terminal's background.",
+        "# [style]",
+        "# colorscheme = { dark = \"gruvbox-dark\", light = \"gruvbox-light\" }",
     ];
-    if extra {
-        plugins.extend([
-            "=extra.complete.all = \"*\"     # completion for about 270 more commands: science, bioinformatics, ...",
-            "=extra.themes = \"*\"           # colour schemes: style -c lists them, style -c NAME tries one",
-            "",
-            "# luish-extra, under the name extra: https://github.com/luispedro/luish-extra",
-            "=[plugins.available]",
-            "=extra = { gh = \"luispedro/luish-extra\" }",
-            "",
-            "# A colour scheme from extra.themes, as a pair: luish takes the one that fits the terminal's background.",
-            "# [style]",
-            "# colorscheme = { dark = \"gruvbox-dark\", light = \"gruvbox-light\" }",
-        ]);
-    }
     let plugins: &[&str] = if cfg!(feature = "plugins") { &plugins } else { &[] };
     for line in settings.iter().chain(plugins) {
         lines.push(match line.strip_prefix('=') {
@@ -107,12 +127,12 @@ fn config_text(history: &str, bash_completion: bool, on: bool, extra: bool) -> S
     text
 }
 
-/// The recommended `config.toml` for this system (as the first run
-/// writes it), with luish-extra if `extra`.
-pub fn default_config(sh: &Shell, extra: bool) -> String {
+/// The recommended `config.toml` for this system, as the first run writes
+/// it.
+pub fn default_config(sh: &Shell) -> String {
     let state = crate::startcache::xdg_dir(sh, b"XDG_STATE_HOME", b"/.local/state").unwrap_or_default();
     let history = with_tilde(sh, &[&state[..], b"/luish/history"].concat());
-    config_text(&history, has_bash_completion(sh), true, extra)
+    config_text(&history, has_bash_completion(sh), true)
 }
 
 /// Asks `question` on stderr. `None` for Ctrl-C or Ctrl-D.
@@ -253,14 +273,15 @@ pub fn run(sh: &mut Shell) {
         with_tilde(sh, dir)
     );
     if cfg!(feature = "plugins") {
-        intro.push_str("  - Builtin Tab completion for about 230 commands\n");
+        intro.push_str("  - Builtin Tab completion for about 500 commands (with luish-extra)\n");
         if bash_completion {
             intro.push_str("  - Bash-based completion for hundreds more commands\n");
         }
+        intro.push_str("  - colour schemes (style -c lists them)\n");
     }
     intro.push_str(
         "  - suggestions from the history as you type (Right accepts them)\n\
-         \x20 - zsh's % sequences in prompts\n\n",
+         \x20 - from zsh: % in prompts, **/ and {a,b} in patterns, cd by name, cd -N\n\n",
     );
     sys::write_all(2, intro.as_bytes());
     let mut items = vec![
@@ -277,8 +298,8 @@ pub fn run(sh: &mut Shell) {
     // collection, what it holds.
     let (text, sync, note) = loop {
         match choose(sh, &items) {
-            Some(0) => break (config_text(&history, bash_completion, true, false), true, None),
-            Some(1) => break (config_text(&history, bash_completion, false, false), false, None),
+            Some(0) => break (config_text(&history, bash_completion, true), true, None),
+            Some(1) => break (config_text(&history, bash_completion, false), false, None),
             // A personal plugin, alone in a minimal configuration.
             Some(n) if n < skip => {
                 let question = "Plugin (a GitHub repository, as OWNER/REPO or its URL, a git URL or a path): ";
@@ -315,29 +336,44 @@ mod tests {
 
     #[test]
     fn config() {
-        let on = config_text("~/.local/state/luish/history", true, true, false);
+        let on = config_text("~/.local/state/luish/history", true, true);
         assert!(on.contains("\n[options.editor]\nautosuggest = true\n"), "{on}");
+        assert!(on.contains("\n[options.glob]\nstar = true\n"), "{on}");
         assert!(
-            on.contains("\n[options.history]\nexpand = true\n# file = \"~/.local/state/luish/history\""),
+            on.contains("\ninc_append = true\n# share = true   # see the commands of the other shells as they run\n# file = \"~/.local/state/luish/history\""),
             "{on}"
         );
         #[cfg(feature = "plugins")]
-        assert!(on.contains("\nstd.bash-completion = \"*\""), "{on}");
-        assert!(!on.contains("extra"), "{on}");
-        let off = config_text("/data/luish/history", false, false, false);
+        {
+            assert!(on.contains("\nstd.bash-completion = \"*\""), "{on}");
+            assert!(on.contains("\nextra.complete.all = \"*\""), "{on}");
+            assert!(on.contains("\nextra.themes = \"*\""), "{on}");
+            assert!(
+                on.contains("\n[plugins.available]\nextra = { gh = \"luispedro/luish-extra\", release = \"luish\" }\n"),
+                "{on}"
+            );
+        }
+        let off = config_text("/data/luish/history", false, false);
         assert!(off.contains("\n# [options.editor]\n# autosuggest = true\n"), "{off}");
         assert!(off.lines().all(|l| l.is_empty() || l.starts_with('#')), "{off}");
         assert!(toml_span::parse(&on).is_ok(), "{on}");
-        let extra = config_text("~/.local/state/luish/history", false, true, true);
+        // The user documentation shows it.
         #[cfg(feature = "plugins")]
-        {
-            assert!(extra.contains("\nextra.complete.all = \"*\""), "{extra}");
-            assert!(extra.contains("\nextra.themes = \"*\""), "{extra}");
-            assert!(
-                extra.contains("\n[plugins.available]\nextra = { gh = \"luispedro/luish-extra\" }\n"),
-                "{extra}"
-            );
+        assert_eq!(
+            on,
+            include_str!("../../docs/default-config.toml"),
+            "docs/default-config.toml"
+        );
+        // Every option it sets exists.
+        for line in on.lines() {
+            if let Some(group) = line.strip_prefix("[options.").and_then(|l| l.strip_suffix(']')) {
+                let names = on.lines().skip_while(|l| *l != line).skip(1);
+                let names = names.take_while(|l| !l.is_empty()).filter(|l| !l.starts_with('#'));
+                for name in names.filter_map(|l| l.split_once(" = ")) {
+                    let name = format!("{group}.{}", name.0);
+                    assert!(crate::options::Options::find(name.as_bytes()).is_some(), "{name}");
+                }
+            }
         }
-        assert!(toml_span::parse(&extra).is_ok(), "{extra}");
     }
 }

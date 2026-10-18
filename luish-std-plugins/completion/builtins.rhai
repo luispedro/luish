@@ -460,8 +460,8 @@ fn internal(words, i) {
             sub,
             i - 1,
         ),
-        "default-config" => lib::complete(#{opts: "--extra  add the luish-extra plugins"}, sub, i - 1),
-        "complete" | "list-completions" | "print-git-rev" | "print-git-rev-short" | "savestate" => [],
+        // (`default-config --extra` is only for older install scripts.)
+        "complete" | "default-config" | "list-completions" | "print-git-rev" | "print-git-rev-short" | "savestate" => [],
         _ => (),
     }
 }

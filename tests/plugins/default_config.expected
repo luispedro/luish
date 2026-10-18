@@ -1,10 +1,26 @@
 status 0
 status 0
-0
+same
 autosuggest = true
 complete
 themes
-extra = { gh = "luispedro/luish-extra" }
+extra = { gh = "luispedro/luish-extra", release = "luish" }
 std
 status 2
 status 2
+--- the options it sets
+cd.auto
+editor.autosuggest
+emacs
+expand.braces
+glob.star
+highlight.paths
+history.expand
+history.ignore_space
+history.inc_append
+history.reduce_blanks
+interactive
+prompt.percent
+pushd.auto
+pushd.ignore_dups
+pushd.silent

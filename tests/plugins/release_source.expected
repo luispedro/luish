@@ -1,0 +1,35 @@
+--- sync takes the newest tag for this version, or for an older one
+Fetching file://~/p
+Fetching file://~/old
+Locking file://~/p at ... (p)
+Locking file://~/old at ... (old)
+2 git sources locked, 2 plugins enabled: p, old
+status 0
+url = "file://~/old"
+release = "X.Y"
+--
+url = "file://~/p"
+release = "X.Y"
+p at vX.Y.1
+old at v0.0.1
+--- a newer tag for this version: check and update
+Update available: file://~/p ... (p)
+Up to date: file://~/old at ... (old)
+1 of 2 git sources can be updated (run plugin update)
+status 0
+Fetching file://~/p
+Updating file://~/p ... (p)
+Up to date file://~/old at ... (old)
+2 git sources locked (1 updated), 2 plugins enabled: p, old
+status 0
+p at vX.Y.2
+old at v0.0.1
+--- no tag for this version or an older one
+Fetching file://~/new
+luish: ~/.config/luish/config.toml: line 4: file://~/new: no release for luish X.Y at file://~/new (a tag vX.Y or vX.Y.N, or for an older luish)
+status 1
+--- bad sources
+luish: ~/.config/luish/config.toml: line 2: a.release: expected "luish", found "latest"
+luish: ~/.config/luish/config.toml: line 3: b: at most one of branch, tag, rev and release
+luish: ~/.config/luish/config.toml: line 4: c: branch, tag, rev and release need gh or git
+status 1

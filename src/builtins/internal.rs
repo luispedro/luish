@@ -184,19 +184,19 @@ fn function_file(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 }
 
 /// `default-config [--extra]`: prints the recommended `config.toml`, as
-/// the first run writes it; with `--extra`, also luish-extra's completion
-/// and themes (for `install.sh`).
+/// the first run writes it. `--extra` (which used to add luish-extra, now
+/// always there) is accepted for older install scripts.
 fn default_config(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    let extra = match argv.get(1).map(Vec::as_slice) {
-        None => false,
-        Some(b"--extra") if argv.len() == 2 => true,
+    match argv.get(1).map(Vec::as_slice) {
+        None => {}
+        Some(b"--extra") if argv.len() == 2 => {}
         Some(_) => {
             let a = String::from_utf8_lossy(&argv[argv.len() - 1]);
             sh.berr(b"__luish_internal default-config", format!("unexpected argument: {a}"));
             return Ok(2);
         }
-    };
-    let text = crate::interactive::firstrun::default_config(sh, extra);
+    }
+    let text = crate::interactive::firstrun::default_config(sh);
     Ok(sh.out_status(text.as_bytes()))
 }
 

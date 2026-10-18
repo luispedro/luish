@@ -10,9 +10,10 @@ curl -fsSL https://raw.githubusercontent.com/luispedro/luish/main/install.sh | s
 ```
 
 If you have no configuration yet (`~/.config/luish` is missing or empty), the script then asks whether to write the
-recommended one, and fetches its plugins (which needs `git`). It is the configuration that luish's
-[first run](getting-started.md#the-first-run) offers, plus [luish-extra](plugins.md#more-completion-luish-extra):
-completion for about 270 more commands, and colour schemes (`style -c` lists them). Without a terminal to ask on, it
+[recommended one](getting-started.md#the-recommended-configuration), and fetches its plugins (which needs `git`).
+It is the configuration that luish's [first run](getting-started.md#the-first-run) offers, with
+[luish-extra](plugins.md#more-completion-luish-extra): completion for about 270 more commands, and colour schemes
+(`style -c` lists them). Without a terminal to ask on, it
 writes nothing, and luish's first run offers a configuration instead.
 
 ### Advanced options for the install script

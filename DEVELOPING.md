@@ -949,9 +949,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - **First run** (`interactive/firstrun.rs`): before `config.toml` is read, an interactive shell reading from the line
   editor, with stderr a terminal (and without `--no-rcs` or `--no-plugins`), whose configuration directory is missing
   or empty (only `.` and `..`) shows a menu on stderr (`choose`): write `config.toml` with the recommended settings
-  (`config_text`: `editor.autosuggest`, `prompt.percent`, `history.expand`, the default `history.file` as a comment, `std.completion`,
-  plus `std.bash-completion` if bash-completion is where `bridge.bash` looks for it; the plugins only with the
-  `plugins` feature), write the same text commented out (so the directory isn't empty next time), write a minimal
+  (`config_text`: `editor.autosuggest`, `prompt.percent`, `highlight.paths`, `glob.star`, `expand.braces`, `cd.auto`,
+  `pushd.auto`, `pushd.ignore_dups`, `pushd.silent`, `history.expand`, `history.ignore_space`,
+  `history.reduce_blanks`, `history.inc_append`, `history.share` and the default `history.file` as comments,
+  `std.completion`, plus `std.bash-completion` if bash-completion is where `bridge.bash` looks for it, and
+  luish-extra as the source `extra` with `release = "luish"`, with `extra.complete.all`, `extra.themes` and a
+  commented-out `[style]` colour scheme; the plugins only with the `plugins` feature), write the same text commented out (so the directory isn't empty next time), write a minimal
   file with only a personal plugin, or write nothing. The menu puts the terminal in raw mode (`Raw`, restored on drop;
   no `ISIG`, so Ctrl-C is a byte) and redraws its items in place (`ESC [ N A`, each line short enough not to wrap);
   `read_key` takes Up and Down (`ESC [ A`, `ESC O A`, also `k`/`j` and Ctrl-P/Ctrl-N), Enter, a digit (which
@@ -962,10 +965,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   once, and `plugin sync` runs unless it is all commented out; the normal startup then loads the plugins.
   The pty tests' `Pty::spawn_term` puts an empty `luishrc` in the configuration directory so that no other test sees
   the menu. Test: `first_run` in `tests/interactive.rs` (vt100 and dumb), and `config` in `firstrun.rs`.
-  `__luish_internal default-config [--extra]` prints the recommended text (`firstrun::default_config`); `--extra` adds
-  luish-extra as the source `extra`, with `extra.complete.all` and `extra.themes`, and a commented-out `[style]`
-  colour scheme. `install.sh` writes that (it can't take the text from the first run, which needs a terminal).
-  Test: `tests/plugins/default_config.sh` (a plugin case, as without plugins the text has none).
+  `__luish_internal default-config` prints the recommended text (`firstrun::default_config`); `--extra`, which
+  added luish-extra before it was always there, is accepted for older copies of `install.sh`. `install.sh` writes
+  that (it can't take the text from the first run, which needs a terminal). `docs/default-config.toml` is the text
+  shown in the user docs, which `firstrun::tests::config` checks against `config_text`. Tests:
+  `tests/plugins/default_config.sh` (a plugin case, as without plugins the text has none; it also checks that an
+  interactive shell reads the file without a message, and lists the options it sets), `firstrun::tests::config`
+  (every option it sets exists).
 - Order: `config.toml`, `rc.d`, then the login files (`login.d`, or else `/etc/profile` and `~/.profile`), `$ENV`,
   `luishrc`. Login files run for login shells whether interactive or not, as in dash.
 - A cache (`startcache.rs`) is a list of entries, each what one file or one `__luish_cache` block changed for one
@@ -1328,6 +1334,15 @@ no plugin completer, as luish's own completer skips it as a
   commits), so it touches neither the cache nor the data directory, and prints a line for each source (`-q`: only
   those with updates, and those not installed). A GitHub source that moved also gets a `compare` link
   (`compare_url`).
+- **Releases of a source** (`release = "luish"`, `GitRef::Release`): the ref holds the running luish's `X.Y`
+  (`luish_minor`), so it is in pins and the lock as `release = "X.Y"`, and after an upgrade the pin no longer matches
+  and the source must be synced again, as `std` must. `fetch::release_tag` lists `refs/tags/v*` with
+  `git ls-remote --tags` and takes the newest `vX.Y` or `vX.Y.N` (digits only, so pre-releases are skipped) whose
+  `X.Y` isn't newer (`newest_release`, which takes an annotated tag's peeled commit); `fetch::concrete` turns the ref
+  into that tag before fetching, and `remote_commit` (`plugin check`) uses the tag's commit. This is how the
+  recommended configuration takes luish-extra, whose `main` may need an unreleased luish. Tests:
+  `tests/plugins/release_source.sh` (tags built from `$SH --version`, so the case doesn't change with the version),
+  `fetch::tests::releases`.
 - **`plugin` output** (`plugins/ui.rs`). `Ui::new` resolves the `plugin.*` styles (roles in `style::ROLES`, defaults in
   `default-dark`) to SGR once per command, only when stdout is a terminal and `$NO_COLOR` is empty (so the startup path
   and pipes pay nothing, and scripts read plain text); `Ui::plain` otherwise. Errors still go through `Shell::berr`,

@@ -94,8 +94,7 @@ status 0
 default-config 	print the recommended config.toml
 status 0
 --- __luish_internal default-config -
---extra 	add the luish-extra plugins
-status 0
+status 1
 --- __luish_internal va
 vared 	edit a variable's value
 status 0

@@ -66,6 +66,11 @@ pub enum GitRef {
     Tag(String),
     /// A full commit hash.
     Rev(String),
+    /// `release = "luish"`: the newest tag `vX.Y` or `vX.Y.N` for this
+    /// luish's version `X.Y`, else for the newest older one
+    /// (`fetch::release_tag`). It holds `X.Y`, so that a source resolved
+    /// by another version of luish is resolved again, as `std` is.
+    Release(String),
 }
 
 impl GitRef {
@@ -76,8 +81,15 @@ impl GitRef {
             GitRef::Branch(b) => Some(("branch", b)),
             GitRef::Tag(t) => Some(("tag", t)),
             GitRef::Rev(r) => Some(("rev", r)),
+            GitRef::Release(v) => Some(("release", v)),
         }
     }
+}
+
+/// `X.Y`, the version of luish that `release = "luish"` takes tags for.
+pub fn luish_minor() -> String {
+    let v = parse_version(env!("CARGO_PKG_VERSION")).unwrap_or_default();
+    format!("{}.{}", v[0], v[1])
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -686,7 +698,7 @@ impl Reader<'_> {
             if plugin && ["version", "options"].contains(&&*k.name) {
                 continue;
             }
-            let known = ["gh", "git", "path", "branch", "tag", "rev", "subdir"].contains(&&*k.name)
+            let known = ["gh", "git", "path", "branch", "tag", "rev", "release", "subdir"].contains(&&*k.name)
                 || (plugin && k.name == "plugin");
             match v.as_str() {
                 _ if !known => {
@@ -694,10 +706,12 @@ impl Reader<'_> {
                     ok = false;
                 }
                 Some(s) => fields.push((
-                    ["gh", "git", "path", "branch", "tag", "rev", "subdir", "plugin"]
-                        .into_iter()
-                        .find(|f| *f == k.name)
-                        .unwrap_or(""),
+                    [
+                        "gh", "git", "path", "branch", "tag", "rev", "release", "subdir", "plugin",
+                    ]
+                    .into_iter()
+                    .find(|f| *f == k.name)
+                    .unwrap_or(""),
                     s.to_string(),
                     k.span.start,
                 )),
@@ -711,7 +725,7 @@ impl Reader<'_> {
         let at = |sel: &str| get(sel);
         let start = value.span.start;
         let whence: Vec<_> = ["gh", "git", "path"].into_iter().filter(|f| get(f).is_some()).collect();
-        let refs: Vec<_> = ["branch", "tag", "rev"]
+        let refs: Vec<_> = ["branch", "tag", "rev", "release"]
             .into_iter()
             .filter(|f| get(f).is_some())
             .collect();
@@ -720,7 +734,7 @@ impl Reader<'_> {
             return None;
         }
         if refs.len() > 1 {
-            self.err(start, format!("{name}: at most one of branch, tag and rev"));
+            self.err(start, format!("{name}: at most one of branch, tag, rev and release"));
             return None;
         }
         let gitref = match refs.first().and_then(|f| at(f).map(|v| (*f, v))) {
@@ -732,6 +746,11 @@ impl Reader<'_> {
                     return None;
                 }
                 GitRef::Rev(r)
+            }
+            Some(("release", (v, _))) if v == "luish" => GitRef::Release(luish_minor()),
+            Some(("release", (v, o))) => {
+                self.err(o, format!("{name}.release: expected \"luish\", found {v:?}"));
+                return None;
             }
             Some((f, (v, o))) if v.is_empty() || v.starts_with('-') || v.contains(['\0', '\n']) => {
                 self.err(o, format!("{name}.{f}: bad value {v:?}"));
@@ -787,7 +806,7 @@ impl Reader<'_> {
             _ => {
                 let (path, o) = get("path").unwrap_or_default();
                 if !refs.is_empty() {
-                    self.err(o, format!("{name}: branch, tag and rev need gh or git"));
+                    self.err(o, format!("{name}: branch, tag, rev and release need gh or git"));
                     return None;
                 }
                 let mut p = tilde(self.sh, path.as_bytes());
@@ -962,7 +981,7 @@ fn manifest(sh: &Shell, dir: &[u8], shown: &[u8], problems: &mut Vec<Problem>) -
 
 /// The numbers of a version `MAJOR[.MINOR[.PATCH]]`, with the missing ones
 /// 0. A pre-release suffix (`0.5.0-dev`) is ignored.
-fn parse_version(v: &str) -> Option<[u64; 3]> {
+pub(super) fn parse_version(v: &str) -> Option<[u64; 3]> {
     let v = v.split_once('-').map_or(v, |(v, _)| v);
     let mut out = [0; 3];
     let mut parts = v.split('.');
@@ -1042,12 +1061,16 @@ fn read_lock(file: &[u8]) -> Result<Lock, LockError> {
                 .and_then(|v| v.as_str())
                 .map(String::from)
         };
-        let gitref = |s: &Value<'_>| match (field(s, "branch"), field(s, "tag"), field(s, "rev")) {
-            (None, None, None) => Some(GitRef::Head),
-            (Some(b), None, None) => Some(GitRef::Branch(b)),
-            (None, Some(t), None) => Some(GitRef::Tag(t)),
-            (None, None, Some(r)) => Some(GitRef::Rev(r)),
-            _ => None,
+        let gitref = |s: &Value<'_>| {
+            let refs = ["branch", "tag", "rev", "release"].map(|k| field(s, k));
+            match refs {
+                [None, None, None, None] => Some(GitRef::Head),
+                [Some(b), None, None, None] => Some(GitRef::Branch(b)),
+                [None, Some(t), None, None] => Some(GitRef::Tag(t)),
+                [None, None, Some(r), None] => Some(GitRef::Rev(r)),
+                [None, None, None, Some(v)] => Some(GitRef::Release(v)),
+                _ => None,
+            }
         };
         for s in sources {
             match (field(&s, "url"), gitref(&s), field(&s, "commit")) {

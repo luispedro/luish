@@ -91,7 +91,7 @@ luish: ~/.config/luish/config.toml: line 2: unknown key: plugins.bogus
 luish: ~/.config/luish/config.toml: line 4: std: expected a table ({ gh = "OWNER/REPO" })
 luish: ~/.config/luish/config.toml: line 5: x.gh: expected OWNER/REPO, found "no-slash"
 luish: ~/.config/luish/config.toml: line 6: y: needs one of gh, git and path
-luish: ~/.config/luish/config.toml: line 7: z: branch, tag and rev need gh or git
+luish: ~/.config/luish/config.toml: line 7: z: branch, tag, rev and release need gh or git
 luish: ~/.config/luish/config.toml: line 8: w.rev: not a full commit hash
 luish: ~/.config/luish/config.toml: line 9: v.subdir: must be a relative path inside the source
 luish: ~/.config/luish/config.toml: line 10: u: unknown key: colour
