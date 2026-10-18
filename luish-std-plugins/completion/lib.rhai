@@ -14,8 +14,15 @@ import "kinds" as kinds;
 // The options of a table: for each, `names`, `desc`, `arg` (whether it
 // takes a value), `argname` (the name of its value), `optional` (whether
 // that value is optional, after `=`) and `eq` (whether it was written
-// after `=`), and `index`, each name's option.
+// after `=`), and `index`, each name's option. Each Tab completes with
+// the same tables, so what is parsed (here, and from help text in
+// `parse_commands` and `help_spec`) is kept, keyed by the text, for an
+// hour.
 fn parse(table) {
+    sh::cached("opts:" + table, 3600, || parse_options(table))
+}
+
+fn parse_options(table) {
     let opts = [];
     let index = #{};
     for line in table.split("\n") {
@@ -60,6 +67,10 @@ fn parse(table) {
 
 // The subcommands of a table: for each, `names` and `desc`.
 fn parse_commands(table) {
+    sh::cached("commands:" + table, 3600, || parse_command_table(table))
+}
+
+fn parse_command_table(table) {
     let out = [];
     for line in table.split("\n") {
         line.trim();
@@ -154,6 +165,10 @@ fn help_of(path) {
 // subcommands. `[possible values: ...]` in a description gives the values
 // of an option, and `[aliases: ...]` the other names of a subcommand.
 fn help_spec(text) {
+    sh::cached("help:" + text, 3600, || parse_help(text))
+}
+
+fn parse_help(text) {
     let opts = "";
     let commands = "";
     let values = #{};

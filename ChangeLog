@@ -6,6 +6,7 @@ Unreleased
       this version of luish
     * Rhai extensions: sh::cached(key, ttl, files, f) keeps what f returns
       until ttl seconds pass or one of the files changes
+    * std completion: faster Tab on options (tables parsed once)
     * Rhai extensions: sh::glob(pattern, dir) lists files with the shell's
       patterns, braces and glob qualifiers
     * std completion lists files faster (with sh::glob); for plugins,

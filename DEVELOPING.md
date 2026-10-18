@@ -1207,7 +1207,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   fields (release build), against 5.6 ms to build them in Rhai. Shared values would avoid it if it ever matters. `f` is called with `FnPtr::call_within_context`, with no borrow of the cache held, so it can
   call `sh::cached` again; an error isn't kept. Bounded as `capture_cached` (32 MiB, 4096 entries), with sizes
   estimated by walking the value (text, plus 16 bytes per element, to a depth of 64). A plugin's entries go when it is
-  unloaded or loaded again (`Host::remove`). Tests: the unit tests in `value_cache.rs`, `tests/plugins/cached.sh`.
+  unloaded or loaded again (`Host::remove`). std's `lib::parse`, `parse_commands` and `help_spec` keep what they parse
+  for an hour, keyed by the text, which halves the time of a Tab on `rsync --` (1.8 to 0.9 ms). Tests: the unit tests
+  in `value_cache.rs`, `tests/plugins/cached.sh`.
 - **`sh::which`** is `Shell::which` (`path.rs`): the `PATH` search that running a command does (`find_in_path`, so
   the `hash` table and an empty entry meaning `.` apply), without its fallback to a file that can't be executed, and,
   for a remembered command that is gone, the search again (as `with_command_path` tries the later directories); a name
