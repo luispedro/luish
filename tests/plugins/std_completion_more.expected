@@ -135,6 +135,27 @@ examples/
 src/
 z.pkg.tar.zst 
 status 0
+--- gunzip gz/
+gz/c.gz 
+gz/dlink/
+gz/sub/
+status 0
+--- gunzip gz/.
+gz/.h.gz 
+gz/.hd/
+status 0
+--- gunzip ~/gz/
+~/gz/c.gz 
+~/gz/dlink/
+~/gz/sub/
+status 0
+--- tar -xfgz/
+-xfgz/c.gz 
+-xfgz/d.txt 
+-xfgz/dlink/
+-xfgz/flink 
+-xfgz/sub/
+status 0
 === subcommands
 --- systemctl sta
 start 	start (activate) units
@@ -493,6 +514,7 @@ status 0
 bin/
 conda/
 examples/
+gz/
 src/
 sub/
 status 0
@@ -520,6 +542,7 @@ b.txt.gz
 bin/
 conda/
 examples/
+gz/
 notes.txt 
 package.json 
 pixi.toml 

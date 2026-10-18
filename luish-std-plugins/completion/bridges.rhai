@@ -7,9 +7,7 @@ import "kinds" as kinds;
 // The files whose names end with one of the extensions `exts` (without
 // the dot), and directories.
 fn with_ext(cur, exts) {
-    let r = kinds::files(cur, "");
-    r.candidates = r.candidates.filter(|c| type_of(c) == "map" || exts.some(|e| c.ends_with("." + e)));
-    r
+    kinds::files_matching(cur, kinds::ending_with(exts.map(|e| "." + e)))
 }
 
 // Programs built with Cobra complete themselves: `PROG __complete ARGS...

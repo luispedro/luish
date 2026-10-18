@@ -1,6 +1,8 @@
 Unreleased
     * Rhai extensions: sh::glob(pattern, dir) lists files with the shell's
       patterns, braces and glob qualifiers
+    * std completion lists files faster (with sh::glob); for plugins,
+      kinds::files_matching(cur, pattern) and kinds::ending_with(suffixes)
     * Tab completes vared's options, and __luish_internal vared like vared
     * Tab completes __luish_internal default-config
     * __luish_internal list-completions: the commands plugins complete

@@ -130,21 +130,9 @@ fn kind(name, cur, words) {
     switch name {
         "apt" => apt_available(cur),
         "deb_installed" => deb_installed(),
-        "debs" => {
-            let r = kinds::files(cur, "");
-            r.candidates = r.candidates.filter(|c| type_of(c) == "map" || c.ends_with(".deb"));
-            r
-        }
-        "rpms" => {
-            let r = kinds::files(cur, "");
-            r.candidates = r.candidates.filter(|c| type_of(c) == "map" || c.ends_with(".rpm"));
-            r
-        }
-        "pkgs" => {
-            let r = kinds::files(cur, "");
-            r.candidates = r.candidates.filter(|c| type_of(c) == "map" || c.contains(".pkg.tar"));
-            r
-        }
+        "debs" => kinds::files_matching(cur, "*.deb"),
+        "rpms" => kinds::files_matching(cur, "*.rpm"),
+        "pkgs" => kinds::files_matching(cur, "*.pkg.tar*"),
         "rpm_installed" => rpm_installed(),
         "pacman" => pacman_available(cur),
         "pacman_installed" => lines(["pacman", "-Qq"]),

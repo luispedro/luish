@@ -10,9 +10,7 @@ fn when() {
 
 // Directories, and the files whose names end with one of `exts`.
 fn with_ext(cur, exts) {
-    let r = kinds::files(cur, "");
-    r.candidates = r.candidates.filter(|c| type_of(c) == "map" || exts.some(|e| c.ends_with(e)));
-    r
+    kinds::files_matching(cur, kinds::ending_with(exts))
 }
 
 // The files in the zip archive of an unzip command line (its first

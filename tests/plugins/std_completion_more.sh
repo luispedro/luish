@@ -59,6 +59,15 @@ c 'gzip n'
 c 'dpkg -i '
 c 'rpm -qp '
 c 'pacman -U '
+# Dot files only after a `.`; a link to a directory is one; ~ is expanded.
+mkdir -p gz/sub gz/.hd
+touch gz/c.gz gz/.h.gz gz/d.txt
+ln -s sub gz/dlink
+ln -s c.gz gz/flink
+c 'gunzip gz/'
+c 'gunzip gz/.'
+c 'gunzip ~/gz/'
+c 'tar -xfgz/'
 
 echo "=== subcommands"
 c 'systemctl sta'

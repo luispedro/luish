@@ -29,26 +29,56 @@ fn split_dir(cur) {
     [cur.sub_string(0, slash + 1), cur.sub_string(slash + 1)]
 }
 
+// The directory part of `cur` as `listing` reads it (with `~` expanded),
+// and the `D` qualifier if the rest starts with `.`.
+fn glob_dir(parts) {
+    let dir = parts[0];
+    [tilde(if dir == "" { "." } else { dir }), if parts[1].starts_with(".") { "D" } else { "" }]
+}
+
 // The names in the directory of `cur` (`dirs_only`: the directories), as
 // a completion of the part after its last `/`, after `prefix` (such as
 // `-f` in `tar -fFILE`). Names that start with `.` only if it does.
 fn listing(cur, prefix, dirs_only) {
     let parts = split_dir(cur);
-    let dir = parts[0];
-    let path = tilde(if dir == "" { "." } else { dir });
+    let g = glob_dir(parts);
     let out = [];
-    for n in fs::list_dir(path) ?? [] {
-        if n.starts_with(".") && !parts[1].starts_with(".") {
-            continue;
+    for n in sh::glob("*(" + g[1] + (if dirs_only { "-/M)" } else { "-M)" }), g[0]) {
+        out.push(if n.ends_with("/") { #{value: n, suffix: ""} } else { n });
+    }
+    #{prefix: prefix + parts[0], candidates: out}
+}
+
+// The files of the directory of `cur` whose names the shell pattern
+// `pattern` (without a glob qualifier) matches, such as `*.{deb,rpm}`, and
+// the directories, as `files` gives them.
+fn files_matching(cur, pattern) {
+    let parts = split_dir(cur);
+    let g = glob_dir(parts);
+    let out = [];
+    for n in sh::glob("*(" + g[1] + "-/M)", g[0]) {
+        out.push(#{value: n, suffix: ""});
+    }
+    out += sh::glob(pattern + "(" + g[1] + "^-/)", g[0]);
+    #{prefix: parts[0], candidates: out}
+}
+
+// A shell pattern for the names that end with one of `suffixes` (such as
+// `[".tar.gz", ".tgz"]`), for `files_matching`.
+fn ending_with(suffixes) {
+    let alts = "";
+    for (s, i) in suffixes {
+        if i > 0 {
+            alts += ",";
         }
-        let p = path + "/" + n;
-        if fs::is_dir(p) {
-            out.push(#{value: n + "/", suffix: ""});
-        } else if !dirs_only {
-            out.push(n);
+        for c in s.chars() {
+            if "*?[]{},()\\".contains(c) {
+                alts += "\\";
+            }
+            alts += c;
         }
     }
-    #{prefix: prefix + dir, candidates: out}
+    if suffixes.len() == 1 { "*" + alts } else { "*{" + alts + "}" }
 }
 
 fn dirs(cur) {

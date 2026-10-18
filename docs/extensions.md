@@ -607,6 +607,13 @@ A kind says what a value or an argument completes to:
 
 An array is its own candidates.
 
+For a kind of files by name, std's `kinds` module (`import "@std/completion/kinds" as kinds;`) has
+`kinds::files_matching(cur, pattern)`: the files of the directory of `cur` that the shell pattern `pattern` matches,
+and the directories, as the `files` kind gives them (files that start with `.` only after a `.`).
+`kinds::ending_with(suffixes)` makes such a pattern from an array of suffixes:
+`kinds::files_matching(cur, kinds::ending_with([".fa", ".fasta"]))`.
+They list the directory with `sh::glob` (above).
+
 A plugin's own kinds and subcommand specs are functions of its modules, named `@SOURCE/PLUGIN/MODULE:NAME` (or by
 the module's absolute path, without `.rhai`: `sh::plugin_dir() + "/kinds:NAME"`, which doesn't depend on the name
 the user gives the source; a
