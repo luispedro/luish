@@ -1,8 +1,9 @@
-//! The cache of `sh::cached` (DEVELOPING.md): values that extension code
-//! computed, kept in memory by plugin and key until their time is up or a
-//! file they were computed from changes, so that a completer doesn't parse
-//! the same text again at each Tab. As with `capture_cache.rs`, nothing is
-//! promised: an entry may be dropped at any time.
+//! The cache of `sh::cache_get` and `sh::cache_put` (DEVELOPING.md): values
+//! that extension code computed, kept in memory by plugin and key until
+//! their time is up or a file they were computed from changes, so that a
+//! completer doesn't parse the same text again at each Tab. As with
+//! `capture_cache.rs`, nothing is promised: an entry may be dropped at any
+//! time.
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -17,6 +18,8 @@ const MAX_ENTRIES: usize = 4096;
 const ELEMENT: usize = 16;
 /// How deep [`size`] looks into nested arrays and maps.
 const MAX_DEPTH: u32 = 64;
+/// How many misses are remembered for the values not yet put.
+const MAX_MISSES: usize = 256;
 
 /// What a file was when a value was computed from it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -52,12 +55,28 @@ impl Entry {
     }
 }
 
+type Files = Vec<(Vec<u8>, Option<Stamp>)>;
+
+/// `files`, each with its stamp.
+fn stamped(files: Vec<Vec<u8>>, stamp: impl Fn(&[u8]) -> Option<Stamp>) -> Files {
+    files
+        .into_iter()
+        .map(|f| {
+            let s = stamp(&f);
+            (f, s)
+        })
+        .collect()
+}
+
 #[derive(Default)]
 pub struct ValueCache {
     /// By plugin, then by key.
     entries: HashMap<u32, HashMap<String, Entry>>,
     len: usize,
     bytes: usize,
+    /// The files as they were when a key was missed, by plugin and key,
+    /// until its value is put: a change while it is computed is then seen.
+    misses: HashMap<(u32, String), Files>,
 }
 
 impl ValueCache {
@@ -77,17 +96,39 @@ impl ValueCache {
         (same && !e.expired(now)).then(|| e.value.clone())
     }
 
-    /// Keeps `value`, computed at `now` from `files` (as they were then),
-    /// for `ttl` seconds.
-    pub fn insert(
+    /// Notes that `key` was missed, with `files` as `stamp` finds them now.
+    pub fn missed(&mut self, plugin: u32, key: &str, files: Vec<Vec<u8>>, stamp: impl Fn(&[u8]) -> Option<Stamp>) {
+        if files.is_empty() {
+            return;
+        }
+        if self.misses.len() >= MAX_MISSES {
+            self.misses.clear();
+        }
+        self.misses.insert((plugin, key.into()), stamped(files, stamp));
+    }
+
+    /// The stamps of `files` for a value of `key`: as they were at the last
+    /// miss of `key`, if it was for the same files, or as `stamp` finds them
+    /// now.
+    pub fn stamps(
         &mut self,
         plugin: u32,
-        key: String,
-        ttl: u64,
-        files: Vec<(Vec<u8>, Option<Stamp>)>,
-        value: Dynamic,
-        now: Instant,
-    ) {
+        key: &str,
+        files: Vec<Vec<u8>>,
+        stamp: impl Fn(&[u8]) -> Option<Stamp>,
+    ) -> Files {
+        if let Some(m) = self.misses.remove(&(plugin, key.into()))
+            && m.len() == files.len()
+            && m.iter().zip(&files).all(|(a, b)| a.0 == *b)
+        {
+            return m;
+        }
+        stamped(files, stamp)
+    }
+
+    /// Keeps `value`, computed at `now` from `files` (as they were then),
+    /// for `ttl` seconds.
+    pub fn insert(&mut self, plugin: u32, key: String, ttl: u64, files: Files, value: Dynamic, now: Instant) {
         self.remove(plugin, &key);
         let size = key.len() + files.iter().map(|f| f.0.len() + ELEMENT).sum::<usize>() + self::size(&value, 0);
         if ttl == 0 || size > MAX_BYTES {
@@ -136,6 +177,7 @@ impl ValueCache {
 
     /// Drops what `plugin` kept, when it is unloaded (or loaded again).
     pub fn remove_plugin(&mut self, plugin: u32) {
+        self.misses.retain(|k, _| k.0 != plugin);
         if let Some(map) = self.entries.remove(&plugin) {
             self.len -= map.len();
             self.bytes -= map.values().map(|e| e.size).sum::<usize>();
@@ -223,6 +265,43 @@ mod tests {
         c.insert(1, "m".into(), 60, vec![(f[0].clone(), None)], Dynamic::from(2_i64), t);
         assert_eq!(int(c.get(1, "m", &f, t, unchanged)), Some(2));
         assert_eq!(int(c.get(1, "m", &f, t, |_| st)), None);
+    }
+
+    #[test]
+    fn misses() {
+        let t = Instant::now();
+        let mut c = ValueCache::default();
+        let stamp = Stamp {
+            dev: 1,
+            ino: 2,
+            size: 3,
+            mtime: (4, 5),
+        };
+        let before = Some(stamp);
+        let after = Some(Stamp { size: 9, ..stamp });
+        let f = vec![b"f".to_vec()];
+        // The file changed between the miss and the put: the value is
+        // stale at once.
+        c.missed(1, "a", f.clone(), |_| before);
+        let files = c.stamps(1, "a", f.clone(), |_| after);
+        assert_eq!(files, vec![(f[0].clone(), before)]);
+        c.insert(1, "a".into(), 60, files, Dynamic::from(1_i64), t);
+        assert_eq!(int(c.get(1, "a", &f, t, |_| after)), None);
+        // A miss is used once, and only for the same files.
+        assert_eq!(c.stamps(1, "a", f.clone(), |_| after), vec![(f[0].clone(), after)]);
+        c.missed(1, "b", f.clone(), |_| before);
+        assert_eq!(
+            c.stamps(1, "b", vec![b"g".to_vec()], |_| after),
+            vec![(b"g".to_vec(), after)]
+        );
+        assert!(c.misses.is_empty());
+        // Nor are misses kept forever.
+        for i in 0..MAX_MISSES + 1 {
+            c.missed(1, &i.to_string(), f.clone(), |_| before);
+        }
+        assert!(c.misses.len() <= MAX_MISSES);
+        c.remove_plugin(1);
+        assert!(c.misses.is_empty());
     }
 
     #[test]

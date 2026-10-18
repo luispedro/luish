@@ -19,7 +19,8 @@ import "kinds" as kinds;
 // `parse_commands` and `help_spec`) is kept, keyed by the text, for an
 // hour.
 fn parse(table) {
-    sh::cached("opts:" + table, 3600, || parse_options(table))
+    let key = "opts:" + table;
+    sh::cache_get(key) ?? sh::cache_put(key, 3600, parse_options(table))
 }
 
 fn parse_options(table) {
@@ -67,7 +68,8 @@ fn parse_options(table) {
 
 // The subcommands of a table: for each, `names` and `desc`.
 fn parse_commands(table) {
-    sh::cached("commands:" + table, 3600, || parse_command_table(table))
+    let key = "commands:" + table;
+    sh::cache_get(key) ?? sh::cache_put(key, 3600, parse_command_table(table))
 }
 
 fn parse_command_table(table) {
@@ -165,7 +167,8 @@ fn help_of(path) {
 // subcommands. `[possible values: ...]` in a description gives the values
 // of an option, and `[aliases: ...]` the other names of a subcommand.
 fn help_spec(text) {
-    sh::cached("help:" + text, 3600, || parse_help(text))
+    let key = "help:" + text;
+    sh::cache_get(key) ?? sh::cache_put(key, 3600, parse_help(text))
 }
 
 fn parse_help(text) {

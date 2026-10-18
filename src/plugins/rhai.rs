@@ -14,9 +14,7 @@ use std::os::unix::ffi::OsStrExt;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use rhai::{
-    AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, NativeCallContext, Position, Scope, Shared,
-};
+use rhai::{AST, Dynamic, Engine, EvalAltResult, FnPtr, Module, ModuleResolver, Position, Scope, Shared};
 
 use super::bytes::{to_bytes, to_str};
 use super::capture_cache::{self, CaptureCache};
@@ -102,7 +100,7 @@ pub struct Host {
     modules: RefCell<HashMap<Vec<u8>, Shared<Module>>>,
     /// What `sh::capture_cached` ran.
     captures: RefCell<CaptureCache>,
-    /// What `sh::cached` computed.
+    /// What `sh::cache_put` kept.
     values: RefCell<ValueCache>,
 }
 
@@ -486,42 +484,51 @@ fn capture_cached(ttl: i64, argv: rhai::Array, stderr: &str) -> RhaiResult<rhai:
     })
 }
 
-/// `sh::cached(key, ttl, files, f)`: what `f()` returned for `key` (in the
-/// running plugin) less than `ttl` seconds ago, if the files `files` are as
-/// they were then, or else what it returns now (`value_cache.rs`).
-fn cached(ctx: NativeCallContext, key: &str, ttl: i64, files: rhai::Array, f: FnPtr) -> RhaiResult<Dynamic> {
-    if ttl < 0 {
-        return error(format!("cached: the time to keep the value is negative: {ttl}"));
-    }
+/// The paths of `sh::cache_get`'s and `sh::cache_put`'s `files`.
+fn cache_files(what: &str, files: rhai::Array) -> RhaiResult<Vec<Vec<u8>>> {
     let mut paths = Vec::with_capacity(files.len());
     for file in files {
         match file.into_immutable_string() {
             Ok(s) => paths.push(to_shell(&s)?),
-            Err(_) => return error("cached: the array of files must hold strings"),
+            Err(_) => return error(format!("{what}: the array of files must hold strings")),
         }
     }
-    if ttl == 0 {
-        return f.call_within_context(&ctx, ());
-    }
+    Ok(paths)
+}
+
+/// `sh::cache_get(key, files)`: a copy of what `sh::cache_put` kept for
+/// `key` (in the running plugin), if it is fresh and the files `files` are
+/// as they were, or else `()` (`value_cache.rs`). A miss notes the files as
+/// they are now, for the `cache_put` that follows.
+fn cache_get(key: &str, files: rhai::Array) -> RhaiResult<Dynamic> {
+    let paths = cache_files("cache_get", files)?;
     let host = with_shell(|sh| host(sh))?;
+    let mut values = host.values.borrow_mut();
     let plugin = CURRENT.get();
-    let now = Instant::now();
-    if let Some(v) = host.values.borrow().get(plugin, key, &paths, now, value_cache::stamp) {
+    if let Some(v) = values.get(plugin, key, &paths, Instant::now(), value_cache::stamp) {
         return Ok(v);
     }
-    // (Before `f` runs, so that a change while it does is seen next time.)
-    let files = paths
-        .into_iter()
-        .map(|p| {
-            let s = value_cache::stamp(&p);
-            (p, s)
-        })
-        .collect();
-    let v: Dynamic = f.call_within_context(&ctx, ())?;
-    host.values
-        .borrow_mut()
-        .insert(plugin, key.into(), ttl as u64, files, v.clone(), now);
-    Ok(v)
+    values.missed(plugin, key, paths, value_cache::stamp);
+    Ok(Dynamic::UNIT)
+}
+
+/// `sh::cache_put(key, ttl, files, value)`: keeps `value` for `key` (in
+/// the running plugin) for `ttl` seconds, with the files as the last
+/// `cache_get` of `key` found them (or as they are now), and returns it.
+fn cache_put(key: &str, ttl: i64, files: rhai::Array, value: Dynamic) -> RhaiResult<Dynamic> {
+    if ttl < 0 {
+        return error(format!("cache_put: the time to keep the value is negative: {ttl}"));
+    }
+    let paths = cache_files("cache_put", files)?;
+    if value.is_unit() {
+        return Ok(value);
+    }
+    let host = with_shell(|sh| host(sh))?;
+    let mut values = host.values.borrow_mut();
+    let plugin = CURRENT.get();
+    let files = values.stamps(plugin, key, paths, value_cache::stamp);
+    values.insert(plugin, key.into(), ttl as u64, files, value.clone(), Instant::now());
+    Ok(value)
 }
 
 /// `#{status, out}`, and `err` if there is one, with NUL bytes and trailing
@@ -742,10 +749,12 @@ fn sh_module() -> Module {
         capture_cached(ttl, argv, "discard")
     });
     m.set_native_fn("capture_cached", capture_cached);
-    m.set_native_fn("cached", |ctx: NativeCallContext, key: &str, ttl: i64, f: FnPtr| {
-        cached(ctx, key, ttl, rhai::Array::new(), f)
+    m.set_native_fn("cache_get", |key: &str| cache_get(key, rhai::Array::new()));
+    m.set_native_fn("cache_get", cache_get);
+    m.set_native_fn("cache_put", |key: &str, ttl: i64, value: Dynamic| {
+        cache_put(key, ttl, rhai::Array::new(), value)
     });
-    m.set_native_fn("cached", cached);
+    m.set_native_fn("cache_put", cache_put);
     m.set_native_fn("which", |name: &str| {
         let name = to_shell(name)?;
         with_shell(|sh| Ok(sh.which(&name).map_or(Dynamic::UNIT, |p| to_str(&p).into())))

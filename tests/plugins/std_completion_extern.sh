@@ -2,7 +2,9 @@
 # completes from its own specs, whose kinds and sub_spec name modules of
 # that plugin as `@SOURCE/PLUGIN/MODULE:NAME` (here loaded by path, so
 # named bio), or by the module's absolute path. Those modules' functions
-# call their own helpers and import their neighbours (and std's kinds).
+# call their own helpers and import their neighbours (and std's kinds). A
+# module may define functions with the names of lib.rhai's variables (text,
+# table), which lib.rhai's code must not see.
 C=$HOME/.config/luish
 B=extra/bio
 mkdir -p "$C" "$B/specs" data/sub
@@ -12,6 +14,11 @@ cat > "$B/extension.rhai" <<'X'
 sh::completer("seqtool", |words, i| {
     import "@std/completion/lib" as lib;
     import "specs/seqtool" as s;
+    lib::complete(s::spec(), words, i)
+});
+sh::completer("seqhelp", |words, i| {
+    import "@std/completion/lib" as lib;
+    import "specs/helped" as s;
     lib::complete(s::spec(), words, i)
 });
 let kinds = sh::plugin_dir() + "/kinds";
@@ -37,6 +44,20 @@ fn sub_spec(name, sub) {
         "faidx" => #{opts: "-o FILE  output", args: ["@extra/bio/kinds:fasta"], args_if: #{"-o": ["dirs"]}},
         _ => (),
     }
+}
+X
+cat > "$B/specs/helped.rhai" <<'X'
+import "@std/completion/lib" as lib;
+fn text() {
+    "Options:\n  -q, --quiet  say less\n  --level=N  how much\n\nCommands:\n  run  run it\n"
+}
+fn table() {
+    "-n NUM  how many"
+}
+fn spec() {
+    let s = lib::help_spec(text());
+    s.opts += table();
+    s
 }
 X
 cat > "$B/kinds.rhai" <<'X'
@@ -93,3 +114,6 @@ c 'seqtool index data/'
 c 'seqtool faidx -o data/genome.fa d'
 c 'seqtool faidx --ref=data/o'
 c 'seqfmt '
+c 'seqhelp -'
+c 'seqhelp --'
+c 'seqhelp '

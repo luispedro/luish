@@ -32,3 +32,12 @@ data/
 --- seqfmt 
 fasta 	sequences
 sam 	alignments
+--- seqhelp -
+--level=	how much
+-n 	how many
+-q 	say less
+--- seqhelp --
+--level=	how much
+--quiet 	say less
+--- seqhelp 
+run 	run it

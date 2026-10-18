@@ -1,0 +1,38 @@
+plain 1
+plain 1
+other 2
+plain 1
+b 3
+b 3
+-- files
+file 4
+file 4
+file 5
+file 5
+files 6
+files 6
+files 7
+file 8
+file 8
+-- a file that changes while the value is computed
+race 9
+race 10
+race 10
+-- 0 is never kept, nor ()
+zero 11
+zero 12
+not kept
+-- modules
+2
+2
+-- a copy
+3
+3
+-- loading a plugin again drops its values
+plain 14
+b 3
+-- errors
+cache_put: the time to keep the value is negative: -1
+cache_put: the array of files must hold strings
+cache_get: the array of files must hold strings
+runs: 14

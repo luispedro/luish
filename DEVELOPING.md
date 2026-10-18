@@ -84,7 +84,7 @@ src/
 │                       # escape.rs (ssh's ~ escapes), chaos.rs (a bad network, for testing)
 └── plugins/            # mod.rs (the `plugin` built-in), package.rs (config.toml's [plugins], plugin.toml,
                         # plugins.lock), fetch.rs (git), add.rs (`plugin add`), ui.rs (`plugin`'s output), rhai.rs,
-                        # capture_cache.rs (sh::capture_cached), value_cache.rs (sh::cached), fs.rs, vcs.rs,
+                        # capture_cache.rs (sh::capture_cached), value_cache.rs (sh::cache_get), fs.rs, vcs.rs,
                         # bytes.rs
 tests/
 ├── cases/              # differential cases (*.sh, with .expected/.status/.stdin where needed)
@@ -1209,18 +1209,24 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   name is a word of the command line that isn't an option or an assignment (`invalidate`): too many may go, which only
   costs a run. std's `lib::help_of` (`-h` scraping) keeps its output 300 s. Tests: the unit tests in
   `capture_cache.rs`, `tests/plugins/capture_cached.sh`, `capture_cached_invalidation` in `tests/interactive.rs`.
-- **`sh::cached`** keeps what a closure returned (`plugins/value_cache.rs`, on the `Host`, empty until used), by
-  plugin (`CURRENT`, so a module function caches for the plugin that calls it) and key. A hit needs the entry younger
-  than `ttl` (not clamped: the files are what usually invalidate it) and the same list of files, each with the same
-  device, inode, size and mtime (in ns) as when the value was computed, or still missing; the stamps are taken before
-  `f` runs, so a change while it runs is seen at the next call. A hit returns a clone, which copies arrays and maps
-  (strings are shared), so that changing the result doesn't change the entry: about 1 ms for 3000 maps of three
-  fields (release build), against 5.6 ms to build them in Rhai. Shared values would avoid it if it ever matters. `f` is called with `FnPtr::call_within_context`, with no borrow of the cache held, so it can
-  call `sh::cached` again; an error isn't kept. Bounded as `capture_cached` (32 MiB, 4096 entries), with sizes
-  estimated by walking the value (text, plus 16 bytes per element, to a depth of 64). A plugin's entries go when it is
-  unloaded or loaded again (`Host::remove`). std's `lib::parse`, `parse_commands` and `help_spec` keep what they parse
-  for an hour, keyed by the text, which halves the time of a Tab on `rsync --` (1.8 to 0.9 ms). Tests: the unit tests
-  in `value_cache.rs`, `tests/plugins/cached.sh`.
+- **`sh::cache_get` and `sh::cache_put`** keep a value that extension code computed (`plugins/value_cache.rs`, on
+  the `Host`, empty until used), by plugin (`CURRENT`, so a module function caches for the plugin that calls it) and
+  key. They are a pair rather than one function taking a closure (`sh::cached(key, ttl, f)`, as it first was) because
+  Rhai (1.26) runs a closure made in a module in the caller's namespace: a captured variable with the name of one of
+  the caller's functions became that function (std's `help_spec(text)`, called from a luish-extra module with `fn
+  text`, got an `Fn`). A hit needs the entry younger than `ttl` (not clamped: the files are what usually invalidate
+  it) and the same list of files, each with the same device, inode, size and mtime (in ns) as when the value was
+  computed, or still missing. A miss notes the stamps of its files (`ValueCache::missed`, at most 256 keys), and the
+  `cache_put` of that key with the same files uses them, so a change while the value is computed is seen at the next
+  get; without a miss, the stamps are taken at the put. `()` isn't kept, as a get gives `()` for nothing. A hit
+  returns a clone, which copies arrays and maps (strings are shared), so that changing the result doesn't change the
+  entry: about 1 ms for 3000 maps of three fields (release build), against 5.6 ms to build them in Rhai. Shared values
+  would avoid it if it ever matters. Bounded as `capture_cached` (32 MiB, 4096 entries), with sizes estimated by
+  walking the value (text, plus 16 bytes per element, to a depth of 64). A plugin's entries go when it is unloaded or
+  loaded again (`Host::remove`). std's `lib::parse`, `parse_commands` and `help_spec` keep what they parse for an
+  hour, keyed by the text, which halves the time of a Tab on `rsync --` (1.8 to 0.9 ms). Tests: the unit tests in
+  `value_cache.rs`, `tests/plugins/cache.sh`, and `std_completion_extern.sh` for a caller with functions named as
+  `lib.rhai`'s variables.
 - **`sh::which`** is `Shell::which` (`path.rs`): the `PATH` search that running a command does (`find_in_path`, so
   the `hash` table and an empty entry meaning `.` apply), without its fallback to a file that can't be executed, and,
   for a remembered command that is gone, the search again (as `with_command_path` tries the later directories); a name
