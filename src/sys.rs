@@ -222,9 +222,11 @@ pub fn dup_high(fd: i32) -> Result<i32, i32> {
 
 /// An anonymous file in memory, close-on-exec.
 pub fn memfd() -> Result<i32, i32> {
+    // The raw system call, as glibc only has a wrapper from 2.27 on and
+    // release builds link against 2.17 (an older kernel gives ENOSYS).
     // SAFETY: a valid name, plain memfd_create.
-    let r = unsafe { libc::memfd_create(c"luish".as_ptr(), libc::MFD_CLOEXEC) };
-    if r < 0 { Err(errno()) } else { Ok(r) }
+    let r = unsafe { libc::syscall(libc::SYS_memfd_create, c"luish".as_ptr(), libc::MFD_CLOEXEC) };
+    if r < 0 { Err(errno()) } else { Ok(r as i32) }
 }
 
 pub fn fd_is_open(fd: i32) -> bool {

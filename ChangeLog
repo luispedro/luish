@@ -1,3 +1,6 @@
+Version 0.7.1 2026-10-19 by luispedro
+    * Release packages build again (0.7.0 had none)
+
 Version 0.7.0 2026-10-19 by luispedro
     * $(basename "$(dirname ...)"): basename, dirname, expr, seq, id and
       uname in $(...) run without a subshell also with a $(...) in their

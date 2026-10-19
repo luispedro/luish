@@ -1,5 +1,10 @@
 # What's new
 
+## Version 0.7.1 (19 October 2026)
+
+The 0.7.0 release packages failed to build, so 0.7.0 was never published
+as a GitHub release; 0.7.1 is 0.7.0 with that fixed.
+
 ## Version 0.7.0 (19 October 2026)
 
 This release makes scripts start fewer processes, adds command substitution
