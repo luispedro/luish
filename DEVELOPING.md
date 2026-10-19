@@ -1879,7 +1879,7 @@ docs, `docs/performance.md`; update them there after rerunning `bench/run.sh` or
 follows is what they came from and what is left.
 
 Per external command, luish makes the same syscalls as dash. Startup makes 66 syscalls to dash's 49 (56 without
-the `plugins` feature). The startup gap (0.52 ms to dash's 0.32 ms per `-c true` in `docs/performance.md`) comes
+the `plugins` feature). The startup gap (0.52 ms to dash's 0.31 ms per `-c true` in `docs/performance.md`) comes
 from the larger binary (4.8 MB) and its libraries, `libm` (for Rhai's floats), `libpthread` and `libgcc_s`:
 `LD_DEBUG=statistics` puts about 100k cycles in the dynamic loader to dash's 50k (so only some 15 µs of the gap), and
 luish takes 252 page faults to dash's 189. A command substitution that forks takes 1.4 times as long as in dash with
@@ -1891,8 +1891,8 @@ Binaries linked by pixi's toolchain (`pixi run release`) have an RPATH into the 
 added by conda-forge's gcc specs, so the loader first looks for each library there; it costs no measurable time. The
 release packages have it removed (`scripts/dist.sh`, below).
 
-Work inside the shell is as fast as dash or faster; `configure` takes 5% longer, mostly startup and forks, and `build`
-half as long, as `basename` and `dirname` run in the shell. Most of the remaining in-shell time is `malloc` and
+Work inside the shell is as fast as dash or faster; `configure` takes 8% longer, mostly startup and forks, and `build`
+a third as long, as `basename` and `dirname` run in the shell. Most of the remaining in-shell time is `malloc` and
 `free`, since expansion builds `Vec`s where dash uses its stack allocator.
 
 For small changes, instruction counts are steadier than timings: run a benchmark script under
