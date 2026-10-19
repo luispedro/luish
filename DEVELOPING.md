@@ -1929,14 +1929,17 @@ fetched, an existing one left alone, `--no-config`), in a `HOME` of its own. Whe
 `/dev/tty` (stdin is the script under `curl | sh`) if stderr is a terminal, writes the output of
 `__luish_internal default-config --extra` (a release without it gets nothing, and its first run asks), and runs
 `__luish_internal plugin sync`, whose failure is only a warning. It uses colours when stderr is a terminal, `TERM`
-isn't `dumb` and `NO_COLOR` is empty. The workflow also runs on pull requests that change any of these, without publishing. To make a
-release, set the version in `Cargo.toml` and push a tag `vVERSION`: the workflow checks that the two agree and
-publishes the packages and `install.sh` as a GitHub release. The tag is also where every luish of that version
+isn't `dumb` and `NO_COLOR` is empty. The workflow also runs on pull requests that change any of these, without publishing. A push to
+the branch `release-test` (`git push -f origin HEAD:release-test`) or a manual run (`gh workflow run release.yml
+--ref BRANCH`) also does everything but publish: only a tag publishes. Try the release commit that way before
+tagging it, as ordinary CI doesn't link against glibc 2.17, so a call to a newer glibc function fails only here (as
+`memfd_create` did for 0.7.0, which never had packages). To make a release, set the version in `Cargo.toml` and
+push a tag `vVERSION`: the workflow checks that the two agree and publishes the packages and `install.sh` as a GitHub release. The tag is also where every luish of that version
 takes the `std` plugins from (`package::std_ref`), so they can't change after the release, and a build whose
 version has no tag yet can't fetch them: developers use a `path` or `branch` source named `std`. `install.sh` downloads from the latest release's URLs
 (`releases/latest/download/NAME`), so the packages' names must not change.
 
-Before tagging: `pixi run check` is green; `version` in `Cargo.toml` (and `Cargo.lock`) is the new one;
+Before tagging: `pixi run check` is green; the release workflow passes on `release-test` with the release commit; `version` in `Cargo.toml` (and `Cargo.lock`) is the new one;
 `Unreleased` in `ChangeLog` is renamed to `Version X.Y.Z YYYY-MM-DD by luispedro`; the new section of
 `docs/whatsnew.md` has its date; the measurements in `docs/performance.md` were made with a release build of a
 revision that is in the history (their date and revision are stated there); and `pixi run docs` builds without

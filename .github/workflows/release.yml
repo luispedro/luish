@@ -2,11 +2,14 @@ name: Release
 
 # Builds the release packages (scripts/dist.sh) on x86_64 and aarch64 and tests
 # install.sh with them. On a v* tag, publishes them, with install.sh, as a
-# GitHub release, where install.sh downloads them from.
+# GitHub release, where install.sh downloads them from. A push to the branch
+# release-test (or a manual run) does everything but publish, to try a
+# release before tagging it.
 
 on:
   push:
     tags: ["v*"]
+    branches: [release-test]
   pull_request:
     paths:
       - install.sh
