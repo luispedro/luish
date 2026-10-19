@@ -4,7 +4,7 @@ This page compares what the shell language of dash, bash, zsh and luish can do b
 quoting, parameter expansion, arrays, arithmetic, conditionals, globbing, redirections, control flow and the
 variables the shell sets. [](builtin-commands.md) compares the built-in commands.
 
-Each feature was tried in dash 0.5.12, bash 5.2, zsh 5.9 (started with `-f`) and luish 0.6.0. The zsh column is
+Each feature was tried in dash 0.5.12, bash 5.2, zsh 5.9 (started with `-f`) and luish 0.7.0. The zsh column is
 native zsh. Where luish takes a feature from zsh, it usually follows zsh's `sh` emulation (`zsh --emulate sh`), which
 turns some of zsh's features off and counts array indices from 0; the notes say where that matters.
 
@@ -92,6 +92,7 @@ All four have `$((...))` with C's integer operators, assignments (`x+=2`), `?:`,
 | Feature | dash | bash | zsh | luish | Notes |
 |---|:-:|:-:|:-:|:-:|---|
 | `[ ... ]`, `test` | ✓ | ✓ | ✓ | ✓ | |
+| `[ a == b ]`, the same as `=` | – | ✓ | ✓ | ✓ | zsh: quote it (`'=='`), as a word that starts with `=` is a command's path (`=ls`) |
 | `[[ ... ]]`, with patterns (`[[ $x == *.c ]]`) | – | ✓ | ✓ | ✓ | |
 | Regular expressions, `[[ $x =~ re ]]` | – | ✓ | ✓ | ✓ | luish sets both bash's `BASH_REMATCH` and zsh's `MATCH` and `match` |
 | `[[ -v name ]]` | – | ✓ | ✓ | ✓ | |
@@ -137,6 +138,7 @@ All four have POSIX's `*`, `?` and `[...]`. luish sorts matches by bytes, where 
 | zsh's `=(cmd)` (a temporary file) | – | – | ✓ | – | |
 | Allocated descriptors, `exec {fd}>f` | – | ✓ | ✓ | – | |
 | `$(<file)` | – | ✓ | ✓ | – | `$(cat file)` |
+| Command substitution without a subshell, `${ list; }`, `${\| list; }` | – | – | – | ✓ | As in bash 5.3 and mksh |
 | Coprocesses, `coproc` | – | ✓ | ✓ | – | |
 
 ## Control flow and functions

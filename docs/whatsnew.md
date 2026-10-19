@@ -1,5 +1,78 @@
 # What's new
 
+## Version 0.7.0 (19 October 2026)
+
+This release makes scripts start fewer processes, adds command substitution
+without a subshell, bash's `shopt` and zsh's options for globs that match
+nothing, and a recommended configuration with more of zsh's conveniences.
+
+**Fewer processes.** `basename`, `dirname`, `expr` (with integers), `seq`
+(with integers), `id -u`, `id -g` and `uname` run inside the shell, without
+starting a process, when they are the system's and given plain arguments.
+The result is the same as the utility's: anything unusual, such as an option,
+runs the utility itself. `$(echo ...)`, `$(printf ...)`,
+`$(pwd)`, `$(command -v ...)`, `$(type ...)` and these utilities in `$(...)`
+don't fork a subshell either, also when nested
+(`$(basename "$(dirname "$f")")`). A build script that computes paths with
+them now takes a third as long as under dash (see [](performance.md)).
+
+**Command substitution in the shell itself.** `${ list; }` is replaced by
+the output of `list`, as `$(list)` is, but `list` runs in the shell rather
+than in a subshell, as in bash 5.3 and mksh; `${| list; }` is replaced by
+the value of `REPLY` after the list (see
+[](usage.md#shell-language-extensions)).
+
+**bash's and zsh's options.**
+
+- `shopt`, as in bash, sets the matching luish option (`globstar`,
+  `autocd`, `histverify`, `nullglob`, `dotglob`, `failglob`), so that lines
+  from a `.bashrc` work (see `help shopt`).
+- `setopt glob.null`, `glob.dots`, `glob.fail` and `glob.fail_all` (zsh's
+  `NULL_GLOB`, `GLOB_DOTS`, `NOMATCH` and `CSH_NULL_GLOB`) decide what a
+  pattern that matches nothing becomes, and whether `*` matches hidden files
+  (see [](globbing.md#patterns-that-match-nothing-and-hidden-files)).
+- `test` and `[` accept `==`, the same as `=`, as zsh and bash do.
+
+**Configuration.**
+
+- The recommended configuration, which the first run and the install script
+  offer, now has the luish-extra completions, `**/`, brace expansion,
+  `cd.auto`, `pushd.auto`, highlighted paths and more history options (see
+  [](getting-started.md#the-recommended-configuration)).
+- A plugin source with `release = "luish"` takes the newest release made for
+  your version of luish (a tag `vX.Y.N`), so that it never needs a newer
+  luish than yours.
+- **Changed:** startup files and `config.toml` are no longer cached as a
+  whole unless `setopt startup.auto_cache` is on (in `config.toml`'s
+  `[options.startup]`); `__luish_cache` blocks are still cached (see
+  [](usage.md#cached-startup-files)).
+- `setopt vars.trace_after_startup` traces variables from the first prompt
+  on, without the cost of tracing the startup files.
+
+**Completion.**
+
+- Tab after `git` offers the repository's own aliases with every version of
+  git, and completes git commands that are programs of their own (`git annex`,
+  `git lfs`) with the completer of `git-annex`, `git-lfs` and so on.
+- Tab on options and file names is faster.
+- `vared`'s options and `__luish_internal`'s subcommands are completed, and
+  `__luish_internal list-completions` lists the commands that plugins
+  complete.
+
+**For plugin authors.** `sh::glob(pattern, dir)` lists files with the
+shell's patterns, braces and glob qualifiers; `sh::cache_put` and
+`sh::cache_get` keep a computed value until it expires or a file it depends
+on changes; a completer can hand the line over to another command's
+completer (`#{delegate: WORDS, index: I}`); and lists and maps have no size
+limits, with a warning when a call uses a lot of memory (see
+[](extensions.md)).
+
+**Fixes.**
+
+- `a=1 b=$a cmd` gives `b` the value 1, as dash does.
+- A script read from standard input no longer loses a first word that spans
+  lines (`p='a<newline>b'`), or the lines of an alias after the first.
+
 ## Version 0.6.0 (10 October 2026)
 
 This release brings remote shells whose line editor runs on your machine,

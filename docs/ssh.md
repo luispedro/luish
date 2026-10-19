@@ -114,7 +114,7 @@ same ssh connection (so you log in once):
 
 ```console
 $ luish --ssh myserver
-luish: copying luish 0.6.0 to the server (5.6 MB)
+luish: copying luish 0.7.0 to the server (5.6 MB)
 ```
 
 The copy is kept on HOST as `~/.cache/luish/binaries/luish-VERSION-BUILD`
