@@ -142,6 +142,7 @@ fn function_command(name: &[u8], body: &Rc<ast::FunctionBody>) -> ast::CompleteC
             rest: Vec::new(),
         },
         async_: false,
+        disown: false,
     }
 }
 
