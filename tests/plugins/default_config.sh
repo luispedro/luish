@@ -6,7 +6,7 @@ __luish_internal default-config >plain; echo "status $?"
 __luish_internal default-config --extra >extra; echo "status $?"
 cmp plain extra && echo same
 grep -x 'autosuggest = true' plain
-grep -x 'extra.complete.all = "\*".*' plain >/dev/null && echo complete
+grep -x 'extra.completion.all = "\*".*' plain >/dev/null && echo complete
 grep -x 'extra.themes = "\*".*' plain >/dev/null && echo themes
 grep -x 'extra = { gh = "luispedro/luish-extra", release = "luish" }' plain
 grep -x 'std.completion = "\*".*' plain >/dev/null && echo std

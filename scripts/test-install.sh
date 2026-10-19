@@ -121,7 +121,7 @@ mkdir "$tmp/fakegit"
 printf '#!/bin/sh\nexit 1\n' >"$tmp/fakegit/git"
 chmod +x "$tmp/fakegit/git"
 PATH=$tmp/fakegit:$PATH check "--config" 0 sh "--$libc" --config
-grep -qx 'extra.complete.all = "\*".*' "$conf/config.toml" && grep -qx 'extra.themes = "\*".*' "$conf/config.toml" ||
+grep -qx 'extra.completion.all = "\*".*' "$conf/config.toml" && grep -qx 'extra.themes = "\*".*' "$conf/config.toml" ||
     fail "--config: $(cat "$conf/config.toml" 2>&1)"
 grep -q 'run plugin sync' "$tmp/out" || fail "--config: no warning that plugin sync failed: $(cat "$tmp/out")"
 # An existing configuration is left alone.

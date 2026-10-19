@@ -120,7 +120,7 @@ personal = { path = "~/src/luish-personal-plugin" }
 - **`plugin.toml`**: dependencies, options, aliases and key bindings, and the
   sources of plugins you load now and then, in `[available]` (such as
   `extra = { gh = "luispedro/luish-extra" }`, so that `plugin load
-  extra/complete/gui` works on every machine; see [Making sources
+  extra/completion/gui` works on every machine; see [Making sources
   available](plugins.md#making-sources-available-available)). Prefer it to
   shell where it can express the setting.
 - **`rc.lsh`**: variables, functions and the prompt, for interactive shells.

@@ -1006,7 +1006,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `pushd.auto`, `pushd.ignore_dups`, `pushd.silent`, `history.expand`, `history.ignore_space`,
   `history.reduce_blanks`, `history.inc_append`, `history.share` and the default `history.file` as comments,
   `std.completion`, plus `std.bash-completion` if bash-completion is where `bridge.bash` looks for it, and
-  luish-extra as the source `extra` with `release = "luish"`, with `extra.complete.all`, `extra.themes` and a
+  luish-extra as the source `extra` with `release = "luish"`, with `extra.completion.all`, `extra.themes` and a
   commented-out `[style]` colour scheme; the plugins only with the `plugins` feature), write the same text commented out (so the directory isn't empty next time), write a minimal
   file with only a personal plugin, or write nothing. The menu puts the terminal in raw mode (`Raw`, restored on drop;
   no `ISIG`, so Ctrl-C is a byte) and redraws its items in place (`ESC [ N A`, each line short enough not to wrap);
@@ -1435,7 +1435,7 @@ no plugin completer, as luish's own completer skips it as a
   `plugin_feedback` in `tests/interactive.rs` (colours, `$NO_COLOR`, silent in functions), `ui::tests`. The lock is written only if its text
   changed (so the rc cache, which fingerprints it, stays valid). Messages about manifests of git plugins show
   `SOURCE:PATH/plugin.toml` rather than the data directory.
-- **Names.** A plugin of a named collection is loaded as `SOURCE/PATH` (`std/completion`, `extra/complete/all`), the
+- **Names.** A plugin of a named collection is loaded as `SOURCE/PATH` (`std/completion`, `extra/completion/all`), the
   name it is written with, so short names such as `all` don't clash. Others are named after the entry (a source
   that is one plugin, `NAME = { gh = ... }`), or after their file or directory (the plugin directory, a path, and
   the dependencies of plugins of a source without a name): `Coll::name_of`, with `Coll::src` the source's name or
@@ -1457,7 +1457,7 @@ no plugin completer, as luish's own completer skips it as a
   for a source in `config.toml` (and `std`), then, in a manifest, in its own declarations only (so the result
   doesn't depend on the order plugins are resolved), and in `plugins.enabled` and for `plugin load` in
   `Resolver::declared` and then `Config::declared`. `resolve_enabled` defers an entry of `plugins.enabled` whose
-  source isn't known yet until no entry makes progress, so `extra.complete.gui` can come before the plugin that
+  source isn't known yet until no entry makes progress, so `extra.completion.gui` can come before the plugin that
   declares `extra` (its error, if it stays unknown, comes after the others). `sync` installs every plugin of the
   declared sources too (`resolve_all`) and writes them to `plugins.lock` as `[[available]]` (name, `declared-by`,
   `url` and ref or an absolute `path`, `subdir`; an older luish ignores them), from which `config_and_pins` fills

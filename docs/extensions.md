@@ -407,7 +407,7 @@ calls it. `NAME` can also be an absolute path, without `.rhai`.
 A plugin can use the modules of another plugin: `import "@SOURCE/PLUGIN/MODULE"` reads `MODULE.rhai` in the
 directory of the plugin `SOURCE/PLUGIN`, such as `import "@std/completion/lib"` for std's completion engine (see
 [Reusing std's completion engine](#reusing-stds-completion-engine)). `PLUGIN` is the plugin's path in its collection
-(`@extra/complete/bio/specs` is `specs.rhai` in `extra/complete/bio`). That plugin must be loaded, so list it in the
+(`@extra/completion/bio/kinds` is `kinds.rhai` in `extra/completion/bio`). That plugin must be loaded, so list it in the
 `[dependencies]` of your [`plugin.toml`](plugins.md#dependencies-options-aliases-and-key-bindings-plugintoml) (here
 `std.completion = "*"`), which loads it first. It is found by its name (see [](plugins.md#names)), or, for a plugin
 whose name has no source (one of the plugin directory, or loaded by path), by `PLUGIN` alone. The module's own imports

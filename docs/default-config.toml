@@ -45,7 +45,7 @@ inc_append = true
 [plugins.enabled]
 std.completion = "*"         # Tab completion for about 230 commands, and git
 std.bash-completion = "*"    # completion from bash-completion for the others
-extra.complete.all = "*"     # completion for about 270 more commands: science, bioinformatics, ...
+extra.completion.all = "*"   # completion for about 270 more commands: science, bioinformatics, ...
 extra.themes = "*"           # colour schemes: style -c lists them, style -c NAME tries one
 
 # luish-extra, under the name extra, at the newest release for this version of luish:

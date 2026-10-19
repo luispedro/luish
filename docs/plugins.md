@@ -64,12 +64,12 @@ name, or `SUB/NAME` in a sub-collection, and it is loaded under that name:
 extra = { gh = "luispedro/luish-extra" }
 
 [plugins.enabled]
-extra.complete.all = "*"           # the plugin all of extra's sub-collection complete
-"extra/complete/bio" = "*"         # the same with / (quoted, as TOML's bare keys can't have it)
+extra.completion.all = "*"         # the plugin all of extra's sub-collection completion
+"extra/completion/bio" = "*"       # the same with / (quoted, as TOML's bare keys can't have it)
 ```
 
-`plugin list-loaded` shows `extra/complete/all`, `plugin unload extra/complete/all` unloads it, and other plugins
-import its modules as `@extra/complete/all/MODULE`. std's plugins are `std/completion`, `std/bash-completion` and `std/notify`.
+`plugin list-loaded` shows `extra/completion/all`, `plugin unload extra/completion/all` unloads it, and other plugins
+import its modules as `@extra/completion/all/MODULE`. std's plugins are `std/completion`, `std/bash-completion` and `std/notify`.
 Other plugins are named after the entry (a source that is one plugin, or `NAME = { gh = ... }`), or after their file
 or directory (those of the plugin directory, or loaded by path).
 
@@ -239,8 +239,8 @@ The `std` library is tied to the version of luish, so it is not affected by
 ## More completion: luish-extra
 
 [luish-extra](https://github.com/luispedro/luish-extra) is a separate collection of completion plugins (in its
-sub-collection `complete`) for the programs that `std.completion` leaves out. It completes about 270 more commands,
-in five plugins that can each be enabled on its own:
+sub-collection `completion`) for the programs that `std.completion` leaves out. It completes about 270 more commands,
+in six plugins that can each be enabled on its own:
 
 - **`bio`**: bioinformatics tools, such as samtools, bcftools, bedtools, bwa, bowtie2, minimap2, STAR, BLAST+, diamond,
   fastp, cutadapt, assemblers (spades, megahit, flye), and the tools of metagenomics (kraken2, metaphlan, checkm,
@@ -250,7 +250,8 @@ in five plugins that can each be enabled on its own:
 - **`gui`**: desktop programs (firefox, libreoffice, code, mpv, inkscape, gimp, ...) and desktop tools (xrandr,
   gsettings, xdotool, ...);
 - **`dev`**: Python tooling (pytest, ruff, poetry, twine, ...) and command-line utilities;
-- **`system`**: borg (its repositories and archives) and fusermount.
+- **`system`**: borg (its repositories and archives), git-annex (also as `git annex`) and fusermount;
+- **`media`**: ffmpeg (the options of each input and output, codecs' and formats' own options, filtergraphs).
 
 As with `std.completion`, completion knows each program's options and the kind of value each one takes, and often
 reads the files you are working on: `samtools sort -O` offers `BAM`, `CRAM` and `SAM`, `samtools view in.bam` the
@@ -260,11 +261,11 @@ installed LibreOffice writes. Each module is compiled the first time Tab is pres
 enabling all of them costs little.
 
 To install it, add the repository as a source (under any name, here `extra`), then enable `all`, which loads the
-five plugins:
+six plugins:
 
 ```console
 $ plugin add luispedro/luish-extra extra
-$ plugin add extra/complete/all
+$ plugin add extra/completion/all
 ```
 
 Or, by hand, in `config.toml` (then run `plugin sync`):
@@ -274,7 +275,7 @@ Or, by hand, in `config.toml` (then run `plugin sync`):
 extra = { gh = "luispedro/luish-extra", release = "luish" }
 
 [plugins.enabled]
-extra.complete.all = "*"        # or only some: extra.complete.bio = "*", ...
+extra.completion.all = "*"      # or only some: extra.completion.bio = "*", ...
 ```
 
 The plugins depend on `std.completion`, whose engine they use, so luish loads it too. The
@@ -287,8 +288,7 @@ for the newest older `X.Y`; pre-releases (`v0.7.0-rc1`) and tags for newer versi
 moves to a newer release, and after luish is upgraded, `plugin sync` takes the releases for the new version. Any
 repository can be used in this way, if its tags follow this scheme.
 
-Adding the whole repository needs luish 0.4.0 or newer, which has sub-collections; with luish 0.3.0, add its
-`complete` directory instead (see its README). `release` needs luish 0.7.0 or newer. Its
+luish-extra needs luish 0.7.0 or newer. Its
 [README](https://github.com/luispedro/luish-extra#readme) lists every command it completes.
 
 ## Plugin formats
@@ -354,12 +354,12 @@ A plugin can also make sources available, in an `[available]` table that is writ
 extra = { gh = "luispedro/luish-extra" }
 
 [dependencies]
-extra.complete.bio = "*"
+extra.completion.bio = "*"
 ```
 
 Once `plugin sync` has run, the sources that the enabled plugins declare are available as if they were in
-`config.toml`: `plugin load extra/complete/gui` loads one of their plugins, `plugin list-available` and Tab after
-`plugin load` list them, `plugin add extra/complete/gui` enables one, `plugins.enabled` can name them, and `plugin
+`config.toml`: `plugin load extra/completion/gui` loads one of their plugins, `plugin list-available` and Tab after
+`plugin load` list them, `plugin add extra/completion/gui` enables one, `plugins.enabled` can name them, and `plugin
 update extra` updates the source. `plugin sync` installs all of their plugins, as for the sources in `config.toml`,
 and records the sources in `plugins.lock`, so a change to `[available]` takes effect at the next `plugin sync`.
 

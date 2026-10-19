@@ -227,7 +227,7 @@ For about 270 more commands with luish-native completion, in bioinformatics
 
 ```console
 $ plugin add luispedro/luish-extra extra
-$ plugin add extra/complete/all
+$ plugin add extra/completion/all
 ```
 
 

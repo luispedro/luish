@@ -102,7 +102,7 @@ fn config_text(history: &str, bash_completion: bool, on: bool) -> String {
             true => "=std.bash-completion = \"*\"    # completion from bash-completion for the others",
             false => "# std.bash-completion = \"*\"  # completion from bash-completion (which isn't installed)",
         },
-        "=extra.complete.all = \"*\"     # completion for about 270 more commands: science, bioinformatics, ...",
+        "=extra.completion.all = \"*\"   # completion for about 270 more commands: science, bioinformatics, ...",
         "=extra.themes = \"*\"           # colour schemes: style -c lists them, style -c NAME tries one",
         "",
         "# luish-extra, under the name extra, at the newest release for this version of luish:",
@@ -346,7 +346,7 @@ mod tests {
         #[cfg(feature = "plugins")]
         {
             assert!(on.contains("\nstd.bash-completion = \"*\""), "{on}");
-            assert!(on.contains("\nextra.complete.all = \"*\""), "{on}");
+            assert!(on.contains("\nextra.completion.all = \"*\""), "{on}");
             assert!(on.contains("\nextra.themes = \"*\""), "{on}");
             assert!(
                 on.contains("\n[plugins.available]\nextra = { gh = \"luispedro/luish-extra\", release = \"luish\" }\n"),
