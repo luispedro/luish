@@ -198,7 +198,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   the options as arrays (`After::Cache`). Tests: `parse/cache_block.sh`, unit tests in `parser.rs`, `unparse.rs` and
   `highlight.rs`.
 - `Parser::started` tells a buffer of blank lines apart from a real incomplete command. The lexer reads a trailing
-  `(...)` as `WordPart::GlobQual` only under `glob.bare_qualifiers`: the only place it depends on an option.
+  `(...)` as `WordPart::GlobQual` only under `glob.bare_qualifiers`: the only place it depends on an option, as
+  `syntax.repeat` (the `repeat` keyword) is the only one the parser reads. Both are set by `Shell::parse_options`.
 - Unit tests in `parser.rs`, and the `parse` and `unparse` fuzz targets (see Fuzzing).
 
 ### Expansion (`expand/`)
@@ -478,6 +479,23 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   expression's operators, and `]]` as a keyword (`After::Cond`). Tests: `parse/cond.sh` (zsh),
   `parse/cond_regex_match.sh` (zsh), `parse/cond_regex_rematch.sh` (`zsh -o bashrematch`), `parse/cond_regex_bash.sh`, `parse/cond_newer.sh` and `parse/cond_xtrace.sh` (`.expected`), unit tests `parser::tests::cond` and
   `unparse::tests::layout`.
+- `repeat` (`CompoundCommand::Repeat`, `parse_repeat`) is a reserved word only with `setopt syntax.repeat`
+  (`Parser::repeat`, given to a parser by `Shell::parse_options`, which is the one place the parse-time options are
+  read, and copied into the parsers of backquotes and here-documents): the word is valid POSIX, so the keyword can't
+  be always on as `function` and `[[` are. Both of zsh's body forms are taken, `repeat WORD; do list; done` and
+  `repeat WORD { list }`; the count is expanded as `case`'s word is and then evaluated by `arith::eval` (so
+  `repeat "$n"` works, where `$((...))`'s own `arith_word` would see the quotes), and a count of zero or less runs
+  nothing, with status 0. In the `{ ... }` form `Parser::brace_body` makes an unquoted `}` end the command it
+  follows, so `repeat 3 { echo hi }` needs no `;`; it stays set for the commands nested in the body (`{ { echo a } }`)
+  and is cleared inside `$(...)` (`read_subst_list`), where `}` is an ordinary word as everywhere else, since zsh's
+  rule (`}` reserved everywhere) would change what `echo a }` means. The body can't be empty, as a brace group's
+  can't. `unparse.rs` and `cmdtext.rs` write the `do ... done` form, which needs the option on to be read back (as a
+  glob qualifier needs `glob.bare_qualifiers`). The highlighter paints the keyword, leaves the count alone and takes
+  `do` or `{` as the body's start (`After::Repeat`, `After::RepeatCount`), with `Scan::brace_bodies` holding the
+  depths of the open `{ ... }` bodies so that a `}` after a command's words is a keyword there too; the completer
+  offers `repeat` as a command name when the option is on. Tests: `parse/repeat.sh` (`.expected`; zsh's sh emulation
+  has no `repeat`) and `parse/repeat_off.sh` (dash), unit tests `parser::tests::repeat_loop`,
+  `cmdtext::tests::repeat_loop`, `interactive::highlight::tests::repeat_loop` and `unparse::tests::layout`.
 - Recursion (`stack.rs`): as in Debian's dash (its patch 0009, for Debian bug 579815), a function call when 1000 are
   running is a shell error, `Maximum function recursion depth (1000) reached`; unlike dash, `func_depth` also goes
   down when the error unwinds. Other deep nesting would overflow the stack, which kills the shell with SIGSEGV
@@ -882,8 +900,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - **Highlighting** (`highlight.rs`): `classify` gives each byte a `Cell`, a role (`style::Role`, the position of a
   name in `style::ROLES`, made by the const fn `Role::of`, so a misspelt role doesn't compile) and a bitset of
   `MODIFIERS` (`error`, `path` and `path.prefix` are set so far). It needs no `Shell`: what it knows comes in `Facts`
-  (the kind of a command name, whether a variable is set, `expand.braces`, `set -f`, and the path check with
-  `highlight.paths`). `ShellHelper::command_kind` finds a command's
+  (the kind of a command name, whether a variable is set, `expand.braces`, `syntax.repeat`, `set -f`, and the path
+  check with `highlight.paths`). `ShellHelper::command_kind` finds a command's
   `CommandKind` in the order the shell would (alias, special built-in, function, built-in or extension's built-in,
   then `PATH`; autocd directories last), cached until the next prompt; a known name in `PRECOMMANDS` gets
   `command.precommand` instead. Words in argument position, and array elements, get `arg` (`arg.option` if they start

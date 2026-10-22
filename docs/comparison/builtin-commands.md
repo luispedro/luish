@@ -12,8 +12,9 @@ or `zsh/system`), add more, and bash can load more with `enable -f`; those are n
 |---|--:|--:|--:|--:|
 | Built-ins | 38 | 61 | 103 | 54, and 8 more in interactive shells |
 
-In the tables, ✓ marks a built-in, – its absence, and *i* a built-in that luish has only in interactive shells (and
-their subshells), so that scripts find the same commands as under dash; there, `__luish_internal NAME` runs it.
+In the tables, ✓ marks a built-in, – its absence, *opt* one that needs an option turned on, and *i* a built-in that
+luish has only in interactive shells (and their subshells), so that scripts find the same commands as under dash;
+there, `__luish_internal NAME` runs it.
 
 ## POSIX special built-ins
 
@@ -165,5 +166,6 @@ Some commands that look like built-ins are reserved words, parsed with the comma
 | `time` | – | ✓ | ✓ | – | Runs the `time` program instead, which can't time pipelines or shell functions |
 | `select` | – | ✓ | ✓ | – | |
 | `coproc` | – | ✓ | ✓ | – | |
-| `repeat`, `foreach`, `nocorrect` | – | – | ✓ | – | |
+| `repeat` | – | – | ✓ | *opt* | With `setopt syntax.repeat`: `repeat 3 { ... }` or `repeat 3; do ... done` |
+| `foreach`, `nocorrect` | – | – | ✓ | – | |
 | `declare`, `export`, `local`, `readonly`, `typeset`, `float`, `integer` | – | – | ✓ | – | In zsh, these are reserved words so that `local a=(x y)` parses. luish parses such array assignments for its own built-ins, which remain built-ins |

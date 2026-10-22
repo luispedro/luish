@@ -605,6 +605,7 @@ fn encode_names(e: &mut Enc, n: &Names) {
         .bool(n.braces)
         .bool(n.glob)
         .bool(n.bareglobqual)
+        .bool(n.repeat)
         .bool(n.paths)
         .bool(n.history_expand);
 }
@@ -632,6 +633,7 @@ fn decode_names(d: &mut Dec) -> Option<Names> {
         braces: d.bool()?,
         glob: d.bool()?,
         bareglobqual: d.bool()?,
+        repeat: d.bool()?,
         paths: d.bool()?,
         history_expand: d.bool()?,
         ..Names::default()

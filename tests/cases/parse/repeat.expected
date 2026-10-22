@@ -1,0 +1,43 @@
+function 2 args
+brace
+brace
+brace
+do-done
+do-done
+no-semicolon
+no-semicolon
+several
+lines
+several
+lines
+n=2
+n=2
+quoted
+quoted
+expression
+expression
+expression
+hex
+hex
+none: 0
+negative: 0
+unset: 0
+nested
+}
+in-if
+once
+each
+each
+inner
+status: 1
+redirected: 0
+substitution: s s
+repeat
+keyword
+in body
+in body
+f() {
+    repeat 2; do
+        echo "in $1"
+    done
+}

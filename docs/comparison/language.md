@@ -152,7 +152,8 @@ All four have POSIX's `*`, `?` and `[...]`. luish sorts matches by bytes, where 
 | `for ((i=0; i<n; i++))` | – | ✓ | ✓ | – | `i=0; while [ $i -lt $n ]; do ...; i=$((i+1)); done` |
 | `select` | – | ✓ | ✓ | – | |
 | `time` as a keyword (times pipelines and functions) | – | ✓ | ✓ | – | luish and dash run the `time` program |
-| `repeat N`, `foreach`, short loops (`for i in a b; cmd`) | – | – | ✓ | – | |
+| `repeat N` | – | – | ✓ | *opt* | `setopt syntax.repeat`: `repeat 3 { ... }` or `repeat 3; do ... done` |
+| `foreach`, short loops (`for i in a b; cmd`) | – | – | ✓ | – | |
 | Anonymous functions, `() { ...; } args` | – | – | ✓ | – | |
 
 ## Errors and debugging

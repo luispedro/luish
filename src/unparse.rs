@@ -378,6 +378,14 @@ impl<'a> Printer<'a> {
                 self.nl();
                 self.w(b"done");
             }
+            CompoundCommand::Repeat { count, body, .. } => {
+                self.w(b"repeat ");
+                self.word(count);
+                self.w(b"; do");
+                self.block(body);
+                self.nl();
+                self.w(b"done");
+            }
             CompoundCommand::Case { word, arms, .. } => {
                 self.w(b"case ");
                 self.word(word);
@@ -850,6 +858,11 @@ fn compound<V: LineVisitor>(cc: &mut CompoundCommand, v: &mut V) {
             }
             walk_lines(body, v);
         }
+        CompoundCommand::Repeat { count, body, lineno } => {
+            v.line(lineno);
+            word(count, v);
+            walk_lines(body, v);
+        }
         CompoundCommand::Case { word: w, arms, lineno } => {
             v.line(lineno);
             word(w, v);
@@ -937,7 +950,10 @@ mod tests {
     use crate::lexer::Parser;
 
     fn parse(src: &[u8]) -> List {
-        Parser::new(src.to_vec(), 1, true).parse_all().expect("parses")
+        let mut p = Parser::new(src.to_vec(), 1, true);
+        // `repeat` is a reserved word, as `setopt syntax.repeat` makes it.
+        p.repeat = true;
+        p.parse_all().expect("parses")
     }
 
     /// The function defined by `src`, printed.
@@ -1026,6 +1042,10 @@ mod tests {
         assert_eq!(
             round_trip("f() { for i in a \"$@\"; do echo $i; done; for j do :; done; }"),
             "f() {\n    for i in a \"$@\"; do\n        echo $i\n    done\n    for j\n    do\n        :\n    done\n}\n"
+        );
+        assert_eq!(
+            round_trip("f() { repeat 2 { echo a }; repeat $n; do :; done; }"),
+            "f() {\n    repeat 2; do\n        echo a\n    done\n    repeat $n; do\n        :\n    done\n}\n"
         );
         assert_eq!(
             round_trip("f() { case $1 in a|esac) x;; *) ;; esac; }"),

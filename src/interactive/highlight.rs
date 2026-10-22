@@ -337,6 +337,8 @@ pub struct Facts<'a> {
     pub var: &'a dyn Fn(&[u8]) -> Option<VarKind>,
     /// `setopt expand.braces`.
     pub braces: bool,
+    /// `setopt syntax.repeat`: `repeat` is a reserved word.
+    pub repeat: bool,
     /// Not `set -f`.
     pub glob: bool,
     /// With `setopt highlight.paths`, the modifiers (`PATH` or
@@ -354,6 +356,10 @@ enum After {
     ForName,
     Case,
     CaseWord,
+    /// The count after `repeat`.
+    Repeat,
+    /// After the count of `repeat`, where `do` or `{` opens the body.
+    RepeatCount,
     /// The names after `function`.
     Function,
     /// Inside `[[ ... ]]`, where `<`, `>`, `(`, `)`, `&&` and `||` are
@@ -381,6 +387,9 @@ struct Scan<'a> {
     alias_args: bool,
     /// How many compound commands (`if`, `while`, `{` ...) are open.
     depth: usize,
+    /// The depths at which the `{ ... }` bodies of `repeat` are open: in
+    /// one, a `}` ends the command it follows, as the parser reads it.
+    brace_bodies: Vec<usize>,
     /// How many nested lists (subshells, substitutions) are open.
     nested: usize,
     /// The cursor's position in the text.
@@ -455,6 +464,15 @@ impl Scan<'_> {
     /// literal and not quoted.
     fn bare(&self, i: usize) -> bool {
         self.cls[i].role == Role::NONE
+    }
+
+    /// Closes a compound command (`fi`, `done`, `}` ...), forgetting the
+    /// `repeat { ... }` bodies that end with it.
+    fn close_depth(&mut self) {
+        self.depth = self.depth.saturating_sub(1);
+        while self.brace_bodies.last().is_some_and(|&d| d > self.depth) {
+            self.brace_bodies.pop();
+        }
     }
 
     fn find(&self, from: usize, c: u8) -> Option<usize> {
@@ -632,6 +650,21 @@ impl Scan<'_> {
                 *after = After::CaseWord;
                 return e;
             }
+            // The count of `repeat`, then its `do` or `{`.
+            After::Repeat => {
+                *after = After::RepeatCount;
+                return e;
+            }
+            After::RepeatCount if plain && (text == b"do" || text == b"{") => {
+                // `repeat` counted the body's depth, so its `{` doesn't.
+                self.paint(start, e, role::KEYWORD);
+                if text == b"{" {
+                    self.brace_bodies.push(self.depth);
+                }
+                *after = After::None;
+                *cmd = true;
+                return e;
+            }
             After::ForName | After::CaseWord if plain && text == b"in" => {
                 self.paint(start, e, role::KEYWORD);
                 *pattern = *after == After::CaseWord;
@@ -672,6 +705,14 @@ impl Scan<'_> {
             }
             _ => {}
         }
+        // In the `{ ... }` body of a `repeat`, and in a brace group nested
+        // in one, a `}` ends the command it follows (`repeat 3 { ls }`).
+        if !*cmd && plain && text == b"}" && self.brace_bodies.last().is_some_and(|&d| d <= self.depth) {
+            self.paint(start, e, role::KEYWORD);
+            self.close_depth();
+            *cmd = true;
+            return e;
+        }
         if !*cmd || (*precommand && raw.starts_with(b"-")) {
             if self.alias_args {
                 if raw.starts_with(b"-") || raw.starts_with(b"+") {
@@ -695,21 +736,31 @@ impl Scan<'_> {
             *after = After::Cache;
             *cmd = false;
             *precommand = false;
-        } else if plain && (RESERVED.contains(&text) || text == b"{" || text == b"}" || text == b"!") {
+        } else if plain
+            && (RESERVED.contains(&text)
+                || text == b"{"
+                || text == b"}"
+                || text == b"!"
+                || (self.facts.repeat && text == b"repeat"))
+        {
             self.paint(start, e, role::KEYWORD);
             match text {
-                b"if" | b"while" | b"until" | b"for" | b"case" | b"select" | b"{" => self.depth += 1,
-                b"fi" | b"done" | b"esac" | b"}" => self.depth = self.depth.saturating_sub(1),
+                b"if" | b"while" | b"until" | b"for" | b"case" | b"select" | b"repeat" | b"{" => self.depth += 1,
+                b"fi" | b"done" | b"esac" | b"}" => self.close_depth(),
                 _ => {}
             }
             match text {
                 b"for" => *after = After::For,
                 b"case" => *after = After::Case,
+                b"repeat" => *after = After::Repeat,
                 b"function" => *after = After::Function,
                 b"[[" => *after = After::Cond,
                 _ => {}
             }
-            *cmd = !matches!(text, b"for" | b"case" | b"fi" | b"done" | b"esac" | b"}" | b"[[");
+            *cmd = !matches!(
+                text,
+                b"for" | b"case" | b"repeat" | b"fi" | b"done" | b"esac" | b"}" | b"[["
+            );
             *precommand = false;
         } else if let Some((_, eq)) = assign {
             self.paint(start, start + eq + 1, role::ASSIGN);
@@ -1240,6 +1291,7 @@ pub fn classify(text: &[u8], cursor: Option<usize>, facts: &Facts) -> Vec<Cell> 
         new_aliases: Vec::new(),
         alias_args: false,
         depth: 0,
+        brace_bodies: Vec::new(),
         nested: 0,
         cursor,
         heredocs: Vec::new(),
@@ -1261,12 +1313,13 @@ pub fn classify(text: &[u8], cursor: Option<usize>, facts: &Facts) -> Vec<Cell> 
 /// parse of `text` and the newline that entering it adds. Nothing runs,
 /// so aliases defined in `text` are not used (the shell doesn't use them
 /// before the next line either). Incomplete text has no error.
-pub fn syntax_error(text: &[u8], aliases: &Rc<AliasMap>, bareglobqual: bool) -> Option<Range<usize>> {
+pub fn syntax_error(text: &[u8], aliases: &Rc<AliasMap>, bareglobqual: bool, repeat: bool) -> Option<Range<usize>> {
     let mut src = Vec::with_capacity(text.len() + 1);
     src.extend_from_slice(text);
     src.push(b'\n');
     let mut p = Parser::new(src, 1, false);
     p.bareglobqual = bareglobqual;
+    p.repeat = repeat;
     loop {
         match p.parse_next(aliases) {
             Ok(Some(_)) => {}
@@ -1422,7 +1475,7 @@ impl ShellHelper {
         if parsed.0 != text {
             *parsed = (
                 text.to_vec(),
-                syntax_error(text, &self.names.aliases, self.names.bareglobqual),
+                syntax_error(text, &self.names.aliases, self.names.bareglobqual, self.names.repeat),
             );
         }
         parsed.1.clone()
@@ -1529,6 +1582,7 @@ impl ShellHelper {
             command: &|name| self.command_kind(name),
             var: &|name| self.names.vars.get(name).copied(),
             braces: self.names.braces,
+            repeat: self.names.repeat,
             glob: self.names.glob,
             path: self.names.paths.then_some(&path as &PathCheck),
             home: self.names.home.as_deref(),
@@ -1580,6 +1634,7 @@ mod tests {
             command: &known,
             var: &fake_var,
             braces: true,
+            repeat: true,
             glob: true,
             path: None,
             home: None,
@@ -1670,6 +1725,19 @@ mod tests {
             classes("case $x in a|b) ls;; (c) echo;; esac"),
             "kkkk.vv.kk..o.o.ccoo.o.o.ccccoo.kkkk"
         );
+    }
+
+    /// With `setopt syntax.repeat` (on in these tests), `repeat` is a
+    /// keyword, its count is not a command, and `do` or `{` opens the body.
+    #[test]
+    fn repeat_loop() {
+        assert_eq!(classes("repeat 3; do ls; done"), "kkkkkk..o.kk.cco.kkkk");
+        assert_eq!(classes("repeat $n { ls }"), "kkkkkk.vv.k.cc.k");
+        assert_eq!(classes("repeat 1 { { ls } }"), "kkkkkk...k.k.cc.k.k");
+        assert_eq!(classes("repeat 1 { ls \"}\" }"), "kkkkkk...k.cc.sss.k");
+        assert_eq!(classes("echo repeat"), "cccc.......");
+        // Outside a `repeat { ... }` body, a `}` is an ordinary word.
+        assert_eq!(classes("echo }"), "cccc..");
     }
 
     #[test]
@@ -1881,6 +1949,7 @@ mod tests {
             command: &known,
             var: &|_| Some(VarKind::Plain),
             braces: false,
+            repeat: false,
             glob: false,
             path: None,
             home: None,
@@ -1907,6 +1976,7 @@ mod tests {
             command: &known,
             var: &fake_var,
             braces: true,
+            repeat: true,
             glob: true,
             path: Some(&path),
             home: Some(b"/home/u"),
@@ -1984,7 +2054,7 @@ mod tests {
     /// Where the `error` modifier starts in `text`, with no aliases and
     /// the cursor at `cursor`.
     fn error_at(text: &str, cursor: Option<usize>) -> Option<usize> {
-        let span = syntax_error(text.as_bytes(), &crate::lexer::no_aliases(), false)?;
+        let span = syntax_error(text.as_bytes(), &crate::lexer::no_aliases(), false, false)?;
         error_start(text.as_bytes(), span, cursor)
     }
 
@@ -2036,8 +2106,11 @@ mod tests {
         let mut aliases = AliasMap::default();
         aliases.insert(b"ifx".to_vec(), b"if true".to_vec(), false);
         let aliases = Rc::new(aliases);
-        assert_eq!(syntax_error(b"ifx; then :; fi", &aliases, false), None);
-        assert_eq!(syntax_error(b"ifx; then :; fi; fi", &aliases, false), Some(17..19));
+        assert_eq!(syntax_error(b"ifx; then :; fi", &aliases, false, false), None);
+        assert_eq!(
+            syntax_error(b"ifx; then :; fi; fi", &aliases, false, false),
+            Some(17..19)
+        );
     }
 
     #[test]

@@ -1,3 +1,6 @@
+Unreleased
+    * setopt syntax.repeat: zsh's repeat loop (repeat 3 { ... })
+
 Version 0.7.1 2026-10-19 by luispedro
     * Release packages build again (0.7.0 had none)
 

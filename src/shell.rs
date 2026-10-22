@@ -738,6 +738,14 @@ impl Shell {
     // ------------------------------------------------------------------
     // Running code
 
+    /// Gives a parser the options that change parsing, in one place:
+    /// `setopt glob.bare_qualifiers` and `setopt syntax.repeat`. They are
+    /// set before each line, since a line can turn them on for the next.
+    pub fn parse_options(&self, p: &mut Parser) {
+        p.bareglobqual = self.opt(Opt::Bareglobqual);
+        p.repeat = self.opt(Opt::SyntaxRepeat);
+    }
+
     /// Parses and runs a string in the current shell (`eval`, traps). Its
     /// lines count on from the current line, so they aren't lines of the
     /// file (`in_string`).
@@ -760,7 +768,7 @@ impl Shell {
             } else {
                 crate::lexer::no_aliases()
             };
-            p.bareglobqual = self.opt(Opt::Bareglobqual);
+            self.parse_options(&mut p);
             match p.parse_next(&aliases) {
                 Ok(Some(list)) => {
                     if !self.opt(Opt::Noexec) || self.interactive {
@@ -868,7 +876,7 @@ impl Shell {
         loop {
             let start = p.consumed();
             let aliases = self.aliases.clone();
-            p.bareglobqual = self.opt(Opt::Bareglobqual);
+            self.parse_options(&mut p);
             match p.parse_next(&aliases) {
                 Ok(Some(list)) => {
                     if self.opt(Opt::Verbose) {
@@ -903,7 +911,7 @@ impl Shell {
         loop {
             let mut p = Parser::new(buf.clone(), lineno, eof);
             let aliases = self.aliases.clone();
-            p.bareglobqual = self.opt(Opt::Bareglobqual);
+            self.parse_options(&mut p);
             p.active_aliases.clone_from(&active);
             match p.parse_next(&aliases) {
                 Ok(Some(list)) => {

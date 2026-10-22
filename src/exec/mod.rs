@@ -404,6 +404,43 @@ impl Shell {
                 self.loop_depth -= 1;
                 r.map(|_| status)
             }
+            CompoundCommand::Repeat { count, body, lineno } => {
+                self.lineno = *lineno;
+                // The count is expanded as `case`'s word is, then evaluated
+                // as arithmetic, as in zsh: `repeat "$n"` and `repeat n+1`
+                // both work.
+                let text = self.expand_word_str(count)?;
+                let times = crate::expand::arith::eval(self, &text).map_err(|msg| {
+                    self.error(msg);
+                    Flow::Error(2)
+                })?;
+                let mut status = 0;
+                self.loop_depth += 1;
+                let mut r = Ok(0);
+                for _ in 0..times {
+                    match self.run_list(body) {
+                        Ok(s) => status = s,
+                        Err(Flow::Break(n)) => {
+                            if n > 1 {
+                                r = Err(Flow::Break(n - 1));
+                            }
+                            break;
+                        }
+                        Err(Flow::Continue(n)) => {
+                            if n > 1 {
+                                r = Err(Flow::Continue(n - 1));
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            r = Err(e);
+                            break;
+                        }
+                    }
+                }
+                self.loop_depth -= 1;
+                r.map(|_| status)
+            }
             CompoundCommand::Case { word, arms, lineno } => {
                 self.lineno = *lineno;
                 let subject = self.expand_word_str(word)?;

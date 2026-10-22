@@ -287,6 +287,13 @@ pub struct Parser {
     /// `setopt glob.bare_qualifiers`: a trailing `(...)` in a word is a glob
     /// qualifier. This is the only place the lexer depends on an option.
     pub bareglobqual: bool,
+    /// `setopt syntax.repeat`: `repeat` is a reserved word, which starts a
+    /// loop (`parse_repeat`). Like `bareglobqual`, it is given to the
+    /// parsers of `$(...)` and here-documents too.
+    pub repeat: bool,
+    /// Parsing the `{ ... }` body of a `repeat`, where an unquoted `}` after
+    /// the words of a command ends the body, as in zsh.
+    pub(crate) brace_body: bool,
     /// Where the last error was found, in bytes of the original input (see
     /// [`Parser::error_span`]).
     error_at: Cell<(usize, usize)>,
@@ -390,6 +397,8 @@ impl Parser {
             splice_delta: 0,
             started: false,
             bareglobqual: false,
+            repeat: false,
+            brace_body: false,
             error_at: Cell::new((0, 0)),
             param_memo: None,
             skim: false,
@@ -1586,6 +1595,9 @@ impl Parser {
         let outer_alias_blank_end = self.alias_blank_end.take();
         let outer_nofork = (self.in_nofork, self.after_separator);
         (self.in_nofork, self.after_separator) = (brace, self.pos);
+        // Inside `$(...)` a `}` is an ordinary word again, even in the body
+        // of a `repeat { ... }`.
+        let outer_brace_body = std::mem::take(&mut self.brace_body);
         let list = self.parse_compound_list().and_then(|list| {
             let t = self.next()?;
             let end = match &t.tok {
@@ -1598,6 +1610,7 @@ impl Parser {
             Ok(list)
         });
         (self.in_nofork, self.after_separator) = outer_nofork;
+        self.brace_body = outer_brace_body;
         let list = match list {
             Ok(list) => list,
             Err(e) => {
@@ -1660,6 +1673,7 @@ impl Parser {
         let mut sub = Parser::new(text, lineno, true);
         sub.aliases = self.aliases.clone();
         sub.bareglobqual = self.bareglobqual;
+        sub.repeat = self.repeat;
         let list = sub.parse_all().inspect_err(|_| self.note_error(start, self.pos))?;
         Ok(WordPart::CmdSubst(Rc::new(list)))
     }
@@ -1720,6 +1734,7 @@ impl Parser {
                 let mut sub = Parser::new(body, lineno, true);
                 sub.aliases = self.aliases.clone();
                 sub.bareglobqual = self.bareglobqual;
+                sub.repeat = self.repeat;
                 sub.read_heredoc_word()
                     .inspect_err(|_| self.note_error(start, self.pos))?
             };

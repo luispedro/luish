@@ -31,6 +31,7 @@ pub enum Opt {
     GlobFail,
     GlobFailAll,
     BraceExpand,
+    SyntaxRepeat,
     Autocd,
     HistIgnoreSpace,
     HistReduceBlanks,
@@ -91,6 +92,7 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::GlobFail, "glob.fail"),
     (Opt::GlobFailAll, "glob.fail_all"),
     (Opt::BraceExpand, "expand.braces"),
+    (Opt::SyntaxRepeat, "syntax.repeat"),
     (Opt::Autocd, "cd.auto"),
     (Opt::HistIgnoreSpace, "history.ignore_space"),
     (Opt::HistReduceBlanks, "history.reduce_blanks"),
@@ -480,6 +482,7 @@ mod tests {
                 "prompt",
                 "pushd",
                 "startup",
+                "syntax",
                 "terminal",
                 "vars"
             ]

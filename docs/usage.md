@@ -111,6 +111,10 @@ n=${ printf '%03d' "$i"; }                 # command substitution in the shell, 
 - `source` is `.`, and looks for a name without a `/` in the current directory first, as zsh does.
 - `zstyle` is not a built-in. `shopt` sets the matching `setopt` option where luish has one (see
   [`shopt`](builtins.md#shopt)).
+- An extension that would change what a POSIX script means needs an option: brace expansion
+  (`setopt expand.braces`), `**/` and glob qualifiers (see [](globbing.md)), and zsh's `repeat` loop
+  (`setopt syntax.repeat`, so that a command named `repeat` keeps working): `repeat 3 { echo hi }`, or
+  `repeat $n; do echo hi; done`.
 
 ## Special variables
 

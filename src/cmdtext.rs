@@ -151,6 +151,13 @@ fn push_compound(out: &mut Vec<u8>, cc: &CompoundCommand) {
             push_list(out, body);
             out.extend_from_slice(b"; done");
         }
+        CompoundCommand::Repeat { count, body, .. } => {
+            out.extend_from_slice(b"repeat ");
+            push_word(out, count);
+            out.extend_from_slice(b"; do ");
+            push_list(out, body);
+            out.extend_from_slice(b"; done");
+        }
         CompoundCommand::Case { word, arms, .. } => {
             out.extend_from_slice(b"case ");
             push_word(out, word);
@@ -416,6 +423,16 @@ mod tests {
         assert_eq!(text("! true && false || true"), "!true && false || true");
         assert_eq!(text("sleep 20 <<X\nbody\nX\n"), "sleep 20 <<...");
         assert_eq!(text("g() { sleep 1; }"), "g() { ... }");
+    }
+
+    /// `repeat` (`setopt syntax.repeat`), which dash has no form of, is
+    /// shown as the `do ... done` form.
+    #[test]
+    fn repeat_loop() {
+        let mut p = Parser::new(b"repeat $n { sleep 21 }\n".to_vec(), 1, true);
+        p.repeat = true;
+        let list = p.parse_all().unwrap();
+        assert_eq!(super::and_or(&list[0].list), "repeat ${n}; do sleep 21; done");
     }
 
     #[test]

@@ -66,6 +66,9 @@ pub struct Names {
     pub glob: bool,
     /// `setopt glob.bare_qualifiers`, for the highlighter's parse.
     pub bareglobqual: bool,
+    /// `setopt syntax.repeat`: `repeat` is a reserved word, for the
+    /// highlighter's parse and for completing it.
+    pub repeat: bool,
     /// `setopt highlight.paths`: the highlighter marks words that name
     /// files.
     pub paths: bool,
@@ -1454,6 +1457,8 @@ impl ShellHelper {
         let all = crate::builtins::names()
             .map(|b: &[u8]| b)
             .chain(RESERVED.iter().copied())
+            // `repeat` is a reserved word only with `setopt syntax.repeat`.
+            .chain(self.names.repeat.then_some(&b"repeat"[..]))
             .chain(self.names.builtins.iter().map(|c| &c[..]))
             .chain(self.names.functions.iter().map(|c| &c[..]))
             .chain(aliases.into_iter().map(|a| a.0))
@@ -1920,6 +1925,7 @@ mod tests {
             names: Names {
                 functions: vec![b"myfunc".to_vec()],
                 builtins: vec![b"myext".to_vec()],
+                repeat: true,
                 aliases: {
                     let mut a = AliasMap::default();
                     a.insert(b"ll".to_vec(), b"ls -l".to_vec(), false);
@@ -2014,6 +2020,7 @@ mod tests {
                 "prompt ",
                 "pushd ",
                 "startup ",
+                "syntax ",
                 "terminal ",
                 "vars "
             ]

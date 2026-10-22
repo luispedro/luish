@@ -37,7 +37,7 @@ the options that are off, in alphabetical order.
   `setopt history.file='...'`); a setting with a value is left out if its
   variable isn't set. If `-p` is given more than once, the last one
   counts. The groups are `cd`, `editor`, `expand`, `glob`, `highlight`,
-  `history`, `prompt` and `pushd`.
+  `history`, `prompt`, `pushd`, `startup`, `syntax`, `terminal` and `vars`.
 
 luish's own options, all off by default:
 
@@ -81,6 +81,18 @@ luish's own options, all off by default:
   elements of arrays, before their other expansions, not to
   assignments. See the documentation on compatibility for where bash and
   zsh differ.
+
+`syntax.repeat`
+: `repeat` is a reserved word, as in zsh: `repeat 3 { echo hi }` or
+  `repeat 3; do echo hi; done` runs the body that many times. The count is
+  expanded and then evaluated as an arithmetic expression (`repeat $n`,
+  `repeat n+1`), and a count of zero or less runs the body not at all.
+  `break` and `continue` work in it as in any loop. In the `{ ... }` form
+  an unquoted `}` ends the command before it, so no `;` is needed, as in
+  zsh. It is off by default because a command or function named `repeat`
+  is valid POSIX; with it on, the reserved word wins over such a command.
+  Since each line is parsed as it is read, the option applies to the lines
+  after the `setopt`, not to the rest of the same line.
 
 `cd.auto` (`autocd`)
 : A command that is only a directory's name, with no arguments or

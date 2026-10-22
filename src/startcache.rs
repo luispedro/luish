@@ -590,6 +590,7 @@ fn has_block(sh: &Shell, text: &[u8]) -> bool {
                 }
                 CompoundCommand::While { cond, body, .. } => list(cond) || list(body),
                 CompoundCommand::For { body, .. } => list(body),
+                CompoundCommand::Repeat { body, .. } => list(body),
                 CompoundCommand::Case { arms, .. } => arms.iter().any(|a| list(&a.body)),
                 CompoundCommand::Cond { .. } => false,
             },
@@ -599,7 +600,7 @@ fn has_block(sh: &Shell, text: &[u8]) -> bool {
         return false;
     }
     let mut p = crate::lexer::Parser::new(text.to_vec(), 1, true);
-    p.bareglobqual = sh.opt(crate::options::Opt::Bareglobqual);
+    sh.parse_options(&mut p);
     let aliases = sh.aliases.clone();
     while let Ok(Some(l)) = p.parse_next(&aliases) {
         if list(&l) {

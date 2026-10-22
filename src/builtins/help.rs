@@ -296,6 +296,7 @@ fn highlight(body: &[&str], colors: &Colors) -> Vec<String> {
         command: &command,
         var: &|_| Some(VarKind::Plain),
         braces: true,
+        repeat: true,
         glob: true,
         path: None,
         home: None,

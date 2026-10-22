@@ -113,6 +113,14 @@ pub enum CompoundCommand {
         body: List,
         lineno: u32,
     },
+    /// `repeat WORD; do list; done` or `repeat WORD { list }`, as in zsh,
+    /// with `setopt syntax.repeat`. The word is an arithmetic expression,
+    /// evaluated once.
+    Repeat {
+        count: Word,
+        body: List,
+        lineno: u32,
+    },
     Case {
         word: Word,
         arms: Vec<CaseArm>,

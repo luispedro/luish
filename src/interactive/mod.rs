@@ -387,6 +387,7 @@ fn names(sh: &Shell) -> Names {
         braces: sh.opt(Opt::BraceExpand),
         glob: !sh.opt(Opt::Noglob),
         bareglobqual: sh.opt(Opt::Bareglobqual),
+        repeat: sh.opt(Opt::SyntaxRepeat),
         paths: sh.opt(Opt::HighlightPaths),
         history_expand: sh.opt(Opt::HistExpand),
         options: crate::options::Options::all_names()
@@ -435,7 +436,7 @@ fn expand(word: &[u8]) -> Option<Vec<Vec<u8>>> {
     let mut parser = crate::lexer::Parser::new(text, 1, true);
     // SAFETY: as in `ask`.
     let sh = unsafe { &mut *p };
-    parser.bareglobqual = sh.opt(Opt::Bareglobqual);
+    sh.parse_options(&mut parser);
     let list = parser.parse_all().ok()?;
     let [cmd] = &list[..] else { return None };
     let ([pipeline], true) = (&cmd.list.first.cmds[..], cmd.list.rest.is_empty() && !cmd.async_) else {

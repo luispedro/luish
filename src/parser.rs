@@ -304,8 +304,12 @@ impl Parser {
             Reserved,
             Simple,
         }
+        let repeat = self.repeat;
         let start = match self.peek_literal()? {
             Some(b"{" | b"if" | b"while" | b"until" | b"for" | b"case" | b"[[") => Start::Compound,
+            // `repeat` is a reserved word only with `setopt syntax.repeat`,
+            // so a command or function of that name still works without it.
+            Some(b"repeat") if repeat => Start::Compound,
             Some(b"function") => Start::Function,
             Some(b"__luish_cache") => Start::Cache,
             Some(w) if is_reserved(w) => Start::Reserved,
@@ -383,6 +387,7 @@ impl Parser {
                 })
             }
             b"for" => self.parse_for(t.lineno),
+            b"repeat" => self.parse_repeat(t.lineno),
             b"case" => self.parse_case(t.lineno),
             b"[[" => {
                 let expr = self.parse_cond_or()?;
@@ -559,6 +564,45 @@ impl Parser {
         })
     }
 
+    /// `repeat WORD; do list; done` or `repeat WORD { list }`, as in zsh
+    /// (with `setopt syntax.repeat`). The `;` is optional, as in zsh, and
+    /// the count is an arithmetic expression, evaluated when the loop runs.
+    fn parse_repeat(&mut self, lineno: u32) -> PResult<CompoundCommand> {
+        self.alias_continuation()?;
+        let t = self.next()?;
+        let Tok::Word(count) = t.tok else {
+            return self.unexpected(&t, None);
+        };
+        if self.peek_op()? == Some(Op::Semi) {
+            self.next()?;
+        }
+        self.skip_newlines()?;
+        self.alias_continuation()?;
+        let body = if self.peek_is_kw(b"{")? {
+            self.next()?;
+            let body = self.parse_brace_body()?;
+            self.expect_kw("}")?;
+            body
+        } else {
+            self.expect_kw("do")?;
+            let body = self.parse_nonempty_list()?;
+            self.expect_kw("done")?;
+            body
+        };
+        Ok(CompoundCommand::Repeat { count, body, lineno })
+    }
+
+    /// The list of a `{ ... }` body of `repeat`, where an unquoted `}` ends
+    /// the command it follows, so that `repeat 3 { echo hi }` needs no `;`,
+    /// as in zsh. It holds for the commands nested in the body too (`{ { echo
+    /// hi } }`), but not inside `$(...)`, where `}` stays an ordinary word.
+    fn parse_brace_body(&mut self) -> PResult<List> {
+        let outer = std::mem::replace(&mut self.brace_body, true);
+        let body = self.parse_nonempty_list();
+        self.brace_body = outer;
+        body
+    }
+
     fn parse_case(&mut self, lineno: u32) -> PResult<CompoundCommand> {
         self.alias_continuation()?;
         let t = self.next()?;
@@ -680,6 +724,15 @@ impl Parser {
                 self.alias_continuation()?;
             }
             if !matches!(self.peek()?.tok, Tok::Word(_)) {
+                break;
+            }
+            // In the `{ ... }` body of a `repeat`, an unquoted `}` ends the
+            // command, as in zsh (`repeat 3 { echo hi }`). An empty command
+            // can't follow one, so the `}` is left to end the body.
+            if self.brace_body
+                && !(words.is_empty() && assigns.is_empty() && redirs.is_empty())
+                && self.peek_is_kw(b"}")?
+            {
                 break;
             }
             let t = self.next()?;
@@ -1233,6 +1286,46 @@ mod tests {
         assert!(qual("echo *(/ )\n").is_err());
         // Without the option, as in POSIX.
         assert!(parse_err("echo *(/)\n").msg.contains("\"(\" unexpected"));
+    }
+
+    #[test]
+    fn repeat_loop() {
+        let rep = |s: &str| {
+            let mut p = Parser::new(s.as_bytes().to_vec(), 1, true);
+            p.repeat = true;
+            p.parse_all()
+        };
+        let body = |s: &str| match &rep(s).unwrap()[0].list.first.cmds[0] {
+            Command::Compound(CompoundCommand::Repeat { count, body, .. }, redirs) => {
+                (count.clone(), body.len(), redirs.len())
+            }
+            c => panic!("not a repeat: {c:?}"),
+        };
+        let three = Word(Parts::One(WordPart::Literal(b"3".to_vec())));
+        // The `do ... done` and `{ ... }` forms, with or without the `;`.
+        assert_eq!(body("repeat 3; do echo hi; done\n"), (three.clone(), 1, 0));
+        assert_eq!(body("repeat 3 do echo hi; done\n"), (three.clone(), 1, 0));
+        assert_eq!(body("repeat 3 { echo hi }\n"), (three.clone(), 1, 0));
+        assert_eq!(body("repeat 3 {\n echo hi\n}\n"), (three.clone(), 1, 0));
+        assert_eq!(body("repeat 3\n{ echo a; echo b }\n"), (three.clone(), 2, 0));
+        assert_eq!(body("repeat 3 { echo hi } >/dev/null\n"), (three, 1, 1));
+        // A `}` ends the body only unquoted, and in nested commands too.
+        assert_eq!(body("repeat 1 { echo \"}\" }\n").1, 1);
+        assert_eq!(body("repeat 1 { { echo a } }\n").1, 1);
+        // Inside `$(...)` it is an ordinary word again.
+        assert_eq!(body("repeat 1 { echo $(echo a } b) }\n").1, 1);
+        for bad in [
+            "repeat\n",
+            "repeat 3\n",
+            "repeat 3 { }\n",
+            "repeat 3 { echo a } }\n",
+            "repeat() { :; }\n",
+        ] {
+            assert!(rep(bad).is_err(), "{bad}");
+        }
+        // Without the option, `repeat` is an ordinary command name.
+        let l = parse("repeat 3 arg\n");
+        assert_eq!(simple(&l).words.len(), 3);
     }
 
     #[test]
