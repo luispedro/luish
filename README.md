@@ -1,4 +1,9 @@
-# luish
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/_static/luish-logo-dark.svg">
+    <img alt="luish" src="docs/_static/luish-logo.svg" height="72">
+  </picture>
+</h1>
 
 [![CI](https://github.com/luispedro/luish/actions/workflows/ci.yml/badge.svg)](https://github.com/luispedro/luish/actions/workflows/ci.yml)
 [![Documentation](https://readthedocs.org/projects/luish/badge/?version=latest)](https://luish.readthedocs.io/en/latest/)

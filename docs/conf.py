@@ -18,7 +18,11 @@ html_theme = "furo"
 html_title = "luish"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
+html_favicon = "_static/luish-icon.svg"
 html_theme_options = {
+    "light_logo": "luish-logo.svg",
+    "dark_logo": "luish-logo-dark.svg",
+    "sidebar_hide_name": True,
     "light_css_variables": {
         "color-brand-primary": "#0f7b6c",
         "color-brand-content": "#0f7b6c",
