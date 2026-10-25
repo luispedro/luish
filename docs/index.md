@@ -186,6 +186,7 @@ ssh
 colour-schemes
 globbing
 builtins
+keywords
 plugins
 extensions
 improvements

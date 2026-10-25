@@ -31,7 +31,8 @@ meaning to what is an error in dash, such as `a=(x y)`) may be always on.
   `.readthedocs.yaml`. Its Python dependencies are in both `docs/requirements.txt` (for Read the Docs) and the
   `docs` feature in `pixi.toml`; keep them in step.
 - `docs/builtins/`: one Markdown page per built-in, which `help` shows (compiled in, see `src/builtins/help.rs`)
-  and `docs/builtins.md` includes. Keep them up to date with the built-ins' behaviour.
+  and `docs/builtins.md` includes, and per reserved word with help (`[[`, `cond.md`), which `docs/keywords.md`
+  includes. Keep them up to date with the built-ins' behaviour.
 
 ## Commands
 

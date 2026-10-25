@@ -5,7 +5,7 @@ mod clipcopy;
 mod dirstack;
 mod echo;
 mod fc;
-mod help;
+pub(crate) mod help;
 pub mod internal;
 mod jobs;
 pub(crate) mod misc;

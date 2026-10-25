@@ -741,11 +741,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   change the words after it (`set -o NAME` ...). Tests: `builtins/internal_savestate.sh` (a new shell reading the
   state prints the same state), `builtins/internal_savestate_aliases.sh`, unit tests in `unparse.rs`.
 - `help` (`help.rs`) shows the Markdown in `docs/builtins/` (compiled in with `include_str!`). It is a built-in only
-  in shells started with `-i` (which `set` can't change, so also their subshells). Unit tests check that every
-  built-in has a page, that pages fit 80 columns and that `docs/builtins.md` includes them all. On a terminal
+  in shells started with `-i` (which `set` can't change, so also their subshells). Reserved words with a page (`[[`,
+  `cond.md`, as bash's `help` has) are in `KEYWORDS`, listed after the built-ins, included by `docs/keywords.md`
+  rather than `docs/builtins.md`, and offered by Tab after `help`. Unit tests check that every built-in has a page,
+  that pages fit 80 columns, that every name in `KEYWORDS` is reserved and that the docs include every page. On a terminal
   (`builtins::style::stdout_sgr`, as for `where`), it uses the colour scheme's highlighting roles: `keyword` for
   headings, `string` for code spans (then shown without backticks), `command.builtin` for the synopsis's command
-  names, bold for terms and `**`; `sh` code blocks go through the line editor's highlighter (`classify`), with
+  names (`keyword` for a reserved word), bold for terms and `**`; `sh` code blocks go through the line editor's highlighter (`classify`), with
   command names taken as built-ins or else external commands, whatever the shell has defined. Tests:
   `builtins/help_noninteractive.sh`, `builtins/internal_help.sh`, `help_builtin` in `tests/interactive.rs`, unit
   tests in `help.rs`.

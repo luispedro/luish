@@ -1,4 +1,5 @@
-//! `help`: shows the documentation of built-ins. The text is the Markdown
+//! `help`: shows the documentation of built-ins (and of `[[`, a reserved
+//! word that has its own page, as in bash's `help`). The text is the Markdown
 //! in `docs/builtins/`, which the user documentation includes too, shown
 //! as plain text, or in the colours of the scheme in use on a terminal.
 //!
@@ -83,6 +84,9 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"where", page!("where")),
 ];
 
+/// Reserved words with a page, listed after the built-ins.
+pub(crate) const KEYWORDS: &[(&[u8], &str)] = &[(b"[[", page!("cond"))];
+
 /// `help`.
 pub fn help(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     run(sh, &argv[0], &argv[1..])
@@ -97,7 +101,7 @@ pub fn run(sh: &mut Shell, name: &[u8], args: &[Vec<u8>]) -> ExecResult {
     }
     let mut status = 0;
     for (i, a) in args.iter().enumerate() {
-        match TOPICS.iter().find(|t| t.0 == a.as_slice()) {
+        match TOPICS.iter().chain(KEYWORDS).find(|t| t.0 == a.as_slice()) {
             Some((_, text)) => {
                 let sep = if i > 0 { "\n" } else { "" };
                 sh.out(format!("{sep}{}", render(text, paint.as_ref())).as_bytes());
@@ -112,7 +116,8 @@ pub fn run(sh: &mut Shell, name: &[u8], args: &[Vec<u8>]) -> ExecResult {
 }
 
 /// The roles whose styles `help` uses, from the colour scheme in use:
-/// headings, code spans and the command names of synopses.
+/// headings (and reserved words), code spans and the command names of
+/// synopses.
 const ROLES: [Role; 3] = [Role::of("keyword"), Role::of("string"), Role::of("command.builtin")];
 
 const BOLD: &str = "\x1b[1m";
@@ -179,15 +184,22 @@ fn index(paint: Option<&Paint>) -> String {
     let code = Paint::code(paint, "", Code::Ticks);
     let mut out = inline("Built-in commands (`help NAME` shows more about one):", code);
     out.push_str("\n\n");
-    for (name, text) in TOPICS {
+    list(&mut out, TOPICS, paint.map_or("", |p| &p.command), code);
+    out.push_str("\nReserved words:\n\n");
+    list(&mut out, KEYWORDS, paint.map_or("", |p| &p.heading), code);
+    out
+}
+
+/// Adds `topics` to `out`, each name (in `on`) with its summary.
+fn list(out: &mut String, topics: &[(&[u8], &str)], on: &str, code: Code) {
+    for (name, text) in topics {
         let name = String::from_utf8_lossy(name);
         out.push_str("  ");
-        wrap(&mut out, paint.map_or("", |p| &p.command), &name);
+        wrap(out, on, &name);
         out.push_str(&" ".repeat(18usize.saturating_sub(name.len())));
         out.push_str(&summary(text, code));
         out.push('\n');
     }
-    out
 }
 
 /// The line after the synopsis.
@@ -262,7 +274,7 @@ fn render(md: &str, paint: Option<&Paint>) -> String {
 }
 
 /// Adds a code block to `out`: the synopsis flush left, with its command
-/// names coloured, others indented, with shell code (`sh`) highlighted.
+/// names (or reserved words) coloured, others indented, with shell code (`sh`) highlighted.
 fn code_block(out: &mut String, lang: &str, body: &[&str], synopsis: bool, paint: Option<&Paint>) {
     let indent = if synopsis { "" } else { "    " };
     let highlighted = paint.filter(|_| lang == "sh").map(|p| highlight(body, &p.colors));
@@ -273,7 +285,12 @@ fn code_block(out: &mut String, lang: &str, body: &[&str], synopsis: bool, paint
             // Continuation lines start with spaces.
             (Some(p), None) if synopsis && !line.starts_with(' ') => {
                 let (name, rest) = line.split_at(line.find(' ').unwrap_or(line.len()));
-                wrap(out, &p.command, name);
+                let on = if crate::parser::is_reserved(name.as_bytes()) {
+                    &p.heading
+                } else {
+                    &p.command
+                };
+                wrap(out, on, name);
                 out.push_str(rest);
             }
             _ => out.push_str(line),
@@ -403,13 +420,21 @@ mod tests {
     #[test]
     fn topics_sorted() {
         assert!(TOPICS.windows(2).all(|w| w[0].0 < w[1].0));
+        assert!(KEYWORDS.windows(2).all(|w| w[0].0 < w[1].0));
+    }
+
+    #[test]
+    fn keywords_are_reserved() {
+        for (name, _) in KEYWORDS {
+            assert!(crate::parser::is_reserved(name), "{}", String::from_utf8_lossy(name));
+        }
     }
 
     /// Each page has the layout that `summary` and `render` expect, and
     /// fits an 80-column terminal.
     #[test]
     fn pages_well_formed() {
-        for (name, text) in TOPICS {
+        for (name, text) in TOPICS.iter().chain(KEYWORDS) {
             let name = String::from_utf8_lossy(name);
             let mut lines = text.lines();
             assert!(lines.next().unwrap().starts_with("# "), "{name}: heading");
@@ -423,11 +448,13 @@ mod tests {
         }
     }
 
-    /// Every page is in the user documentation.
+    /// Every page is in the user documentation (reserved words in their
+    /// own page).
     #[test]
     fn pages_in_docs() {
         let docs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs");
-        let index = std::fs::read_to_string(docs.join("builtins.md")).unwrap();
+        let index = std::fs::read_to_string(docs.join("builtins.md")).unwrap()
+            + std::fs::read_to_string(docs.join("keywords.md")).unwrap().as_str();
         for f in std::fs::read_dir(docs.join("builtins")).unwrap() {
             let f = f.unwrap().file_name();
             let f = f.to_str().unwrap();

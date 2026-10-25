@@ -19,3 +19,7 @@ Do nothing, successfully (exit status 0).
 
 `true` ignores its arguments.
 status 1
+Reserved words:
+
+  [[                Evaluate a condition, without splitting or globbing.
+[[ expression ]]

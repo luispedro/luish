@@ -1,4 +1,5 @@
 Unreleased
+    * help [[: the help for [[ ... ]]
     * =(cmd): a temporary file with the output of cmd, as in zsh
     * read: Ctrl-C and trapped signals interrupt it, as in dash
     * $(<file): the file's contents, read without a subshell

@@ -1308,6 +1308,7 @@ impl ShellHelper {
                     }
                     Some(Args::Builtins) => {
                         out.extend(crate::builtins::names().map(Candidate::word));
+                        out.extend(crate::builtins::help::KEYWORDS.iter().map(|k| Candidate::word(k.0)));
                         0
                     }
                     Some(Args::Jobs) => {

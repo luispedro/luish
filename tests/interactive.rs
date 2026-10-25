@@ -1875,6 +1875,8 @@ fn help_builtin() {
     assert_has(&sh.run("help pwd"), "\x1b[32mpwd\x1b[0m [-L | -P]");
     assert_has(&sh.run("help pwd | cat"), "\npwd [-L | -P]");
     assert_has(&sh.run("NO_COLOR=1 help pwd"), "\npwd [-L | -P]");
+    // `[[`, a reserved word, in the colour of reserved words.
+    assert_has(&sh.run("help '[['"), "\x1b[1;34m[[\x1b[0m expression ]]");
     let out = sh.run("help nosuch; echo \"status $?\"");
     assert_has(&out, "help: no help for nosuch");
     assert_has(&out, "status 1");

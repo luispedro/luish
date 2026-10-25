@@ -64,7 +64,7 @@ lists every difference.
 ```sh
 function greet { echo "hello $1"; }        # the function keyword (also: function greet() { ...; })
 if [[ $name == j* && -d $dir ]]; then ...  # conditions without word splitting or globbing
-[[ $line =~ ^([a-z]+)=(.*)$ ]] && echo "${match[1]} ${match[2]}"   # a regular expression, with its groups
+[[ $line =~ ^([a-z]+)=(.*)$ ]] && echo "${match[0]} ${match[1]}"   # a regular expression, with its groups
 path+=(/opt/bin)                           # NAME+=value appends to a variable, or to an array
 let 'n = n * 2 + 1'                        # arithmetic, with the status of its value
 echo $((i++)) $((2**10)) $((a=1, a+1))     # ++ and -- (before or after), ** (power), and the comma operator
@@ -89,7 +89,8 @@ conf=$(<~/.config/app)                     # a file's contents, read without a s
   basename` still names the file. `$(echo ...)`, `$(printf ...)`, `$(pwd)`, `$(command -v ...)` and `$(type ...)` also
   run without a subshell under the same conditions, but without command substitutions in their words.
 - `[[ ... ]]` has `test`'s operators, `&&`, `||`, `!` and parentheses, patterns on the right of `==` and `!=`, `=~`
-  for regular expressions (which sets `MATCH`, `match` and `BASH_REMATCH`) and `-v NAME` for a set variable.
+  for regular expressions (which sets `MATCH`, `match` and `BASH_REMATCH`) and `-v NAME` for a set variable (see
+  [](keywords.md)).
 - Process substitution: `<(list)` is the path of a pipe (`/dev/fd/N`) that gives what the list writes, so a command
   that wants a file can read from a command. `>(list)` is one that feeds the list's standard input. The list runs
   in its own process, and the pipe is closed when the command that got it ends. luish then waits for a `>(list)`
