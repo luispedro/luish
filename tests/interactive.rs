@@ -280,6 +280,24 @@ impl Pty {
         }
     }
 
+    /// Waits until the shell itself is blocked reading from an fd other
+    /// than 0 (from which the line editor reads).
+    fn wait_for_read(&mut self) {
+        let start = Instant::now();
+        let read = libc::SYS_read.to_string();
+        let path = format!("/proc/{}/syscall", self.pid);
+        let reading = |s: &str| {
+            let mut fields = s.split(' ');
+            fields.next() == Some(&read[..]) && fields.next().is_some_and(|fd| fd != "0x0")
+        };
+        while !std::fs::read_to_string(&path).is_ok_and(|s| reading(&s)) {
+            if start.elapsed() > TIMEOUT {
+                self.fail("timed out waiting for the shell to read");
+            }
+            self.read_some(Duration::from_millis(10));
+        }
+    }
+
     /// Waits until a process named by each of `names` (after exec) is in
     /// the foreground of the SSH mode's server's pty: in a session whose
     /// leader (the shell) is the child of the relay, the client's child.
@@ -532,6 +550,19 @@ fn interrupt_and_terminal_input() {
         &sh.run("sleep 0 & wait"),
         "\n[1] + Done                       sleep 0\n$ ",
     );
+}
+
+#[test]
+fn interrupt_file_subst() {
+    let mut sh = Pty::spawn("filesubst");
+    sh.expect("$ ");
+    // `$(<file)` reads in the shell itself, where Ctrl-C interrupts it.
+    sh.send("x=$(</dev/tty); echo after\n");
+    sh.wait_for_read();
+    sh.send("\x03");
+    let out = sh.expect("\n$ ");
+    assert!(!out.contains("\nafter\n"), "the line went on after Ctrl-C:\n{out}");
+    assert_has(&sh.run("echo st=$?"), "st=130\n");
 }
 
 #[test]

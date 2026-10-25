@@ -285,6 +285,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `REPLY` local and unset, and its value is `REPLY` at the end, trailing newlines included. Both set `$?` as `$(...)`
   does. Measured on a busy machine: 20 µs for `${ echo hi; }` (mostly the memfd's syscalls) and 2 µs for
   `${| REPLY=hi; }`, against 380 µs for `$(echo hi)`. Test: `expand/nofork_subst.sh`.
+- `$(<file)` (`redirect::file_subst`, tried first in `command_subst`): a `$(...)` that is one simple command with
+  only `<file` or `0<file` reads the file in the shell, as ksh, bash and zsh do (POSIX leaves it unspecified; in
+  dash the value is empty). The name goes through `redirect_target` (so `expand.braces` applies), in the shell, as
+  in bash and zsh. The read loop runs pending traps before each (interruptible) `read`, so Ctrl-C in an
+  interactive shell abandons the line, also when it came just before the `read`. Failures are status 1, as in zsh.
+  Tests: `expand/file_subst.sh` (zsh), `expand/file_subst_nul.sh`, `interrupt_file_subst` in
+  `tests/interactive.rs` (which waits for the shell to block in `read`, from `/proc/PID/syscall`).
 - Globbing: byte order, `.*` matches `.` and `..` (as in dash), `^` is not negation. A lone `[` without a matching
   `]` is not a pattern: treating it as one made every `[ ... ]` call `readdir` and loops 7× slower.
 - `expand.braces` (`brace.rs`): done in `expand_word_into` on the parsed word, not in the lexer, so that the option
@@ -490,12 +497,14 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   and is cleared inside `$(...)` (`read_subst_list`), where `}` is an ordinary word as everywhere else, since zsh's
   rule (`}` reserved everywhere) would change what `echo a }` means. The body can't be empty, as a brace group's
   can't. `unparse.rs` and `cmdtext.rs` write the `do ... done` form, which needs the option on to be read back (as a
-  glob qualifier needs `glob.bare_qualifiers`). The highlighter paints the keyword, leaves the count alone and takes
-  `do` or `{` as the body's start (`After::Repeat`, `After::RepeatCount`), with `Scan::brace_bodies` holding the
-  depths of the open `{ ... }` bodies so that a `}` after a command's words is a keyword there too; the completer
-  offers `repeat` as a command name when the option is on. Tests: `parse/repeat.sh` (`.expected`; zsh's sh emulation
-  has no `repeat`) and `parse/repeat_off.sh` (dash), unit tests `parser::tests::repeat_loop`,
-  `cmdtext::tests::repeat_loop`, `interactive::highlight::tests::repeat_loop` and `unparse::tests::layout`.
+  glob qualifier needs `glob.bare_qualifiers`), so `savestate` sets it before the functions. The highlighter paints
+  the keyword, leaves the count alone and takes `do` or `{` as the body's start (`After::Repeat`,
+  `After::RepeatCount`), with `Scan::brace_bodies` holding the depths of the open `{ ... }` bodies so that a `}`
+  after a command's words is a keyword there too; the completer offers `repeat` as a command name when the option is
+  on. Tests: `parse/repeat.sh` (`.expected`; zsh's sh emulation
+  has no `repeat`), `parse/repeat_off.sh` (dash) and `builtins/internal_savestate_repeat.sh`, unit tests
+  `parser::tests::repeat_loop`, `cmdtext::tests::repeat_loop`, `interactive::highlight::tests::repeat_loop` and
+  `unparse::tests::layout`.
 - Recursion (`stack.rs`): as in Debian's dash (its patch 0009, for Debian bug 579815), a function call when 1000 are
   running is a shell error, `Maximum function recursion depth (1000) reached`; unlike dash, `func_depth` also goes
   down when the error unwinds. Other deep nesting would overflow the stack, which kills the shell with SIGSEGV
@@ -1736,6 +1745,7 @@ truncates when it relocates the package.
 | `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |
 | `${!x}`, `${!prefix@}` | `expand/indirect.sh` |
 | `${ list; }`, `${\| list; }` | `expand/nofork_subst.sh` |
+| `$(<file)` | `expand/file_subst.sh` (zsh), `expand/file_subst_nul.sh`, `interrupt_file_subst` in `tests/interactive.rs` |
 | Parameter flags, `${(o)a[@]}` | `expand/param_flags.sh` (zsh), `expand/param_flags_luish.sh` |
 | `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh`, `builtins/typeset_case.sh` (zsh), `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh`, `builtins/typeset_functions.sh` (zsh), `builtins/typeset_functions_luish.sh` |
 | `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |

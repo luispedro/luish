@@ -1171,6 +1171,9 @@ impl Shell {
     /// Runs `$(...)` in a subshell and returns its output without trailing
     /// newlines.
     pub fn command_subst(&mut self, list: &List) -> EResult<Vec<u8>> {
+        if let Some(w) = crate::exec::redirect::file_subst(list) {
+            return self.file_subst(w);
+        }
         let expanded;
         let list = match self.subst_in_place(list)? {
             Subst::Output(out) => return Ok(out),

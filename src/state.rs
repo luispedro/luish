@@ -21,7 +21,7 @@ use crate::{signals, sys, unparse};
 const MODE_OPTIONS: &[Opt] = &[Opt::Interactive, Opt::Stdin, Opt::Monitor, Opt::Noexec];
 
 /// Options that change how functions are parsed: restored before them.
-const SYNTAX_OPTIONS: &[Opt] = &[Opt::Bareglobqual];
+const SYNTAX_OPTIONS: &[Opt] = &[Opt::Bareglobqual, Opt::SyntaxRepeat];
 
 /// Variables that belong to the process.
 const PROCESS_VARS: &[&[u8]] = &[b"PPID", b"LINENO", b"SHLVL"];

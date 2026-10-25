@@ -67,6 +67,26 @@ pub fn create_error(e: i32) -> String {
     }
 }
 
+/// The file of `$(<file)` (or `$(0<file)`): a `$(...)` that is only one
+/// redirection of standard input.
+pub fn file_subst(list: &List) -> Option<&Word> {
+    let [cc] = &list[..] else { return None };
+    let pipeline = &cc.list.first;
+    if cc.async_ || !cc.list.rest.is_empty() || pipeline.negated {
+        return None;
+    }
+    let [Command::Simple(sc)] = &pipeline.cmds[..] else {
+        return None;
+    };
+    let [r] = &sc.redirs[..] else { return None };
+    match &r.target {
+        RedirTarget::Word(w) if r.kind == RedirKind::In && r.fd.unwrap_or(0) == 0 => {
+            (sc.words.is_empty() && sc.assigns.is_empty()).then_some(w)
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn clear_cloexec(fd: i32) {
     // SAFETY: plain fcntl.
     unsafe {
@@ -115,6 +135,64 @@ impl Shell {
             return Err(RedirError::Open(1));
         }
         Ok(self.expand_word_str(w)?)
+    }
+
+    /// The value of `$(<file)`: the file's contents, read by the shell
+    /// itself, as in ksh, bash and zsh (dash only opens it, so the value is
+    /// empty). As in bash and zsh, the name is expanded in the shell, not
+    /// in a subshell (`${x:=f}` assigns, and an expansion error is fatal).
+    /// A file that can't be opened or read (a directory) gives status 1, as
+    /// in zsh.
+    #[inline(never)]
+    pub fn file_subst(&mut self, w: &Word) -> Result<Vec<u8>, Flow> {
+        let mut out = Vec::new();
+        let status = match self.redirect_target(w) {
+            Ok(name) => self.read_file(&name, &mut out)?,
+            Err(RedirError::Open(n)) => n,
+            Err(RedirError::Flow(f)) => return Err(f),
+        };
+        self.subst_status = Some(status);
+        out.retain(|&b| b != 0);
+        while out.last() == Some(&b'\n') {
+            out.pop();
+        }
+        Ok(out)
+    }
+
+    /// Appends the contents of the file `name` to `out`, running traps for
+    /// signals that arrive meanwhile. Returns the status.
+    fn read_file(&mut self, name: &[u8], out: &mut Vec<u8>) -> Result<i32, Flow> {
+        let shown = String::from_utf8_lossy(name);
+        let fd = match sys::open(name, libc::O_RDONLY, 0) {
+            Ok(fd) => fd,
+            Err(e) => {
+                self.error(format!("cannot open {shown}: {}", open_error(e)));
+                return Ok(1);
+            }
+        };
+        if let Some(st) = sys::fstat(fd)
+            && st.st_mode & libc::S_IFMT == libc::S_IFREG
+        {
+            out.reserve(st.st_size.max(0) as usize);
+        }
+        let mut buf = [0u8; 8192];
+        let r = loop {
+            // Also before the first read: the signal may have come already.
+            if let Err(f) = self.run_pending_traps() {
+                break Err(f);
+            }
+            match sys::read(fd, &mut buf, true) {
+                Ok(0) => break Ok(0),
+                Ok(n) => out.extend_from_slice(&buf[..n]),
+                Err(libc::EINTR) => {}
+                Err(e) => {
+                    self.error(format!("cannot read {shown}: {}", sys::strerror(e)));
+                    break Ok(1);
+                }
+            }
+        };
+        sys::close(fd);
+        r
     }
 
     fn apply_redirect(&mut self, r: &Redirect, save: bool, saved: &mut SavedFds) -> Result<(), RedirError> {

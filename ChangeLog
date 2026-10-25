@@ -1,4 +1,5 @@
 Unreleased
+    * $(<file): the file's contents, read without a subshell
     * setopt syntax.repeat: zsh's repeat loop (repeat 3 { ... })
 
 Version 0.7.1 2026-10-19 by luispedro

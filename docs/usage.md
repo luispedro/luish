@@ -77,6 +77,7 @@ case $x in a) one;& b) two;| *) all;; esac # ;& runs the next body too, ;| (or ;
 firefox &!                                 # in the background, and disowned (also &|)
 read -r first rest <<< "$line"             # a here-string: the word and a newline on stdin
 n=${ printf '%03d' "$i"; }                 # command substitution in the shell, without forking a subshell
+conf=$(<~/.config/app)                     # a file's contents, read without a subshell
 ```
 
 - `basename`, `dirname`, `expr` (for arithmetic and comparisons of integers), `seq` (for integers), `id -u`, `id -g` and
@@ -104,6 +105,8 @@ n=${ printf '%03d' "$i"; }                 # command substitution in the shell, 
   list, trailing newlines included, and `REPLY` is local to it and starts unset (`${| REPLY=${x%.*}; }`). After
   `${` must come a blank, a newline or `|`, and the `}` must be where a command could start: after `;`, `&` or a
   newline (`${ echo a }` goes on, as `echo a }`).
+- `$(<file)` is replaced by the contents of `file`, as `$(cat file)` would be, but the shell reads the file itself,
+  without a subshell or `cat`, as in ksh, bash and zsh (in dash it is empty).
 - [Arrays](#arrays), including associative ones, with `typeset`, `read -A` and zsh's parameter flags.
 - [Parameter expansion](#parameter-expansion): `${x:offset:length}`, `${x/pattern/replacement}`, `${!name}`, zsh's
   modifiers (`${x:t}`, `${BASH_SOURCE:A:h}`) and more.
