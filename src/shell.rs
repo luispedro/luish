@@ -785,6 +785,15 @@ impl Shell {
         Ok(status)
     }
 
+    /// A signal that has arrived and has a trap to run (the highest, if
+    /// several have).
+    pub fn trapped_pending(&self) -> Option<usize> {
+        signals::peek_pending()
+            .into_iter()
+            .rev()
+            .find(|&s| self.traps[s].as_ref().is_some_and(|a| !a.is_empty()))
+    }
+
     /// Runs any traps for signals that have arrived.
     pub fn run_pending_traps(&mut self) -> Result<(), Flow> {
         if !signals::any_pending() {

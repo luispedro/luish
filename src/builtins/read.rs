@@ -1,21 +1,32 @@
 //! `read` and `getopts`.
 
 use crate::lexer::is_valid_name;
-use crate::shell::{ExecResult, Shell};
+use crate::shell::{ExecResult, Flow, Shell};
+use crate::signals;
 use crate::sys;
 use crate::vars::Item;
 
 /// Reads one line from fd 0 a byte at a time, so that nothing after the
 /// newline is consumed. Returns the bytes (each with an "escaped" flag) and
-/// whether end of file was reached before a newline.
-fn read_line(raw: bool) -> (Vec<(u8, bool)>, bool) {
+/// whether the line ended early: at end of file, or, as in dash, when a
+/// signal with a trap arrived (which runs after `read`, as after any
+/// command). Ctrl-C in an interactive shell abandons the command.
+fn read_line(sh: &mut Shell, raw: bool) -> Result<(Vec<(u8, bool)>, bool), Flow> {
     let mut out = Vec::new();
     let mut buf = [0u8; 1];
     let mut escape = false;
     loop {
-        match sys::read(0, &mut buf, false) {
+        // Also before the first read: the signal may have come already.
+        if signals::any_pending() {
+            if sh.trapped_pending().is_some() {
+                return Ok((out, true));
+            }
+            sh.run_pending_traps()?;
+        }
+        match sys::read(0, &mut buf, true) {
             Ok(1) => {}
-            _ => return (out, true),
+            Err(libc::EINTR) => continue,
+            _ => return Ok((out, true)),
         }
         let c = buf[0];
         if c == 0 {
@@ -34,7 +45,7 @@ fn read_line(raw: bool) -> (Vec<(u8, bool)>, bool) {
             continue;
         }
         if c == b'\n' {
-            return (out, false);
+            return Ok((out, false));
         }
         out.push((c, false));
     }
@@ -119,7 +130,7 @@ pub fn read(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     {
         sys::write_all(2, &p);
     }
-    let (line, eof) = read_line(raw);
+    let (line, eof) = read_line(sh, raw)?;
     let ifs = sh.get_var(b"IFS").unwrap_or_else(|| b" \t\n".to_vec());
     let is_ifs = |c: &(u8, bool)| !c.1 && ifs.contains(&c.0);
     let is_ws = |c: &(u8, bool)| is_ifs(c) && matches!(c.0, b' ' | b'\t' | b'\n');

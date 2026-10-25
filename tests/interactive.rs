@@ -280,17 +280,23 @@ impl Pty {
         }
     }
 
-    /// Waits until the shell itself is blocked reading from an fd other
-    /// than 0 (from which the line editor reads).
-    fn wait_for_read(&mut self) {
+    /// Waits until the shell itself is blocked in a `read` of `count` bytes
+    /// from `fd`, for which `reading` is true. The line editor reads 1024
+    /// bytes from fd 0.
+    fn wait_for_read(&mut self, reading: impl Fn(u64, u64) -> bool) {
         let start = Instant::now();
         let read = libc::SYS_read.to_string();
         let path = format!("/proc/{}/syscall", self.pid);
-        let reading = |s: &str| {
+        let hex = |f: Option<&str>| f.and_then(|f| u64::from_str_radix(f.trim_start_matches("0x"), 16).ok());
+        let blocked = |s: &str| {
             let mut fields = s.split(' ');
-            fields.next() == Some(&read[..]) && fields.next().is_some_and(|fd| fd != "0x0")
+            if fields.next() != Some(&read[..]) {
+                return false;
+            }
+            let (fd, _, count) = (hex(fields.next()), fields.next(), hex(fields.next()));
+            fd.zip(count).is_some_and(|(fd, count)| reading(fd, count))
         };
-        while !std::fs::read_to_string(&path).is_ok_and(|s| reading(&s)) {
+        while !std::fs::read_to_string(&path).is_ok_and(|s| blocked(&s)) {
             if start.elapsed() > TIMEOUT {
                 self.fail("timed out waiting for the shell to read");
             }
@@ -553,12 +559,19 @@ fn interrupt_and_terminal_input() {
 }
 
 #[test]
-fn interrupt_file_subst() {
-    let mut sh = Pty::spawn("filesubst");
+fn interrupt_shell_read() {
+    let mut sh = Pty::spawn("shellread");
     sh.expect("$ ");
     // `$(<file)` reads in the shell itself, where Ctrl-C interrupts it.
     sh.send("x=$(</dev/tty); echo after\n");
-    sh.wait_for_read();
+    sh.wait_for_read(|fd, _| fd != 0);
+    sh.send("\x03");
+    let out = sh.expect("\n$ ");
+    assert!(!out.contains("\nafter\n"), "the line went on after Ctrl-C:\n{out}");
+    assert_has(&sh.run("echo st=$?"), "st=130\n");
+    // So does `read`, which reads a byte at a time.
+    sh.send("read x; echo after\n");
+    sh.wait_for_read(|fd, count| fd == 0 && count == 1);
     sh.send("\x03");
     let out = sh.expect("\n$ ");
     assert!(!out.contains("\nafter\n"), "the line went on after Ctrl-C:\n{out}");

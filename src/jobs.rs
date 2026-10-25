@@ -14,7 +14,6 @@
 
 use crate::exec::signal_description;
 use crate::shell::{Flow, Shell};
-use crate::signals;
 use crate::sys::{self, WaitStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -407,10 +406,7 @@ impl Shell {
                     if !interruptible {
                         continue;
                     }
-                    let trapped = signals::peek_pending()
-                        .into_iter()
-                        .rev()
-                        .find(|&s| self.traps[s].as_ref().is_some_and(|a| !a.is_empty()));
+                    let trapped = self.trapped_pending();
                     self.run_pending_traps()?;
                     if let Some(sig) = trapped {
                         return Ok(Waited::Interrupted(sig as i32));

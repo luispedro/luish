@@ -112,7 +112,6 @@ instead.
 Scripts:
 
 - `trap` with no arguments, run inside a subshell or `$(...)`, doesn't show the parent's traps.
-- `read` is not interrupted by trapped signals.
 - `${@#pat}` and `${*%pat}` operate on the joined string rather than on each parameter.
 - `set -v` output is approximate.
 - Glob results are sorted in byte order; locale collation is not implemented.

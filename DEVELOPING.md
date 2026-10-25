@@ -290,7 +290,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   dash the value is empty). The name goes through `redirect_target` (so `expand.braces` applies), in the shell, as
   in bash and zsh. The read loop runs pending traps before each (interruptible) `read`, so Ctrl-C in an
   interactive shell abandons the line, also when it came just before the `read`. Failures are status 1, as in zsh.
-  Tests: `expand/file_subst.sh` (zsh), `expand/file_subst_nul.sh`, `interrupt_file_subst` in
+  Tests: `expand/file_subst.sh` (zsh), `expand/file_subst_nul.sh`, `interrupt_shell_read` in
   `tests/interactive.rs` (which waits for the shell to block in `read`, from `/proc/PID/syscall`).
 - Globbing: byte order, `.*` matches `.` and `..` (as in dash), `^` is not negation. A lone `[` without a matching
   `]` is not a pattern: treating it as one made every `[ ... ]` call `readdir` and loops 7× slower.
@@ -682,6 +682,13 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   the original); that costs nothing on reads. Tests: `builtins/typeset_integer.sh` (zsh),
   `builtins/typeset_integer_luish.sh` (arrays, `typeset -p`, decimal output), `builtins/typeset_case.sh` (zsh),
   `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh` (arrays, `+l`, `typeset -p`, `path`).
+- `read` reads fd 0 a byte at a time (`read_line`), with interruptible reads. As in dash, a signal with a trap ends
+  it with status 1 (`Shell::trapped_pending`, shared with `wait`): the variables get what was read so far, and the
+  trap runs after `read`, as after any command (bash and zsh run it at once and go on reading). Other signals are
+  handled (`run_pending_traps`) and the read goes on, except Ctrl-C in an interactive shell, which abandons the
+  line. Pending signals are checked before each byte too, for one that came just before the `read`. Tests:
+  `builtins/read_trap.sh` (which sends the signal once `/proc/$$/wchan` shows the shell waiting on the fifo),
+  `interrupt_shell_read` in `tests/interactive.rs`.
 - `read -A` (zsh) and `read -a NAME` (bash) split the line with the same `next_field` as `read` uses for all names
   but the last, so there is no empty element after a trailing delimiter (bash; zsh has one). Tests:
   `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh`.
@@ -1745,7 +1752,7 @@ truncates when it relocates the package.
 | `${!a[@]}`, `${!a[*]}` | `expand/array_keys.sh` |
 | `${!x}`, `${!prefix@}` | `expand/indirect.sh` |
 | `${ list; }`, `${\| list; }` | `expand/nofork_subst.sh` |
-| `$(<file)` | `expand/file_subst.sh` (zsh), `expand/file_subst_nul.sh`, `interrupt_file_subst` in `tests/interactive.rs` |
+| `$(<file)` | `expand/file_subst.sh` (zsh), `expand/file_subst_nul.sh`, `interrupt_shell_read` in `tests/interactive.rs` |
 | Parameter flags, `${(o)a[@]}` | `expand/param_flags.sh` (zsh), `expand/param_flags_luish.sh` |
 | `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh`, `builtins/typeset_case.sh` (zsh), `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh`, `builtins/typeset_functions.sh` (zsh), `builtins/typeset_functions_luish.sh` |
 | `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
