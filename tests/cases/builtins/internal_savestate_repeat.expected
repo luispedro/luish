@@ -2,3 +2,10 @@ hi
 hi
 setopt syntax.repeat
 f() {
+hi
+hi
+syntax.repeat
+unsetopt syntax.repeat
+setopt syntax.repeat
+f() {
+unsetopt syntax.repeat

@@ -30,6 +30,8 @@ pub struct Needs {
     pub globqual: bool,
     /// `{name}>file`: `setopt syntax.fd_vars`.
     pub fd_vars: bool,
+    /// A `repeat` loop: `setopt syntax.repeat`.
+    pub repeat: bool,
 }
 
 /// The text of a `__luish_cache` block, for the startup cache's key (so
@@ -395,6 +397,10 @@ impl<'a> Printer<'a> {
                 self.w(b"done");
             }
             CompoundCommand::Repeat { count, body, .. } => {
+                self.needs.set(Needs {
+                    repeat: true,
+                    ..self.needs.get()
+                });
                 self.w(b"repeat ");
                 self.word(count);
                 self.w(b"; do");

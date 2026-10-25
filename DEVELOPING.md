@@ -518,7 +518,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   and is cleared inside `$(...)` (`read_subst_list`), where `}` is an ordinary word as everywhere else, since zsh's
   rule (`}` reserved everywhere) would change what `echo a }` means. The body can't be empty, as a brace group's
   can't. `unparse.rs` and `cmdtext.rs` write the `do ... done` form, which needs the option on to be read back (as a
-  glob qualifier needs `glob.bare_qualifiers`), so `savestate` sets it before the functions. The highlighter paints
+  glob qualifier needs `glob.bare_qualifiers`), so `savestate` sets it before the functions, and wraps a function
+  with a `repeat` in `setopt`/`unsetopt` when it is off (`unparse::Needs`). The highlighter paints
   the keyword, leaves the count alone and takes `do` or `{` as the body's start (`After::Repeat`,
   `After::RepeatCount`), with `Scan::brace_bodies` holding the depths of the open `{ ... }` bodies so that a `}`
   after a command's words is a keyword there too; the completer offers `repeat` as a command name when the option is

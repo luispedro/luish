@@ -253,11 +253,13 @@ impl Shell {
                 t.extend_from_slice(b" 2>/dev/null\n");
             }
             let (text, needs) = unparse::function(name, body, &self.aliases);
-            // A function with a glob qualifier or `{name}>`, defined before
-            // the option was turned off, needs it to be read back.
+            // A function with a glob qualifier, `{name}>` or `repeat`,
+            // defined before the option was turned off, needs it to be read
+            // back.
             let wrap: Vec<&str> = [
                 (needs.globqual, Opt::Bareglobqual, "glob.bare_qualifiers"),
                 (needs.fd_vars, Opt::SyntaxFdVars, "syntax.fd_vars"),
+                (needs.repeat, Opt::SyntaxRepeat, "syntax.repeat"),
             ]
             .into_iter()
             .filter(|&(needed, o, _)| needed && !self.opt(o))
