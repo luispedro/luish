@@ -771,6 +771,16 @@ impl Parser {
         let mut qual = None;
         // Unclosed `(` in a regular expression (`regex_word`).
         let mut depth = 0;
+        // `=(list)` (zsh), an error in POSIX sh. Only at the start of a word, as
+        // `a=(x y)` is an array.
+        if self.at(0) == Some(b'=') && self.at(1) == Some(b'(') && !self.regex_word {
+            self.pos += 2;
+            let list = self.read_subst_list(false)?;
+            parts.push(WordPart::ProcSubst {
+                kind: ProcKind::File,
+                list,
+            });
+        }
         while let Some(c) = self.at(0) {
             match c {
                 b'(' if self.bareglobqual
@@ -786,10 +796,8 @@ impl Parser {
                     flush(&mut parts, &mut lit);
                     self.pos += 2;
                     let list = self.read_subst_list(false)?;
-                    parts.push(WordPart::ProcSubst {
-                        output: c == b'>',
-                        list,
-                    });
+                    let kind = if c == b'>' { ProcKind::Output } else { ProcKind::Input };
+                    parts.push(WordPart::ProcSubst { kind, list });
                 }
                 b' ' | b'\t' | b'\n' | b';' | b'&' | b'|' | b'<' | b'>' | b'(' | b')' => {
                     if !self.regex_word {

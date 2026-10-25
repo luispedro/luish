@@ -425,8 +425,8 @@ impl Shell {
                 let out = self.nofork_subst(*reply, list)?;
                 push_result(&out, quoted, f);
             }
-            WordPart::ProcSubst { output, list } => {
-                let path = self.process_subst(*output, list)?;
+            WordPart::ProcSubst { kind, list } => {
+                let path = self.process_subst(*kind, list)?;
                 f.push_quoted(&path);
             }
             WordPart::Arith(w) => {

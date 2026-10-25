@@ -489,7 +489,7 @@ impl<'a> Printer<'a> {
                 }
                 WordPart::CmdSubst(list) => self.cmdsubst(b"$(", list),
                 WordPart::NoForkSubst { reply, list } => self.nofork(*reply, list),
-                WordPart::ProcSubst { output, list } => self.cmdsubst(if *output { b">(" } else { b"<(" }, list),
+                WordPart::ProcSubst { kind, list } => self.cmdsubst(kind.opener(), list),
                 WordPart::Arith(w) => {
                     self.w(b"$((");
                     self.word(w);
@@ -1046,6 +1046,10 @@ mod tests {
         // A subshell first must not read as `<((`.
         round_trip("f() { cat <(( echo a )); }");
         assert!(round_trip("f() { while read x; do :; done < <(cmd); }").contains("< <(cmd)"));
+        assert_eq!(
+            round_trip("f() { diff =(sort a) <=(b); }"),
+            "f() {\n    diff =(sort a) < =(b)\n}\n"
+        );
     }
 
     #[test]

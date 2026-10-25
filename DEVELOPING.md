@@ -70,7 +70,7 @@ src/
 ├── expand/             # mod.rs (driver, parameters, command substitution), arith.rs, split.rs, pattern.rs, glob.rs,
 │                       # qual.rs (glob qualifiers), brace.rs (brace expansion), modify.rs (zsh's modifiers)
 ├── exec/               # mod.rs (lists, pipelines, compound commands), simple.rs (commands, lookup), fork.rs,
-│                       # redirect.rs, cond.rs (`[[ ... ]]`), procsubst.rs (`<(...)`, `>(...)`), not_found.rs
+│                       # redirect.rs, cond.rs (`[[ ... ]]`), procsubst.rs (`<(...)`, `>(...)`, `=(...)`), not_found.rs
 │                       # (hints for commands of other shells)
 ├── vars.rs, options.rs, jobs.rs, signals.rs, path.rs
 ├── hash.rs             # the hash for the shell's tables (not SipHash)
@@ -155,8 +155,10 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - Process substitution: `read_word` reads `<(` and `>(` anywhere in a word (a syntax error in dash, so it is always
   on, and only `<` and `>` pay for the check) as a `WordPart::ProcSubst`, as bash and zsh do (`--input=<(cmd)`, and
   `2<(cmd)` is one word, not an fd number); `lex` sends a token that starts with one to `lex_word`. Not in
-  `[[ x =~ ... ]]` (`regex_word`). The list is parsed as for `$(` (`read_subst_list`). Tests: `expand/procsubst*.sh`,
-  unit tests in `unparse.rs`.
+  `[[ x =~ ... ]]` (`regex_word`). The list is parsed as for `$(` (`read_subst_list`). `=(` (zsh) is read only at
+  the start of a word, before `read_word`'s loop, since `a=(` is an array, and not by `${x-word}` or `$((...))`,
+  which don't use `read_word` (`${x-=(y)}` and `$((a =(2)))` are valid in dash). All three are a
+  `WordPart::ProcSubst` with an `ast::ProcKind`. Tests: `expand/procsubst*.sh`, unit tests in `unparse.rs`.
 - `${ list; }` and `${| list; }` (mksh and bash 5.3; bad substitutions in dash, so always on): `${` followed by a
   blank, a newline or `|` (`read_braced_param_uncached`) is a `WordPart::NoForkSubst`, whose list `read_subst_list`
   parses up to a `}` instead of a `)`. So the list must parse even where dash would only fail when expanding it.
@@ -442,7 +444,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   over, error or not: it closes the descriptors, waits for `>(...)` processes, and leaves `<(...)` ones to be reaped
   without blocking (`procsub_orphans`, since a process that ignores SIGPIPE, or that has more to do, mustn't hold the
   shell up). `exec` without a command (`exec 3< <(cmd)`) uses `detach_procsubs`, which doesn't wait. `run_external`
-  doesn't `exec` in place while the list is not empty, or nothing would close and wait. Tests: `expand/procsubst*.sh`.
+  doesn't `exec` in place while the list is not empty, or nothing would close and wait. `=(...)`
+  (`file_procsubst`) records the path of its temporary file (`temp_file`, `mkostemp`) in the same list
+  (`ProcSub::File`) before forking, so the file is removed on every path out of the command, then runs the list with
+  its output there and waits for it, ignoring its status, as zsh does. `end_procsubs` and `detach_procsubs` remove
+  it; children forget the files (`forget_procsubs`), which are the parent's to remove. A background job forks
+  before expanding its words, so the job removes its own files. Tests: `expand/procsubst*.sh`.
 - The `exit` flag (`run_list_exit`, dash's `EV_EXIT`) is passed to the last element of lists and and-or lists, to
   `if`/`case` bodies and brace groups without redirections, but not to loops, negated pipelines, or compound
   commands with redirections (as in dash). So `$!` is the command itself. Tests: `exec/exec_last.sh`,
@@ -1753,6 +1760,7 @@ truncates when it relocates the package.
 | `&\|`, `&!` | `exec/amp_disown.sh` (zsh), `parse/amp_bang.sh` |
 | `<<< word` | `exec/here_string.sh` (zsh), `parse/here_string_error.sh` |
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
+| `=(...)` | `expand/procsubst_file.sh` (zsh) |
 | Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |
 | `{name}>file` | `exec/fd_vars.sh` (zsh `-o noignorebraces`), `exec/fd_vars_differences.sh`, `exec/fd_vars_off.sh` (dash), `builtins/internal_savestate_fd_vars.sh` |
 | `**/` | `expand/globstar.sh` (zsh), `expand/globstar_off.sh` (dash), `expand/globstar_loop.sh` |

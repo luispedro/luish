@@ -255,7 +255,10 @@ fn push_part(out: &mut Vec<u8>, p: &WordPart) {
         WordPart::Param(pe) => push_param(out, pe),
         WordPart::CmdSubst(_) => out.extend_from_slice(b"$(...)"),
         WordPart::NoForkSubst { reply, .. } => out.extend_from_slice(if *reply { b"${|...}" } else { b"${ ... }" }),
-        WordPart::ProcSubst { output, .. } => out.extend_from_slice(if *output { b">(...)" } else { b"<(...)" }),
+        WordPart::ProcSubst { kind, .. } => {
+            out.extend_from_slice(kind.opener());
+            out.extend_from_slice(b"...)");
+        }
         WordPart::Arith(w) => {
             out.extend_from_slice(b"$((");
             push_word(out, w);

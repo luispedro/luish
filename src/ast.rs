@@ -441,6 +441,28 @@ impl<'a> IntoIterator for &'a Parts {
     }
 }
 
+/// The kind of a process substitution.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ProcKind {
+    /// `<(...)`: a pipe from the list's standard output.
+    Input,
+    /// `>(...)`: a pipe to the list's standard input.
+    Output,
+    /// `=(...)` (zsh): a temporary file with the list's output.
+    File,
+}
+
+impl ProcKind {
+    /// How the substitution starts: `<(`, `>(` or `=(`.
+    pub fn opener(self) -> &'static [u8] {
+        match self {
+            ProcKind::Input => b"<(",
+            ProcKind::Output => b">(",
+            ProcKind::File => b"=(",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum WordPart {
     /// Unquoted literal text.
@@ -461,10 +483,11 @@ pub enum WordPart {
         reply: bool,
         list: Rc<List>,
     },
-    /// `<(...)` (`output: false`) and `>(...)`: the word is the path of a
-    /// pipe to the list's standard output, or from its standard input.
+    /// `<(...)`, `>(...)` and `=(...)`: the word is the path of a pipe to
+    /// the list's standard output or from its standard input, or of a
+    /// temporary file with its output.
     ProcSubst {
-        output: bool,
+        kind: ProcKind,
         list: Rc<List>,
     },
     /// `$((...))`: the text is expanded first, then evaluated.

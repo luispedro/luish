@@ -1,22 +1,39 @@
-//! Process substitution, `<(...)` and `>(...)`.
+//! Process substitution, `<(...)`, `>(...)` and `=(...)`.
 //!
-//! The list runs in a forked process with its standard output (or input)
-//! on a pipe, and the word becomes `/dev/fd/N`, N being the shell's end of
-//! the pipe. The shell keeps that end open until the command it belongs to
-//! (`Shell::run_command`) is done.
+//! For `<(...)` and `>(...)`, the list runs in a forked process with its
+//! standard output (or input) on a pipe, and the word becomes `/dev/fd/N`,
+//! N being the shell's end of the pipe. The shell keeps that end open until
+//! the command it belongs to (`Shell::run_command`) is done. For `=(...)`,
+//! the list's output goes to a temporary file, which is removed then.
 
-use crate::ast::List;
+use crate::ast::{List, ProcKind};
 use crate::exec::redirect::clear_cloexec;
 use crate::shell::{Flow, Shell};
 use crate::sys;
 
-/// A substitution that is running: the shell's end of the pipe, and the
-/// process at the other end.
-pub struct ProcSub {
-    fd: i32,
-    pid: i32,
-    /// `>(...)`, whose process reads what the command writes.
-    output: bool,
+/// A substitution whose command isn't over.
+pub enum ProcSub {
+    /// `<(...)` or `>(...)`: the shell's end of the pipe, and the process at
+    /// the other end.
+    Pipe {
+        fd: i32,
+        pid: i32,
+        /// `>(...)`, whose process reads what the command writes.
+        output: bool,
+    },
+    /// `=(...)`: the path of the temporary file.
+    File(Vec<u8>),
+}
+
+/// In a child: closes the shell's ends of the pipes of the substitutions
+/// (a `>(...)` would never see the end of its input), and forgets the
+/// files, which are the parent's to remove.
+fn forget_procsubs(procsubs: &mut Vec<ProcSub>) {
+    for p in procsubs.drain(..) {
+        if let ProcSub::Pipe { fd, .. } = p {
+            sys::close(fd);
+        }
+    }
 }
 
 /// Moves `fd` to a number from 64 up, without close-on-exec (`fd` itself
@@ -33,8 +50,13 @@ fn high_fd(fd: i32) -> i32 {
 }
 
 impl Shell {
-    /// Starts `list` and returns the path of the pipe to it.
-    pub fn process_subst(&mut self, output: bool, list: &List) -> Result<Vec<u8>, Flow> {
+    /// Starts `list` and returns the path of the pipe to it, or (`=(...)`)
+    /// runs it and returns the path of the file with its output.
+    pub fn process_subst(&mut self, kind: ProcKind, list: &List) -> Result<Vec<u8>, Flow> {
+        if kind == ProcKind::File {
+            return self.file_procsubst(list);
+        }
+        let output = kind == ProcKind::Output;
         self.reap_procsub_orphans();
         let (r, w) = match sys::pipe() {
             Ok(p) => p,
@@ -54,11 +76,7 @@ impl Shell {
             }
         };
         if pid == 0 {
-            // Other substitutions' pipes mustn't be held open here: a `>(...)`
-            // would never see the end of its input.
-            for p in self.procsubs.drain(..) {
-                sys::close(p.fd);
-            }
+            forget_procsubs(&mut self.procsubs);
             sys::close(ours);
             let target = if output { 0 } else { 1 };
             if theirs != target {
@@ -77,35 +95,77 @@ impl Shell {
         // moved out of the way of the low numbers that scripts use for their
         // own redirections (`exec 3< <(cmd)` would close its own descriptor).
         let ours = high_fd(ours);
-        self.procsubs.push(ProcSub { fd: ours, pid, output });
+        self.procsubs.push(ProcSub::Pipe { fd: ours, pid, output });
         Ok(format!("/dev/fd/{ours}").into_bytes())
     }
 
+    /// `=(list)`: runs `list` with its output to a new temporary file, and
+    /// returns the file's path. As in zsh, the list's status is ignored.
+    fn file_procsubst(&mut self, list: &List) -> Result<Vec<u8>, Flow> {
+        let (fd, path) = self.temp_file(b"luish-")?;
+        // Recorded now, so that the file is removed whatever happens next.
+        self.procsubs.push(ProcSub::File(path.clone()));
+        let pid = match self.fork_or_error() {
+            Ok(pid) => pid,
+            Err(e) => {
+                sys::close(fd);
+                return Err(e);
+            }
+        };
+        if pid == 0 {
+            forget_procsubs(&mut self.procsubs);
+            if fd != 1 {
+                let _ = sys::dup2(fd, 1);
+                sys::close(fd);
+            } else {
+                clear_cloexec(fd);
+            }
+            // As for `$(...)`, a condition around it doesn't suppress `set -e`.
+            self.errexit_suppressed = 0;
+            let res = self.run_list_exit(list, true);
+            self.child_exit(res);
+        }
+        sys::close(fd);
+        self.wait_for(pid);
+        Ok(path)
+    }
+
     /// Closes the pipes of the substitutions after the first `mark`, as
-    /// their command is over. A `>(...)` process is waited for, so that its
-    /// output comes before whatever runs next. A `<(...)` process ends by
-    /// itself or on SIGPIPE, and isn't waited for.
+    /// their command is over, and removes their files. A `>(...)` process is
+    /// waited for, so that its output comes before whatever runs next. A
+    /// `<(...)` process ends by itself or on SIGPIPE, and isn't waited for.
     pub fn end_procsubs(&mut self, mark: usize) {
         let done = self.procsubs.split_off(mark);
         for p in &done {
-            sys::close(p.fd);
+            match p {
+                ProcSub::Pipe { fd, .. } => sys::close(*fd),
+                ProcSub::File(path) => sys::unlink(path),
+            }
         }
         for p in done {
-            if p.output {
-                self.wait_for(p.pid);
-            } else {
-                self.procsub_orphans.push(p.pid);
+            match p {
+                ProcSub::Pipe { pid, output: true, .. } => {
+                    self.wait_for(pid);
+                }
+                ProcSub::Pipe { pid, .. } => self.procsub_orphans.push(pid),
+                ProcSub::File(_) => {}
             }
         }
         self.reap_procsub_orphans();
     }
 
     /// Closes our ends of the pipes after the first `mark`, without waiting
-    /// (`exec 3< <(cmd)` has made copies).
+    /// (`exec 3< <(cmd)` has made copies), and removes the files (`exec 3<
+    /// =(cmd)` has opened them).
     pub fn detach_procsubs(&mut self, mark: usize) {
         for p in self.procsubs.split_off(mark) {
-            sys::close(p.fd);
-            self.procsub_orphans.push(p.pid);
+            match p {
+                ProcSub::Pipe { fd, pid, .. } => {
+                    sys::close(fd);
+                    self.procsub_orphans.push(pid);
+                }
+                ProcSub::File(path) => sys::unlink(&path),
+            }
         }
     }
 

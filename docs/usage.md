@@ -72,6 +72,7 @@ typeset -i count=0                         # variable attributes, also with decl
 builtin cd /tmp                            # run the built-in even if a function has its name
 set -o pipefail                            # a pipeline fails if any of its commands does
 diff <(sort a) <(sort b)                   # process substitution: a file to read the output of a command
+vim =(curl -s "$url")                      # a temporary file with the output, removed when the command ends
 make |& less                               # pipe standard error too, as make 2>&1 | less
 case $x in a) one;& b) two;| *) all;; esac # ;& runs the next body too, ;| (or ;;&) tries the next patterns
 firefox &!                                 # in the background, and disowned (also &|)
@@ -96,6 +97,11 @@ conf=$(<~/.config/app)                     # a file's contents, read without a s
   A redirection can take one too: `while read -r l; do ...; done < <(cmd)` (unlike `cmd | while ...`, the loop runs
   in the shell, so its variables stay), and `exec 3< <(cmd)` reads it later, from `<&3`. The word isn't split or
   globbed. It can be part of a word, as in bash and zsh: `prog --input=<(cmd)` passes `--input=/dev/fd/N`.
+- `=(list)`, as in zsh, runs the list to the end with its output in a new temporary file in `$TMPDIR` (or `/tmp`),
+  readable only by you, and is the file's path, for commands that need a real file (to seek in it, read it twice or
+  edit it). The file is removed when the command that got it ends; `exec 3< =(cmd)` keeps it open on fd 3. Only at
+  the start of a word (`a=(x y)` is an array). The list's status is ignored, as in zsh. A command run with `exec`
+  replaces the shell, so the file is left behind, also in zsh.
 - Command substitution in the shell itself, as in bash 5.3 and mksh: `${ list; }` is replaced by the output of
   `list`, as `$(list)` is (trailing newlines removed, then split unless in double quotes), but `list` runs in the
   shell rather than in a subshell, which saves a fork: `${ printf '%03d' "$i"; }` costs about as much as the
@@ -533,7 +539,7 @@ far:
 | `var.readonly` | read-only variables (an exported or array one too) |
 | `var.unset` | `$NAME` or `${NAME}` when `NAME` is not set (and not assigned earlier on the line, or in a `for` loop there) |
 | `subst.command` | the delimiters of `$(...)` and backquotes |
-| `subst.process` | the delimiters of `<(...)` and `>(...)` |
+| `subst.process` | the delimiters of `<(...)`, `>(...)` and `=(...)` |
 | `subst.arith` | `$((...))` |
 | `expand.tilde` | `~` and `~user` |
 | `expand.brace` | the braces and separators of a brace expansion, with `setopt expand.braces` (`{a,b}`, `{1..3}`) |

@@ -980,7 +980,8 @@ impl Scan<'_> {
         let mut j = start;
         while j < s.len() {
             let c = s[j];
-            if is_procsubst(s, j) {
+            // `=(` only at the start of a word, as in the lexer.
+            if is_procsubst(s, j) || (j == start && c == b'=' && s.get(j + 1) == Some(&b'(')) {
                 w.expanded = true;
                 j = self.nested(j, 2, role::PROCESS, b')');
                 continue;
@@ -1923,6 +1924,10 @@ mod tests {
         );
         // `2<(` is a word, not a redirection of fd 2.
         assert_eq!(classes("cat < <(ls) 2<(ls)"), "ccc.r.$$cc$..$$cc$");
+        assert_eq!(
+            roles("cat =(ls)"),
+            "cat:command.external =(:subst.process ls:command.external ):subst.process"
+        );
     }
 
     #[test]
