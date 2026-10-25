@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-luish is a POSIX `sh` for Linux, written in Rust, meant eventually to replace zsh as a daily-driver shell. dash is the
+luish is a POSIX `sh` for Linux, written in Rust, and the author's daily-driver shell in place of zsh. dash is the
 reference implementation: where POSIX is ambiguous, match dash. It must be as fast as dash, and anything beyond POSIX
 must cost nothing when unused. That is strict for scripts and `-c` (time and memory). Interactive shells are judged on
 responsiveness and functionality instead: a few bytes per variable or history entry for interactive features is fine,
@@ -11,8 +11,8 @@ meaning to what is an error in dash, such as `a=(x y)`) may be always on.
 
 ## Project documents
 
-- `GOALS.md`: the goals, grouped into stages. When goals conflict, the earlier stage wins. Stage 1 (POSIX, dash speed,
-  interactive daily driver) is the current focus.
+- `GOALS.md`: the goals. luish has replaced zsh as the author's shell; its core is POSIX conformance at dash's
+  speed, and every extension must cost nothing when unused.
 - `PLAN.md`: what is still to be built, by phase (the phase numbers are used throughout the other documents),
   starting with the next steps in priority order.
 - `DEVELOPING.md`: developer documentation: design decisions, implementation notes by area with the tests that cover

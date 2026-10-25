@@ -17,7 +17,7 @@ behaviour listed here must stay covered by the tests named with it.
 | Process creation | Raw `fork` + `execve`, and `posix_spawn` where possible | Subshells need a fork *without* an exec, which `std::process::Command` can't do |
 | String type | `Vec<u8>` throughout | POSIX data is bytes |
 | Execution model | Tree-walking interpreter over an AST | Simple, and fast enough for a shell |
-| Line editing | rustyline, kept inside `interactive/` | Mature, with vi and emacs modes. The completer and highlighter get a plain-data snapshot (`Names`) instead of `Shell`, which keeps the editor separable for the SSH mode of Stage 3 |
+| Line editing | rustyline, kept inside `interactive/` | Mature, with vi and emacs modes. The completer and highlighter get a plain-data snapshot (`Names`) instead of `Shell`, which keeps the editor separable for the SSH mode |
 | Plugins | Rhai, behind the `plugins` cargo feature, with the engine created on the first extension loaded | Pure Rust, so no system dependency. No threads, global state or signal handlers, so it is safe across `fork`. Scripts can be interrupted and resource-limited |
 | Reference behaviour | dash (upstream for intent), then zsh beyond POSIX | See `docs/compatibility.md` |
 | Arrays | Always on (associative ones too, made with `typeset -A`), with ksh/bash syntax and zsh's sh-emulation semantics (from 0, `$a` is `${a[0]}`) | Their syntax is an error in dash (`a=(`, `${a[i]}`), so no POSIX script changes, except that `a[i]=x` and `x+=y` stop being command names. zsh's native forms (`$a[1]`, 1-based) would change the meaning of POSIX scripts. `zsh --emulate sh` is then a reference for tests |
@@ -1179,7 +1179,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   takes `startup` as a third name, built the same way as `rc` and `login` (`Cache::built_by`'s `-i` branch, since
   neither file runs outside an interactive shell). Tests: `misc/startup_cache_blocks.sh`,
   `tests/plugins/startup_cache_blocks.sh`.
-- Not yet done (see `PLAN.md`, Stage 3): `commands=(...)`, warning about variables a block reads but doesn't list,
+- Not yet done (see `PLAN.md`, Caching of login scripts): `commands=(...)`, warning about variables a block reads but doesn't list,
   and `flock` for many shells at once. Background revalidation and merging into running shells won't be: blocks
   list what they depend on instead.
 - `config.toml` is parsed with `toml-span`; errors are `luish: PATH: line N: ...`, in the file's order. A key directly
@@ -1598,7 +1598,7 @@ no plugin completer, as luish's own completer skips it as a
 
 ### SSH mode (`remote/`, `interactive/remote.rs`)
 
-Stage 3, started as a walking skeleton (`PLAN.md`). `luish --remote CMD...` (the client) runs CMD with pipes for its
+Started as a walking skeleton (`PLAN.md`, SSH client/server mode). `luish --remote CMD...` (the client) runs CMD with pipes for its
 stdin and stdout; CMD starts `luish --serve` (the server), usually through `ssh -T` (`--ssh HOST`). luish's own
 options among ssh's (`client::Ssh::parse`): `--luish-path=PROGRAM` replaces `luish`, `-e`/`--rsh`/`--ssh-command=COMMAND`
 replaces `ssh -T` (split into words as rsync does, with quotes), `--copy-luish` and `-o ssh.no_auto_copy`
@@ -1922,7 +1922,7 @@ Checked on 2026-09-26 (the scripts are not in the repository):
   - The 59 that don't list dash (1179 cases): 614 give bash's or zsh's output (or the expected one), and with
     `-o expand.braces -o glob.star`, 64 of the 68 in the brace, globstar and glob-bash files do. The rest are features luish lacks: `(( ))`
     and `for ((`, `extglob`, `GLOBIGNORE`, `DEBUG` and `ERR` traps, namerefs, `type -t/-p/-a`, most `read`
-    options, bash's `\u` prompts, `typeset NAME+=`, `typeset a[i]=x`, `$(<file)`, sparse arrays, characters
+    options, bash's `\u` prompts, `typeset NAME+=`, `typeset a[i]=x`, `$(<file)` (built since), sparse arrays, characters
     rather than bytes in `${x:i:n}` and patterns, `${x////c}` (bash reads the pattern as `/`), recursive arithmetic on
     variables' values (dash's `Illegal number`), `[[ -v a[i] ]]`.
   - Found and fixed: assignments before a command not seeing those before them, and in scripts read from standard

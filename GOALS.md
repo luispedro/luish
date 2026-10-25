@@ -1,26 +1,18 @@
 # Goals for luish
 
-The long-term aim is for luish to replace zsh as my default shell. The core is
-a POSIX `sh` that is as fast as dash. Extensions that go beyond POSIX cost
-nothing when unused. Those that change behaviour are opt-in; those that only
-give a meaning to what was an error may be always on.
+The aim was for luish to replace zsh as my default shell and it has achieved
+it.
 
-Goals are grouped into stages. Each stage builds on the one before, and work
-on a later stage does not start until the earlier one is usable. When goals
-conflict, the earlier stage wins.
-
-## Stage 1: Reproduce existing functionality (current focus)
+The core is a POSIX `sh` that is as fast as dash. Extensions that go beyond
+POSIX cost nothing when unused. Those that change behaviour are opt-in; those
+that only give a meaning to what was an error may be always on.
 
 - **POSIX conformance.** Implement the POSIX Shell Command Language and its
   required built-ins, plus `local` as in dash. Where the spec is ambiguous,
   match dash.
 - **As fast as dash** for scripts that only use POSIX features, both at
-  startup and during execution. Every later feature must be pay-for-what-you-use.
-- **Usable interactively as a daily driver**: line editing, history,
-  completion and job control, at least as good as a basic zsh setup.
-
-## Stage 2: Beyond POSIX
-
+  startup and during execution. Every later feature must be
+  pay-for-what-you-use.
 - **Plugins**, loaded lazily so that they add no cost unless used.
 - **Modern shell features**: arrays, associative arrays and process
   substitution (behind an opt-in where they would change behaviour).
@@ -31,14 +23,10 @@ conflict, the earlier stage wins.
   `pipefail`, and a predictable strict mode. Also debugging support.
 - **Better interactive use**: richer tab completion, and history shared
   across sessions with metadata (working directory, exit status, duration).
-
-## Stage 3: New capabilities
-
 - **Caching of login scripts.** The final goal is to cache the *effects* of
   login scripts: environment variables, functions, aliases and options.
   Caching parsed scripts is a first step toward this. With a warm cache, a new
-  shell should start almost instantly. Since this changes semantics, it must
-  be explicit, and the cache must be invalidated correctly when its inputs change.
+  shell should start almost instantly. 
 - **Built-in SSH support.** A client/server mode where the line editor runs on
   the client, so input is predicted locally. History could be managed on the
   client and shared across hosts. The line editor should be kept separate from

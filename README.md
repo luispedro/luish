@@ -10,28 +10,27 @@
 [![Latest release](https://img.shields.io/github/v/release/luispedro/luish)](https://github.com/luispedro/luish/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](COPYING.MIT)
 
-luish is a POSIX `sh` for Linux, written in Rust, meant to replace zsh as a daily driver, built on a core that is as
-fast as [dash](http://gondor.apana.org.au/~herbert/dash/).
+luish is a POSIX `sh` for Linux, written in Rust, meant to replace bash or zsh
+as a daily driver, but as fast as possible (as fast or faster than
+[dash](http://gondor.apana.org.au/~herbert/dash/)).
 
-- **POSIX first.** luish implements the POSIX Shell Command Language and its required built-ins, plus `local`.
-  Where POSIX is ambiguous, luish matches dash.
 - **As fast as dash, with zsh's features.** Scripts run as fast as under dash (faster on arithmetic and function
   calls), and up to five times faster than under bash or zsh. Interactively: zsh's keys, syntax highlighting,
   autosuggestions, shared history in zsh's format with history expansion (`!!`, `!$`), completion with a menu (for
   about 230 commands with the standard plugins, and about 270 more, from bioinformatics, science, desktop and Python
   tools, with [luish-extra](https://github.com/luispedro/luish-extra)), zsh's prompts and glob qualifiers.
+- **Instant startup**: luish caches the effect of your startup files, so a shell starts in milliseconds even with
+  `conda`, `nvm` and other slow initializations.
 - **A modern plugin architecture**: plugins in shell and [Rhai](https://rhai.rs), listed in `config.toml` (or added
   with `plugin add`), fetched from git and pinned in a lock file. Plugins can add hooks, prompt variables, completion
-  and commands. Anything beyond POSIX that changes behaviour is opt-in, and none of it costs anything when it is not
-  used.
+  and commands.
 - **Remote shells that feel local**: `luish --ssh HOST` runs commands on HOST but edits command lines on your
-  machine, so typing, the history and the completion menu don't wait for the network. luish needn't be installed on
-  HOST: it copies itself there.
+  machine, so typing, the history and the completion menu don't wait for the network.
 - **bash's and zsh's scripting extensions**: arrays and associative arrays, `[[ ... ]]`, `${x/pattern/replacement}`,
   process substitution (`<(...)`), `typeset`, zsh's parameter flags and more. Scripts that use them run up to six
   times faster than under bash or zsh.
-- **Instant startup**: luish caches the effect of your startup files, so a shell starts in milliseconds even with
-  `conda`, `nvm` and the like set up.
+- **Automatic optimization of common patterns**: For example, `$(basename "$x")` is optimized to run in the same
+  process with a built-in implementation of `basename`. The same applies to several other common commands.
 - **Modern configuration** in a TOML file, with options named in groups (`history.share`) and settings in layers
   (`config.toml`, plugins, your own startup files).
 
@@ -44,7 +43,7 @@ from dash and the known limitations, and [DEVELOPING.md](DEVELOPING.md) has how 
 Releases have binaries for Linux on x86_64 and aarch64. This installs the right one in `~/.local/bin`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/luispedro/luish/main/install.sh | sh
+curl -fsSL https://luish-shell.xyz/install.sh | sh
 ```
 
 [docs/installation.md](docs/installation.md) has its options, such as the static musl build (`sh -s -- --musl`), and
@@ -96,19 +95,6 @@ LUISH_CASE=expand/ pixi run test  # only the differential cases whose path conta
 ```
 
 [DEVELOPING.md](DEVELOPING.md) has more for developers: design decisions, implementation notes and their tests.
-
-## Roadmap
-
-The goals are grouped into stages, described in [GOALS.md](GOALS.md):
-
-1. **Reproduce existing functionality** (current focus): POSIX conformance, dash-level speed, and a usable
-   interactive shell.
-2. **Beyond POSIX**: lazily loaded plugins, process substitution, modern terminal features, better error messages and
-   strict mode, and richer history and completion. Plugins, arrays and process substitution are already built.
-3. **New capabilities**: caching the effects of login scripts for near-instant startup, and a built-in SSH mode
-   where the line editor runs locally.
-
-The implementation plan is in [PLAN.md](PLAN.md).
 
 ## License
 

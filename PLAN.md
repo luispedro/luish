@@ -1,20 +1,25 @@
 # luish — Implementation Plan
 
-`GOALS.md` groups the goals into three stages. This plan covers what is still to be built: the rest of Stage 1, the
-plugin system from Stage 2, and sketches of the later stages with the constraints they put on the design now. What
-is already built, and how, is in `DEVELOPING.md`; the user documentation is in `docs/`.
+This plan covers what is still to be built towards the goals in `GOALS.md`, and sketches of later work with the
+constraints it puts on the design now. What is already built, and how, is in `DEVELOPING.md`; the user
+documentation is in `docs/`.
 
-## Status (2026-10-14)
+## Status (2026-10-25)
 
-Phases 0 to 10 (the POSIX shell and the interactive mode) and 13 (replacing zsh, milestone M4) are done. The open
-work:
+luish has replaced zsh as the author's shell. Phases 0 to 10 (the POSIX shell and the interactive mode) and 13
+(replacing zsh, milestone M4) are done; the latest release is 0.7.1 (2026-10-19). Since the last status (2026-10-14):
+`basename`, `dirname`, `expr`, `seq`, `id` and `uname` run in the shell, and `$(echo ...)` and the like without a
+subshell (Phase 12); completers can hand the line to another command's completer, and plugins got `sh::glob` and a
+value cache (`sh::cache_get`, `sh::cache_put`); and new extensions: `${ list; }`, `$(<file)`, `shopt`,
+`setopt syntax.repeat` and `syntax.fd_vars`. The open work:
 
-| Phase | Stage | Status |
-|---|---|---|
-| 11 Plugins | 2 | Started, because the daily driver's prompt and completion build on it |
-| 12 Conformance and performance | 1 | Under way; what remains of Stage 1 |
-| 13's follow-ups | 1 | Completion and the startup cache, below |
-| SSH mode | 3 | Released in 0.6.0, see Stage 3 below |
+| Area | Status |
+|---|---|
+| Phase 11, plugins | Built and in daily use; hooks' time budgets, `plugin remove` and the example plugins remain |
+| Phase 12, conformance and performance | Under way; the startup gap with dash is deferred |
+| Phase 13's follow-ups | Completion content and lazy function parsing of the startup cache, below |
+| Startup cache | Built; `check-cache` warnings remain, below |
+| SSH mode | Released in 0.6.0; redraws and job output while editing remain, below |
 
 ### Next steps, in priority order
 
@@ -29,7 +34,7 @@ work:
    `Candidate`, also for plugins), `LS_COLORS` for files, fuzzy matching.
 5. **Plugins (Phase 11)**: time budgets for hooks, `plugin remove`, the example plugins of M5.
 
-## Phase 11 — Plugin system (Stage 2)
+## Phase 11 — Plugin system
 
 1. A plugin-agnostic `Builtin` trait, with the Rust built-ins moved onto it, so that extension and native built-ins
    go through the same code path (extension built-ins are a separate `CommandKind::Extension`):
@@ -70,11 +75,15 @@ work:
 
 ## Phase 12 — Conformance and performance
 
+Done since the last status: common commands run in the shell, also in `$(...)` (`basename`, `dirname`, `expr` and
+`seq` with integers, `id -u`/`-g`, `uname`), and `$(...)` of `echo`, `printf`, `pwd`, `command -v` and `type` needs
+no subshell; the `build` benchmark takes a third of dash's time (`docs/performance.md`).
+
 Still to do: the startup gap (deferred), larger `configure` scripts (coreutils) and distribution scripts, the smoosh
 and modernish suites, and `hyperfine` in CI (non-blocking) for startup and loop regressions, including `-c true` with
 and without the `plugins` feature. Optimisations only where profiling shows a need.
 
-## Phase 13's follow-ups — Completion and the startup cache (Stage 1)
+## Phase 13's follow-ups — Completion and the startup cache
 
 What replacing the author's zsh setup showed to be missing, in this order:
 
@@ -126,21 +135,18 @@ does: put the default node's `bin` on `PATH` and define `nvm() { unset -f nvm; .
 M1 (simple scripts), M2 (POSIX script engine), M3 (real-world scripts) and M4 (a daily-driver interactive shell,
 replacing the author's zsh setup) are done.
 
-| Milestone | Stage | Phases | Definition of done | Status |
-|---|---|---|---|---|
-| M5: Plugins | 2 | 11 | Extension built-ins and hooks; example plugins: a git-aware prompt, a `json` query built-in, command timing | Started |
+| Milestone | Phases | Definition of done | Status |
+|---|---|---|---|
+| M5: Plugins | 11 | Extension built-ins and hooks; example plugins: a git-aware prompt, a `json` query built-in, command timing | Extension built-ins and hooks done; the example plugins remain |
 
-Stage 1 is complete once startup matches dash (Phase 12). Milestones for the rest of Stage 2 and for Stage 3 will
-be planned then.
+## Later work
 
-## Later stages
-
-A sketch, not a plan: what the later stages need, so that Stage 1 doesn't make them harder. The constraints on the
-design now: all shell state lives in `Shell` (so it can be snapshotted, compared and restored); the line editor gets
+A sketch, not a plan: what later work needs, so that what is built now doesn't make it harder. The constraints on
+the design now: all shell state lives in `Shell` (so it can be snapshotted, compared and restored); the line editor gets
 only plain data (`Names`), so it could run in another process; all assignments go through one function, and the
 shell tracks the current file as well as the line, for provenance and for error messages with a stack.
 
-### Stage 2: beyond POSIX
+### Beyond POSIX
 
 - **Extensions** stay behind options (as `glob.star`, `glob.bare_qualifiers` and `expand.braces` are), unless their
   syntax is an error in POSIX sh. With them off, POSIX scripts must parse and behave exactly as before and run as
@@ -169,7 +175,7 @@ shell tracks the current file as well as the line, for provenance and for error 
 - **Interactive**: richer completion, and history with metadata (working directory, exit status, duration).
   `history.rs` owns the storage, so it can move to a structured store without changing the editor.
 
-### Stage 3: caching of login scripts
+### Caching of login scripts
 
 The goal is to cache the *effects* of login scripts. With a warm cache, a new shell should start almost instantly,
 and many shells started at once (a desktop login can start 40) should not each run the scripts. The cache of
@@ -199,7 +205,7 @@ Still to do:
 - **Parse cache**: parsed ASTs of sourced files, keyed by fingerprint and the alias table, for the uncached parts of
   startup files, `$ENV` and `luishrc`. Functions in the effect cache are parsed lazily (Phase 13).
 
-### Stage 3: SSH client/server mode
+### SSH client/server mode
 
 The line editor runs on the local client, while commands, completion and everything else that needs the remote
 host's state run on the server, over any transport such as `ssh -T` (no daemon, no extra ports). It is built and
@@ -218,5 +224,5 @@ released (`DEVELOPING.md`, SSH mode). Still to do:
 |---|---|
 | An extension hanging or slowing the prompt | Ctrl-C interrupts extension code; hooks that run before the prompt get a time budget (Phase 11) |
 | Few people know Rhai, and it has no library ecosystem | Keep the API small, ship example extensions, provide what extensions need (commands, files, JSON) |
-| Scope creep into later stages | When goals conflict, the earlier stage wins (`GOALS.md`), and Stage 1's startup work (Phase 12) is still open. Keep extensions that change behaviour behind options |
+| Extensions slowing POSIX scripts | Speed matches dash's for POSIX scripts (`GOALS.md`), and the startup gap (Phase 12) is still open. Keep extensions that change behaviour behind options, and benchmark with a release build |
 | Plugin support adding startup cost | Engine created on the first extension; feature flag; benchmark `-c true` with and without it |
