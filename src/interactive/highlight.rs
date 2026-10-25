@@ -339,6 +339,8 @@ pub struct Facts<'a> {
     pub braces: bool,
     /// `setopt syntax.repeat`: `repeat` is a reserved word.
     pub repeat: bool,
+    /// `setopt syntax.fd_vars`: `{name}>file` is a redirection.
+    pub fd_vars: bool,
     /// Not `set -f`.
     pub glob: bool,
     /// With `setopt highlight.paths`, the modifiers (`PATH` or
@@ -432,6 +434,15 @@ fn ends_word(c: u8) -> bool {
 /// Whether `<` or `>` at `i` starts a process substitution.
 fn is_procsubst(s: &[u8], i: usize) -> bool {
     matches!(s[i], b'<' | b'>') && s.get(i + 1) == Some(&b'(')
+}
+
+/// Where the operator after `{name}` at `i` is, if it is a redirection
+/// (`setopt syntax.fd_vars`).
+fn fd_var_op(s: &[u8], i: usize) -> Option<usize> {
+    let close = i + 1 + s[i + 1..].iter().position(|&c| c == b'}')?;
+    let op = close + 1;
+    (crate::lexer::is_valid_name(&s[i + 1..close]) && matches!(s.get(op), Some(b'<' | b'>')) && !is_procsubst(s, op))
+        .then_some(op)
 }
 
 /// Whether `name` (in `${...}` or after `$`) is a special parameter or a
@@ -589,6 +600,12 @@ impl Scan<'_> {
                     }
                 }
                 b'<' | b'>' if !is_procsubst(s, i) => i = self.redirect(i, i),
+                b'{' if self.facts.fd_vars
+                    && let Some(op) = fd_var_op(s, i) =>
+                {
+                    self.assigned.push(s[i + 1..op - 1].to_vec());
+                    i = self.redirect(i, op);
+                }
                 b'0'..=b'9' => {
                     let d = i + s[i..].iter().take_while(|c| c.is_ascii_digit()).count();
                     if matches!(s.get(d), Some(b'<' | b'>')) && !is_procsubst(s, d) {
@@ -1313,13 +1330,20 @@ pub fn classify(text: &[u8], cursor: Option<usize>, facts: &Facts) -> Vec<Cell> 
 /// parse of `text` and the newline that entering it adds. Nothing runs,
 /// so aliases defined in `text` are not used (the shell doesn't use them
 /// before the next line either). Incomplete text has no error.
-pub fn syntax_error(text: &[u8], aliases: &Rc<AliasMap>, bareglobqual: bool, repeat: bool) -> Option<Range<usize>> {
+pub fn syntax_error(
+    text: &[u8],
+    aliases: &Rc<AliasMap>,
+    bareglobqual: bool,
+    repeat: bool,
+    fd_vars: bool,
+) -> Option<Range<usize>> {
     let mut src = Vec::with_capacity(text.len() + 1);
     src.extend_from_slice(text);
     src.push(b'\n');
     let mut p = Parser::new(src, 1, false);
     p.bareglobqual = bareglobqual;
     p.repeat = repeat;
+    p.fd_vars = fd_vars;
     loop {
         match p.parse_next(aliases) {
             Ok(Some(_)) => {}
@@ -1475,7 +1499,13 @@ impl ShellHelper {
         if parsed.0 != text {
             *parsed = (
                 text.to_vec(),
-                syntax_error(text, &self.names.aliases, self.names.bareglobqual, self.names.repeat),
+                syntax_error(
+                    text,
+                    &self.names.aliases,
+                    self.names.bareglobqual,
+                    self.names.repeat,
+                    self.names.fd_vars,
+                ),
             );
         }
         parsed.1.clone()
@@ -1583,6 +1613,7 @@ impl ShellHelper {
             var: &|name| self.names.vars.get(name).copied(),
             braces: self.names.braces,
             repeat: self.names.repeat,
+            fd_vars: self.names.fd_vars,
             glob: self.names.glob,
             path: self.names.paths.then_some(&path as &PathCheck),
             home: self.names.home.as_deref(),
@@ -1635,6 +1666,7 @@ mod tests {
             var: &fake_var,
             braces: true,
             repeat: true,
+            fd_vars: true,
             glob: true,
             path: None,
             home: None,
@@ -1786,6 +1818,14 @@ mod tests {
         assert_eq!(classes("cat <<EOF\nif\nEOF\nls"), "ccc.rr....sssrrr.cc");
         assert_eq!(classes("cat <<-E; ls\n\tE\n"), "ccc.rrr.o.cc.rr.");
         assert_eq!(classes("cat <<< x; ls"), "ccc.rrr..o.cc");
+        // `{name}>` with `setopt syntax.fd_vars` (on in these tests), which
+        // assigns the name.
+        assert_eq!(classes("exec {fd}>out; echo $fd"), "uuuu.rrrrr...o.cccc.vvv");
+        assert_eq!(
+            roles("ls {fd}<&-"),
+            "ls:command.external {fd}:redir.fd <&:redir -:redir.fd"
+        );
+        assert_eq!(classes("echo {1}>x {a}>(ls)"), "cccc....r.....$$cc$");
     }
 
     #[test]
@@ -1950,6 +1990,7 @@ mod tests {
             var: &|_| Some(VarKind::Plain),
             braces: false,
             repeat: false,
+            fd_vars: false,
             glob: false,
             path: None,
             home: None,
@@ -1977,6 +2018,7 @@ mod tests {
             var: &fake_var,
             braces: true,
             repeat: true,
+            fd_vars: true,
             glob: true,
             path: Some(&path),
             home: Some(b"/home/u"),
@@ -2054,7 +2096,7 @@ mod tests {
     /// Where the `error` modifier starts in `text`, with no aliases and
     /// the cursor at `cursor`.
     fn error_at(text: &str, cursor: Option<usize>) -> Option<usize> {
-        let span = syntax_error(text.as_bytes(), &crate::lexer::no_aliases(), false, false)?;
+        let span = syntax_error(text.as_bytes(), &crate::lexer::no_aliases(), false, false, false)?;
         error_start(text.as_bytes(), span, cursor)
     }
 
@@ -2106,9 +2148,9 @@ mod tests {
         let mut aliases = AliasMap::default();
         aliases.insert(b"ifx".to_vec(), b"if true".to_vec(), false);
         let aliases = Rc::new(aliases);
-        assert_eq!(syntax_error(b"ifx; then :; fi", &aliases, false, false), None);
+        assert_eq!(syntax_error(b"ifx; then :; fi", &aliases, false, false, false), None);
         assert_eq!(
-            syntax_error(b"ifx; then :; fi; fi", &aliases, false, false),
+            syntax_error(b"ifx; then :; fi; fi", &aliases, false, false, false),
             Some(17..19)
         );
     }

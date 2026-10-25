@@ -220,6 +220,14 @@ pub fn dup_high(fd: i32) -> Result<i32, i32> {
     if r < 0 { Err(errno()) } else { Ok(r) }
 }
 
+/// A copy of `fd` at the lowest free fd from `min` on, inherited by
+/// commands (not close-on-exec).
+pub fn dup_from(fd: i32, min: i32) -> Result<i32, i32> {
+    // SAFETY: plain fcntl.
+    let r = unsafe { libc::fcntl(fd, libc::F_DUPFD, min) };
+    if r < 0 { Err(errno()) } else { Ok(r) }
+}
+
 /// An anonymous file in memory, close-on-exec.
 pub fn memfd() -> Result<i32, i32> {
     // The raw system call, as glibc only has a wrapper from 2.27 on and
@@ -229,9 +237,13 @@ pub fn memfd() -> Result<i32, i32> {
     if r < 0 { Err(errno()) } else { Ok(r as i32) }
 }
 
-pub fn fd_is_open(fd: i32) -> bool {
+/// Whether `fd` is open and not one of the shell's own: those are
+/// close-on-exec (such as the copies that redirections save at 10 and
+/// above), while redirections leave the user's fds inherited by commands.
+pub fn fd_is_users(fd: i32) -> bool {
     // SAFETY: plain fcntl.
-    unsafe { libc::fcntl(fd, libc::F_GETFD) >= 0 }
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD) };
+    flags >= 0 && flags & libc::FD_CLOEXEC == 0
 }
 
 /// A close-on-exec pipe: (read end, write end).

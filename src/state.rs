@@ -21,7 +21,7 @@ use crate::{signals, sys, unparse};
 const MODE_OPTIONS: &[Opt] = &[Opt::Interactive, Opt::Stdin, Opt::Monitor, Opt::Noexec];
 
 /// Options that change how functions are parsed: restored before them.
-const SYNTAX_OPTIONS: &[Opt] = &[Opt::Bareglobqual, Opt::SyntaxRepeat];
+const SYNTAX_OPTIONS: &[Opt] = &[Opt::Bareglobqual, Opt::SyntaxRepeat, Opt::SyntaxFdVars];
 
 /// Variables that belong to the process.
 const PROCESS_VARS: &[&[u8]] = &[b"PPID", b"LINENO", b"SHLVL"];
@@ -252,16 +252,23 @@ impl Shell {
                 t.extend(single_quote(name));
                 t.extend_from_slice(b" 2>/dev/null\n");
             }
-            let (text, globqual) = unparse::function(name, body, &self.aliases);
-            // A function with a glob qualifier, defined before the option
-            // was turned off, needs it to be read back.
-            let wrap = globqual && !self.opt(Opt::Bareglobqual);
-            if wrap {
-                t.extend_from_slice(b"setopt glob.bare_qualifiers\n");
+            let (text, needs) = unparse::function(name, body, &self.aliases);
+            // A function with a glob qualifier or `{name}>`, defined before
+            // the option was turned off, needs it to be read back.
+            let wrap: Vec<&str> = [
+                (needs.globqual, Opt::Bareglobqual, "glob.bare_qualifiers"),
+                (needs.fd_vars, Opt::SyntaxFdVars, "syntax.fd_vars"),
+            ]
+            .into_iter()
+            .filter(|&(needed, o, _)| needed && !self.opt(o))
+            .map(|(_, _, name)| name)
+            .collect();
+            for name in &wrap {
+                t.extend_from_slice(format!("setopt {name}\n").as_bytes());
             }
             t.extend(text);
-            if wrap {
-                t.extend_from_slice(b"unsetopt glob.bare_qualifiers\n");
+            for name in &wrap {
+                t.extend_from_slice(format!("unsetopt {name}\n").as_bytes());
             }
             if let Some(file) = &func.file {
                 t.extend_from_slice(b"command __luish_internal function-file ");

@@ -276,6 +276,7 @@ impl Parser {
                 };
                 redirs.push(Redirect {
                     fd: Some(2),
+                    var: None,
                     kind: RedirKind::DupOut,
                     target: RedirTarget::Word(Word(Parts::One(WordPart::Literal(b"1".to_vec())))),
                 });
@@ -667,12 +668,19 @@ impl Parser {
     }
 
     fn try_parse_redirect(&mut self) -> PResult<Option<Redirect>> {
-        let fd = match self.peek()?.tok {
+        let (fd, var) = match &self.peek()?.tok {
             Tok::IoNumber(n) => {
+                let n = *n;
                 self.next()?;
-                Some(n)
+                (Some(n), None)
             }
-            Tok::Op(op) if op.redir_kind().is_some() => None,
+            Tok::IoVar(_) => {
+                let Tok::IoVar(name) = self.next()?.tok else {
+                    unreachable!()
+                };
+                (None, Some(name))
+            }
+            Tok::Op(op) if op.redir_kind().is_some() => (None, None),
             _ => return Ok(None),
         };
         let t = self.next()?;
@@ -705,7 +713,7 @@ impl Parser {
         } else {
             RedirTarget::Word(word)
         };
-        Ok(Some(Redirect { fd, kind, target }))
+        Ok(Some(Redirect { fd, var, kind, target }))
     }
 
     fn parse_simple(&mut self) -> PResult<Command> {
@@ -1286,6 +1294,30 @@ mod tests {
         assert!(qual("echo *(/ )\n").is_err());
         // Without the option, as in POSIX.
         assert!(parse_err("echo *(/)\n").msg.contains("\"(\" unexpected"));
+    }
+
+    #[test]
+    fn fd_vars() {
+        let redirs = |s: &str, on: bool| {
+            let mut p = Parser::new(s.as_bytes().to_vec(), 1, true);
+            p.fd_vars = on;
+            let l = p.parse_all().unwrap();
+            let s = simple(&l);
+            let vars: Vec<_> = s.redirs.iter().map(|r| r.var.as_deref().map(<[u8]>::to_vec)).collect();
+            (s.words.len(), vars)
+        };
+        let fd = Some(b"fd".to_vec());
+        assert_eq!(redirs("exec {fd}>f\n", true), (1, vec![fd.clone()]));
+        assert_eq!(redirs("{fd}<&- echo\n", true), (1, vec![fd.clone()]));
+        assert_eq!(redirs("cat {fd}<<E\nx\nE\n", true), (1, vec![fd]));
+        // Only a name, right before the operator, unquoted, and with the
+        // option.
+        assert_eq!(redirs("echo {fd}>f\n", false), (2, vec![None]));
+        assert_eq!(redirs("echo {fd} >f\n", true), (2, vec![None]));
+        assert_eq!(redirs("echo {1x}>f {}>f x{a}>f {a}x>f\n", true), (5, vec![None; 4]));
+        assert_eq!(redirs("echo \"{a}\">f {a\\}>f\n", true), (3, vec![None; 2]));
+        // `{a}>(cmd)` is a word with a process substitution.
+        assert_eq!(redirs("echo {a}>(ls)\n", true), (2, vec![]));
     }
 
     #[test]

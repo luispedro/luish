@@ -136,7 +136,7 @@ All four have POSIX's `*`, `?` and `[...]`. luish sorts matches by bytes, where 
 | `\|&` (pipe stdout and stderr) | – | ✓ | ✓ | ✓ | |
 | Process substitution, `<(cmd)`, `>(cmd)` | – | ✓ | ✓ | ✓ | |
 | zsh's `=(cmd)` (a temporary file) | – | – | ✓ | – | |
-| Allocated descriptors, `exec {fd}>f` | – | ✓ | ✓ | – | |
+| Allocated descriptors, `exec {fd}>f` | – | ✓ | ✓ | *opt* | luish: `setopt syntax.fd_vars` |
 | `$(<file)` | – | ✓ | ✓ | ✓ | |
 | Command substitution without a subshell, `${ list; }`, `${\| list; }` | – | – | – | ✓ | As in bash 5.3 and mksh |
 | Coprocesses, `coproc` | – | ✓ | ✓ | – | |

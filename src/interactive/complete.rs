@@ -69,6 +69,8 @@ pub struct Names {
     /// `setopt syntax.repeat`: `repeat` is a reserved word, for the
     /// highlighter's parse and for completing it.
     pub repeat: bool,
+    /// `setopt syntax.fd_vars`, for the highlighter's parse.
+    pub fd_vars: bool,
     /// `setopt highlight.paths`: the highlighter marks words that name
     /// files.
     pub paths: bool,
@@ -1926,6 +1928,7 @@ mod tests {
                 functions: vec![b"myfunc".to_vec()],
                 builtins: vec![b"myext".to_vec()],
                 repeat: true,
+                fd_vars: true,
                 aliases: {
                     let mut a = AliasMap::default();
                     a.insert(b"ll".to_vec(), b"ls -l".to_vec(), false);

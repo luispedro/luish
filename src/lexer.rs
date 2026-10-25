@@ -223,6 +223,9 @@ impl Op {
 pub enum Tok {
     Word(Word),
     IoNumber(u32),
+    /// `{name}` right before a redirection operator, with `setopt
+    /// syntax.fd_vars`.
+    IoVar(Box<[u8]>),
     Op(Op),
     Newline,
     Eof,
@@ -291,6 +294,10 @@ pub struct Parser {
     /// loop (`parse_repeat`). Like `bareglobqual`, it is given to the
     /// parsers of `$(...)` and here-documents too.
     pub repeat: bool,
+    /// `setopt syntax.fd_vars`: `{name}` right before a redirection
+    /// operator names a variable for the fd (`Tok::IoVar`). Given to the
+    /// parsers of `$(...)` and here-documents too.
+    pub fd_vars: bool,
     /// Parsing the `{ ... }` body of a `repeat`, where an unquoted `}` after
     /// the words of a command ends the body, as in zsh.
     pub(crate) brace_body: bool,
@@ -398,6 +405,7 @@ impl Parser {
             started: false,
             bareglobqual: false,
             repeat: false,
+            fd_vars: false,
             brace_body: false,
             error_at: Cell::new((0, 0)),
             param_memo: None,
@@ -733,6 +741,16 @@ impl Parser {
                     && let Ok(n) = std::str::from_utf8(lit).unwrap().parse::<u32>() =>
             {
                 Tok::IoNumber(n)
+            }
+            // As bash and zsh: only directly before the operator (zsh also
+            // takes `{fd} >file`), and only for a valid name.
+            Some(lit)
+                if self.fd_vars
+                    && matches!(self.at(0), Some(b'<' | b'>'))
+                    && let Some(name) = lit.strip_prefix(b"{").and_then(|l| l.strip_suffix(b"}"))
+                    && is_valid_name(name) =>
+            {
+                Tok::IoVar(name.into())
             }
             _ => Tok::Word(word),
         };
@@ -1674,6 +1692,7 @@ impl Parser {
         sub.aliases = self.aliases.clone();
         sub.bareglobqual = self.bareglobqual;
         sub.repeat = self.repeat;
+        sub.fd_vars = self.fd_vars;
         let list = sub.parse_all().inspect_err(|_| self.note_error(start, self.pos))?;
         Ok(WordPart::CmdSubst(Rc::new(list)))
     }
@@ -1735,6 +1754,7 @@ impl Parser {
                 sub.aliases = self.aliases.clone();
                 sub.bareglobqual = self.bareglobqual;
                 sub.repeat = self.repeat;
+                sub.fd_vars = self.fd_vars;
                 sub.read_heredoc_word()
                     .inspect_err(|_| self.note_error(start, self.pos))?
             };

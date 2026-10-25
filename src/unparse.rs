@@ -15,21 +15,29 @@ use crate::parser::is_reserved;
 
 /// The definition of a function, ending with a newline. A command name that
 /// is one of `aliases` is quoted, so that reading the text back doesn't
-/// expand it again. Also returns whether the text has a glob qualifier
-/// (which reads back only under `setopt glob.bare_qualifiers`).
-pub fn function(name: &[u8], body: &FunctionBody, aliases: &AliasMap) -> (Vec<u8>, bool) {
-    let globqual = Cell::new(false);
-    let mut p = Printer::new(0, aliases, &globqual);
+/// expand it again. Also returns the options it needs to be read back.
+pub fn function(name: &[u8], body: &FunctionBody, aliases: &AliasMap) -> (Vec<u8>, Needs) {
+    let needs = Cell::new(Needs::default());
+    let mut p = Printer::new(0, aliases, &needs);
     p.function(&[name], body);
-    (p.finish(), globqual.get())
+    (p.finish(), needs.get())
+}
+
+/// The options that printed text reads back only under.
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub struct Needs {
+    /// A glob qualifier: `setopt glob.bare_qualifiers`.
+    pub globqual: bool,
+    /// `{name}>file`: `setopt syntax.fd_vars`.
+    pub fd_vars: bool,
 }
 
 /// The text of a `__luish_cache` block, for the startup cache's key (so
 /// that editing comments or the layout doesn't change it).
 pub fn cache_block(block: &CacheBlock) -> Vec<u8> {
-    let globqual = Cell::new(false);
+    let needs = Cell::new(Needs::default());
     let aliases = AliasMap::default();
-    let mut p = Printer::new(0, &aliases, &globqual);
+    let mut p = Printer::new(0, &aliases, &needs);
     p.cache_block(block);
     p.finish()
 }
@@ -38,20 +46,20 @@ struct Printer<'a> {
     out: Vec<u8>,
     indent: usize,
     aliases: &'a AliasMap,
-    /// Set when a glob qualifier is written.
-    globqual: &'a Cell<bool>,
+    /// Set as text that needs an option is written.
+    needs: &'a Cell<Needs>,
     /// Here-document bodies (with their delimiters) to write after the
     /// next newline.
     heredocs: Vec<(Vec<u8>, Vec<u8>)>,
 }
 
 impl<'a> Printer<'a> {
-    fn new(indent: usize, aliases: &'a AliasMap, globqual: &'a Cell<bool>) -> Printer<'a> {
+    fn new(indent: usize, aliases: &'a AliasMap, needs: &'a Cell<Needs>) -> Printer<'a> {
         Printer {
             out: Vec::new(),
             indent,
             aliases,
-            globqual,
+            needs,
             heredocs: Vec::new(),
         }
     }
@@ -267,6 +275,14 @@ impl<'a> Printer<'a> {
     fn redir(&mut self, r: &Redirect) {
         if let Some(fd) = r.fd {
             self.w(fd.to_string().as_bytes());
+        } else if let Some(name) = &r.var {
+            self.needs.set(Needs {
+                fd_vars: true,
+                ..self.needs.get()
+            });
+            self.w(b"{");
+            self.w(name);
+            self.w(b"}");
         }
         self.w(match r.kind {
             RedirKind::In => b"<",
@@ -293,12 +309,12 @@ impl<'a> Printer<'a> {
                     (true, [WordPart::Literal(s)]) => s.clone(),
                     (true, []) => Vec::new(),
                     (_, [WordPart::DoubleQuoted(parts)]) => {
-                        let mut p = Printer::new(0, self.aliases, self.globqual);
+                        let mut p = Printer::new(0, self.aliases, self.needs);
                         p.parts(parts);
                         p.finish_with(false)
                     }
                     _ => {
-                        let mut p = Printer::new(0, self.aliases, self.globqual);
+                        let mut p = Printer::new(0, self.aliases, self.needs);
                         p.word(&hd.body);
                         p.finish_with(false)
                     }
@@ -474,7 +490,10 @@ impl<'a> Printer<'a> {
                     self.w(b"))");
                 }
                 WordPart::GlobQual(q) => {
-                    self.globqual.set(true);
+                    self.needs.set(Needs {
+                        globqual: true,
+                        ..self.needs.get()
+                    });
                     self.w(b"(");
                     self.w(q);
                     self.w(b")");
@@ -667,7 +686,7 @@ impl<'a> Printer<'a> {
 
     /// The text of the list of a substitution, one level further in.
     fn subst_text(&self, list: &List) -> Vec<u8> {
-        let mut p = Printer::new(self.indent + 1, self.aliases, self.globqual);
+        let mut p = Printer::new(self.indent + 1, self.aliases, self.needs);
         p.seq(list, false);
         p.finish_with(false)
     }
@@ -951,8 +970,10 @@ mod tests {
 
     fn parse(src: &[u8]) -> List {
         let mut p = Parser::new(src.to_vec(), 1, true);
-        // `repeat` is a reserved word, as `setopt syntax.repeat` makes it.
+        // `repeat` is a reserved word, as `setopt syntax.repeat` makes it,
+        // and `{name}>` is a redirection, as with `setopt syntax.fd_vars`.
         p.repeat = true;
+        p.fd_vars = true;
         p.parse_all().expect("parses")
     }
 
@@ -962,8 +983,8 @@ mod tests {
         let Command::FunctionDef { names, body } = &list[0].list.first.cmds[0] else {
             panic!("not a function: {}", String::from_utf8_lossy(src));
         };
-        let globqual = Cell::new(false);
-        let mut p = Printer::new(0, aliases, &globqual);
+        let needs = Cell::new(Needs::default());
+        let mut p = Printer::new(0, aliases, &needs);
         p.function(names, body);
         String::from_utf8(p.finish()).unwrap()
     }
@@ -1046,6 +1067,10 @@ mod tests {
         assert_eq!(
             round_trip("f() { repeat 2 { echo a }; repeat $n; do :; done; }"),
             "f() {\n    repeat 2; do\n        echo a\n    done\n    repeat $n; do\n        :\n    done\n}\n"
+        );
+        assert_eq!(
+            round_trip("f() { exec {fd}>out {in}<&-; cat {h}<<E; }\nx\nE\n"),
+            "f() {\n    exec {fd}>out {in}<&-\n    cat {h}<<EOF\nx\nEOF\n}\n"
         );
         assert_eq!(
             round_trip("f() { case $1 in a|esac) x;; *) ;; esac; }"),

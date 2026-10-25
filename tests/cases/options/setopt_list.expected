@@ -39,6 +39,7 @@ pushd.ignore_dups
 pushd.silent
 startup.auto_cache
 stdin
+syntax.fd_vars
 syntax.repeat
 terminal.no_integration
 vars.trace

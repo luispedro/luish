@@ -198,8 +198,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   the options as arrays (`After::Cache`). Tests: `parse/cache_block.sh`, unit tests in `parser.rs`, `unparse.rs` and
   `highlight.rs`.
 - `Parser::started` tells a buffer of blank lines apart from a real incomplete command. The lexer reads a trailing
-  `(...)` as `WordPart::GlobQual` only under `glob.bare_qualifiers`: the only place it depends on an option, as
-  `syntax.repeat` (the `repeat` keyword) is the only one the parser reads. Both are set by `Shell::parse_options`.
+  `(...)` as `WordPart::GlobQual` only under `glob.bare_qualifiers`, and `{name}` right before a redirection operator
+  as `Tok::IoVar` only under `syntax.fd_vars`: the only places it depends on an option, as `syntax.repeat` (the
+  `repeat` keyword) is the only one the parser reads. All are set by `Shell::parse_options`.
 - Unit tests in `parser.rs`, and the `parse` and `unparse` fuzz targets (see Fuzzing).
 
 ### Expansion (`expand/`)
@@ -323,7 +324,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   device, link count, size and time tests, `^ - , N D n`, `o`/`O` (`n L l a m c d N`), subscripts (from 0), `M`,
   `T`, and the modifiers of `modify.rs`. Errors have status 1 and name the field (which may come from an expansion,
   such as an unquoted `$PS1` ending in `%(...)`). `savestate` sets the option before the functions, and wraps a function
-  with a qualifier in `set -o`/`+o` when it is off. Tests: `expand/glob_qualifiers.sh`,
+  with a qualifier in `setopt`/`unsetopt` when it is off (`unparse::Needs`, as for `syntax.fd_vars`). Tests: `expand/glob_qualifiers.sh`,
   `expand/glob_qualifier_errors.sh`, `expand/glob_qualifier_error_message.sh`,
   `builtins/internal_savestate_globqual.sh`, unit tests in `qual.rs` and
   `parser.rs`.
@@ -450,7 +451,27 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   control, until the child has reset its dispositions; otherwise a signal sent right after `fork` (`sleep &` then
   `kill %2`) could be lost.
 - Redirections: `n>&n` does nothing even if `n` is closed; `>&word` with a word that isn't a number or `-` is a fatal
-  syntax error, as in dash. Tests: `exec/redirect_dup.sh`, `exec/redirect_big_fd.sh`.
+  syntax error, as in dash. An fd that is close-on-exec counts as closed for `>&n` (`sys::fd_is_users`, also for
+  `print -u`): the shell's own fds all are (such as the copies `SavedFds` keeps at 10 and above, which take the
+  lowest free fd, so after `exec 10>&-` the copy that `2>/dev/null` saves is likely 10), while a redirection always
+  leaves its fd inherited. Tests: `exec/redirect_dup.sh`, `exec/redirect_big_fd.sh`, `exec/fd_vars_differences.sh`.
+- `{name}>file` (`setopt syntax.fd_vars`, bash's and zsh's): the lexer makes a word that is `{`, a valid name and `}`,
+  unquoted and right before `<` or `>`, a `Tok::IoVar` (as a number there is a `Tok::IoNumber`), which goes in
+  `Redirect::var` with `fd` left `None`. The `{` must be at the start of the word and nothing may come between the
+  `}` and the operator (as in bash; zsh also takes `{fd} >f`), so `x{a}>f`, `{1a}>f` and `{a}>(cmd)` keep their POSIX
+  meaning. `apply_var_redirect` opens the target as any redirection would (`redirect_source`), moves it to the lowest
+  free fd from 10 on with `F_DUPFD` (`sys::dup_from`, not close-on-exec) and assigns the number; with `>&-` or `<&-`
+  it closes the fd whose number is in the variable. Neither is saved and restored, so for every command, not only
+  `exec`, the fd stays open (as in bash without `varredir_close`, and zsh). Since luish makes redirections in the
+  shell for every kind of command, as dash does, this holds for an external command too, where bash and zsh open the
+  fd only in the child. Errors (a readonly name, a variable that isn't an fd number, failing to move the fd) have
+  status 1, as in both; failing to open the file keeps dash's status 2, and, as for any redirection of a special
+  built-in, exits a non-interactive shell for `exec`. `unparse.rs` and `cmdtext.rs` write `{name}>`, and
+  `unparse::Needs` tells `savestate` to wrap the function in `setopt syntax.fd_vars` when the option is off. The
+  highlighter paints `{name}` as `redir.fd` and counts the name as assigned (`fd_var_op`). Tests:
+  `exec/fd_vars.sh` (zsh `-o noignorebraces`), `exec/fd_vars_differences.sh` (`.expected`), `exec/fd_vars_off.sh`
+  (dash), `builtins/internal_savestate_fd_vars.sh`, unit tests `parser::tests::fd_vars`, `cmdtext::tests::fd_vars`,
+  `unparse::tests::layout` and `interactive::highlight::tests::redirections`.
 - A command that isn't found is reported by `report_not_found` (`exec/not_found.rs`), from all three places that
   find out (`look_up_before_fork`, and `exec_error` after `posix_spawn` or `execve`), so the message is the same
   whether the shell spawns, forks or execs. This is the place for suggestions (such as similar command names); it
@@ -916,7 +937,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - **Highlighting** (`highlight.rs`): `classify` gives each byte a `Cell`, a role (`style::Role`, the position of a
   name in `style::ROLES`, made by the const fn `Role::of`, so a misspelt role doesn't compile) and a bitset of
   `MODIFIERS` (`error`, `path` and `path.prefix` are set so far). It needs no `Shell`: what it knows comes in `Facts`
-  (the kind of a command name, whether a variable is set, `expand.braces`, `syntax.repeat`, `set -f`, and the path
+  (the kind of a command name, whether a variable is set, `expand.braces`, `syntax.repeat`, `syntax.fd_vars`,
+  `set -f`, and the path
   check with `highlight.paths`). `ShellHelper::command_kind` finds a command's
   `CommandKind` in the order the shell would (alias, special built-in, function, built-in or extension's built-in,
   then `PATH`; autocd directories last), cached until the next prompt; a known name in `PRECOMMANDS` gets
@@ -1731,6 +1753,7 @@ truncates when it relocates the package.
 | `<<< word` | `exec/here_string.sh` (zsh), `parse/here_string_error.sh` |
 | `<(...)`, `>(...)` | `expand/procsubst.sh` (zsh), `expand/procsubst_exec.sh` (zsh), `expand/procsubst_quoted.sh` (zsh), `expand/procsubst_word.sh` (zsh), `expand/procsubst_output.sh` (waiting for `>(...)`) |
 | Brace expansion | `expand/braces.sh` (zsh `-o noignorebraces`), `expand/braces_luish.sh`, `expand/braces_off.sh` (dash) |
+| `{name}>file` | `exec/fd_vars.sh` (zsh `-o noignorebraces`), `exec/fd_vars_differences.sh`, `exec/fd_vars_off.sh` (dash), `builtins/internal_savestate_fd_vars.sh` |
 | `**/` | `expand/globstar.sh` (zsh), `expand/globstar_off.sh` (dash), `expand/globstar_loop.sh` |
 | `glob.null`, `glob.dots`, `glob.fail`, `glob.fail_all` | `expand/glob_null.sh`, `expand/glob_dots.sh`, `expand/glob_fail.sh`, `expand/glob_fail_all.sh` (zsh), `expand/glob_qualifiers.sh` (zsh), `expand/glob_fail_eval.sh` (`eval` exits), `options::tests::grouped_names` |
 | Glob qualifiers | `expand/glob_qualifiers.sh`, `expand/glob_qualifier_errors.sh` (zsh `+o shglob -o bareglobqual +o ksharrays`), `expand/glob_qualifier_error_message.sh`, `builtins/internal_savestate_globqual.sh` |

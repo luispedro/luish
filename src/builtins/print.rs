@@ -61,7 +61,7 @@ pub fn run(sh: &mut Shell, name: &[u8], args: &[Vec<u8>]) -> ExecResult {
     };
     let tabs = all_tabs.map(|n| (n, true)).or(tabs.map(|n| (n, false)));
     let fd = fd.map_or(1, |n| n as i32);
-    if !sys::fd_is_open(fd) {
+    if !sys::fd_is_users(fd) {
         return err(format!("bad file number: {fd}"));
     }
     if o.has(b'p') {

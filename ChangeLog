@@ -2,6 +2,8 @@ Unreleased
     * read: Ctrl-C and trapped signals interrupt it, as in dash
     * $(<file): the file's contents, read without a subshell
     * setopt syntax.repeat: zsh's repeat loop (repeat 3 { ... })
+    * setopt syntax.fd_vars: exec {fd}>file, as in bash and zsh
+    * >&N no longer reaches the shell's own fds (after exec N>&-)
 
 Version 0.7.1 2026-10-19 by luispedro
     * Release packages build again (0.7.0 had none)

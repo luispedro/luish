@@ -388,6 +388,7 @@ fn names(sh: &Shell) -> Names {
         glob: !sh.opt(Opt::Noglob),
         bareglobqual: sh.opt(Opt::Bareglobqual),
         repeat: sh.opt(Opt::SyntaxRepeat),
+        fd_vars: sh.opt(Opt::SyntaxFdVars),
         paths: sh.opt(Opt::HighlightPaths),
         history_expand: sh.opt(Opt::HistExpand),
         options: crate::options::Options::all_names()

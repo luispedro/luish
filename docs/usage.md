@@ -117,7 +117,8 @@ conf=$(<~/.config/app)                     # a file's contents, read without a s
 - An extension that would change what a POSIX script means needs an option: brace expansion
   (`setopt expand.braces`), `**/` and glob qualifiers (see [](globbing.md)), and zsh's `repeat` loop
   (`setopt syntax.repeat`, so that a command named `repeat` keeps working): `repeat 3 { echo hi }`, or
-  `repeat $n; do echo hi; done`.
+  `repeat $n; do echo hi; done`. bash's and zsh's `exec {fd}>file`, which opens a file on a new descriptor and puts
+  its number in `fd`, needs `setopt syntax.fd_vars`.
 
 ## Special variables
 

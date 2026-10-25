@@ -616,6 +616,10 @@ impl Replace {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Redirect {
     pub fd: Option<u32>,
+    /// `{name}>file` (`setopt syntax.fd_vars`): the redirection opens a new
+    /// fd (10 or above) and stores its number in `name`, or, with `>&-` or
+    /// `<&-`, closes the fd whose number is in `name`. `fd` is then `None`.
+    pub var: Option<Box<[u8]>>,
     pub kind: RedirKind,
     pub target: RedirTarget,
 }

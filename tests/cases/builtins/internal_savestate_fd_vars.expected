@@ -1,0 +1,6 @@
+fd set
+syntax.fd_vars
+unsetopt syntax.fd_vars
+setopt syntax.fd_vars
+f() {
+unsetopt syntax.fd_vars

@@ -191,7 +191,13 @@ fn push_redirs(out: &mut Vec<u8>, redirs: &[Redirect]) {
             out.extend_from_slice(b"<<...");
             continue;
         }
-        out.extend_from_slice(r.fd.unwrap_or(r.kind.default_fd()).to_string().as_bytes());
+        if let Some(name) = &r.var {
+            out.push(b'{');
+            out.extend_from_slice(name);
+            out.push(b'}');
+        } else {
+            out.extend_from_slice(r.fd.unwrap_or(r.kind.default_fd()).to_string().as_bytes());
+        }
         out.extend_from_slice(match r.kind {
             RedirKind::In => b"<",
             RedirKind::Out => b">",
@@ -423,6 +429,15 @@ mod tests {
         assert_eq!(text("! true && false || true"), "!true && false || true");
         assert_eq!(text("sleep 20 <<X\nbody\nX\n"), "sleep 20 <<...");
         assert_eq!(text("g() { sleep 1; }"), "g() { ... }");
+    }
+
+    /// `{name}>file` (`setopt syntax.fd_vars`).
+    #[test]
+    fn fd_vars() {
+        let mut p = Parser::new(b"sleep 22 {fd}>f {fd}>&-\n".to_vec(), 1, true);
+        p.fd_vars = true;
+        let list = p.parse_all().unwrap();
+        assert_eq!(super::and_or(&list[0].list), "sleep 22 {fd}>f {fd}>&-");
     }
 
     /// `repeat` (`setopt syntax.repeat`), which dash has no form of, is

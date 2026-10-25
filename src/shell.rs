@@ -739,11 +739,13 @@ impl Shell {
     // Running code
 
     /// Gives a parser the options that change parsing, in one place:
-    /// `setopt glob.bare_qualifiers` and `setopt syntax.repeat`. They are
+    /// `setopt glob.bare_qualifiers`, `syntax.repeat` and `syntax.fd_vars`.
+    /// They are
     /// set before each line, since a line can turn them on for the next.
     pub fn parse_options(&self, p: &mut Parser) {
         p.bareglobqual = self.opt(Opt::Bareglobqual);
         p.repeat = self.opt(Opt::SyntaxRepeat);
+        p.fd_vars = self.opt(Opt::SyntaxFdVars);
     }
 
     /// Parses and runs a string in the current shell (`eval`, traps). Its

@@ -80,7 +80,7 @@ pub fn file_subst(list: &List) -> Option<&Word> {
     };
     let [r] = &sc.redirs[..] else { return None };
     match &r.target {
-        RedirTarget::Word(w) if r.kind == RedirKind::In && r.fd.unwrap_or(0) == 0 => {
+        RedirTarget::Word(w) if r.kind == RedirKind::In && r.fd.unwrap_or(0) == 0 && r.var.is_none() => {
             (sc.words.is_empty() && sc.assigns.is_empty()).then_some(w)
         }
         _ => None,
@@ -196,27 +196,11 @@ impl Shell {
     }
 
     fn apply_redirect(&mut self, r: &Redirect, save: bool, saved: &mut SavedFds) -> Result<(), RedirError> {
+        if let Some(name) = &r.var {
+            return self.apply_var_redirect(r, name);
+        }
         let fd = r.fd.unwrap_or(r.kind.default_fd()) as i32;
-        let action = match &r.target {
-            RedirTarget::HereDoc(body) => {
-                let body = body.borrow().clone();
-                let text = if body.quoted {
-                    body.body.as_literal().unwrap_or_default().to_vec()
-                } else {
-                    self.expand_word_str(&body.body)?
-                };
-                Action::Owned(self.heredoc_fd(&text)?)
-            }
-            RedirTarget::Word(w) if r.kind == RedirKind::HereString => {
-                let mut text = self.expand_here_string(w)?;
-                text.push(b'\n');
-                Action::Owned(self.heredoc_fd(&text)?)
-            }
-            RedirTarget::Word(w) => {
-                let target = self.redirect_target(w)?;
-                self.redirect_action(r.kind, &target, fd)?
-            }
-        };
+        let action = self.redirect_source(r, fd)?;
         if save && !saved.0.iter().any(|(f, _)| *f == fd) {
             let copy = sys::dup_high(fd).ok();
             saved.0.push((fd, copy));
@@ -238,6 +222,72 @@ impl Shell {
             Action::Close => sys::close(fd),
         }
         Ok(())
+    }
+
+    /// What a redirection to (or from) `fd` points it to.
+    fn redirect_source(&mut self, r: &Redirect, fd: i32) -> Result<Action, RedirError> {
+        Ok(match &r.target {
+            RedirTarget::HereDoc(body) => {
+                let body = body.borrow().clone();
+                let text = if body.quoted {
+                    body.body.as_literal().unwrap_or_default().to_vec()
+                } else {
+                    self.expand_word_str(&body.body)?
+                };
+                Action::Owned(self.heredoc_fd(&text)?)
+            }
+            RedirTarget::Word(w) if r.kind == RedirKind::HereString => {
+                let mut text = self.expand_here_string(w)?;
+                text.push(b'\n');
+                Action::Owned(self.heredoc_fd(&text)?)
+            }
+            RedirTarget::Word(w) => {
+                let target = self.redirect_target(w)?;
+                self.redirect_action(r.kind, &target, fd)?
+            }
+        })
+    }
+
+    /// `{name}>file` (`setopt syntax.fd_vars`), as in bash and zsh: opens a
+    /// new fd, 10 or above, and sets `name` to its number, or with `>&-`
+    /// closes the fd in `name`. Either way the change outlasts the command
+    /// (it isn't saved and restored), also for commands other than `exec`.
+    /// Errors give status 1, as in both.
+    #[inline(never)]
+    fn apply_var_redirect(&mut self, r: &Redirect, name: &[u8]) -> Result<(), RedirError> {
+        let shown = String::from_utf8_lossy(name).into_owned();
+        // An fd that isn't open is a valid target here (`3>&3` is not).
+        match self.redirect_source(r, -1)? {
+            Action::Close => {
+                let value = self.get_var(name).unwrap_or_default();
+                let fd = std::str::from_utf8(&value).ok().and_then(|s| s.parse::<i32>().ok());
+                let Some(fd) = fd.filter(|_| value.iter().all(u8::is_ascii_digit)) else {
+                    self.error(format!("parameter {shown} does not contain a file descriptor"));
+                    return Err(RedirError::Open(1));
+                };
+                sys::close(fd);
+                Ok(())
+            }
+            action => {
+                let (Action::Owned(src) | Action::Dup(src)) = action else {
+                    unreachable!()
+                };
+                let new = sys::dup_from(src, 10);
+                if let Action::Owned(src) = action {
+                    sys::close(src);
+                }
+                let new = new.map_err(|e| {
+                    self.error(format!("{shown}: {}", sys::strerror(e)));
+                    RedirError::Open(1)
+                })?;
+                if let Err(msg) = self.try_set_var(name, new.to_string().into_bytes()) {
+                    sys::close(new);
+                    self.error(msg);
+                    return Err(RedirError::Open(1));
+                }
+                Ok(())
+            }
+        }
     }
 
     fn redirect_action(&mut self, kind: RedirKind, target: &[u8], fd: i32) -> Result<Action, RedirError> {
@@ -281,7 +331,9 @@ impl Shell {
                 match n {
                     Some(n) if target.iter().all(|c| c.is_ascii_digit()) => {
                         // As in dash, `3>&3` does nothing, even if 3 is closed.
-                        if n != fd && !sys::fd_is_open(n) {
+                        // The shell's own fds count as closed, so that after
+                        // `exec 10>&-`, `>&10` can't reach a saved copy at 10.
+                        if n != fd && !sys::fd_is_users(n) {
                             self.error(format!("{n}: Bad file descriptor"));
                             return Err(RedirError::Open(2));
                         }

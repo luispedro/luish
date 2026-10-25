@@ -94,6 +94,15 @@ luish's own options, all off by default:
   Since each line is parsed as it is read, the option applies to the lines
   after the `setopt`, not to the rest of the same line.
 
+`syntax.fd_vars`
+: `{name}` right before a redirection operator, as in bash and zsh:
+  `exec {fd}>file` opens `file` on a new fd, 10 or above, and puts its
+  number in `fd` (so `echo hi >&$fd` writes to it), and `exec {fd}>&-`
+  closes it again. It works with every redirection operator, and with
+  commands other than `exec`, after which the fd stays open too. It is off
+  by default because `echo {fd}>file` is valid POSIX (it writes `{fd}`);
+  as for `syntax.repeat`, it applies from the line after the `setopt` on.
+
 `cd.auto` (`autocd`)
 : A command that is only a directory's name, with no arguments or
   redirections, changes to that directory, as in zsh. It applies only to
