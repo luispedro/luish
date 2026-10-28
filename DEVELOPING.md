@@ -671,7 +671,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `builtins/dirstack.sh`, `builtins/dirstack_interactive.sh`, `builtins/auto_pushd.sh`, `builtins/pushd_silent.sh`,
   `builtins/popd_dir.sh`.
 - `unset` of a bad name is an error; `set -` turns off `-x` and `-v`; `.` of a directory reads nothing. Test:
-  `builtins/special_misc.sh`. `source`: `builtins/source.sh`, `builtins/source_missing.sh`.
+  `builtins/special_misc.sh`. `.` skips a first `--` and rejects other options (dash's `nextopt`):
+  `builtins/dot_dashdash.sh`. `source`: `builtins/source.sh`, `builtins/source_missing.sh`,
+  `builtins/source_dashdash.sh` (a first `--` skipped, other words starting with `-` are files, as in zsh).
 - `builtin` (`misc::builtin`) is a regular built-in that calls the one named, passing its errors through, so a special
   one's errors still exit (as in zsh), but assignments before it are temporary (as in bash). Its arguments aren't
   expanded as assignments (`declaration_command` doesn't skip it), as in zsh and bash. Test: `builtins/builtin.sh`
@@ -1750,7 +1752,7 @@ truncates when it relocates the package.
 
 | Deviation | Tests |
 |---|---|
-| `source` | `builtins/source.sh` (zsh), `builtins/source_missing.sh` |
+| `source` | `builtins/source.sh` (zsh), `builtins/source_dashdash.sh` (zsh), `builtins/source_missing.sh` |
 | `pushd`, `popd`, `dirs` | `builtins/dirstack.sh` (zsh `-o noposixcd`), `builtins/dirstack_interactive.sh` (zsh), `builtins/popd_dir.sh` |
 | `setopt`, `unsetopt` | `options/setopt.sh` (zsh), `options/setopt_list.sh` |
 | `%` sequences in prompts | `misc/prompt_percent.sh`, `misc/prompt_percent_long.sh`, `misc/prompt_style.sh` |

@@ -15,21 +15,34 @@ use crate::parser::is_reserved;
 use crate::shell::{ExecResult, Flow, Shell};
 use crate::sys;
 
+/// `.`: as in dash, it has no options, but `--` ends them and any other word
+/// starting with `-` (but `-`) is an illegal one.
 pub fn dot(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    run_file(sh, argv, false)
+    let args = super::options(sh, argv, b"").map_err(Flow::Error)?.1;
+    run_file(sh, &argv[0], args.first(), false)
+}
+
+/// The arguments of `source`, without a first `--` (as in bash and zsh). As
+/// in zsh, any other word is a file name.
+fn operands(argv: &[Vec<u8>]) -> &[Vec<u8>] {
+    match &argv[1..] {
+        [first, rest @ ..] if first == b"--" => rest,
+        args => args,
+    }
 }
 
 /// `source`, as in zsh: `.`, but a name without `/` is looked for in the
 /// current directory before `PATH`, and further arguments are the positional
 /// parameters while the file runs.
 pub fn source(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    if argv.len() <= 2 {
-        return run_file(sh, argv, true);
+    let args = operands(argv);
+    if args.len() <= 1 {
+        return run_file(sh, &argv[0], args.first(), true);
     }
-    let saved_pos = std::mem::replace(&mut sh.positional, argv[2..].to_vec());
+    let saved_pos = std::mem::replace(&mut sh.positional, args[1..].to_vec());
     let saved_getopts = (sh.optind, sh.optoff);
     sh.reset_getopts();
-    let r = run_file(sh, &argv[..2], true);
+    let r = run_file(sh, &argv[0], args.first(), true);
     sh.positional = saved_pos;
     (sh.optind, sh.optoff) = saved_getopts;
     r
@@ -39,9 +52,9 @@ fn is_regular(p: &[u8]) -> bool {
     sys::stat(p).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFREG)
 }
 
-fn run_file(sh: &mut Shell, argv: &[Vec<u8>], cwd_first: bool) -> ExecResult {
-    let Some(name) = argv.get(1) else {
-        sh.berr(&argv[0], "filename argument required");
+fn run_file(sh: &mut Shell, cmd: &[u8], name: Option<&Vec<u8>>, cwd_first: bool) -> ExecResult {
+    let Some(name) = name else {
+        sh.berr(cmd, "filename argument required");
         return Err(Flow::Error(2));
     };
     let path = if name.contains(&b'/') || (cwd_first && is_regular(name)) {
@@ -71,7 +84,7 @@ fn run_file(sh: &mut Shell, argv: &[Vec<u8>], cwd_first: bool) -> ExecResult {
                 .and_then(|e| e.raw_os_error())
                 .unwrap_or(libc::ENOENT);
             sh.berr(
-                &argv[0],
+                cmd,
                 format!(
                     "cannot open {}: {}",
                     String::from_utf8_lossy(name),

@@ -1,4 +1,5 @@
 Unreleased
+    * . -- file and source -- file skip the --, as in dash, bash and zsh
     * help [[: the help for [[ ... ]]
     * =(cmd): a temporary file with the output of cmd, as in zsh
     * read: Ctrl-C and trapped signals interrupt it, as in dash
