@@ -635,14 +635,19 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   terminal that can move the cursor (`TERM` not `dumb`), and otherwise fails with status 2, as dash does. The loop
   polls the terminal (every 500 ms, 100 ms while a `KILL` is pending) and reaps children in between, so the rows
   follow the jobs; no job is freed while it is open (`show_job` isn't used), so a job that changed is reported at the
-  next prompt. Rows are in job-number order, so the selection is stable. `f`, `b` and `s` act at once; signals that
+  next prompt. Rows are in job-number order, so the selection is stable. `f`, `b`, `s` and `d` act at once (`s` stops
+  a running job and continues a stopped one; `d` flips the job's `nohup`, so it is `disown -h`, undone by `d` again,
+  for jobs under job control, as only those get SIGHUP); signals that
   end a job take two keys (`K`, then one of `SIGNALS`; any other key cancels). `Shell::signal_job` signals the process
   group, or without job control only the processes that haven't been reaped (whose pids may have been reused). A
   stopped job is continued (`restart_job`) after any signal but `KILL`, as bash and zsh do, so that it acts on it.
   `e` sends `TERM` and records a `Kill`; `KILL` follows after `ESCALATE` (5 s). Nothing could send it once the line
   editor has the terminal, so leaving waits until every such job has ended (Ctrl-C leaves without), which also lets
-  the prompt report it. `Menu` (keys and drawing) doesn't see `Shell`. Tests: unit tests in `jobmenu.rs`, `jobs_menu`
-  in `tests/interactive.rs`, `builtins/jobs_menu.sh` (without a terminal).
+  the prompt report it. `Menu` (keys and drawing) doesn't see `Shell`; it gets the `jobs.*` styles (and
+  `menu.selected`, or reverse video) as SGR parameters in `Colours`, empty with `$NO_COLOR`. `paint` cuts a row of
+  coloured parts to the width as `truncate` does, and puts the selected row on the selection's style, returning to it
+  after each part. Tests: unit tests in `jobmenu.rs`, `jobs_menu`
+  and `jobs_menu_disown` in `tests/interactive.rs`, `builtins/jobs_menu.sh` (without a terminal).
 - `disown` (zsh's, with bash's `-a`, `-r`, `-h` and process ids, `jobs::disown`) frees the jobs' slots
   (`JobTable::free`), resolving every argument first so that naming a job twice frees it once; the children are
   still reaped, by `waitpid(-1)`, as any unknown child is. A stopped job gets zsh's warning (with `-PGID`, or each
@@ -1834,7 +1839,7 @@ truncates when it relocates the package.
 | Startup files | `misc/startup_cache.sh`, `misc/startup_cache_assigned.sh`, `misc/startup_cache_blocks.sh`, `misc/startup_cache_check.sh`, `misc/config_toml.sh`, `misc/config_toml_env.sh`, `tests/plugins/startup_cache_check.sh`, `tests/plugins/startup_cache_blocks.sh`, `tests/plugins/startup_cache_nested.sh` |
 | Grouped option names | `options/setopt_values.sh`, `options/setopt_group.sh`, `options/setopt_list.sh` |
 | `help` | `builtins/internal_help.sh`, `builtins/help_noninteractive.sh` (same as dash), `help_builtin` in `tests/interactive.rs` |
-| `jobs -i` | `jobs_menu` in `tests/interactive.rs`, unit tests in `interactive/jobmenu.rs`, `builtins/jobs_menu.sh` (no terminal: status 2, as dash) |
+| `jobs -i` | `jobs_menu`, `jobs_menu_disown` in `tests/interactive.rs`, unit tests in `interactive/jobmenu.rs`, `builtins/jobs_menu.sh` (no terminal: status 2, as dash) |
 | `print` | `builtins/print.sh` (zsh), `builtins/print_luish.sh`, `print_builtin` in `tests/interactive.rs` |
 | `vared` | `builtins/internal_vared.sh`, `vared_builtin` and `remote_editing` in `tests/interactive.rs` |
 | `clipcopy` | `builtins/internal_clipcopy.sh`, `clipcopy` in `tests/interactive.rs` |

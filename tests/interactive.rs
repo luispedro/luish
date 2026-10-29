@@ -780,10 +780,17 @@ fn jobs_menu() {
     sh.send("sleep 31 & sleep 32 & echo started\n");
     sh.expect("started\n");
     sh.expect("$ ");
-    // The current job is selected; s stops it and b continues it.
+    // The current job is selected (with its number in bold); s stops it
+    // and continues it, as b does.
     sh.send("jobs -i\n");
-    sh.expect("\x1b[7m> [2]+");
-    sh.expect("q: quit");
+    sh.expect("\x1b[7m> \x1b[1m[2]+");
+    sh.expect("s\x1b[m: stop");
+    sh.expect(": quit");
+    sh.send("s");
+    sh.expect("Stopped (signal)");
+    sh.expect("s\x1b[m: continue");
+    sh.send("s");
+    sh.expect("Continued [2] in the background");
     sh.send("s");
     sh.expect("Stopped (signal)");
     sh.send("b");
@@ -808,7 +815,7 @@ fn jobs_menu() {
     sh.expect("started\n");
     sh.expect("$ ");
     sh.send("jobs -i\n");
-    sh.expect("q: quit");
+    sh.expect(": quit");
     sh.send("Ke");
     sh.expect("KILL in 5 s");
     sh.send("q");
@@ -820,7 +827,7 @@ fn jobs_menu() {
     sh.expect("started\n");
     sh.expect("$ ");
     sh.send("jobs -i\n");
-    sh.expect("q: quit");
+    sh.expect(": quit");
     sh.send("\r");
     sh.expect("sleep 34\n");
     sh.wait_for_procs(&["sleep"]);
@@ -830,6 +837,48 @@ fn jobs_menu() {
     sh.expect("st=130\n");
     sh.send("exit\n");
     assert_eq!(sh.exit_status(), 0);
+}
+
+/// `d` in `jobs -i` disowns a job as `disown -h` does, so that it doesn't
+/// get SIGHUP when the shell exits, and undoes that.
+#[test]
+fn jobs_menu_disown() {
+    let mut sh = Pty::spawn_term("jobsmenudisown", "vt100");
+    sh.expect("$ ");
+    sh.send("unsetopt jobs.check_running; sleep 36 & echo $! >hupped; sleep 35 & echo $! >kept; echo started\n");
+    sh.expect("started\n");
+    sh.expect("$ ");
+    let pid = |name| {
+        std::fs::read_to_string(sh.path(name))
+            .unwrap()
+            .trim()
+            .parse::<i32>()
+            .unwrap()
+    };
+    let (hupped, kept) = (pid("hupped"), pid("kept"));
+    sh.send("jobs -i\n");
+    sh.expect("d\x1b[m: disown");
+    sh.send("d");
+    sh.expect(", disowned");
+    sh.expect("Disowned [2]: it won't get HUP");
+    sh.expect("d\x1b[m: undisown");
+    // On job 1, d is undone by d.
+    sh.send("1d");
+    sh.expect("Disowned [1]");
+    sh.send("d");
+    sh.expect("[1] is no longer disowned");
+    sh.send("q");
+    sh.expect("$ ");
+    // Disowned jobs stay jobs.
+    sh.send("jobs\n");
+    sh.expect("sleep 35\n");
+    sh.send("exit 3\n");
+    assert_eq!(sh.exit_status(), 3);
+    let (kept_alive, hupped_alive) = (alive(kept), alive(hupped));
+    kill_pid(kept);
+    kill_pid(hupped);
+    assert!(kept_alive, "the disowned job got SIGHUP");
+    assert!(!hupped_alive, "the job didn't get SIGHUP");
 }
 
 #[test]

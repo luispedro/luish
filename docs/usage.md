@@ -556,6 +556,7 @@ far:
 | `menu.description` | descriptions in the completion menu |
 | `suggestion` | autosuggestions |
 | `plugin.name`, `plugin.ok`, `plugin.update`, `plugin.warn`, `plugin.error`, `plugin.dim` | the output of `plugin`, on a terminal |
+| `jobs.number`, `jobs.pid`, `jobs.running`, `jobs.stopped`, `jobs.done`, `jobs.key` | the menu of `jobs -i` |
 
 So `command` sets all the kinds of command at once, `string` all the strings, and so on. `error` is added to the
 style of the text with a syntax error, and `path` and `path.prefix` to that of a word that names a file (see

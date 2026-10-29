@@ -1,4 +1,6 @@
 Unreleased
+    * jobs -i: colours, s continues a stopped job, d disowns a job (as
+      disown -h, and undoes it)
     * exit warns about running jobs, as in zsh (jobs.check_running)
     * Jobs get SIGHUP on exit and hangup, as in zsh (jobs.hup)
     * . -- file and source -- file skip the --, as in dash, bash and zsh

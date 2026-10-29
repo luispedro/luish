@@ -1,5 +1,6 @@
 //! `jobs -i`: a menu of the jobs, to bring one to the foreground, continue
-//! it in the background, stop it, or send it a signal that ends it.
+//! it in the background, stop it, disown it (as `disown -h` does, which the
+//! menu can undo), or send it a signal that ends it.
 //!
 //! The signals that end a job take two keys: `K` lists them, and the next
 //! key chooses one (any other key cancels), so that a stray key can't end a
@@ -12,8 +13,8 @@
 //! (`firstrun.rs`), and erased when it is left. The loop (`run`) reaps
 //! children while it waits for keys, so the menu shows jobs as they change.
 //! The jobs stay in the table while it is open (none is freed), so a
-//! finished job is reported at the next prompt as usual. `Menu` handles the
-//! keys and draws, without `Shell`, so that it can be tested alone.
+//! finished job is reported at the next prompt as usual. `Menu` handles the keys and draws, without `Shell`, so that it
+//! can be tested alone; the colours are the `jobs.*` styles ([`Colours`]).
 
 use std::time::{Duration, Instant};
 
@@ -21,6 +22,7 @@ use super::menu::truncate;
 use super::tty::{Raw, read_byte, readable};
 use crate::jobs::{JobState, JobTable};
 use crate::shell::Shell;
+use crate::style::Role;
 use crate::{signals, sys};
 
 /// How long after TERM the menu sends KILL, for the `e` choice.
@@ -36,7 +38,111 @@ const SIGNALS: &[(u8, i32, &str)] = &[
     (b'h', libc::SIGHUP, "HUP: as when the terminal closes"),
 ];
 
-const HELP: &str = "f/Enter: foreground  b: background  s: stop  K: kill...  q: quit";
+/// The keys, and what they do. `s` continues a stopped job instead, and
+/// `d` undoes the disowning of a disowned one.
+const HELP: &[(&str, &str)] = &[
+    ("f", "foreground"),
+    ("b", "background"),
+    ("s", "stop"),
+    ("d", "disown"),
+    ("K", "kill..."),
+    ("q", "quit"),
+];
+
+/// The SGR parameters of the parts of the menu (empty for plain text).
+#[derive(Clone, Debug)]
+struct Colours {
+    selected: String,
+    number: String,
+    pid: String,
+    running: String,
+    stopped: String,
+    done: String,
+    key: String,
+}
+
+impl Default for Colours {
+    /// No colours, but the selection in reverse video.
+    fn default() -> Colours {
+        let plain = String::new;
+        Colours {
+            selected: "7".into(),
+            number: plain(),
+            pid: plain(),
+            running: plain(),
+            stopped: plain(),
+            done: plain(),
+            key: plain(),
+        }
+    }
+}
+
+impl Colours {
+    /// The `jobs.*` styles (and `menu.selected`) of the colour scheme in
+    /// use, or none with `$NO_COLOR`. The selection is in reverse video if
+    /// the scheme gives it no style.
+    fn new(sh: &Shell) -> Colours {
+        if sh.get_var(b"NO_COLOR").is_some_and(|v| !v.is_empty()) {
+            return Colours::default();
+        }
+        let scheme = crate::builtins::style::scheme_in_use(sh);
+        let r = sh.styles.resolver(scheme.as_deref());
+        let get = |role: Role| {
+            role.index()
+                .map_or(String::new(), |i| r.get(crate::style::ROLES[i]).sgr())
+        };
+        let selected = get(Role::of("menu.selected"));
+        Colours {
+            selected: if selected.is_empty() { "7".into() } else { selected },
+            number: get(Role::of("jobs.number")),
+            pid: get(Role::of("jobs.pid")),
+            running: get(Role::of("jobs.running")),
+            stopped: get(Role::of("jobs.stopped")),
+            done: get(Role::of("jobs.done")),
+            key: get(Role::of("jobs.key")),
+        }
+    }
+
+    fn state(&self, state: JobState) -> &str {
+        match state {
+            JobState::Running => &self.running,
+            JobState::Stopped => &self.stopped,
+            JobState::Done => &self.done,
+        }
+    }
+}
+
+/// `parts` (each a text in its SGR parameters) cut to `max` columns as
+/// [`truncate`] cuts. With SGR parameters `base` (the selection's), the
+/// whole line is in them, as wide as `max`.
+fn paint(parts: &[(&str, &str)], base: &str, max: usize) -> String {
+    let plain: String = parts.iter().map(|p| p.1).collect();
+    let (text, w) = truncate(&plain, max);
+    let mut chars = text.chars();
+    let mut out = String::new();
+    if !base.is_empty() {
+        out.push_str(&format!("\x1b[{base}m"));
+    }
+    for (i, &(sgr, part)) in parts.iter().enumerate() {
+        // The last part gets the `…` of a cut in it.
+        let n = if i + 1 == parts.len() {
+            usize::MAX
+        } else {
+            part.chars().count()
+        };
+        let shown: String = chars.by_ref().take(n).collect();
+        match (sgr, base) {
+            _ if shown.is_empty() => {}
+            ("", _) => out.push_str(&shown),
+            (_, "") => out.push_str(&format!("\x1b[{sgr}m{shown}\x1b[m")),
+            _ => out.push_str(&format!("\x1b[{sgr}m{shown}\x1b[0;{base}m")),
+        }
+    }
+    if !base.is_empty() {
+        out.push_str(&format!("{:pad$}\x1b[m", "", pad = max - w));
+    }
+    out
+}
 
 /// A job, as the menu shows it.
 #[derive(Clone, Debug, PartialEq)]
@@ -44,7 +150,10 @@ struct Row {
     number: usize,
     mark: char,
     pid: i32,
+    kind: JobState,
     state: String,
+    /// It was disowned, so it doesn't get SIGHUP when the shell exits.
+    nohup: bool,
     cmd: String,
 }
 
@@ -66,7 +175,10 @@ enum Action {
     Quit,
     Foreground,
     Background,
+    /// Stop a running job, or continue a stopped one in the background.
     Stop,
+    /// Disown the job as `disown -h` does, or undo that.
+    Disown,
     /// A signal that ends the job.
     Signal(i32),
     /// TERM, then KILL after [`ESCALATE`].
@@ -75,6 +187,7 @@ enum Action {
 
 #[derive(Default)]
 struct Menu {
+    colours: Colours,
     /// The selected row.
     sel: usize,
     /// `K` was pressed: the next key chooses a signal.
@@ -112,6 +225,7 @@ impl Menu {
             Key::Enter | Key::Char(b'f') => return Action::Foreground,
             Key::Char(b'b') => return Action::Background,
             Key::Char(b's') => return Action::Stop,
+            Key::Char(b'd') => return Action::Disown,
             Key::Char(b'K') => self.kill = true,
             Key::Char(b'q') | Key::Cancel => return Action::Quit,
             _ => {}
@@ -123,24 +237,41 @@ impl Menu {
     /// `lines` high.
     fn draw(&mut self, rows: &[Row], cols: usize, lines: usize) -> Vec<String> {
         let usable = cols.saturating_sub(1).max(1);
+        let c = &self.colours;
         let mut footer = Vec::new();
         let sel = rows.get(self.sel);
         match sel {
             Some(r) if self.kill => {
-                footer.push(format!("Send to [{}] {}:", r.number, r.cmd));
+                footer.push(truncate(&format!("Send to [{}] {}:", r.number, r.cmd), usable).0);
                 for &(key, sig, what) in SIGNALS {
-                    match sig {
-                        0 => footer.push(format!("  {}  {what} {} s", key as char, ESCALATE.as_secs())),
-                        _ => footer.push(format!("  {}  {what}", key as char)),
-                    }
+                    let what = match sig {
+                        0 => format!("  {what} {} s", ESCALATE.as_secs()),
+                        _ => format!("  {what}"),
+                    };
+                    let key = (key as char).to_string();
+                    footer.push(paint(&[("", "  "), (&c.key, &key), ("", &what)], "", usable));
                 }
-                footer.push("  (any other key: nothing)".into());
+                footer.push(truncate("  (any other key: nothing)", usable).0);
             }
             _ => {
                 if !self.message.is_empty() {
-                    footer.push(self.message.clone());
+                    footer.push(truncate(&self.message, usable).0);
                 }
-                footer.push(HELP.into());
+                let stopped = sel.is_some_and(|r| r.kind == JobState::Stopped);
+                let nohup = sel.is_some_and(|r| r.nohup);
+                let mut parts = Vec::new();
+                for (i, &(key, what)) in HELP.iter().enumerate() {
+                    let what = match key {
+                        "s" if stopped => "continue",
+                        "d" if nohup => "undisown",
+                        _ => what,
+                    };
+                    if i > 0 {
+                        parts.push(("", "  "));
+                    }
+                    parts.extend([(c.key.as_str(), key), ("", ": "), ("", what)]);
+                }
+                footer.push(paint(&parts, "", usable));
             }
         }
         // The rows that fit, scrolled to the selection.
@@ -157,23 +288,22 @@ impl Menu {
         let mut out = Vec::new();
         for (i, r) in rows.iter().enumerate().skip(self.top).take(shown) {
             let selected = i == self.sel;
-            let num = format!("[{}]", r.number);
-            let text = format!(
-                "{} {num:<w$}{} {:>pid_w$}  {:<state_w$}  {}",
-                if selected { '>' } else { ' ' },
-                r.mark,
-                r.pid,
-                r.state,
-                r.cmd,
-                w = num_w + 2,
-            );
-            let (text, w) = truncate(&text, usable);
-            out.push(match selected {
-                true => format!("\x1b[7m{text}{:pad$}\x1b[m", "", pad = usable - w),
-                false => text,
-            });
+            let num = format!("{:<w$}{}", format!("[{}]", r.number), r.mark, w = num_w + 2);
+            let pid = format!("{:>pid_w$}", r.pid);
+            let state = format!("{:<state_w$}", r.state);
+            let parts = [
+                ("", if selected { "> " } else { "  " }),
+                (c.number.as_str(), &num),
+                ("", " "),
+                (&c.pid, &pid),
+                ("", "  "),
+                (c.state(r.kind), &state),
+                ("", "  "),
+                ("", &r.cmd),
+            ];
+            out.push(paint(&parts, if selected { &c.selected } else { "" }, usable));
         }
-        out.extend(footer.into_iter().map(|l| truncate(&l, usable).0));
+        out.extend(footer);
         out
     }
 }
@@ -262,6 +392,9 @@ fn rows(sh: &Shell, slots: &[usize], kills: &[Kill], now: Instant) -> Vec<Row> {
             }
             None => {}
         }
+        if job.nohup {
+            state.push_str(", disowned");
+        }
         // Without job control, jobs have no command text (as in dash).
         let mut cmd = job.text();
         if job.procs.iter().all(|p| p.cmd.is_empty()) {
@@ -272,7 +405,9 @@ fn rows(sh: &Shell, slots: &[usize], kills: &[Kill], now: Instant) -> Vec<Row> {
             number: JobTable::number(i),
             mark: sh.jobs.mark(i).unwrap_or(' '),
             pid: job.pgid(),
+            kind: job.state,
             state,
+            nohup: job.nohup,
             cmd,
         }
     };
@@ -306,6 +441,7 @@ pub fn run(sh: &mut Shell, first: Option<usize>) -> i32 {
     let Some(raw) = Raw::new() else { return 0 };
     let mut menu = Menu {
         sel: slots.iter().position(|&s| Some(s) == first).unwrap_or(0),
+        colours: Colours::new(sh),
         ..Menu::default()
     };
     let mut screen = Screen::default();
@@ -353,19 +489,26 @@ pub fn run(sh: &mut Shell, first: Option<usize>) -> i32 {
                 "Waiting to send KILL (Ctrl-C: leave without sending it)".into()
             }
             _ if done => format!("[{n}] has ended"),
-            Action::Foreground | Action::Background | Action::Stop if no_jobctl => {
+            Action::Foreground | Action::Background | Action::Stop | Action::Disown if no_jobctl => {
                 format!("[{n}] wasn't started under job control")
             }
             Action::Foreground if !kills.is_empty() => "Waiting to send KILL: wait, or leave with q".into(),
             Action::Foreground => break Some(slot),
-            Action::Background if job.state == JobState::Running => format!("[{n}] is running"),
-            Action::Background => {
+            Action::Background | Action::Stop if job.state == JobState::Stopped => {
                 sh.jobs.make_current(slot, false);
                 sh.restart_job(slot, false);
                 format!("Continued [{n}] in the background")
             }
-            Action::Stop if job.state == JobState::Stopped => format!("[{n}] is stopped"),
+            Action::Background => format!("[{n}] is running"),
             Action::Stop => send(sh, slot, libc::SIGSTOP),
+            Action::Disown => {
+                let job = sh.jobs.get_mut(slot);
+                job.nohup = !job.nohup;
+                match job.nohup {
+                    true => format!("Disowned [{n}]: it won't get HUP when the shell exits"),
+                    false => format!("[{n}] is no longer disowned"),
+                }
+            }
             Action::Signal(sig) => send(sh, slot, sig),
             Action::TermThenKill => {
                 if !kills.iter().any(|k| k.slot == slot) {
@@ -391,19 +534,23 @@ mod tests {
     use super::*;
 
     fn rows() -> Vec<Row> {
-        let row = |number, mark, pid, state: &str, cmd: &str| Row {
+        let row = |number, mark, pid, kind, state: &str, cmd: &str| Row {
             number,
             mark,
             pid,
+            kind,
             state: state.into(),
+            nohup: false,
             cmd: cmd.into(),
         };
         vec![
-            row(1, ' ', 101, "Running", "sleep 30"),
-            row(2, '-', 2002, "Stopped (signal)", "vi notes"),
-            row(3, '+', 303, "Running", "make | tee log"),
+            row(1, ' ', 101, JobState::Running, "Running", "sleep 30"),
+            row(2, '-', 2002, JobState::Stopped, "Stopped (signal)", "vi notes"),
+            row(3, '+', 303, JobState::Running, "Running", "make | tee log"),
         ]
     }
+
+    const HELP_RUNNING: &str = "f: foreground  b: background  s: stop  d: disown  K: kill...  q: quit";
 
     #[test]
     fn keys() {
@@ -424,6 +571,7 @@ mod tests {
             keys(&mut m, &[Key::Enter, Key::Char(b'f'), Key::Char(b'b'), Key::Char(b's')]),
             [Action::Foreground, Action::Foreground, Action::Background, Action::Stop]
         );
+        assert_eq!(keys(&mut m, &[Key::Char(b'd')]), [Action::Disown]);
         // A signal that ends a job takes two keys.
         assert_eq!(keys(&mut m, &[Key::Char(b'k')]), [Action::None]);
         assert_eq!(
@@ -463,9 +611,17 @@ mod tests {
                 "  [1]   101  Running           sleep 30",
                 &format!("\x1b[7m{:79}\x1b[m", "> [2]- 2002  Stopped (signal)  vi notes"),
                 "  [3]+  303  Running           make | tee log",
-                HELP,
+                // The selected job is stopped: s continues it.
+                "f: foreground  b: background  s: continue  d: disown  K: kill...  q: quit",
             ]
         );
+        m.sel = 0;
+        assert_eq!(m.draw(&rows, 80, 24)[3], HELP_RUNNING);
+        // A disowned job: d undoes it.
+        let mut disowned = rows.clone();
+        disowned[0].nohup = true;
+        assert!(m.draw(&disowned, 80, 24)[3].contains("  d: undisown  "));
+        m.sel = 1;
         // `K`: the signals, for the selected job.
         m.key(Key::Char(b'K'), &rows);
         let lines = m.draw(&rows, 80, 24);
@@ -475,7 +631,7 @@ mod tests {
         // A message; lines cut to the width.
         m.key(Key::Char(b'x'), &rows);
         let lines = m.draw(&rows, 20, 24);
-        assert_eq!(&lines[3..], ["Nothing sent", "f/Enter: foregroun…"]);
+        assert_eq!(&lines[3..], ["Nothing sent", "f: foreground  b: …"]);
         assert_eq!(lines[0], "  [1]   101  Runni…");
         // Too few lines: scrolled to the selection.
         m.message.clear();
@@ -486,5 +642,39 @@ mod tests {
         assert!(lines[1].contains("> [3]+"), "{lines:?}");
         m.sel = 0;
         assert!(m.draw(&rows, 80, 4)[0].contains("> [1]"));
+    }
+
+    #[test]
+    fn colours() {
+        let rows = rows();
+        let mut m = Menu {
+            colours: Colours {
+                selected: "7".into(),
+                number: "1".into(),
+                pid: "90".into(),
+                running: "32".into(),
+                stopped: "33".into(),
+                done: "90".into(),
+                key: "1".into(),
+            },
+            ..Menu::default()
+        };
+        let lines = m.draw(&rows, 80, 24);
+        // The state in its colour; the selected row on the selection's,
+        // which each coloured part goes back to.
+        let selected =
+            "\x1b[7m> \x1b[1m[1] \x1b[0;7m \x1b[90m 101\x1b[0;7m  \x1b[32mRunning         \x1b[0;7m  sleep 30";
+        assert_eq!(lines[0], format!("{selected}{:40}\x1b[m", ""));
+        assert_eq!(
+            lines[1],
+            "  \x1b[1m[2]-\x1b[m \x1b[90m2002\x1b[m  \x1b[33mStopped (signal)\x1b[m  vi notes"
+        );
+        assert!(lines[3].starts_with("\x1b[1mf\x1b[m: foreground  \x1b[1mb\x1b[m: "));
+        // Cut to the width, with the `…` in the colour of the part cut.
+        assert_eq!(
+            m.draw(&rows, 20, 24)[1],
+            "  \x1b[1m[2]-\x1b[m \x1b[90m2002\x1b[m  \x1b[33mStopp…\x1b[m"
+        );
+        assert_eq!(paint(&[("1", "ab"), ("", "cd")], "", 3), "\x1b[1mab\x1b[m…");
     }
 }

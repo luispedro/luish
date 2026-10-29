@@ -32,7 +32,12 @@ choose a job, and these keys act on it:
 : Continue it in the background, as `bg` does.
 
 `s`
-: Stop it (with `STOP`).
+: Stop it (with `STOP`), or, if it is stopped, continue it in the background.
+
+`d`
+: Disown it, as `disown -h` does: it stays a job, marked `disowned`, but
+  isn't sent `HUP` when the shell exits or the terminal hangs up. `d` again
+  undoes that.
 
 `K`
 : List the signals that end it. The next key sends one: `t` for `TERM`, `e`
@@ -41,9 +46,10 @@ choose a job, and these keys act on it:
   job is never ended by one key. A stopped job is continued after the signal,
   so that it can act on it.
 
-`q`, Esc or Ctrl-C leave the menu. If `KILL` is still to be sent, leaving waits
-for it (Ctrl-C again leaves without sending it). Jobs that stopped or ended are
-reported before the next prompt, as usual.
+The job's state is in colour (the `jobs.*` styles of the colour scheme, unless
+`NO_COLOR` is set). `q`, Esc or Ctrl-C leave the menu. If `KILL` is still to be
+sent, leaving waits for it (Ctrl-C again leaves without sending it). Jobs that
+stopped or ended are reported before the next prompt, as usual.
 
 A job is named by `%n` (its number), `%+` or `%%` (the current job), `%-`
 (the previous job), `%string` (the job whose command starts with `string`)

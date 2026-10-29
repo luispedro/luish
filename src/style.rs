@@ -88,6 +88,13 @@ pub const ROLES: &[&str] = &[
     "plugin.warn",
     "plugin.error",
     "plugin.dim",
+    "jobs",
+    "jobs.number",
+    "jobs.pid",
+    "jobs.running",
+    "jobs.stopped",
+    "jobs.done",
+    "jobs.key",
 ];
 
 const _: () = assert!(ROLES.len() < u8::MAX as usize);
@@ -171,10 +178,20 @@ const BUILTIN: &[Builtin] = &[
             ("plugin.warn", "yellow"),
             ("plugin.error", "bold red"),
             ("plugin.dim", "bright-black"),
+            ("jobs.number", "bold"),
+            ("jobs.pid", "bright-black"),
+            ("jobs.running", "green"),
+            ("jobs.stopped", "yellow"),
+            ("jobs.done", "bright-black"),
+            ("jobs.key", "bold"),
         ],
     ),
     // Yellow is hard to read on a light background.
-    ("default-light", Some("default-dark"), &[("string", "136")]),
+    (
+        "default-light",
+        Some("default-dark"),
+        &[("string", "136"), ("jobs.stopped", "136")],
+    ),
 ];
 
 /// The scheme pair used when none is chosen.
