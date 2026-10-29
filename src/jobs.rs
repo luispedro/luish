@@ -48,6 +48,8 @@ pub struct Job {
     /// `set -o pipefail` was on when the job started, so its status is that
     /// of the last process that failed.
     pub pipefail: bool,
+    /// `disown -h`: the job isn't sent SIGHUP (`Shell::hup_jobs`).
+    pub nohup: bool,
 }
 
 impl Job {
@@ -63,6 +65,7 @@ impl Job {
             waited: false,
             jobctl,
             pipefail,
+            nohup: false,
         }
     }
 
@@ -555,6 +558,27 @@ impl Shell {
         sys::write_all(2, msg);
         self.job_warning = 2;
         true
+    }
+
+    /// Sends SIGHUP to the jobs, with `jobs.hup` and job control, as zsh does
+    /// when it exits (its `HUP` option) or gets SIGHUP: to each job's process
+    /// group but those that `disown -h` marked, then SIGCONT to a stopped one
+    /// so that it gets it.
+    pub fn hup_jobs(&mut self) {
+        if !self.jobctl() || !self.opt(crate::options::Opt::HupJobs) {
+            return;
+        }
+        self.reap_jobs();
+        for &i in self.jobs.order() {
+            let job = self.jobs.get(i);
+            if job.state == JobState::Done || job.nohup || !job.jobctl {
+                continue;
+            }
+            let _ = sys::kill(-job.pgid(), libc::SIGHUP);
+            if job.state == JobState::Stopped {
+                let _ = sys::kill(-job.pgid(), libc::SIGCONT);
+            }
+        }
     }
 
     /// Resolves a job spec (dash's `getjob`). `None` means the current job.

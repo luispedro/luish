@@ -171,8 +171,8 @@ pub fn wait(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
 }
 
 /// `disown` (not POSIX; as in zsh and bash): removes jobs from the table,
-/// so that they are no longer reported, waited for or warned about. luish
-/// never sends SIGHUP to its jobs, so bash's `-h` has nothing to do.
+/// so that they are no longer reported, waited for, warned about or sent
+/// SIGHUP. With bash's `-h`, they stay but aren't sent SIGHUP.
 pub fn disown(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     let (opts, args) = match options(sh, argv, b"ahr") {
         Ok(r) => r,
@@ -215,6 +215,9 @@ pub fn disown(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         }
     }
     if opts.contains(&b'h') {
+        for i in slots {
+            sh.jobs.get_mut(i).nohup = true;
+        }
         return Ok(status);
     }
     for i in slots {

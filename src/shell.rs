@@ -819,6 +819,7 @@ impl Shell {
                     sys::write_all(2, b"\n");
                     return Err(Flow::Error(128 + libc::SIGINT));
                 }
+                None if sig == libc::SIGHUP as usize && !self.in_subshell => self.hangup(),
                 None => {}
             }
         }
@@ -841,12 +842,24 @@ impl Shell {
         }
         if !self.in_subshell {
             status = crate::plugins::exit(self, status);
+            self.hup_jobs();
             crate::interactive::save_history(self);
             crate::interactive::restore_terminal_colors();
             // Give the terminal back to whoever had it before us.
             self.set_jobctl(false);
         }
         sys::exit(status)
+    }
+
+    /// SIGHUP arrived with no trap, which only `jobs.hup` catches (the
+    /// terminal hung up): sends it on to the jobs, saves the history and
+    /// dies of it, as bash does.
+    pub fn hangup(&mut self) -> ! {
+        self.hup_jobs();
+        crate::interactive::save_history(self);
+        signals::set_disposition(libc::SIGHUP, signals::Disposition::Default);
+        sys::raise(libc::SIGHUP);
+        sys::exit(128 + libc::SIGHUP)
     }
 
     /// Runs the main input loop until end of input.
@@ -1007,6 +1020,11 @@ impl Shell {
                             self.last_status = 128 + libc::SIGINT;
                         }
                         Line::Eof => {
+                            // The terminal hung up, more likely than not.
+                            let hup = libc::SIGHUP as usize;
+                            if signals::is_pending(libc::SIGHUP) && self.traps[hup].is_none() && !self.in_subshell {
+                                self.hangup();
+                            }
                             eof = true;
                             if buf.is_empty() && self.exit_jobs_warning() {
                                 eof = false;

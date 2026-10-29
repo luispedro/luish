@@ -321,6 +321,24 @@ impl Pty {
         }
     }
 
+    /// Closes the terminal, as closing its window does, and returns the
+    /// shell's wait status once it has ended.
+    fn hang_up(&mut self) -> i32 {
+        // SAFETY: closing our own fd, which `drop` then leaves alone.
+        unsafe { libc::close(self.master) };
+        self.master = -1;
+        let start = Instant::now();
+        loop {
+            let mut status = 0;
+            // SAFETY: waiting for our own child.
+            if unsafe { libc::waitpid(self.pid, &mut status, libc::WNOHANG) } == self.pid {
+                return status;
+            }
+            assert!(start.elapsed() < TIMEOUT, "the shell didn't end after the hangup");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     /// Waits for the shell to exit and returns its exit status.
     fn exit_status(&mut self) -> i32 {
         let start = Instant::now();
@@ -498,13 +516,12 @@ fn running_jobs_exit_warning() {
     assert_eq!(sh.exit_status(), 4);
     let mut sh = Pty::spawn("running2");
     sh.expect("$ ");
-    let out = sh.run("sleep 30 & echo pid=$!");
-    // A second `exit` in a row exits.
+    let pid = echoed_pid(&sh.run("sleep 30 & echo pid=$!"));
+    // A second `exit` in a row exits, and the job gets SIGHUP.
     assert_has(&sh.run("exit"), "You have running jobs.\n");
     sh.send("exit 3\n");
-    let status = sh.exit_status();
-    kill_echoed_pid(&out);
-    assert_eq!(status, 3);
+    assert_eq!(sh.exit_status(), 3);
+    wait_gone(pid);
 }
 
 #[test]
@@ -512,25 +529,109 @@ fn running_jobs_no_check() {
     let mut sh = Pty::spawn("nocheck");
     sh.expect("$ ");
     sh.run("unsetopt jobs.check_running");
-    let out = sh.run("sleep 30 & echo pid=$!");
+    let pid = echoed_pid(&sh.run("sleep 30 & echo pid=$!"));
     sh.send("exit 5\n");
-    let status = sh.exit_status();
-    kill_echoed_pid(&out);
-    assert_eq!(status, 5);
+    assert_eq!(sh.exit_status(), 5);
+    wait_gone(pid);
 }
 
-/// Kills the process whose pid follows the last `pid=` in `out`, a job
-/// that the shell left running when it exited.
-fn kill_echoed_pid(out: &str) {
-    let at = out.rfind("pid=").unwrap() + 4;
-    let pid: i32 = out[at..]
-        .chars()
-        .take_while(char::is_ascii_digit)
-        .collect::<String>()
-        .parse()
-        .unwrap();
+#[test]
+fn hup_jobs_on_exit() {
+    let mut sh = Pty::spawn("hupexit");
+    sh.expect("$ ");
+    let running = echoed_pid(&sh.run("sleep 30 & echo pid=$!"));
+    let kept = echoed_pid(&sh.run("sleep 31 & echo pid=$!"));
+    sh.run("disown -h");
+    sh.send("sh -c 'echo pid=$$; exec sleep 32'\n");
+    sh.wait_for_procs(&["sleep"]);
+    sh.send("\x1a");
+    let stopped = echoed_pid(&sh.expect("\n$ "));
+    // As in zsh (its `HUP` option), the running and stopped jobs get
+    // SIGHUP when the shell exits, but not one marked by `disown -h`.
+    assert_has(&sh.run("exit"), "You have stopped jobs.\n");
+    sh.send("exit\n");
+    assert_eq!(sh.exit_status(), 0);
+    wait_gone(running);
+    wait_gone(stopped);
+    let survived = alive(kept);
+    kill_pid(kept);
+    assert!(survived, "the job of disown -h got SIGHUP");
+}
+
+#[test]
+fn hup_jobs_on_hangup() {
+    let mut sh = Pty::spawn("hangup");
+    sh.expect("$ ");
+    let pid = echoed_pid(&sh.run("sleep 30 & echo pid=$!"));
+    // When the terminal hangs up, the shell sends SIGHUP on to its jobs,
+    // saves the history and dies of SIGHUP, as bash does.
+    let status = sh.hang_up();
+    assert!(
+        libc::WIFSIGNALED(status) && libc::WTERMSIG(status) == libc::SIGHUP,
+        "{status:#x}"
+    );
+    wait_gone(pid);
+    let text = std::fs::read_to_string(sh.path(".local/state/luish/history")).unwrap();
+    assert!(text.ends_with(";sleep 30 & echo pid=$!\n"), "{text}");
+}
+
+#[test]
+fn no_hup_jobs() {
+    // With `unsetopt jobs.hup`, jobs are left running, as in dash, on
+    // `exit` and when the terminal hangs up.
+    let mut sh = Pty::spawn("nohup");
+    sh.expect("$ ");
+    sh.run("unsetopt jobs.hup jobs.check_running");
+    let pid = echoed_pid(&sh.run("sleep 30 & echo pid=$!"));
+    sh.send("exit 2\n");
+    assert_eq!(sh.exit_status(), 2);
+    let survived = alive(pid);
+    kill_pid(pid);
+    assert!(survived, "the job got SIGHUP on exit");
+    let mut sh = Pty::spawn("nohup2");
+    sh.expect("$ ");
+    sh.run("unsetopt jobs.hup");
+    let pid = echoed_pid(&sh.run("sleep 30 & echo pid=$!"));
+    let status = sh.hang_up();
+    assert!(
+        libc::WIFSIGNALED(status) && libc::WTERMSIG(status) == libc::SIGHUP,
+        "{status:#x}"
+    );
+    let survived = alive(pid);
+    kill_pid(pid);
+    assert!(survived, "the job got SIGHUP on hangup");
+}
+
+/// The last pid in `out` printed after `pid=` (not the `pid=$!` of the
+/// command line, nor of a job's text).
+fn echoed_pid(out: &str) -> i32 {
+    out.match_indices("pid=")
+        .filter_map(|(at, _)| {
+            let digits: String = out[at + 4..].chars().take_while(char::is_ascii_digit).collect();
+            digits.parse().ok()
+        })
+        .last()
+        .unwrap_or_else(|| panic!("no pid in:\n{out}"))
+}
+
+/// Whether a process is running (or stopped): it exists and isn't a zombie.
+fn alive(pid: i32) -> bool {
+    proc_stat(&pid.to_string()).is_some_and(|(_, fields)| fields[0] != "Z")
+}
+
+/// Waits until a process has ended.
+fn wait_gone(pid: i32) {
+    let start = Instant::now();
+    while alive(pid) {
+        assert!(start.elapsed() < TIMEOUT, "process {pid} is still running");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Kills a job that the shell left running when it exited.
+fn kill_pid(pid: i32) {
     // SAFETY: kill on a process the test started.
-    unsafe { libc::kill(pid, libc::SIGTERM) };
+    unsafe { libc::kill(pid, libc::SIGKILL) };
 }
 
 #[test]

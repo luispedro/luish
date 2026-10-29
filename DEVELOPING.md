@@ -617,6 +617,15 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   ended doesn't count. It shares dash's `job_warning` counter, so Ctrl-D after one command exits without a second
   warning, as in dash. Its test only reads `job_warning` and the current job unless job control is on, so `exit` in
   scripts costs nothing more. Tests: `running_jobs_exit_warning`, `running_jobs_no_check` in `tests/interactive.rs`.
+- `hup_jobs` (`jobs.hup`, on in interactive shells, as zsh's `hup`; dash never sends SIGHUP) sends SIGHUP to each
+  job's process group, then SIGCONT to a stopped one, from `Shell::exit` in the main shell with job control. For a
+  hangup, interactive shells catch SIGHUP while the option is on and there is no trap (`default_disposition`;
+  `set_option` updates the disposition when the option changes, and `child_reset` restores it). The pending signal is
+  handled where traps run (`run_pending_traps`), and also when the line editor returns end of input, since on a hangup
+  rustyline retries the interrupted read and then gets EOF from the tty. `Shell::hangup` then sends SIGHUP on to the
+  jobs, saves the history and re-raises SIGHUP with its default action, as bash does, so the parent sees the shell
+  killed by it, as with dash. A `HUP` trap replaces all of that. Tests: `hup_jobs_on_exit`, `hup_jobs_on_hangup`,
+  `no_hup_jobs` in `tests/interactive.rs`.
 - `wait` uses dash's statuses (127 for an unknown pid, 2 for an unknown job; only a pipeline's last pid names it).
   `kill` is a port of dash's; signal names follow dash's table (any case, no `SIG`, `RTMIN+n`/`RTMAX-n`, no name for
   16), also for `trap`, which takes no options. Tests: `builtins/jobs.sh`, `builtins/kill_job.sh`,
@@ -637,8 +646,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - `disown` (zsh's, with bash's `-a`, `-r`, `-h` and process ids, `jobs::disown`) frees the jobs' slots
   (`JobTable::free`), resolving every argument first so that naming a job twice frees it once; the children are
   still reaped, by `waitpid(-1)`, as any unknown child is. A stopped job gets zsh's warning (with `-PGID`, or each
-  pid without job control). luish never sends SIGHUP to its jobs (as dash; zsh does on exit, bash on SIGHUP), so
-  `-h` does nothing. Errors are status 1 (bash; zsh uses 127 for an unknown job). Tests: `builtins/disown.sh`
+  pid without job control). `-h` sets the job's `nohup` instead, which `hup_jobs` skips. Errors are status 1 (bash; zsh uses 127 for an unknown job). Tests: `builtins/disown.sh`
   (zsh), `builtins/disown_bash.sh`, `disown_stopped` in `tests/interactive.rs`.
 
 ### Built-ins (`builtins/`)
@@ -1765,6 +1773,7 @@ truncates when it relocates the package.
 | `**`, `++`, `--`, `,` in arithmetic | `expand/arith_extended.sh` (zsh), `expand/arith_ops.sh` |
 | `disown` | `builtins/disown.sh` (zsh), `builtins/disown_bash.sh` |
 | `exit` with running jobs | `running_jobs_exit_warning`, `running_jobs_no_check` in `tests/interactive.rs` |
+| SIGHUP to jobs | `hup_jobs_on_exit`, `hup_jobs_on_hangup`, `no_hup_jobs` in `tests/interactive.rs` |
 | `\|&` | `exec/pipe_amp.sh` (zsh) |
 | `;&`, `;\|`, `;;&` in `case` | `parse/case_fallthrough.sh` (zsh), `parse/case_fallthrough_bash.sh` |
 | `&\|`, `&!` | `exec/amp_disown.sh` (zsh), `parse/amp_bang.sh` |

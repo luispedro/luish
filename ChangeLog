@@ -1,5 +1,6 @@
 Unreleased
     * exit warns about running jobs, as in zsh (jobs.check_running)
+    * Jobs get SIGHUP on exit and hangup, as in zsh (jobs.hup)
     * . -- file and source -- file skip the --, as in dash, bash and zsh
     * help [[: the help for [[ ... ]]
     * =(cmd): a temporary file with the output of cmd, as in zsh

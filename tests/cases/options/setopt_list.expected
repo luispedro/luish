@@ -27,6 +27,7 @@ history.verify
 ignoreeof
 interactive
 jobs.check_running
+jobs.hup
 monitor
 noclobber
 noexec

@@ -27,6 +27,10 @@ impl Shell {
             if sig == libc::SIGQUIT || sig == libc::SIGTERM {
                 return Disposition::Ignore;
             }
+            // So that a hangup reaches the jobs (`Shell::hangup`).
+            if sig == libc::SIGHUP && self.opt(crate::options::Opt::HupJobs) {
+                return Disposition::Catch;
+            }
         }
         // Under job control the shell itself must not be stopped from the
         // terminal (as in dash, SIGTTIN keeps its default action).

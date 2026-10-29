@@ -140,11 +140,16 @@ impl Shell {
         }
     }
 
-    /// Sets an option, starting or stopping tracing if it is one of its own.
+    /// Sets an option, starting or stopping tracing if it is one of its own,
+    /// and catching SIGHUP or not for `jobs.hup`.
     pub fn set_option(&mut self, o: Opt, on: bool) {
         self.options.set(o, on);
         if matches!(o, Opt::VarsTrace | Opt::VarsTraceHistory | Opt::VarsTraceAfterStartup) {
             self.update_var_trace(false);
+        }
+        let hup = libc::SIGHUP as usize;
+        if o == Opt::HupJobs && self.traps[hup].is_none() && !crate::signals::ignored_on_entry(hup) {
+            self.apply_trap_disposition(hup);
         }
     }
 

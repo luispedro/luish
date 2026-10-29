@@ -21,6 +21,7 @@ history.inc_append
 history.reduce_blanks
 interactive
 jobs.check_running
+jobs.hup
 prompt.percent
 pushd.auto
 pushd.ignore_dups

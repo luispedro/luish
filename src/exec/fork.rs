@@ -111,12 +111,13 @@ impl Shell {
         }
         self.traps[0] = None;
         if self.interactive {
-            for sig in [libc::SIGINT, libc::SIGQUIT, libc::SIGTERM] {
+            for sig in [libc::SIGINT, libc::SIGQUIT, libc::SIGTERM, libc::SIGHUP] {
                 if !signals::ignored_on_entry(sig as usize) && self.traps[sig as usize].is_none() {
                     signals::set_disposition(sig, Disposition::Default);
                 }
             }
             signals::clear_pending(libc::SIGINT as usize);
+            signals::clear_pending(libc::SIGHUP as usize);
         }
         self.interactive = false;
     }

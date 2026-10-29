@@ -103,6 +103,8 @@ struct Invocation {
     monitor_given: bool,
     /// `-o jobs.check_running` (or `+o`) was given, likewise.
     check_running_given: bool,
+    /// `-o jobs.hup` (or `+o`) was given, likewise.
+    hup_given: bool,
     /// `--no-rcs`.
     no_rcs: bool,
 }
@@ -117,6 +119,7 @@ impl Invocation {
             _ => {
                 self.monitor_given |= o == Opt::Monitor;
                 self.check_running_given |= o == Opt::CheckRunningJobs;
+                self.hup_given |= o == Opt::HupJobs;
                 sh.options.set(o, on);
             }
         }
@@ -236,6 +239,7 @@ fn run(mut args: Vec<Vec<u8>>) -> ! {
         login,
         monitor_given,
         check_running_given,
+        hup_given,
         no_rcs,
     } = inv;
 
@@ -292,7 +296,10 @@ fn run(mut args: Vec<Vec<u8>>) -> ! {
         if !check_running_given {
             sh.options.set(Opt::CheckRunningJobs, true);
         }
-        for sig in [libc::SIGINT, libc::SIGQUIT, libc::SIGTERM] {
+        if !hup_given {
+            sh.options.set(Opt::HupJobs, true);
+        }
+        for sig in [libc::SIGINT, libc::SIGQUIT, libc::SIGTERM, libc::SIGHUP] {
             if !signals::ignored_on_entry(sig as usize) {
                 signals::set_disposition(sig, sh.default_disposition(sig));
             }

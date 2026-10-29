@@ -40,8 +40,8 @@ the options that are off, in alphabetical order.
   `history`, `jobs`, `prompt`, `pushd`, `startup`, `syntax`, `terminal`
   and `vars`.
 
-luish's own options, all off by default except `jobs.check_running` in
-interactive shells:
+luish's own options, all off by default except `jobs.check_running` and
+`jobs.hup` in interactive shells:
 
 `jobs.check_running` (`checkrunningjobs`)
 : With job control, `exit` and end of input (Ctrl-D) warn about running
@@ -52,6 +52,17 @@ interactive shells:
   `check_running = false` under `[options.jobs]` in `config.toml`)
   leaves only the warning about stopped jobs, as in dash. Disowned jobs
   don't count.
+
+`jobs.hup` (`hup`)
+: With job control, send SIGHUP to the jobs when the shell exits, and
+  SIGCONT after it to the stopped ones, as zsh's `hup` does, so that
+  exiting ends them. When the terminal hangs up (its window is closed),
+  the shell catches SIGHUP, sends it on to the jobs in the same way,
+  saves the history and then dies of SIGHUP, as bash does. Jobs that
+  `disown` removed or `disown -h` marked, and commands run with `nohup`,
+  are left running. A trap on `HUP` replaces the shell's handling of a
+  hangup. It is on in interactive shells unless `luish -o` (or `+o`)
+  sets it; with `unsetopt jobs.hup`, jobs are left running, as in dash.
 
 `prompt.percent` (`promptpercent`)
 : Expand `%` sequences in `PS1`, `PS2` and `PS4`, after parameter
