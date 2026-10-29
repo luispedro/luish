@@ -514,6 +514,14 @@ fn running_jobs_exit_warning() {
     sh.run("kill %1; wait %1");
     sh.send("exit 4\n");
     assert_eq!(sh.exit_status(), 4);
+    // Nor does one marked by `disown -h`, which exiting leaves alone.
+    let mut sh = Pty::spawn("running3");
+    sh.expect("$ ");
+    let pid = echoed_pid(&sh.run("sleep 30 & echo pid=$!"));
+    sh.run("disown -h");
+    sh.send("exit 6\n");
+    assert_eq!(sh.exit_status(), 6);
+    kill_pid(pid);
     let mut sh = Pty::spawn("running2");
     sh.expect("$ ");
     let pid = echoed_pid(&sh.run("sleep 30 & echo pid=$!"));

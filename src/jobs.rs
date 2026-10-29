@@ -537,7 +537,8 @@ impl Shell {
 
     /// Warns once if the current job is stopped or, with
     /// `jobs.check_running` and job control (as zsh's `checkrunningjobs`),
-    /// if a job is running (before `exit` or at end of input). Returns true
+    /// if a job is running (before `exit` or at end of input), unless
+    /// `disown -h` marked it, as exiting leaves it alone. Returns true
     /// if the shell should not exit yet.
     pub fn exit_jobs_warning(&mut self) -> bool {
         if self.job_warning != 0 {
@@ -548,7 +549,8 @@ impl Shell {
             Some(_) if self.jobctl() && self.opt(crate::options::Opt::CheckRunningJobs) => {
                 self.reap_jobs();
                 let jobs = &self.jobs;
-                if !jobs.order().iter().any(|&i| jobs.get(i).state == JobState::Running) {
+                let running = |&i: &usize| jobs.get(i).state == JobState::Running && !jobs.get(i).nohup;
+                if !jobs.order().iter().any(running) {
                     return false;
                 }
                 b"You have running jobs.\n"

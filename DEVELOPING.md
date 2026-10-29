@@ -614,7 +614,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   assignments dropped). The stopped-jobs warning only lets you out with an *immediately* repeated `exit`.
 - `exit_jobs_warning` warns about a stopped current job (dash) or, with `jobs.check_running` (on in interactive
   shells, as zsh's `checkrunningjobs`) and job control, about any running job, after reaping so that a job that has
-  ended doesn't count. It shares dash's `job_warning` counter, so Ctrl-D after one command exits without a second
+  ended doesn't count; nor does one with `nohup` (`disown -h`, `d` in `jobs -i`), which `hup_jobs` skips. It shares dash's `job_warning` counter, so Ctrl-D after one command exits without a second
   warning, as in dash. Its test only reads `job_warning` and the current job unless job control is on, so `exit` in
   scripts costs nothing more. Tests: `running_jobs_exit_warning`, `running_jobs_no_check` in `tests/interactive.rs`.
 - `hup_jobs` (`jobs.hup`, on in interactive shells, as zsh's `hup`; dash never sends SIGHUP) sends SIGHUP to each

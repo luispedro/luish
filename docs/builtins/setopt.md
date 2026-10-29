@@ -51,7 +51,8 @@ luish's own options, all off by default except `jobs.check_running` and
   `luish -o` (or `+o`) sets it; `unsetopt jobs.check_running` (or
   `check_running = false` under `[options.jobs]` in `config.toml`)
   leaves only the warning about stopped jobs, as in dash. Disowned jobs
-  don't count.
+  don't count, nor do those that `disown -h` marked (which exiting leaves
+  alone).
 
 `jobs.hup` (`hup`)
 : With job control, send SIGHUP to the jobs when the shell exits, and
