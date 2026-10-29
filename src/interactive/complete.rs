@@ -2021,6 +2021,7 @@ mod tests {
                 "glob ",
                 "highlight ",
                 "history ",
+                "jobs ",
                 "prompt ",
                 "pushd ",
                 "startup ",
