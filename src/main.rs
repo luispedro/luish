@@ -101,6 +101,8 @@ struct Invocation {
     login: bool,
     /// `-m` (or `+m`) was given, so an interactive shell keeps it.
     monitor_given: bool,
+    /// `-o jobs.check_running` (or `+o`) was given, likewise.
+    check_running_given: bool,
     /// `--no-rcs`.
     no_rcs: bool,
 }
@@ -114,6 +116,7 @@ impl Invocation {
             Opt::Stdin => self.stdin = on,
             _ => {
                 self.monitor_given |= o == Opt::Monitor;
+                self.check_running_given |= o == Opt::CheckRunningJobs;
                 sh.options.set(o, on);
             }
         }
@@ -232,6 +235,7 @@ fn run(mut args: Vec<Vec<u8>>) -> ! {
         interactive: force_interactive,
         login,
         monitor_given,
+        check_running_given,
         no_rcs,
     } = inv;
 
@@ -284,6 +288,9 @@ fn run(mut args: Vec<Vec<u8>>) -> ! {
         }
         if !monitor_given {
             sh.options.set(Opt::Monitor, true);
+        }
+        if !check_running_given {
+            sh.options.set(Opt::CheckRunningJobs, true);
         }
         for sig in [libc::SIGINT, libc::SIGQUIT, libc::SIGTERM] {
             if !signals::ignored_on_entry(sig as usize) {

@@ -37,9 +37,21 @@ the options that are off, in alphabetical order.
   `setopt history.file='...'`); a setting with a value is left out if its
   variable isn't set. If `-p` is given more than once, the last one
   counts. The groups are `cd`, `editor`, `expand`, `glob`, `highlight`,
-  `history`, `prompt`, `pushd`, `startup`, `syntax`, `terminal` and `vars`.
+  `history`, `jobs`, `prompt`, `pushd`, `startup`, `syntax`, `terminal`
+  and `vars`.
 
-luish's own options, all off by default:
+luish's own options, all off by default except `jobs.check_running` in
+interactive shells:
+
+`jobs.check_running` (`checkrunningjobs`)
+: With job control, `exit` and end of input (Ctrl-D) warn about running
+  jobs (`You have running jobs.`), as they do about a stopped one, and
+  don't exit; exiting again right away works, as zsh's `checkjobs` and
+  `checkrunningjobs` do. It is on in interactive shells unless
+  `luish -o` (or `+o`) sets it; `unsetopt jobs.check_running` (or
+  `check_running = false` under `[options.jobs]` in `config.toml`)
+  leaves only the warning about stopped jobs, as in dash. Disowned jobs
+  don't count.
 
 `prompt.percent` (`promptpercent`)
 : Expand `%` sequences in `PS1`, `PS2` and `PS4`, after parameter

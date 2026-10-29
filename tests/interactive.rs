@@ -482,6 +482,58 @@ fn stopped_pipeline_and_exit_warning() {
 }
 
 #[test]
+fn running_jobs_exit_warning() {
+    let mut sh = Pty::spawn("running");
+    sh.expect("$ ");
+    sh.run("sleep 30 &");
+    // As in zsh (`checkrunningjobs`), Ctrl-D and `exit` warn about a
+    // running job, as about a stopped one.
+    sh.send("\x04");
+    assert_has(&sh.expect("\n$ "), "You have running jobs.\n");
+    sh.run("true");
+    assert_has(&sh.run("exit"), "You have running jobs.\n");
+    // A finished job doesn't count.
+    sh.run("kill %1; wait %1");
+    sh.send("exit 4\n");
+    assert_eq!(sh.exit_status(), 4);
+    let mut sh = Pty::spawn("running2");
+    sh.expect("$ ");
+    let out = sh.run("sleep 30 & echo pid=$!");
+    // A second `exit` in a row exits.
+    assert_has(&sh.run("exit"), "You have running jobs.\n");
+    sh.send("exit 3\n");
+    let status = sh.exit_status();
+    kill_echoed_pid(&out);
+    assert_eq!(status, 3);
+}
+
+#[test]
+fn running_jobs_no_check() {
+    let mut sh = Pty::spawn("nocheck");
+    sh.expect("$ ");
+    sh.run("unsetopt jobs.check_running");
+    let out = sh.run("sleep 30 & echo pid=$!");
+    sh.send("exit 5\n");
+    let status = sh.exit_status();
+    kill_echoed_pid(&out);
+    assert_eq!(status, 5);
+}
+
+/// Kills the process whose pid follows the last `pid=` in `out`, a job
+/// that the shell left running when it exited.
+fn kill_echoed_pid(out: &str) {
+    let at = out.rfind("pid=").unwrap() + 4;
+    let pid: i32 = out[at..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .unwrap();
+    // SAFETY: kill on a process the test started.
+    unsafe { libc::kill(pid, libc::SIGTERM) };
+}
+
+#[test]
 fn disown_stopped() {
     let mut sh = Pty::spawn("disown");
     sh.expect("$ ");

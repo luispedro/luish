@@ -532,20 +532,29 @@ impl Shell {
         sys::write_all(2, out.as_bytes());
     }
 
-    /// Warns once if the current job is stopped (before `exit` or at end
-    /// of input). Returns true if the shell should not exit yet.
-    pub fn stopped_jobs_warning(&mut self) -> bool {
+    /// Warns once if the current job is stopped or, with
+    /// `jobs.check_running` and job control (as zsh's `checkrunningjobs`),
+    /// if a job is running (before `exit` or at end of input). Returns true
+    /// if the shell should not exit yet.
+    pub fn exit_jobs_warning(&mut self) -> bool {
         if self.job_warning != 0 {
             return false;
         }
-        match self.jobs.order().first() {
-            Some(&i) if self.jobs.get(i).state == JobState::Stopped => {
-                sys::write_all(2, b"You have stopped jobs.\n");
-                self.job_warning = 2;
-                true
+        let msg: &[u8] = match self.jobs.order().first() {
+            Some(&i) if self.jobs.get(i).state == JobState::Stopped => b"You have stopped jobs.\n",
+            Some(_) if self.jobctl() && self.opt(crate::options::Opt::CheckRunningJobs) => {
+                self.reap_jobs();
+                let jobs = &self.jobs;
+                if !jobs.order().iter().any(|&i| jobs.get(i).state == JobState::Running) {
+                    return false;
+                }
+                b"You have running jobs.\n"
             }
-            _ => false,
-        }
+            _ => return false,
+        };
+        sys::write_all(2, msg);
+        self.job_warning = 2;
+        true
     }
 
     /// Resolves a job spec (dash's `getjob`). `None` means the current job.

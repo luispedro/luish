@@ -52,6 +52,7 @@ pub enum Opt {
     VarsTraceHistory,
     VarsTraceAfterStartup,
     StartupAutoCache,
+    CheckRunningJobs,
 }
 
 /// Option table: (option, letter, long name), in dash's order (with POSIX's
@@ -81,8 +82,9 @@ pub const OPTIONS: &[(Opt, Option<u8>, &str)] = &[
 
 /// luish's own options, beyond POSIX and dash: (option, name). They are set
 /// only with `setopt` and `unsetopt`, as in zsh, so that `set -o` and `$-`
-/// stay as in dash. All are off by default. Their names are grouped by
-/// what they apply to, as `group.name`.
+/// stay as in dash. All are off by default, except `jobs.check_running` in
+/// interactive shells. Their names are grouped by what they apply to, as
+/// `group.name`.
 pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::PromptPercent, "prompt.percent"),
     (Opt::TransientRprompt, "prompt.transient_rprompt"),
@@ -114,6 +116,7 @@ pub const EXTENDED: &[(Opt, &str)] = &[
     (Opt::VarsTraceHistory, "vars.trace_history"),
     (Opt::VarsTraceAfterStartup, "vars.trace_after_startup"),
     (Opt::StartupAutoCache, "startup.auto_cache"),
+    (Opt::CheckRunningJobs, "jobs.check_running"),
 ];
 
 /// Other names of luish's own options: zsh's, and those they had before
@@ -144,6 +147,7 @@ const ALIASES: &[(Opt, &str)] = &[
     (Opt::AutoPushd, "autopushd"),
     (Opt::PushdIgnoreDups, "pushdignoredups"),
     (Opt::PushdSilent, "pushdsilent"),
+    (Opt::CheckRunningJobs, "checkrunningjobs"),
 ];
 
 /// What luish does for one of bash's `shopt` options.
@@ -481,6 +485,7 @@ mod tests {
                 "glob",
                 "highlight",
                 "history",
+                "jobs",
                 "prompt",
                 "pushd",
                 "startup",

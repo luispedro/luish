@@ -1008,7 +1008,7 @@ impl Shell {
                         }
                         Line::Eof => {
                             eof = true;
-                            if buf.is_empty() && self.stopped_jobs_warning() {
+                            if buf.is_empty() && self.exit_jobs_warning() {
                                 eof = false;
                             } else if self.interactive && buf.is_empty() && self.opt(Opt::Ignoreeof) {
                                 sys::write_all(2, b"Use \"exit\" to leave shell.\n");

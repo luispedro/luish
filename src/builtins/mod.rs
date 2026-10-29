@@ -297,7 +297,7 @@ fn exit_status_arg(sh: &Shell, argv: &[Vec<u8>]) -> Result<i32, Flow> {
 }
 
 fn exit(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    if sh.stopped_jobs_warning() {
+    if sh.exit_jobs_warning() {
         return Ok(0);
     }
     let n = exit_status_arg(sh, argv)?;

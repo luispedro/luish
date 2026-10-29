@@ -20,6 +20,7 @@ history.ignore_space
 history.inc_append
 history.reduce_blanks
 interactive
+jobs.check_running
 prompt.percent
 pushd.auto
 pushd.ignore_dups

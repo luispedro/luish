@@ -26,6 +26,7 @@ history.share
 history.verify
 ignoreeof
 interactive
+jobs.check_running
 monitor
 noclobber
 noexec

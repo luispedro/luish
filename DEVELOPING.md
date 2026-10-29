@@ -612,6 +612,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   stops or dies from a signal they are restored (as bash; dash doesn't).
 - Job text follows dash's `cmdtxt` (`$x` becomes `${x}`, single quotes become double quotes, `$(...)` elided,
   assignments dropped). The stopped-jobs warning only lets you out with an *immediately* repeated `exit`.
+- `exit_jobs_warning` warns about a stopped current job (dash) or, with `jobs.check_running` (on in interactive
+  shells, as zsh's `checkrunningjobs`) and job control, about any running job, after reaping so that a job that has
+  ended doesn't count. It shares dash's `job_warning` counter, so Ctrl-D after one command exits without a second
+  warning, as in dash. Its test only reads `job_warning` and the current job unless job control is on, so `exit` in
+  scripts costs nothing more. Tests: `running_jobs_exit_warning`, `running_jobs_no_check` in `tests/interactive.rs`.
 - `wait` uses dash's statuses (127 for an unknown pid, 2 for an unknown job; only a pipeline's last pid names it).
   `kill` is a port of dash's; signal names follow dash's table (any case, no `SIG`, `RTMIN+n`/`RTMAX-n`, no name for
   16), also for `trap`, which takes no options. Tests: `builtins/jobs.sh`, `builtins/kill_job.sh`,
@@ -1759,6 +1764,7 @@ truncates when it relocates the package.
 | The right prompt | `right_prompt` in `tests/interactive.rs` |
 | `**`, `++`, `--`, `,` in arithmetic | `expand/arith_extended.sh` (zsh), `expand/arith_ops.sh` |
 | `disown` | `builtins/disown.sh` (zsh), `builtins/disown_bash.sh` |
+| `exit` with running jobs | `running_jobs_exit_warning`, `running_jobs_no_check` in `tests/interactive.rs` |
 | `\|&` | `exec/pipe_amp.sh` (zsh) |
 | `;&`, `;\|`, `;;&` in `case` | `parse/case_fallthrough.sh` (zsh), `parse/case_fallthrough_bash.sh` |
 | `&\|`, `&!` | `exec/amp_disown.sh` (zsh), `parse/amp_bang.sh` |
