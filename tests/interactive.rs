@@ -284,21 +284,32 @@ impl Pty {
     /// from `fd`, for which `reading` is true. The line editor reads 1024
     /// bytes from fd 0.
     fn wait_for_read(&mut self, reading: impl Fn(u64, u64) -> bool) {
-        let start = Instant::now();
         let read = libc::SYS_read.to_string();
-        let path = format!("/proc/{}/syscall", self.pid);
         let hex = |f: Option<&str>| f.and_then(|f| u64::from_str_radix(f.trim_start_matches("0x"), 16).ok());
-        let blocked = |s: &str| {
+        self.wait_for_syscall("read", |s| {
             let mut fields = s.split(' ');
             if fields.next() != Some(&read[..]) {
                 return false;
             }
             let (fd, _, count) = (hex(fields.next()), fields.next(), hex(fields.next()));
             fd.zip(count).is_some_and(|(fd, count)| reading(fd, count))
-        };
+        });
+    }
+
+    /// Waits until the shell itself is blocked waiting for a child.
+    fn wait_for_wait4(&mut self) {
+        let wait4 = libc::SYS_wait4.to_string();
+        self.wait_for_syscall("wait", |s| s.split(' ').next() == Some(&wait4[..]));
+    }
+
+    /// Waits until the shell is in a system call for which `blocked` is true
+    /// of its line in `/proc/PID/syscall`.
+    fn wait_for_syscall(&mut self, what: &str, blocked: impl Fn(&str) -> bool) {
+        let start = Instant::now();
+        let path = format!("/proc/{}/syscall", self.pid);
         while !std::fs::read_to_string(&path).is_ok_and(|s| blocked(&s)) {
             if start.elapsed() > TIMEOUT {
-                self.fail("timed out waiting for the shell to read");
+                self.fail(&format!("timed out waiting for the shell to {what}"));
             }
             self.read_some(Duration::from_millis(10));
         }
@@ -691,6 +702,29 @@ fn pipefail_job_control() {
     sh.send("\x1a");
     sh.expect("\n$ ");
     assert_has(&sh.run("echo st=$?"), "st=148\n");
+}
+
+#[test]
+fn wait_stopped_job() {
+    let mut sh = Pty::spawn("waitf");
+    sh.expect("$ ");
+    let out = sh.run("sleep 30 & p=$!; kill -STOP $p; echo pid=$p.");
+    let at = out.rfind("pid=").unwrap_or_else(|| panic!("no pid in:\n{out}")) + 4;
+    let pid: i32 = out[at..].split('.').next().unwrap().parse().unwrap();
+    // `wait` returns when the job stops; `-n` ignores stopped jobs.
+    assert_has(&sh.run("wait $p; echo st=$?"), "st=147\n");
+    assert_has(&sh.run("wait -n; echo st=$?"), "st=127\n");
+    // `-f` waits until the job ends.
+    sh.send("wait -f -p v $p; echo st=$? $([ $v = $p ] && echo p)\n");
+    sh.wait_for_wait4();
+    // SAFETY: kill on a process the test started.
+    unsafe {
+        libc::kill(pid, libc::SIGTERM);
+        libc::kill(pid, libc::SIGCONT);
+    }
+    assert_has(&sh.expect("\n$ "), "st=143 p\n");
+    sh.send("exit\n");
+    assert_eq!(sh.exit_status(), 0);
 }
 
 #[test]

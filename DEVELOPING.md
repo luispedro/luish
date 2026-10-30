@@ -627,6 +627,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   killed by it, as with dash. A `HUP` trap replaces all of that. Tests: `hup_jobs_on_exit`, `hup_jobs_on_hangup`,
   `no_hup_jobs` in `tests/interactive.rs`.
 - `wait` uses dash's statuses (127 for an unknown pid, 2 for an unknown job; only a pipeline's last pid names it).
+  bash's `-n`, `-p` and `-f` are an extension (illegal options in dash). `-n` looks only at the job table: a `Done`
+  job that isn't `waited` is returned at once (the lowest slot, as bash picks), otherwise it blocks in `wait_any`
+  while a candidate is `Running`; stopped jobs never count, so `-f` changes nothing there. `-f` makes the other forms
+  keep waiting while a job is `Stopped`. `-p` unsets its variable before waiting and sets it in `wait_status`. Tests:
+  `builtins/wait_bash.sh` (its jobs block on fifos, and `finished` polls `/proc/PID/stat` for a zombie, which works
+  because luish reaps only in `wait`), `wait_stopped_job` in `tests/interactive.rs` (`wait_for_wait4`).
   `kill` is a port of dash's; signal names follow dash's table (any case, no `SIG`, `RTMIN+n`/`RTMAX-n`, no name for
   16), also for `trap`, which takes no options. Tests: `builtins/jobs.sh`, `builtins/kill_job.sh`,
   `builtins/kill_trap_signals.sh`, `tests/interactive.rs`, unit tests in `cmdtext.rs`.

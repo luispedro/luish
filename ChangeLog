@@ -1,4 +1,5 @@
 Unreleased
+    * wait -n, -p and -f, as in bash
     * jobs -i: colours, s continues a stopped job, d disowns a job (as
       disown -h, and undoes it)
     * exit warns about running jobs, as in zsh (jobs.check_running),

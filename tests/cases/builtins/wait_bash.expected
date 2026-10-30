@@ -1,0 +1,23 @@
+first: 4 b
+second: 3 a
+none: 127 unset
+lowest: 5 a
+left: 6
+all waited for: 127
+named: 7
+then: 8
+releaser: 0
+not a child: 127
+pipeline: 6 last
+pipefail: 3
+last: 3 b
+not a child: 127 unset
+no operand: 0 unset
+after --: 4 it
+joined: 127 unset
+-f: 9
+-f all: 0
+bad name: 2
+no name: 2
+bad option: 2
+read only: 2

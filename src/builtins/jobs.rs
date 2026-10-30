@@ -2,7 +2,8 @@
 
 use super::options;
 use crate::jobs::{JobState, ShowMode, Waited};
-use crate::shell::{ExecResult, Shell};
+use crate::lexer::is_valid_name;
+use crate::shell::{ExecResult, Flow, Shell};
 use crate::signals;
 use crate::sys;
 
@@ -97,11 +98,89 @@ pub fn fg(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     Ok(status)
 }
 
+/// `wait`, with bash's options (not POSIX): `-n` waits for the first job to
+/// finish, `-p VAR` sets `VAR` to the pid of the job whose status is
+/// returned, and `-f` waits for stopped jobs to finish too.
 pub fn wait(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    let args = match options(sh, argv, b"") {
-        Ok((_, a)) => a,
-        Err(s) => return Ok(s),
-    };
+    let (mut any, mut force, mut var) = (false, false, None);
+    let mut n = 1;
+    while let Some(a) = argv.get(n) {
+        if a.len() < 2 || a[0] != b'-' {
+            break;
+        }
+        n += 1;
+        if a == b"--" {
+            break;
+        }
+        for (j, &c) in a.iter().enumerate().skip(1) {
+            match c {
+                b'n' => any = true,
+                b'f' => force = true,
+                b'p' => {
+                    var = if j + 1 < a.len() {
+                        Some(&a[j + 1..])
+                    } else if let Some(v) = argv.get(n) {
+                        n += 1;
+                        Some(&v[..])
+                    } else {
+                        sh.berr(&argv[0], "No arg for -p option");
+                        return Ok(2);
+                    };
+                    break;
+                }
+                _ => {
+                    sh.berr(&argv[0], format!("Illegal option -{}", c as char));
+                    return Ok(2);
+                }
+            }
+        }
+    }
+    let args = &argv[n..];
+    if let Some(v) = var {
+        if !is_valid_name(v) {
+            sh.berr(&argv[0], format!("{}: bad variable name", String::from_utf8_lossy(v)));
+            return Ok(2);
+        }
+        if sh.unset_var(v).is_err() {
+            sh.berr(&argv[0], format!("{}: is read only", String::from_utf8_lossy(v)));
+            return Err(Flow::Error(2));
+        }
+    }
+    // A stopped job is still waited for with `-f`, and never with `-n`.
+    let waiting = |state| state == JobState::Running || force && state == JobState::Stopped;
+    if any {
+        let mut jobs = Vec::new();
+        for a in args {
+            match wait_operand(sh, &argv[0], a) {
+                Ok(Some(i)) => jobs.push(i),
+                Ok(None) => {}
+                Err(s) => return Ok(s),
+            }
+        }
+        loop {
+            let candidates = if args.is_empty() { sh.jobs.order() } else { &jobs[..] };
+            // Of the jobs that have finished, the one with the lowest
+            // number, as in bash.
+            let done = (candidates.iter().copied())
+                .filter(|&i| sh.jobs.get(i).state == JobState::Done && !sh.jobs.get(i).waited)
+                .min();
+            if let Some(i) = done {
+                return wait_status(sh, i, var);
+            }
+            if !candidates.iter().any(|&i| sh.jobs.get(i).state == JobState::Running) {
+                return Ok(127);
+            }
+            match sh.wait_any(true)? {
+                Waited::Child(pid, ws) => {
+                    if sh.jobs.find_pid(pid).is_some() {
+                        crate::exec::report_signaled(&ws);
+                    }
+                }
+                Waited::NoChildren => return Ok(127),
+                Waited::Interrupted(sig) => return Ok(128 + sig),
+            }
+        }
+    }
     if args.is_empty() {
         loop {
             // Wait until no job is running. The finished ones are now
@@ -109,7 +188,7 @@ pub fn wait(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
             let mut running = false;
             for i in sh.jobs.order().to_vec() {
                 let job = sh.jobs.get_mut(i);
-                if job.state == JobState::Running {
+                if waiting(job.state) {
                     running = true;
                     break;
                 }
@@ -126,30 +205,16 @@ pub fn wait(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         }
     }
     let mut status = 127;
-    for a in args {
-        let i = if a.first() == Some(&b'%') {
-            match sh.get_job(Some(a), false) {
-                Ok(i) => i,
-                Err(msg) => {
-                    sh.berr(&argv[0], msg);
-                    return Ok(2);
-                }
+    for (k, a) in args.iter().enumerate() {
+        let i = match wait_operand(sh, &argv[0], a) {
+            Ok(Some(i)) => i,
+            Ok(None) => {
+                status = 127;
+                continue;
             }
-        } else {
-            let Some(pid) = super::parse_uint(a) else {
-                sh.berr(&argv[0], format!("Illegal number: {}", String::from_utf8_lossy(a)));
-                return Ok(2);
-            };
-            // As in dash, only the last process of a job can be named.
-            match sh.jobs.find_last_pid(pid as i32) {
-                Some(i) => i,
-                None => {
-                    status = 127;
-                    continue;
-                }
-            }
+            Err(s) => return Ok(s),
         };
-        while sh.jobs.get(i).state == JobState::Running {
+        while waiting(sh.jobs.get(i).state) {
             match sh.wait_any(true)? {
                 Waited::Child(pid, ws) => {
                     if sh.jobs.get(i).procs.iter().any(|p| p.pid == pid) {
@@ -160,12 +225,44 @@ pub fn wait(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
                 Waited::Interrupted(sig) => return Ok(128 + sig),
             }
         }
-        let job = sh.jobs.get_mut(i);
-        job.waited = true;
-        status = match job.procs.last().and_then(|p| p.status) {
-            Some(_) => job.status(),
-            None => 127,
+        // `-p` names the job of the last operand only.
+        status = wait_status(sh, i, var.filter(|_| k + 1 == args.len()))?;
+    }
+    Ok(status)
+}
+
+/// The job that an operand of `wait` names: `Ok(None)` for a pid that isn't
+/// a child, or the exit status after an error.
+fn wait_operand(sh: &Shell, name: &[u8], a: &[u8]) -> Result<Option<usize>, i32> {
+    if a.first() == Some(&b'%') {
+        return match sh.get_job(Some(a), false) {
+            Ok(i) => Ok(Some(i)),
+            Err(msg) => {
+                sh.berr(name, msg);
+                Err(2)
+            }
         };
+    }
+    let Some(pid) = super::parse_uint(a) else {
+        sh.berr(name, format!("Illegal number: {}", String::from_utf8_lossy(a)));
+        return Err(2);
+    };
+    // As in dash, only the last process of a job can be named.
+    Ok(sh.jobs.find_last_pid(pid as i32))
+}
+
+/// Marks job `i` as waited for and returns its status, setting the variable
+/// of `-p` (if any) to the pid of its last process.
+fn wait_status(sh: &mut Shell, i: usize, var: Option<&[u8]>) -> ExecResult {
+    let job = sh.jobs.get_mut(i);
+    job.waited = true;
+    let Some(last) = job.procs.last().filter(|p| p.status.is_some()) else {
+        return Ok(127);
+    };
+    let pid = last.pid;
+    let status = job.status();
+    if let Some(v) = var {
+        sh.set_var(v, pid.to_string().into_bytes())?;
     }
     Ok(status)
 }
