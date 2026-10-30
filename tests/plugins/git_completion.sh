@@ -31,3 +31,8 @@ c 'git diff HEAD^.. s'
 c 'git diff v1 '
 c 'git diff v1 main '
 c 'git diff v1 -- '
+echo "=== git log: revisions and tracked files"
+c 'git log '
+c 'git log v1 s'
+c 'git log -- '
+c 'git shortlog main.. '

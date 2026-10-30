@@ -313,8 +313,13 @@ fn arguments(g, cmd, args, cur, depth) {
             if dd || revs >= 2 { changed } else { revisions_and(g, cur, changed) }
         }
         "reset" => if dd { staged(g, cur) } else { revisions_and(g, cur, staged(g, cur)) },
-        "log" | "show" | "shortlog" | "whatchanged" | "cherry" | "range-diff" | "format-patch" | "describe" | "merge"
-        | "rebase" | "cherry-pick" | "revert" | "merge-base" | "rev-list" => {
+        // Commands that take paths after their revisions: the tracked files
+        // (a path in no revision would select no commit).
+        "log" | "shortlog" | "whatchanged" | "rev-list" => {
+            if dd { tracked(g, cur) } else { revisions_and(g, cur, tracked(g, cur)) }
+        }
+        "show" | "cherry" | "range-diff" | "format-patch" | "describe" | "merge" | "rebase" | "cherry-pick" | "revert"
+        | "merge-base" => {
             if dd { () } else { revisions(g, cur) }
         }
         "fetch" | "pull" => {
