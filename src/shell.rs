@@ -132,6 +132,9 @@ pub struct Shell {
     pub optoff: Option<usize>,
     /// Currently running the EXIT trap.
     pub in_exit_trap: bool,
+    /// While a trap action runs: the status from before it, which `exit`
+    /// without an argument uses (dash's `savestatus`). Kept in subshells.
+    pub trap_status: Option<i32>,
     /// While an entry of a startup cache is built: the absolute paths of
     /// the files read by `.`.
     pub sourced_files: Option<Vec<Vec<u8>>>,
@@ -236,6 +239,7 @@ impl Shell {
             out_failed: std::cell::Cell::new(false),
             captured: std::cell::RefCell::new(None),
             in_exit_trap: false,
+            trap_status: None,
             sourced_files: None,
             plugins: None,
             no_plugins: false,
@@ -806,7 +810,12 @@ impl Shell {
                 Some(action) if !action.is_empty() => {
                     let saved = self.last_status;
                     let saved_lineno = self.lineno;
-                    match self.run_string(&action) {
+                    // A trap run from a trap's action keeps the outer status, as in dash.
+                    let outer = self.trap_status;
+                    self.trap_status = Some(outer.unwrap_or(saved));
+                    let r = self.run_string(&action);
+                    self.trap_status = outer;
+                    match r {
                         Err(Flow::Exit(n)) => return Err(Flow::Exit(n)),
                         Err(Flow::Error(n)) if !self.interactive => return Err(Flow::Exit(n)),
                         _ => {}
@@ -835,6 +844,7 @@ impl Shell {
         {
             self.in_exit_trap = true;
             self.last_status = status;
+            self.trap_status = Some(status);
             match self.run_string(&action) {
                 Err(Flow::Exit(n)) | Err(Flow::Error(n)) => status = n,
                 _ => {}

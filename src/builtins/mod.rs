@@ -300,7 +300,11 @@ fn exit(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     if sh.exit_jobs_warning() {
         return Ok(0);
     }
-    let n = exit_status_arg(sh, argv)?;
+    // In a trap's action, the status from before the trap (POSIX; dash's `savestatus`).
+    let n = match sh.trap_status {
+        Some(n) if argv.len() < 2 => n,
+        _ => exit_status_arg(sh, argv)?,
+    };
     Err(Flow::Exit(n))
 }
 

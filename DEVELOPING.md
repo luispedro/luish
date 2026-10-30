@@ -626,6 +626,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   jobs, saves the history and re-raises SIGHUP with its default action, as bash does, so the parent sees the shell
   killed by it, as with dash. A `HUP` trap replaces all of that. Tests: `hup_jobs_on_exit`, `hup_jobs_on_hangup`,
   `no_hup_jobs` in `tests/interactive.rs`.
+- A trapped signal ends `wait` with 128+n, and its trap runs with `$?` already 128+n, as in dash, whose trap runs
+  after `wait` (`wait_any`, `wait_interrupted`). `wait_any` looks for a trapped signal before each blocking
+  `waitpid`, as dash's `dowait` does: a signal whose handler ran as `waitpid` returned a child (such as the
+  process that sent it and exited at once) wouldn't interrupt the next one. Test: `builtins/trap_exit_status.sh`
+  (which sends the signal once `/proc/$$/wchan` shows the shell waiting).
 - `wait` uses dash's statuses (127 for an unknown pid, 2 for an unknown job; only a pipeline's last pid names it).
   bash's `-n`, `-p` and `-f` are an extension (illegal options in dash). `-n` looks only at the job table: a `Done`
   job that isn't `waited` is returned at once (the lowest slot, as bash picks), otherwise it blocks in `wait_any`
@@ -677,6 +682,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - `getopts`: `OPTIND` moves past an argument as soon as its first letter is read, `OPTARG` is left alone at the end,
   the position is reset by assigning `OPTIND`, `set --` and `shift`, and saved across function calls; `OPTIND` must
   be a number.
+- `exit` without an argument in a trap's action exits with the status from before the trap ran (POSIX), also in a
+  function, `eval`, `$(...)` or subshell run from the action, as in dash: `Shell::trap_status` (dash's `savestatus`)
+  is set while an action runs (`run_pending_traps`, `Shell::exit` for the EXIT trap), a trap run from an action
+  keeps the outer one's, and subshells inherit it (bash's `( false; exit )` there exits with 1, dash's with 0).
+  `return` still takes the last command's status. Test: `builtins/trap_exit_status.sh`.
 - A built-in whose output can't be written prints `name: I/O error` and its status gets bit 1 (dash's `evalbltin`).
   Test: `builtins/write_errors.sh`.
 - `set -x` doesn't trace commands run while `PS4` is expanded (`in_ps4`, dash's `inps4`), which would loop forever.

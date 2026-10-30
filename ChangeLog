@@ -1,4 +1,6 @@
 Unreleased
+    * exit in a trap: the status from before the trap, as in dash
+    * wait: a trap that ends it sees $? = 128+n, and is no longer missed
     * git log <Tab>: tracked files as well as revisions
     * wait -n, -p and -f, as in bash
     * jobs -i: colours, s continues a stopped job, d disowns a job (as

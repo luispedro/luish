@@ -399,25 +399,37 @@ impl Shell {
     pub fn wait_any(&mut self, interruptible: bool) -> Result<Waited, Flow> {
         let flags = if self.jobctl() { libc::WUNTRACED } else { 0 };
         loop {
+            // A signal whose handler ran outside `waitpid` (before it, or as it
+            // returned a child that exited at the same time, such as the one
+            // that sent the signal) would not interrupt the next one, so check
+            // first, as dash's `dowait` does.
+            if interruptible && let Some(sig) = self.trapped_pending() {
+                return self.wait_interrupted(sig);
+            }
             match sys::waitpid(-1, flags) {
                 Ok(Some((pid, ws))) => {
                     self.jobs.record(pid, ws);
                     return Ok(Waited::Child(pid, ws));
                 }
                 Ok(None) => continue,
-                Err(libc::EINTR) => {
-                    if !interruptible {
-                        continue;
+                Err(libc::EINTR) if interruptible => {
+                    if let Some(sig) = self.trapped_pending() {
+                        return self.wait_interrupted(sig);
                     }
-                    let trapped = self.trapped_pending();
                     self.run_pending_traps()?;
-                    if let Some(sig) = trapped {
-                        return Ok(Waited::Interrupted(sig as i32));
-                    }
                 }
+                Err(libc::EINTR) => {}
                 Err(_) => return Ok(Waited::NoChildren),
             }
         }
+    }
+
+    /// `wait` ended by a signal with a trap: the trap runs once `wait` is
+    /// over (as in dash), so `$?` there is wait's status, 128+n.
+    fn wait_interrupted(&mut self, sig: usize) -> Result<Waited, Flow> {
+        self.last_status = 128 + sig as i32;
+        self.run_pending_traps()?;
+        Ok(Waited::Interrupted(sig as i32))
     }
 
     /// Waits for a job under job control to finish or stop, gives the
