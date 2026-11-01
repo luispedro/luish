@@ -269,22 +269,23 @@ fn edit(sh: &mut Shell, name: &[u8], o: &Opts, vi: bool, text: Vec<u8>) -> Resul
             Ok(Some(t))
         }
         Ok(Line::Eof) => Ok(None),
-        // As at the prompt (where the editor has started a new line), or
-        // as SIGINT would: a subshell gets it, and a trap runs now.
-        Ok(Line::Interrupted) if sh.interactive && sh.traps[libc::SIGINT as usize].is_none() => {
-            Err(Flow::Error(128 + libc::SIGINT))
-        }
-        Ok(Line::Interrupted) => {
-            // SAFETY: raise has no preconditions.
-            unsafe { libc::raise(libc::SIGINT) };
-            sh.run_pending_traps()?;
-            Ok(None)
-        }
+        Ok(Line::Interrupted) => interrupted(sh).map(|()| None),
         Err(msg) => {
             sh.berr(name, msg);
             Ok(None)
         }
     }
+}
+
+/// Ctrl-C while editing a value (`vared`, `read -e`): as at the prompt
+/// (where the editor has started a new line), or as SIGINT would: a
+/// subshell gets it, and a trap runs now.
+pub(super) fn interrupted(sh: &mut Shell) -> Result<(), Flow> {
+    if sh.interactive && sh.traps[libc::SIGINT as usize].is_none() {
+        return Err(Flow::Error(128 + libc::SIGINT));
+    }
+    crate::sys::raise(libc::SIGINT);
+    sh.run_pending_traps()
 }
 
 /// Joins the elements of an array for editing, with the first character of

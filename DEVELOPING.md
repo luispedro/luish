@@ -757,6 +757,19 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - `read -A` (zsh) and `read -a NAME` (bash) split the line with the same `next_field` as `read` uses for all names
   but the last, so there is no empty element after a trailing delimiter (bash; zsh has one). Tests:
   `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh`.
+- bash's options of `read` (`read.rs`) cost nothing when unused: a plain `read` adds only a few comparisons per
+  byte (`Text::add`), against a `read(2)` per byte. `-d` is the byte that `Text::add` ends the line at (a NUL, which is
+  otherwise dropped, for `-d ''`); `-n` and `-N` stop the loop once so many bytes are kept (a backslash isn't kept,
+  the byte it quotes is), and `-N` makes the delimiter ordinary and assigns the text unsplit. `-t` polls before
+  each byte, with the time left to an `Instant` deadline, and keeps what was read on a timeout (status 142, as bash);
+  `-t 0` only polls. `-s`, `-n` and `-N` on a terminal change its modes while reading (`Terminal`, which restores
+  them when dropped, so also when Ctrl-C abandons the line); meanwhile the signals that would kill the shell
+  (SIGINT, SIGTERM, SIGHUP, SIGQUIT with their default action) are caught, and one that comes restores the modes
+  and the action, and raises itself again (`Terminal::die`), so a script killed in `read -s` leaves the echo on.
+  `-e` reads with `interactive::edit_value` (as `vared`), and falls back to the plain read when the editor can't be
+  used; the edited line goes through `Text::add` too, so backslashes and splitting are as without it. Tests:
+  `builtins/read_bash.sh` (bash's output), `read_terminal_modes` and `read_line_editor` in `tests/interactive.rs`
+  (which wait for the pty's modes to change, read from the master side).
 - `__luish_internal` (`internal.rs`) holds luish's own commands, so they don't take names from the command
   namespace; a missing or unknown subcommand is status 2. `print-git-rev` is set at compile time by `build.rs`
   (`-dirty` if `src/`, `build.rs`, `Cargo.toml` or `Cargo.lock` differ). Test: `builtins/internal_git_rev.sh`.
@@ -1828,7 +1841,7 @@ truncates when it relocates the package.
 | `$(<file)` | `expand/file_subst.sh` (zsh), `expand/file_subst_nul.sh`, `interrupt_shell_read` in `tests/interactive.rs` |
 | Parameter flags, `${(o)a[@]}` | `expand/param_flags.sh` (zsh), `expand/param_flags_luish.sh` |
 | `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh`, `builtins/typeset_case.sh` (zsh), `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh`, `builtins/typeset_functions.sh` (zsh), `builtins/typeset_functions_luish.sh` |
-| `read -A`, `read -a` | `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh` |
+| `read` options, `read -A`, `read -a` | `builtins/read_bash.sh`, `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh`, `read_terminal_modes` and `read_line_editor` in `tests/interactive.rs` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |
 | Modifiers, `${x:h}` | `expand/modifiers.sh` (zsh), `expand/modifiers_luish.sh`, `parse/dash_lenient.sh` |
 | `SHLVL` | `misc/shlvl.sh`, `histcmd_shlvl` in `tests/interactive.rs` |

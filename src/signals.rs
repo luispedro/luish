@@ -40,6 +40,15 @@ pub fn set_disposition(sig: i32, d: Disposition) {
     }
 }
 
+/// Whether `sig` has its default action now.
+pub fn is_default(sig: i32) -> bool {
+    // SAFETY: querying the current action only.
+    unsafe {
+        let mut old: libc::sigaction = std::mem::zeroed();
+        libc::sigaction(sig, std::ptr::null(), &mut old) == 0 && old.sa_sigaction == libc::SIG_DFL
+    }
+}
+
 /// Whether each signal was ignored when the shell started: 0 if not known
 /// yet, 1 if not, 2 if it was.
 static ENTRY: [AtomicU8; NSIG] = [const { AtomicU8::new(0) }; NSIG];

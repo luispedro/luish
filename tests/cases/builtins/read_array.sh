@@ -23,3 +23,5 @@ f() {
 }
 echo 'x y' | f
 echo "[${l-unset}]"
+# Without a name, into `reply`.
+echo 'x y' | { read -A; show "${reply[@]}"; }

@@ -296,6 +296,29 @@ impl Pty {
         });
     }
 
+    /// Waits until the terminal's local modes have `flag` set (`on`) or
+    /// clear: on Linux, the master side gives the terminal's modes.
+    fn wait_for_lflag(&mut self, flag: libc::tcflag_t, on: bool) {
+        let start = Instant::now();
+        loop {
+            // SAFETY: tcgetattr on our own fd, into a valid buffer.
+            let lflag = unsafe {
+                let mut t: libc::termios = std::mem::zeroed();
+                libc::tcgetattr(self.master, &mut t);
+                t.c_lflag
+            };
+            if (lflag & flag != 0) == on {
+                return;
+            }
+            if start.elapsed() > TIMEOUT {
+                self.fail(&format!(
+                    "timed out waiting for the terminal's mode {flag:#x} to be {on}"
+                ));
+            }
+            self.read_some(Duration::from_millis(10));
+        }
+    }
+
     /// Waits until the shell itself is blocked waiting for a child.
     fn wait_for_wait4(&mut self) {
         let wait4 = libc::SYS_wait4.to_string();
@@ -771,6 +794,80 @@ fn interrupt_shell_read() {
     let out = sh.expect("\n$ ");
     assert!(!out.contains("\nafter\n"), "the line went on after Ctrl-C:\n{out}");
     assert_has(&sh.run("echo st=$?"), "st=130\n");
+}
+
+#[test]
+fn read_terminal_modes() {
+    let mut sh = Pty::spawn("readmodes");
+    sh.expect("$ ");
+    let check = "case $(stty -a) in *' -echo '*) echo echo=off;; *) echo echo=on;; esac";
+    // -s: nothing is echoed, not even the newline.
+    sh.send("read -s -p 'pw: ' x; echo \"[$x]\"\n");
+    sh.expect("\npw: ");
+    sh.wait_for_lflag(libc::ECHO, false);
+    sh.send("secret\n");
+    assert_eq!(sh.expect("\n$ "), "[secret]\n$ ");
+    assert_has(&sh.run(check), "echo=on\n");
+    // -n: no need for a newline on a terminal.
+    sh.send("read -n 3 x; echo \"[$x]\"\n");
+    sh.wait_for_lflag(libc::ICANON, false);
+    sh.send("abc");
+    assert_has(&sh.expect("\n$ "), "abc[abc]\n");
+    // Ctrl-C abandons the line, and the modes are restored.
+    sh.send("read -sn 5 x; echo after\n");
+    sh.wait_for_lflag(libc::ECHO, false);
+    sh.send("\x03");
+    let out = sh.expect("\n$ ");
+    assert!(!out.contains("\nafter\n"), "the line went on after Ctrl-C:\n{out}");
+    assert_has(&sh.run("echo st=$?"), "st=130\n");
+    assert_has(&sh.run(check), "echo=on\n");
+    assert_has(
+        &sh.run("case $(stty -a) in *' -icanon '*) echo icanon=off;; *) echo icanon=on;; esac"),
+        "icanon=on\n",
+    );
+    // A script that Ctrl-C kills restores them first (here its parent,
+    // which has a trap and so carries on, checks).
+    let script = sh.path("read-s");
+    let luish = env!("CARGO_BIN_EXE_luish");
+    write_script(
+        &script,
+        &format!("trap : INT\n{luish} -c 'read -s x; echo not-reached'\necho inner=$?\n{check}\n"),
+    );
+    sh.send(&format!("{}\n", script.display()));
+    sh.wait_for_lflag(libc::ECHO, false);
+    sh.send("\x03");
+    let out = sh.expect("\n$ ");
+    assert_has(&out, "inner=130\necho=on\n");
+    assert!(!out.contains("not-reached"), "{out}");
+}
+
+#[test]
+fn read_line_editor() {
+    let mut sh = Pty::spawn_term("readedit", "vt100");
+    sh.expect("$ ");
+    // Runs a command line, and waits for read's editor to show `shown`.
+    let start = |sh: &mut Pty, line: &str, shown: &str| {
+        sh.send(line);
+        sh.send("\n");
+        sh.expect("\x1b[?2004l\n\x1b[?2004h");
+        sh.expect(shown);
+    };
+    // -e with -i's text and -p's prompt; backslashes are still processed.
+    start(&mut sh, r#"read -e -i 'a\b' -p 'v> ' x y; echo "[$x][$y]""#, r"v> a\b");
+    sh.send(" c\n");
+    sh.expect("[ab][c]\n");
+    // Ctrl-D on an empty line is the end of the input.
+    start(&mut sh, r#"read -e -p 'v> ' x; echo "st=$? [$x]""#, "v> ");
+    sh.send("\x04");
+    sh.expect("st=1 []\n");
+    // Also in a script, with standard input a terminal.
+    sh.expect("$ ");
+    let luish = env!("CARGO_BIN_EXE_luish");
+    sh.send(&format!("{luish} -c 'read -e -p \"s> \" x; echo \"<$x>\"'\n"));
+    sh.expect("s> ");
+    sh.wait_for_lflag(libc::ICANON, false);
+    sh.send("hi\x01!\n");
+    sh.expect("<!hi>\n");
 }
 
 #[test]

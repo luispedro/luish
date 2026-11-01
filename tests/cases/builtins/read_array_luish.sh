@@ -16,7 +16,6 @@ echo 'x y' | { read -aa b; show "${a[@]}" "[${b-unset}]"; }
 # Errors.
 echo x | { read -A a b; echo "status $?"; }
 echo x | { read -a; echo "status $?"; }
-echo x | { read -A; echo "status $?"; }
 echo x | { read -a 1a; echo "status $?"; }
 readonly r
 echo x | { read -A r; echo never; }

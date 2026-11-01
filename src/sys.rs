@@ -272,6 +272,21 @@ pub fn poll(fds: &mut [libc::pollfd]) -> Result<(), i32> {
     }
 }
 
+/// Waits up to `ms` milliseconds (0: not at all) for `fd` to be readable,
+/// or at its end. Not retried on EINTR.
+pub fn poll_readable(fd: i32, ms: i32) -> Result<bool, i32> {
+    let mut p = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: one valid `pollfd`.
+    match unsafe { libc::poll(&mut p, 1, ms) } {
+        n if n < 0 => Err(errno()),
+        n => Ok(n > 0),
+    }
+}
+
 pub fn isatty(fd: i32) -> bool {
     // SAFETY: plain isatty.
     unsafe { libc::isatty(fd) == 1 }
