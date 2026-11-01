@@ -151,6 +151,18 @@ fn push_compound(out: &mut Vec<u8>, cc: &CompoundCommand) {
             push_list(out, body);
             out.extend_from_slice(b"; done");
         }
+        CompoundCommand::ArithFor { exprs, body, .. } => {
+            out.extend_from_slice(b"for ((");
+            for (i, e) in exprs.iter().enumerate() {
+                if i > 0 {
+                    out.push(b';');
+                }
+                push_word(out, e);
+            }
+            out.extend_from_slice(b")); do ");
+            push_list(out, body);
+            out.extend_from_slice(b"; done");
+        }
         CompoundCommand::Repeat { count, body, .. } => {
             out.extend_from_slice(b"repeat ");
             push_word(out, count);

@@ -514,6 +514,20 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   expression's operators, and `]]` as a keyword (`After::Cond`). Tests: `parse/cond.sh` (zsh),
   `parse/cond_regex_match.sh` (zsh), `parse/cond_regex_rematch.sh` (`zsh -o bashrematch`), `parse/cond_regex_bash.sh`, `parse/cond_newer.sh` and `parse/cond_xtrace.sh` (`.expected`), unit tests `parser::tests::cond` and
   `unparse::tests::layout`.
+- `for ((init; cond; step))` (`CompoundCommand::ArithFor`, `parse_arith_for`): `parse_for` looks at the token after
+  `for`, and a `(` with another `(` right after it in the text starts the arithmetic form (a pure extension: dash
+  has a syntax error there). The lexer reads the three expressions with `read_arith_for`, which is `$((`'s reader
+  (`read_arith_to`) splitting at each `;` outside parentheses, so `$(...)` and quotes inside work as in `$((...))`;
+  any other number of expressions is a syntax error (bash's; zsh takes more). Each expression is expanded as
+  `case`'s word is (`expand_word_str`, so quotes are removed as in bash and zsh, where `$((...))`'s `arith_text`
+  keeps them as dash does) and evaluated by `arith::eval` each time (`Shell::arith_for_expr`), an empty `cond` being
+  true; `continue` still runs `step`, and the status is the body's last command's, 0 if it never ran or after
+  `break` (as `while`). `set -x` writes `(( expr ))` for each evaluated expression, as bash does. `unparse.rs` and
+  `cmdtext.rs` write the expressions joined by `;` as they were read, and the body as `do ... done`. The highlighter
+  paints the `((...))` as arithmetic, as `$((`, and takes the next `do` or `{` (also after a `;`) as the body's start
+  without counting depth for the `{` (`After::ArithFor`). History expansion doesn't know about it, so `!x` in it is
+  expanded (as in bash), where in `$((...))` it isn't. Tests: `parse/arith_for.sh` (zsh), `parse/arith_for_bash.sh`
+  (`.expected`), unit tests `unparse::tests::arith_for` and `interactive::highlight::tests::for_and_case`.
 - `repeat` (`CompoundCommand::Repeat`, `parse_repeat`) is a reserved word only with `setopt syntax.repeat`
   (`Parser::repeat`, given to a parser by `Shell::parse_options`, which is the one place the parse-time options are
   read, and copied into the parsers of backquotes and here-documents): the word is valid POSIX, so the keyword can't
@@ -1858,6 +1872,7 @@ truncates when it relocates the package.
 | `exec -- cmd` | `exec/exec_dashdash.sh` |
 | `cd -e` | `builtins/cd_e.sh` |
 | `[[ ... ]]` | `parse/cond.sh` (zsh), `parse/cond_regex_match.sh` (zsh), `parse/cond_regex_rematch.sh` (zsh), `parse/cond_regex_bash.sh`, `parse/cond_xtrace.sh`, `parser::tests::cond` |
+| `for ((init; cond; step))` | `parse/arith_for.sh` (zsh), `parse/arith_for_bash.sh` |
 | `set -o pipefail` | `options/pipefail.sh` (zsh), `options/pipefail_async.sh`, `pipefail_job_control` in `tests/interactive.rs` |
 | `set -o` / `set +o` list | `options/set_o_hashall.sh`, `options/setopt_list.sh` |
 | `set -x` output | `options/xtrace.sh` |

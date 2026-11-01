@@ -524,6 +524,13 @@ impl Parser {
 
     fn parse_for(&mut self, lineno: u32) -> PResult<CompoundCommand> {
         self.alias_continuation()?;
+        let t = self.peek()?;
+        let end = t.end;
+        if t.tok == Tok::Op(Op::LParen) && self.src.get(end) == Some(&b'(') {
+            self.pos = end + 1;
+            self.peeked = None;
+            return self.parse_arith_for(lineno);
+        }
         let t = self.next()?;
         let var = match &t.tok {
             Tok::Word(w) if w.as_literal().is_some_and(is_valid_name) => w.as_literal().unwrap().to_vec(),
@@ -563,6 +570,29 @@ impl Parser {
             body,
             lineno,
         })
+    }
+
+    /// After `for ((`: `init; cond; step)); do list; done`, as in bash and
+    /// zsh. The `;` after `))` is optional, and the body can also be a
+    /// `{ list; }` (as in both).
+    fn parse_arith_for(&mut self, lineno: u32) -> PResult<CompoundCommand> {
+        let exprs = self.read_arith_for()?;
+        if self.peek_op()? == Some(Op::Semi) {
+            self.next()?;
+        }
+        self.skip_newlines()?;
+        let body = if self.peek_is_kw(b"{")? {
+            self.next()?;
+            let body = self.parse_nonempty_list()?;
+            self.expect_kw("}")?;
+            body
+        } else {
+            self.expect_kw("do")?;
+            let body = self.parse_nonempty_list()?;
+            self.expect_kw("done")?;
+            body
+        };
+        Ok(CompoundCommand::ArithFor { exprs, body, lineno })
     }
 
     /// `repeat WORD; do list; done` or `repeat WORD { list }`, as in zsh

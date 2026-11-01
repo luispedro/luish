@@ -590,7 +590,7 @@ fn has_block(sh: &Shell, text: &[u8]) -> bool {
                 }
                 CompoundCommand::While { cond, body, .. } => list(cond) || list(body),
                 CompoundCommand::For { body, .. } => list(body),
-                CompoundCommand::Repeat { body, .. } => list(body),
+                CompoundCommand::Repeat { body, .. } | CompoundCommand::ArithFor { body, .. } => list(body),
                 CompoundCommand::Case { arms, .. } => arms.iter().any(|a| list(&a.body)),
                 CompoundCommand::Cond { .. } => false,
             },

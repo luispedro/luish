@@ -396,6 +396,19 @@ impl<'a> Printer<'a> {
                 self.nl();
                 self.w(b"done");
             }
+            CompoundCommand::ArithFor { exprs, body, .. } => {
+                self.w(b"for ((");
+                for (i, e) in exprs.iter().enumerate() {
+                    if i > 0 {
+                        self.w(b";");
+                    }
+                    self.parts(&e.0);
+                }
+                self.w(b")); do");
+                self.block(body);
+                self.nl();
+                self.w(b"done");
+            }
             CompoundCommand::Repeat { count, body, .. } => {
                 self.needs.set(Needs {
                     repeat: true,
@@ -883,6 +896,13 @@ fn compound<V: LineVisitor>(cc: &mut CompoundCommand, v: &mut V) {
             }
             walk_lines(body, v);
         }
+        CompoundCommand::ArithFor { exprs, body, lineno } => {
+            v.line(lineno);
+            for e in exprs.iter_mut() {
+                word(e, v);
+            }
+            walk_lines(body, v);
+        }
         CompoundCommand::Repeat { count, body, lineno } => {
             v.line(lineno);
             word(count, v);
@@ -1019,6 +1039,14 @@ mod tests {
         assert_eq!(
             round_trip("f() { __luish_cache env=(A B) files=(\"$H\"/a ~/b\\ c) { x=1; }; __luish_cache { :; }; }"),
             "f() {\n    __luish_cache env=(A B) files=(\"$H\"/a ~/b\\ c) {\n        x=1\n    }\n    __luish_cache {\n        :\n    }\n}\n"
+        );
+    }
+
+    #[test]
+    fn arith_for() {
+        assert_eq!(
+            round_trip("f() { for ((i = \"$x\"; i < $(n)\n;)) { echo $i; }; }"),
+            "f() {\n    for ((i = \"$x\"; i < $(n)\n;)); do\n        echo $i\n    done\n}\n"
         );
     }
 

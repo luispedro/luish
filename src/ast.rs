@@ -113,6 +113,14 @@ pub enum CompoundCommand {
         body: List,
         lineno: u32,
     },
+    /// `for ((init; cond; step)); do list; done`, as in bash and zsh. Each
+    /// expression is expanded as `$((...))` is, then evaluated as
+    /// arithmetic; an empty `cond` is true.
+    ArithFor {
+        exprs: Box<[Word; 3]>,
+        body: List,
+        lineno: u32,
+    },
     /// `repeat WORD; do list; done` or `repeat WORD { list }`, as in zsh,
     /// with `setopt syntax.repeat`. The word is an arithmetic expression,
     /// evaluated once.

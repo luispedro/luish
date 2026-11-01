@@ -294,6 +294,32 @@ impl Shell {
     }
 
     /// Runs a compound command. `exit` is as for `run_list_exit`.
+    /// One expression of `for ((...))`, expanded and evaluated. Unlike in
+    /// `$((...))` (where dash keeps them), quotes are removed, as in bash and
+    /// zsh. An empty expression is skipped, and as `cond` is true. `set -x`
+    /// shows it as `(( expr ))`, as bash does.
+    fn arith_for_expr(&mut self, w: &Word, cond: bool) -> Result<i64, Flow> {
+        let text = self.expand_word_str(w)?;
+        let expr = text.trim_ascii();
+        if expr.is_empty() && !cond {
+            return Ok(0);
+        }
+        let expr = if expr.is_empty() { b"1".as_slice() } else { expr };
+        if self.opt(Opt::Xtrace) && !self.in_ps4 {
+            self.in_ps4 = true;
+            let mut line = self.expand_prompt(b"PS4");
+            self.in_ps4 = false;
+            line.extend_from_slice(b"(( ");
+            line.extend_from_slice(expr);
+            line.extend_from_slice(b" ))\n");
+            sys::write_all(2, &line);
+        }
+        crate::expand::arith::eval(self, expr).map_err(|msg| {
+            self.error(msg);
+            Flow::Error(2)
+        })
+    }
+
     pub fn run_compound(&mut self, cc: &CompoundCommand, exit: bool) -> ExecResult {
         match cc {
             CompoundCommand::BraceGroup(list) => self.run_list_exit(list, exit),
@@ -403,6 +429,42 @@ impl Shell {
                 }
                 self.loop_depth -= 1;
                 r.map(|_| status)
+            }
+            CompoundCommand::ArithFor { exprs, body, lineno } => {
+                self.lineno = *lineno;
+                let [init, cond, step] = &**exprs;
+                self.arith_for_expr(init, false)?;
+                let mut status = 0;
+                self.loop_depth += 1;
+                let r = loop {
+                    match self.arith_for_expr(cond, true) {
+                        Ok(0) => break Ok(status),
+                        Ok(_) => {}
+                        Err(e) => break Err(e),
+                    }
+                    match self.run_list(body) {
+                        Ok(s) => status = s,
+                        Err(Flow::Break(n)) => {
+                            if n > 1 {
+                                break Err(Flow::Break(n - 1));
+                            }
+                            break Ok(0);
+                        }
+                        Err(Flow::Continue(n)) => {
+                            if n > 1 {
+                                break Err(Flow::Continue(n - 1));
+                            }
+                            status = 0;
+                        }
+                        Err(e) => break Err(e),
+                    }
+                    self.lineno = *lineno;
+                    if let Err(e) = self.arith_for_expr(step, false) {
+                        break Err(e);
+                    }
+                };
+                self.loop_depth -= 1;
+                r
             }
             CompoundCommand::Repeat { count, body, lineno } => {
                 self.lineno = *lineno;

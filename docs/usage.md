@@ -91,6 +91,10 @@ conf=$(<~/.config/app)                     # a file's contents, read without a s
 - `[[ ... ]]` has `test`'s operators, `&&`, `||`, `!` and parentheses, patterns on the right of `==` and `!=`, `=~`
   for regular expressions (which sets `MATCH`, `match` and `BASH_REMATCH`) and `-v NAME` for a set variable (see
   [](keywords.md)).
+- `for ((init; cond; step)); do list; done` is bash's and zsh's arithmetic loop: `for ((i = 0; i < n; i++)); do echo
+  $i; done`. `init` runs once, then the body runs while `cond` is non-zero, with `step` after each time. Each part
+  is an arithmetic expression, expanded as `$((...))` is (but quotes are removed), and any may be empty (an empty
+  `cond` is true, so `for ((;;))` runs until `break`). The body can also be `{ list; }`.
 - Process substitution: `<(list)` is the path of a pipe (`/dev/fd/N`) that gives what the list writes, so a command
   that wants a file can read from a command. `>(list)` is one that feeds the list's standard input. The list runs
   in its own process, and the pipe is closed when the command that got it ends. luish then waits for a `>(list)`

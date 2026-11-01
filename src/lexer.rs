@@ -1572,6 +1572,28 @@ impl Parser {
 
     /// After `$((`. Returns `None` if this turns out to be `$( (...) )`.
     fn try_read_arith(&mut self) -> PResult<Option<Word>> {
+        self.read_arith_to(None)
+    }
+
+    /// After the `((` of `for ((init; cond; step))`: the three expressions,
+    /// read as `$((...))` is and split at the `;`s outside parentheses.
+    pub(crate) fn read_arith_for(&mut self) -> PResult<Box<[Word; 3]>> {
+        let mut words = Vec::with_capacity(3);
+        let Some(last) = self.read_arith_to(Some(&mut words))? else {
+            return self.err_at("Syntax error: Missing '))'");
+        };
+        words.push(last);
+        match <Box<[Word; 3]>>::try_from(words.into_boxed_slice()) {
+            Ok(w) => Ok(w),
+            Err(_) => self.err_at("Syntax error: arithmetic for loop needs three expressions"),
+        }
+    }
+
+    /// Reads arithmetic text up to its `))`. Returns `None` at a lone `)`.
+    /// With `split` (for `for ((`), an unquoted `;` outside parentheses ends
+    /// an expression, which is pushed there; in `$((`, `;` is a character
+    /// of the expression (an error when evaluated).
+    fn read_arith_to(&mut self, mut split: Option<&mut Vec<Word>>) -> PResult<Option<Word>> {
         let mut parts = Parts::new();
         let mut lit = Vec::new();
         let mut depth = 0usize;
@@ -1599,6 +1621,13 @@ impl Parser {
                 }
                 b'\'' => {
                     lit.push(c);
+                    self.pos += 1;
+                }
+                b';' if depth == 0
+                    && let Some(words) = split.as_deref_mut() =>
+                {
+                    flush(&mut parts, &mut lit);
+                    words.push(Word(std::mem::take(&mut parts)));
                     self.pos += 1;
                 }
                 _ => self.read_word_char(c, &mut parts, &mut lit, Ctx::DQuote)?,

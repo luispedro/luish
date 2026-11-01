@@ -362,6 +362,9 @@ enum After {
     Repeat,
     /// After the count of `repeat`, where `do` or `{` opens the body.
     RepeatCount,
+    /// After `for ((...))`, where `do` or `{` opens the body (also after a
+    /// `;`).
+    ArithFor,
     /// The names after `function`.
     Function,
     /// Inside `[[ ... ]]`, where `<`, `>`, `(`, `)`, `&&` and `||` are
@@ -571,7 +574,17 @@ impl Scan<'_> {
                     pattern = case_term;
                     cmd = !pattern;
                     precommand = false;
-                    after = After::None;
+                    if !(after == After::ArithFor && c == b';' && len == 1) {
+                        after = After::None;
+                    }
+                }
+                // `for ((init; cond; step))`, then its `do` or `{`.
+                b'(' if after == After::For && s.get(i + 1) == Some(&b'(') => {
+                    let e = self.parens_end(i);
+                    self.paint(i, e, role::ARITH);
+                    i = e;
+                    after = After::ArithFor;
+                    cmd = false;
                 }
                 b'(' => {
                     self.paint(i, i + 1, role::OP);
@@ -714,6 +727,14 @@ impl Scan<'_> {
                 }
                 return e;
             }
+            // `for` counted the body's depth, so its `{` doesn't.
+            After::ArithFor if plain && (text == b"do" || text == b"{") => {
+                self.paint(start, e, role::KEYWORD);
+                *after = After::None;
+                *cmd = true;
+                return e;
+            }
+            After::ArithFor => *after = After::None,
             After::ForName if plain && text == b"do" => {
                 self.paint(start, e, role::KEYWORD);
                 *after = After::None;
@@ -1081,27 +1102,31 @@ impl Scan<'_> {
         s.len()
     }
 
+    /// The end of the parentheses that open at `i`, or of the text.
+    fn parens_end(&self, i: usize) -> usize {
+        let s = self.s;
+        let mut depth = 0;
+        let mut k = i;
+        while k < s.len() {
+            match s[k] {
+                b'(' => depth += 1,
+                b')' => depth -= 1,
+                _ => {}
+            }
+            k += 1;
+            if depth == 0 {
+                break;
+            }
+        }
+        k
+    }
+
     /// Scans an expansion starting with `$`. Returns `i + 1` if there is
     /// none (a literal `$`).
     fn dollar(&mut self, i: usize) -> usize {
         let s = self.s;
         let (e, r) = match (s.get(i + 1), s.get(i + 2)) {
-            (Some(b'('), Some(b'(')) => {
-                let mut depth = 0;
-                let mut k = i + 1;
-                while k < s.len() {
-                    match s[k] {
-                        b'(' => depth += 1,
-                        b')' => depth -= 1,
-                        _ => {}
-                    }
-                    k += 1;
-                    if depth == 0 {
-                        break;
-                    }
-                }
-                (k, role::ARITH)
-            }
+            (Some(b'('), Some(b'(')) => (self.parens_end(i + 1), role::ARITH),
             (Some(b'('), _) => return self.nested(i, 2, role::SUBST, b')'),
             (Some(b'{'), Some(b' ' | b'\t' | b'\n' | b'|')) => return self.nested(i, 3, role::SUBST, b'}'),
             (Some(b'{'), _) => {
@@ -1754,6 +1779,11 @@ mod tests {
     fn for_and_case() {
         assert_eq!(classes("for i in a; do ls; done"), "kkk...kk..o.kk.cco.kkkk");
         assert_eq!(classes("for i do ls; done"), "kkk...kk.cco.kkkk");
+        assert_eq!(
+            classes("for ((i=0; i<$n; i++)); do ls; done"),
+            "kkk.$$$$$$$$$$$$$$$$$$o.kk.cco.kkkk"
+        );
+        assert_eq!(classes("for ((;;)) { ls; }; ls"), "kkk.$$$$$$.k.cco.ko.cc");
         assert_eq!(
             classes("case $x in a|b) ls;; (c) echo;; esac"),
             "kkkk.vv.kk..o.o.ccoo.o.o.ccccoo.kkkk"

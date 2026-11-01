@@ -1,4 +1,5 @@
 Unreleased
+    * for ((i = 0; i < n; i++)): the arithmetic loop of bash and zsh
     * Colour schemes: ui.ok, ui.warn, ui.bad, ui.dim and ui.strong colour
       the menus and plugin's output (jobs.*, plugin.*, ...) by default
     * read: bash's -d, -n, -N, -t, -u, -s, -e and -i; REPLY without a name
