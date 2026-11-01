@@ -557,8 +557,21 @@ far:
 | `suggestion` | autosuggestions |
 | `plugin.name`, `plugin.ok`, `plugin.update`, `plugin.warn`, `plugin.error`, `plugin.dim` | the output of `plugin`, on a terminal |
 | `jobs.number`, `jobs.pid`, `jobs.running`, `jobs.stopped`, `jobs.done`, `jobs.key` | the menu of `jobs -i` |
+| `ui.ok`, `ui.warn`, `ui.bad`, `ui.dim`, `ui.strong` | what the six rows above fall back to, by what they mean (see below) |
 
-So `command` sets all the kinds of command at once, `string` all the strings, and so on. `error` is added to the
+So `command` sets all the kinds of command at once, `string` all the strings, and so on. The names that aren't
+parts of the line then fall back to a `ui.*` name, by what they mean, so that a colour scheme needs only those five
+to colour the menus and `plugin`'s output, and new ones like them:
+
+| Name | Falls back to it |
+|---|---|
+| `ui.ok` | `plugin.ok`, `jobs.running` |
+| `ui.warn` | `plugin.warn`, `plugin.update`, `jobs.stopped` |
+| `ui.bad` | `plugin.error` |
+| `ui.dim` | `menu.description`, `suggestion`, `plugin.dim`, `jobs.pid`, `jobs.done` |
+| `ui.strong` | `plugin.name`, `jobs.number`, `jobs.key` |
+
+A name's own parent comes first: `jobs.stopped` takes what it doesn't set from `jobs`, then from `ui.warn`. `error` is added to the
 style of the text with a syntax error, and `path` and `path.prefix` to that of a word that names a file (see
 above). More names exist already, for distinctions the highlighter doesn't make yet (`style` lists them). Other names, such as `git.branch` or `prompt.dir`, are free for plugins and prompts (`%[style:prompt.dir]`, see
 [Prompts](#prompts)) to use, but not those that start like a name of luish's (`command.nosuch` is an error).
@@ -588,7 +601,7 @@ style -r command.unknown         # back to the colour scheme's
 ### Colour schemes
 
 A colour scheme is a named set of styles. luish has two, `default-dark` and `default-light` (the same but for the
-strings, as yellow is hard to read on a light background), and more can be defined in `config.toml`, by a plugin, or
+strings and `ui.warn`, as yellow is hard to read on a light background), and more can be defined in `config.toml`, by a plugin, or
 with `style -s`. A scheme can inherit what it doesn't set from another:
 
 ```toml
@@ -613,7 +626,7 @@ colorscheme = "green"
 `colorscheme` in the `style` table chooses the scheme, and the other keys there set styles over it (as `style NAME
 VALUE` does). A scheme starts empty: it has only what it sets and what it inherits. Each name's value comes from the
 first of: the `style` table (or the `style` built-in), the scheme, the schemes it inherits from, then the defaults
-of plugins; then what it leaves out comes from its parent the same way. So a scheme's `command.unknown` is kept even
+of plugins; then what it leaves out comes from its parent the same way (and then from its `ui.*` name). So a scheme's `command.unknown` is kept even
 if `[style]` sets `command`.
 
 The scheme can depend on whether the terminal's background is dark or light:

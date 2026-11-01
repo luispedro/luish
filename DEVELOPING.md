@@ -1046,13 +1046,19 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   built-in pair). The built-in schemes are const tables, made into a `Scheme` when looked up; changing one with `style
   -s` copies it first, but `-i` (which the saved state uses to start each scheme) defines an empty one, so a replayed
   state is exact. `Resolver::value` takes a name's value from the first layer that has it (user, then the scheme
-  chain, then plugins), and `get` then walks the parents, so a scheme's specific name beats the user's general one.
+  chain, then plugins), and `get` then walks `style::fallbacks`: the parents, then the name's `ui.*` name
+  (`UI_FALLBACKS`, by meaning: `ui.ok`, `ui.warn`, `ui.bad`, `ui.dim`, `ui.strong`) and its parent, so a scheme's
+  specific name beats the user's general one, and `jobs` beats `ui.ok` for `jobs.running`. The built-in schemes set
+  only the `ui.*` names for what isn't the line, so a scheme that inherits them and sets `ui.ok` changes everything
+  under it; a new name for the interface should get an entry in `UI_FALLBACKS`, not values in the built-in schemes,
+  so that schemes don't need more names. `style NAME` lists the same chain.
   Names in `ROLES` are fixed; another name is free unless its first component is a role's (then it must be in
   `ROLES`) or it has no dot and is within edit distance 2 of a top-level role ("did you mean"). Undefined schemes
   are allowed in a choice from `config.toml` and in `inherits` (a plugin loaded later may define them), but not by
   `style -c`. Styles are saved state (`Kind::Style`, as `__luish_internal style` commands; `style::removal` undoes
-  one). Tests: unit tests in `style.rs` and `highlight.rs` (`colors`), `builtins/internal_style.sh`,
-  `misc/config_toml_style.sh`, `tests/plugins/manifest_style.sh`, `syntax_highlighting` in `tests/interactive.rs`.
+  one). Tests: unit tests in `style.rs` (`ui_fallbacks` and others) and `highlight.rs` (`colors`),
+  `builtins/internal_style.sh`, `misc/config_toml_style.sh`, `tests/plugins/manifest_style.sh`,
+  `syntax_highlighting` in `tests/interactive.rs`.
 - **The background** (`interactive::find_background`, `interactive/tty.rs`): before the first prompt with a dark/light
   pair chosen (the default) and colours on, unless `$LUISH_BACKGROUND` is `dark` or `light`, the shell takes it from
   `$COLORFGBG`, or else asks the terminal, if stdin and stderr are one and `TERM` is set and not one the editor

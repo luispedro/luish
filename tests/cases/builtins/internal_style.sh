@@ -100,3 +100,18 @@ s error undercurl red ul:#ff8800
 s error
 s -p | grep 'style error'
 e arg ul:x
+echo '--- interface names fall back to a ui.* name, after their parents'
+s jobs.running
+s -c default-dark default-light
+COLORFGBG='0;15' s plugin.warn
+s -s u ui.warn magenta
+s -s u jobs underline
+s -c u
+s jobs.stopped
+s jobs.running
+s menu.description
+s ui.dim dim
+s menu.description
+s -s u jobs.done plain
+s jobs.done
+e ui.nosuch red

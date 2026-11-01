@@ -10,7 +10,9 @@
 //! `%F{...}`: a name, `bright-NAME`, `default`, 0 to 255 or `#rrggbb`.
 //!
 //! Names are dotted, and a name falls back to its parent field by field
-//! (`command.alias` takes what it doesn't set from `command`), as in helix.
+//! (`command.alias` takes what it doesn't set from `command`), as in helix;
+//! the names that aren't parts of the line then fall back to a `ui.*` name
+//! by what they mean ([`UI_FALLBACKS`]).
 //! The names in [`ROLES`] are luish's own and validated; other names are
 //! free (for prompts and plugins), unless they start with a role's first
 //! component, so that typos are caught.
@@ -95,6 +97,32 @@ pub const ROLES: &[&str] = &[
     "jobs.stopped",
     "jobs.done",
     "jobs.key",
+    "ui",
+    "ui.ok",
+    "ui.warn",
+    "ui.bad",
+    "ui.dim",
+    "ui.strong",
+];
+
+/// The names that fall back to a `ui.*` name, by what they mean, after
+/// their own parents: so a scheme that sets the five `ui.*` names colours
+/// all of them, and new names here add nothing for schemes to fill.
+const UI_FALLBACKS: &[(&str, &str)] = &[
+    ("menu.description", "ui.dim"),
+    ("suggestion", "ui.dim"),
+    ("plugin.name", "ui.strong"),
+    ("plugin.ok", "ui.ok"),
+    ("plugin.update", "ui.warn"),
+    ("plugin.warn", "ui.warn"),
+    ("plugin.error", "ui.bad"),
+    ("plugin.dim", "ui.dim"),
+    ("jobs.number", "ui.strong"),
+    ("jobs.pid", "ui.dim"),
+    ("jobs.running", "ui.ok"),
+    ("jobs.stopped", "ui.warn"),
+    ("jobs.done", "ui.dim"),
+    ("jobs.key", "ui.strong"),
 ];
 
 const _: () = assert!(ROLES.len() < u8::MAX as usize);
@@ -170,27 +198,18 @@ const BUILTIN: &[Builtin] = &[
             ("error", "red underline"),
             ("path", "underline"),
             ("menu.selected", "reverse"),
-            ("menu.description", "bright-black"),
-            ("suggestion", "bright-black"),
-            ("plugin.name", "bold"),
-            ("plugin.ok", "green"),
-            ("plugin.update", "yellow"),
-            ("plugin.warn", "yellow"),
-            ("plugin.error", "bold red"),
-            ("plugin.dim", "bright-black"),
-            ("jobs.number", "bold"),
-            ("jobs.pid", "bright-black"),
-            ("jobs.running", "green"),
-            ("jobs.stopped", "yellow"),
-            ("jobs.done", "bright-black"),
-            ("jobs.key", "bold"),
+            ("ui.ok", "green"),
+            ("ui.warn", "yellow"),
+            ("ui.bad", "bold red"),
+            ("ui.dim", "bright-black"),
+            ("ui.strong", "bold"),
         ],
     ),
     // Yellow is hard to read on a light background.
     (
         "default-light",
         Some("default-dark"),
-        &[("string", "136"), ("jobs.stopped", "136")],
+        &[("string", "136"), ("ui.warn", "136")],
     ),
 ];
 
@@ -541,6 +560,22 @@ impl Style {
 /// The parent of a name (`command` for `command.alias`).
 pub fn parent(name: &str) -> Option<&str> {
     name.rfind('.').map(|i| &name[..i])
+}
+
+/// The `ui.*` name that `name` falls back to after its parents
+/// ([`UI_FALLBACKS`]).
+pub fn ui_fallback(name: &str) -> Option<&'static str> {
+    UI_FALLBACKS.iter().find(|f| f.0 == name).map(|f| f.1)
+}
+
+/// The names `name` takes its style from, in order: itself, its parents,
+/// then its `ui.*` name and that one's parent (`jobs.running`, `jobs`,
+/// `ui.ok`, `ui`).
+pub fn fallbacks(name: &str) -> impl Iterator<Item = &str> {
+    let own = std::iter::successors(Some(name), |n| parent(n));
+    let first: Option<&str> = ui_fallback(name);
+    let ui = std::iter::successors(first, |n| parent(n));
+    own.chain(ui)
 }
 
 /// Checks a style name: one of [`ROLES`], or a name that isn't in their
@@ -1022,18 +1057,20 @@ impl Resolver<'_> {
         (self.styles.defaults.get(name)).map(|v| (v.clone(), Origin::Plugin))
     }
 
-    /// The style of `name`, with what it leaves out from its parents.
+    /// The style of `name`, with what it leaves out from the names it falls
+    /// back to ([`fallbacks`]).
     pub fn get(&self, name: &str) -> Style {
-        let mut style = self.value(name).map(|v| v.0).unwrap_or_default();
-        let mut cur = parent(name);
-        while let Some(p) = cur {
-            if style.plain {
+        let mut style = Style::default();
+        for (i, n) in fallbacks(name).enumerate() {
+            if i > 0 && style.plain {
                 break;
             }
-            if let Some((v, _)) = self.value(p) {
-                style.inherit(&v);
+            if let Some((v, _)) = self.value(n) {
+                match i {
+                    0 => style = v,
+                    _ => style.inherit(&v),
+                }
             }
-            cur = parent(p);
         }
         style
     }
@@ -1169,6 +1206,34 @@ mod tests {
         assert_eq!(st.missing(Some("nope")), Some("nope".into()));
         st.set_inherits("blue", Some("later")).unwrap();
         assert_eq!(st.missing(Some("green")), Some("later".into()));
+    }
+
+    #[test]
+    fn ui_fallbacks() {
+        let mut st = Styles::default();
+        let r = st.resolver(Some("default-dark"));
+        assert_eq!(r.get("jobs.running").text(), "green");
+        assert_eq!(r.get("plugin.error").text(), "bold red");
+        assert_eq!(r.get("suggestion").text(), "bright-black");
+        assert_eq!(st.resolver(Some("default-light")).get("jobs.stopped").text(), "136");
+        // A scheme of its own needs only the ui.* names, and the parent
+        // comes first: `jobs` over `ui.ok`.
+        st.set_in_scheme("s", "ui.ok", parse("green").unwrap());
+        st.set_in_scheme("s", "jobs", parse("bold blue").unwrap());
+        let r = st.resolver(Some("s"));
+        assert_eq!(r.get("jobs.running").text(), "bold blue");
+        assert_eq!(r.get("plugin.ok").text(), "green");
+        assert_eq!(r.get("plugin.dim").text(), "plain");
+        let names: Vec<&str> = fallbacks("jobs.running").collect();
+        assert_eq!(names, ["jobs.running", "jobs", "ui.ok", "ui"]);
+        assert_eq!(
+            fallbacks("command.alias").collect::<Vec<_>>(),
+            ["command.alias", "command"]
+        );
+        // Every fallback is a role, and so is every name it covers.
+        for (from, to) in UI_FALLBACKS {
+            assert!(ROLES.contains(from) && ROLES.contains(to) && to.starts_with("ui."));
+        }
     }
 
     #[test]

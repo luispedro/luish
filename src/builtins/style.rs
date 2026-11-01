@@ -159,15 +159,13 @@ fn set_or_show(sh: &mut Shell, cmd: &[u8], args: &[Vec<u8>]) -> ExecResult {
     let scheme = scheme_in_use(sh);
     let r = sh.styles.resolver(scheme.as_deref());
     let mut out = format!("{name} {}\n", r.get(&name).text());
-    let mut cur = Some(name.as_str());
-    while let Some(n) = cur {
+    for n in style::fallbacks(&name) {
         if let Some((v, origin)) = r.value(n) {
             out.push_str(&format!("  {n}: {} ({origin})\n", v.text()));
             if v.plain {
                 break;
             }
         }
-        cur = style::parent(n);
     }
     Ok(sh.out_status(out.as_bytes()))
 }

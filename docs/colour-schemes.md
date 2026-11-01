@@ -58,13 +58,23 @@ Some names aren't parts of the line, and need setting in any scheme that doesn't
 | `error` | added to text with a syntax error | `red underline` |
 | `path`, `path.prefix` | added to words that name files, with `setopt highlight.paths` | `underline` |
 | `menu.selected` | the selection in the completion menu | `reverse` |
-| `menu.description` | descriptions in the completion menu | `bright-black` |
-| `suggestion` | autosuggestions | `bright-black` |
-| `plugin.name`, `plugin.ok`, `plugin.update`, `plugin.warn`, `plugin.error`, `plugin.dim` | the output of `plugin` (names, what worked, what changed or can, warnings, errors, detail), on a terminal | `bold`, `green`, `yellow`, `yellow`, `bold red`, `bright-black` |
-| `jobs.number`, `jobs.pid`, `jobs.running`, `jobs.stopped`, `jobs.done`, `jobs.key` | the menu of `jobs -i` (job numbers, process IDs, the states of running, stopped and finished jobs, and the keys) | `bold`, `bright-black`, `green`, `yellow` (`136` in `default-light`), `bright-black`, `bold` |
 
 `error`, `path` and `path.prefix` are added on top of the text's own style. An attribute such as `underline` keeps
 the text's colour; a colour replaces it.
+
+The rest of what the shell shows (the completion menu's descriptions, autosuggestions, the output of `plugin` and
+the menu of `jobs -i`) falls back to five names by what they mean, so these are enough for all of it:
+
+| Name | For | In `default-dark` |
+|---|---|---|
+| `ui.ok` | what worked or runs: `plugin.ok`, `jobs.running` | `green` |
+| `ui.warn` | warnings, and what changed or stopped: `plugin.warn`, `plugin.update`, `jobs.stopped` | `yellow` (`136` in `default-light`) |
+| `ui.bad` | errors: `plugin.error` | `bold red` |
+| `ui.dim` | detail: `menu.description`, `suggestion`, `plugin.dim`, `jobs.pid`, `jobs.done` | `bright-black` |
+| `ui.strong` | names and keys: `plugin.name`, `jobs.number`, `jobs.key` | `bold` |
+
+Set a specific name only to make it differ from the others: `"jobs.stopped" = "bold yellow"`. A name's own parent
+comes before its `ui.*` name, so `jobs = "italic"` makes the whole `jobs -i` menu italic, in the `ui.*` colours.
 
 ## Start from a scheme, or from nothing
 
@@ -84,7 +94,8 @@ command.alias italic green
 ```
 
 `command.alias` is `italic green` in `default-dark`, so it doesn't fall back to `ocean`'s `command`. Set it in your
-scheme too. These are the names `default-dark` sets:
+scheme too. (The `ui.*` names don't have this problem: `default-dark` sets only them, so setting `ui.ok` changes
+everything that falls back to it.) These are the names `default-dark` sets:
 
 ```toml
 keyword = "bold blue"
@@ -105,8 +116,11 @@ assign = "blue"
 error = "red underline"
 path = "underline"
 "menu.selected" = "reverse"
-"menu.description" = "bright-black"
-suggestion = "bright-black"
+"ui.ok" = "green"
+"ui.warn" = "yellow"
+"ui.bad" = "bold red"
+"ui.dim" = "bright-black"
+"ui.strong" = "bold"
 ```
 
 ## Pick the colours
@@ -119,7 +133,7 @@ There are three kinds of colour, and the choice matters for who can use the sche
 
 - **The 16 named colours** (`red`, `bright-blue`, ...) are those of the terminal's own palette, so they follow the
   terminal's theme: a scheme that only uses them often works on both dark and light backgrounds (`default-dark`
-  differs from `default-light` only in `string`, as yellow is hard to read on white).
+  differs from `default-light` only in `string` and `ui.warn`, as yellow is hard to read on white).
 - **The 256 colours** (a number from 0 to 255) are the same in most terminals, apart from the first 16.
 - **`#rrggbb`** is an exact colour, in terminals that support 24-bit colour (most do, but not the Linux console).
   An exact colour doesn't adapt to the background, so a scheme of them needs a light version (see below).

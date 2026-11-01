@@ -1,4 +1,6 @@
 Unreleased
+    * Colour schemes: ui.ok, ui.warn, ui.bad, ui.dim and ui.strong colour
+      the menus and plugin's output (jobs.*, plugin.*, ...) by default
     * read: bash's -d, -n, -N, -t, -u, -s, -e and -i; REPLY without a name
     * exit in a trap: the status from before the trap, as in dash
     * wait: a trap that ends it sees $? = 128+n, and is no longer missed

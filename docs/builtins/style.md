@@ -17,8 +17,10 @@ Show or change the line editor's styles and colour scheme.
 A style is a name, such as `keyword` or `command.unknown`, and a value:
 words that give a colour, a background colour and attributes. The names
 are dotted, and a style that is not set takes what it doesn't say from
-its parent (`command.alias` from `command`). See the user documentation
-on syntax highlighting for the names and values, and on colour schemes.
+its parent (`command.alias` from `command`); the names of the menus and
+of `plugin`'s output then fall back to a name by what they mean, such as
+`ui.ok` or `ui.dim`. See the user documentation on syntax highlighting
+for the names and values, and on colour schemes.
 Prompts also use the styles, with `%[style:name]` (when
 `setopt prompt.percent` is on).
 
