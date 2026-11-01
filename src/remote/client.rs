@@ -578,7 +578,7 @@ impl Client {
             if fds[0].revents != 0 {
                 let mut buf = [0u8; 16384];
                 match sys::read(0, &mut buf, false) {
-                    Ok(n @ 1..) => self.input(&buf[..n]),
+                    Ok(n @ 1..) => self.input(&buf[..n], false),
                     _ => self.end(Some(0)),
                 }
             }
@@ -586,8 +586,8 @@ impl Client {
     }
 
     /// Keys typed while a command runs: passed on to the server's pty,
-    /// apart from the escapes.
-    fn input(&mut self, keys: &[u8]) {
+    /// apart from the escapes. `editing` as for `escape`.
+    fn input(&mut self, keys: &[u8], editing: bool) {
         let mut out = Vec::with_capacity(keys.len());
         for &k in keys {
             if let Some(a) = self.escapes.key(k, &mut out) {
@@ -596,7 +596,7 @@ impl Client {
                 echo.extend_from_slice(escape::echo(a));
                 echo.extend_from_slice(b"\r\n");
                 sys::write_all(2, &echo);
-                self.escape(a, false);
+                self.escape(a, editing);
             }
         }
         self.send_input(&out);
@@ -605,8 +605,9 @@ impl Client {
     /// Passes on the keys that have come but weren't read yet, while the
     /// terminal is raw: once it is back in its modes, those left would be
     /// read as they came (Enter a `\r`, which doesn't end a line read
-    /// whole).
-    fn input_waiting(&mut self) {
+    /// whole). With `editing` (as for `escape`), the terminal is back in
+    /// its modes already, and an end of file is Ctrl-D typed there.
+    fn input_waiting(&mut self, editing: bool) {
         let mut fds = [libc::pollfd {
             fd: 0,
             events: libc::POLLIN,
@@ -615,7 +616,8 @@ impl Client {
         while super::poll(&mut fds, 0) {
             let mut buf = [0u8; 16384];
             match sys::read(0, &mut buf, false) {
-                Ok(n @ 1..) => self.input(&buf[..n]),
+                Ok(n @ 1..) => self.input(&buf[..n], editing),
+                Ok(0) if editing => break,
                 _ => self.end(Some(0)),
             }
         }
@@ -675,8 +677,14 @@ impl Client {
     fn event(&mut self, e: Event) {
         match e {
             Some((msg::REQUEST, data)) => {
-                self.input_waiting();
+                self.input_waiting(false);
                 self.cooked();
+                // Keys that came between the two were taken raw (no echo,
+                // Enter a `\r`), and the terminal's modes now hand them
+                // over at once, as a line that a line read whole would
+                // wait on the end of: they are typed ahead as those
+                // before.
+                self.input_waiting(true);
                 let held = self.escapes.line_read();
                 let sent = std::mem::take(&mut self.sent);
                 let before = self.sent_before;

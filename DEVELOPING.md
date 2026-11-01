@@ -918,6 +918,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 
 ### Interactive mode (`interactive/`)
 
+- **Keys typed ahead**: rustyline is built with its `buffer-redux` feature, which keeps the bytes a read got past
+  the accepted line for the next `readline`; without it they were dropped, so of lines that came in one read (typed
+  quickly, or sent together by tmux or a test) only the first ran. Where rustyline doesn't edit (`TERM=dumb`), it
+  reads whole lines through `std::io::stdin()`, whose buffer keeps them anyway. Test: `type_ahead_lines` in
+  `tests/interactive.rs`.
 - **History** (`history.rs`) implements rustyline's `History` trait (its `FileHistory` can't remove an entry or keep
   stable numbers). `add_current` marks the newest entry as the running command, also when it was a duplicate and not
   added, so `fc` leaves it out; `fc -s`/`-e` call `remove_current` and add what they run. `interactive::with_history`
@@ -1728,7 +1733,10 @@ dispatched in `main::run` before `Shell::new`, so they cost other invocations on
   request and adds the bytes from there on, with `\r` as `\n` if the terminal's own modes have `ICRNL` (they came
   raw; the pty's keys went through its `ICRNL`). Before that, the client reads the keys still waiting on its terminal
   (`input_waiting`), as its loop takes the request first: back in the terminal's modes they would stay raw, and a line
-  read whole (`TERM=dumb`) wouldn't end at their `\r`. It goes back to raw mode before sending the line, else `~^Z`
+  read whole (`TERM=dumb`) wouldn't end at their `\r`. It reads them again once back in the terminal's modes
+  (`input_waiting(true)`), for keys that came in between: they came raw too, and the switch to `ICANON` hands them
+  over at once, which a line read whole would take and then wait for its newline (`remote_chaos` caught it, about
+  once in 100 runs). It goes back to raw mode before sending the line, else `~^Z`
   typed once the command runs could reach a terminal with `ISIG` on. So keys typed after the command's output but
   before the prompt (half a round trip over ssh) are neither lost nor read by the next command. A typed-ahead line
   ending in a newline runs without editing (the client prints the prompt and the line); the rest starts the line
@@ -1920,10 +1928,18 @@ truncates when it relocates the package.
   completion menu. Ctrl-C at the prompt sets `$?` to 130.
 - A job notification is printed before the *next* prompt, so it shows up in the output of the command that caused
   it. With `stty -echo`, neither the command nor its newline is echoed; Ctrl-D isn't echoed as a newline.
+- The tests run in threads of one process, so anything one opens can end up in a process another forks. The pty's
+  fds are close-on-exec from the start (`posix_openpt` and `TIOCGPTPEER` with `O_CLOEXEC`, not `openpty`): a shell
+  that kept another test's master open would keep that terminal from hanging up when the test closes it.
+- Type a line only after the prompt: before the editor has the terminal, the terminal echoes what is typed, and an
+  `expect` can match that echo before the line has run. Where a job must be ready before a key acts on it (a `trap`
+  set in a background subshell), the job says so itself (it makes a file, `wait_for_file`): the shell's own output
+  says only that the job started. A signal's effect is waited for (`gone`, `wait_gone`), not checked at once: `kill`
+  returns before the process has acted on it.
 - The pty is created with size 0x0 (rustyline then assumes 80 columns, the menu 24 rows); `Pty::resize` sets it.
 - Checking the line editor by hand: tmux works well (`tmux new-session -d -x 70 -y 10 ...`, `send-keys`,
   `capture-pane -p [-e]`), but run `tmux set -sg escape-time 0` first, or tmux holds Esc for 500 ms and glues it to
-  the next key. Wait after Enter before typing: input sent before the next prompt is discarded.
+  the next key.
 - pixi task `outputs` caching ignores paths under `.pixi/`.
 - `tests/compare.rs` runs each case in a session of its own (`setsid`), so it has no controlling terminal. Under
   `pixi run`, `cargo test` is in the background group of the user's terminal, and a case that touched it (`luish -i`,

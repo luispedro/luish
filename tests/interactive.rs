@@ -113,18 +113,22 @@ impl Pty {
         let mut env_p: Vec<*const libc::c_char> = env.iter().map(|a| a.as_ptr()).collect();
         env_p.push(std::ptr::null());
         let cdir = CString::new(dir.as_os_str().as_encoded_bytes()).unwrap();
-        // SAFETY: openpty with valid out-pointers; the child only makes
+        // SAFETY: opening a pty and forking; the child only makes
         // async-signal-safe calls before execve.
         unsafe {
-            let (mut master, mut slave) = (0, 0);
-            let r = libc::openpty(
-                &mut master,
-                &mut slave,
-                std::ptr::null_mut(),
-                std::ptr::null(),
-                std::ptr::null(),
+            // Both ends are close-on-exec from the start (not `openpty`'s):
+            // the tests run in threads, and a shell another one forks in the
+            // meantime would otherwise keep them open, so that closing the
+            // master wouldn't hang up the terminal (`hang_up`).
+            let master = libc::posix_openpt(libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC);
+            assert!(master >= 0, "posix_openpt failed");
+            assert_eq!(libc::unlockpt(master), 0, "unlockpt failed");
+            let slave = libc::ioctl(
+                master,
+                libc::TIOCGPTPEER,
+                libc::O_RDWR | libc::O_NOCTTY | libc::O_CLOEXEC,
             );
-            assert_eq!(r, 0, "openpty failed");
+            assert!(slave >= 0, "TIOCGPTPEER failed");
             let pid = libc::fork();
             assert!(pid >= 0, "fork failed");
             if pid == 0 {
@@ -393,6 +397,18 @@ impl Pty {
 
     fn path(&self, name: &str) -> PathBuf {
         self.dir.join(name)
+    }
+
+    /// Waits until the file `name` exists in the shell's directory, which a
+    /// job makes to say it is ready.
+    fn wait_for_file(&mut self, name: &str) {
+        let start = Instant::now();
+        while !self.path(name).exists() {
+            if start.elapsed() > TIMEOUT {
+                self.fail(&format!("timed out waiting for the file {name}"));
+            }
+            self.read_some(Duration::from_millis(10));
+        }
     }
 }
 
@@ -663,11 +679,20 @@ fn alive(pid: i32) -> bool {
 
 /// Waits until a process has ended.
 fn wait_gone(pid: i32) {
+    assert!(gone(pid), "process {pid} is still running");
+}
+
+/// Whether a process ends within the timeout: a signal sent to it may not
+/// have been acted on yet when `kill` returns.
+fn gone(pid: i32) -> bool {
     let start = Instant::now();
     while alive(pid) {
-        assert!(start.elapsed() < TIMEOUT, "process {pid} is still running");
+        if start.elapsed() > TIMEOUT {
+            return false;
+        }
         std::thread::sleep(Duration::from_millis(10));
     }
+    true
 }
 
 /// Kills a job that the shell left running when it exited.
@@ -914,8 +939,10 @@ fn jobs_menu() {
     // Without jobs, there is no menu.
     sh.send("jobs -i; echo none=$?\n");
     sh.expect("none=0\n");
-    // Each line waits for the prompt: the editor discards what is typed
-    // before it.
+    // Each line waits for the prompt: before the editor has the terminal,
+    // the terminal echoes what is typed, and `started` in that echo would
+    // let the next line go before this one runs.
+    sh.expect("$ ");
     sh.send("sleep 31 & sleep 32 & echo started\n");
     sh.expect("started\n");
     sh.expect("$ ");
@@ -950,9 +977,12 @@ fn jobs_menu() {
     sh.expect("\x1b[?25h");
     sh.expect("$ ");
     // A job that ignores TERM gets KILL, which leaving the menu waits for.
-    sh.send("(trap '' TERM; sleep 33) & echo started\n");
+    // `started` comes from the shell, so the job makes a file once it
+    // ignores TERM.
+    sh.send("(trap '' TERM; : >trapped; sleep 33) & echo started\n");
     sh.expect("started\n");
     sh.expect("$ ");
+    sh.wait_for_file("trapped");
     sh.send("jobs -i\n");
     sh.expect(": quit");
     sh.send("Ke");
@@ -1013,11 +1043,28 @@ fn jobs_menu_disown() {
     sh.expect("sleep 35\n");
     sh.send("exit 3\n");
     assert_eq!(sh.exit_status(), 3);
-    let (kept_alive, hupped_alive) = (alive(kept), alive(hupped));
+    // Once the other job has ended of its SIGHUP, the disowned one would
+    // have had its own too.
+    let hupped_gone = gone(hupped);
+    let kept_alive = alive(kept);
     kill_pid(kept);
     kill_pid(hupped);
+    assert!(hupped_gone, "the job didn't get SIGHUP");
     assert!(kept_alive, "the disowned job got SIGHUP");
-    assert!(!hupped_alive, "the job didn't get SIGHUP");
+}
+
+/// Lines typed ahead that the editor reads together with the line before
+/// (here two in one write) are kept for the next prompts, not dropped.
+#[test]
+fn type_ahead_lines() {
+    let mut sh = Pty::spawn_term("typeahead", "vt100");
+    sh.expect("$ ");
+    sh.send("echo one\necho two\necho three\n");
+    sh.expect("one\n");
+    sh.expect("two\n");
+    sh.expect("three\n");
+    sh.send("exit\n");
+    assert_eq!(sh.exit_status(), 0);
 }
 
 #[test]
