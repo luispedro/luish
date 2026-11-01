@@ -24,30 +24,32 @@ benchmark print the same output for it.
 | build | A make-like build that runs `$SH -c` for each object: fork, exec and shell startup |
 | arrays | Not POSIX: sorting, a sieve, word counts, grouping, matrices, a search and slices, in indexed and associative arrays |
 
-The script and startup measurements on this page were made on 2026-10-19, with the release build of luish at git
-revision `a00a69d` (`pixi run release`), on a laptop with an Intel Core i7-1260P (4 performance cores of 2 threads each,
-and 8 slower efficiency cores) running Ubuntu 26.04, in its performance power profile. Every measurement ran pinned to
-the same performance core (`taskset -c 3`), one shell and one benchmark at a time, after a 30-second pause to let the
-processor cool, with the desktop running. The other shells are Ubuntu's dash 0.5.12, bash 5.3 (`--posix`) and BusyBox
-1.37.0 (`busybox sh`, from the `busybox-static` package), and zsh 5.9 (`--emulate sh`) from conda-forge, as pinned in
-luish's `pixi.toml`. Two complete runs of the script benchmarks gave times within 1% of each other for dash and luish
-(luish's ratios within 0.01), and within 3% for the other shells.
+The script and startup measurements on this page were made on 2026-11-01, with the release build of luish at git
+revision `931cc89` (`pixi run release`), on a laptop with an Intel Core i7-1360P (4 performance cores of 2 threads each,
+and 8 slower efficiency cores) running Ubuntu 26.04, in its performance power profile, with nothing running but the
+desktop. Every measurement ran pinned to the same performance core (`taskset -c 3`), one shell and one benchmark at a
+time (each a hyperfine run of its own), after a 60-second pause to let the processor cool to its idle temperature.
+The other shells are Ubuntu's dash 0.5.12, bash 5.3 (`--posix`) and BusyBox 1.37.0 (`busybox sh`, from the
+`busybox-static` package), and zsh 5.9 (`--emulate sh`) from conda-forge, as pinned in luish's `pixi.toml`. Two
+complete runs of the script benchmarks gave times within 1% of each other for every shell and benchmark (luish's
+ratios within 0.01), except luish's `arrays` (2%) and zsh's `textproc`, whose first run started with the processor
+still warm and took 8% longer: its row is from two runs that started cool.
 
-Seconds (and the ratio to dash; lower is faster), mean of 40 runs (two runs of `bench/run.sh -r 20`):
+Seconds (and the ratio to dash; lower is faster), mean of 40 runs (two runs of 20):
 
 | Benchmark | dash | luish | bash | zsh | busybox |
 |---|---|---|---|---|---|
-| arith | 0.203 (1.00) | 0.132 (0.65) | 0.533 (2.63) | 0.339 (1.67) | 0.277 (1.36) |
-| functions | 0.117 (1.00) | 0.109 (0.93) | 0.656 (5.61) | 0.479 (4.10) | 0.152 (1.30) |
-| strings | 0.160 (1.00) | 0.124 (0.78) | 0.526 (3.30) | 0.424 (2.66) | 0.225 (1.41) |
-| textproc | 0.124 (1.00) | 0.125 (1.01) | 0.317 (2.56) | 0.385 (3.10) | 0.188 (1.51) |
-| configure | 0.644 (1.00) | 0.695 (1.08) | 0.845 (1.31) | 0.794 (1.23) | 0.296 (0.46)\* |
-| build | 0.893 (1.00) | 0.312 (0.35) | 1.001 (1.12) | 1.003 (1.12) | 0.134 (0.15)\* |
+| arith | 0.173 (1.00) | 0.111 (0.64) | 0.462 (2.68) | 0.292 (1.69) | 0.235 (1.36) |
+| functions | 0.101 (1.00) | 0.093 (0.92) | 0.565 (5.61) | 0.423 (4.20) | 0.130 (1.29) |
+| strings | 0.153 (1.00) | 0.120 (0.78) | 0.470 (3.07) | 0.389 (2.54) | 0.209 (1.36) |
+| textproc | 0.127 (1.00) | 0.127 (1.00) | 0.279 (2.19) | 0.350 (2.75) | 0.181 (1.42) |
+| configure | 0.716 (1.00) | 0.764 (1.07) | 0.902 (1.26) | 0.887 (1.24) | 0.334 (0.47)\* |
+| build | 0.997 (1.00) | 0.354 (0.36) | 1.109 (1.11) | 1.124 (1.13) | 0.148 (0.15)\* |
 
 The first four run mostly inside the shell, where luish is as fast as dash, or faster. In `strings`, luish runs
 `$(printf ...)` without a subshell (see [Shell language extensions](usage.md#shell-language-extensions)), so it forks
 23 times to dash's 195. The next two spend most of their time starting programs. `configure` starts the same
-programs in both shells, with the same system calls, and takes 8% longer, mostly because luish itself starts more
+programs in both shells, with the same system calls, and takes 7% longer, mostly because luish itself starts more
 slowly and a command substitution that forks costs more (below). `build` takes about a third as long: luish runs
 `basename` and `dirname` in the shell, also in `$(basename "$(dirname "$src")")`, where dash starts the utility, so
 it starts 346 programs to dash's 834 (it still starts a new shell for each file it compiles). Ubuntu 26.04's `cat`, `basename` and other basic utilities
@@ -65,7 +67,7 @@ program it starts faster. This counts for more with the slower utilities of Ubun
 
 | Benchmark | luish | bash | zsh |
 |---|---|---|---|
-| arrays | 0.111 (1.00) | 0.483 (4.36) | 0.529 (4.77) |
+| arrays | 0.093 (1.00) | 0.416 (4.48) | 0.459 (4.94) |
 
 ## Startup and single commands
 
@@ -74,16 +76,16 @@ environment (only `PATH`, `HOME` set to an empty directory, and `LC_ALL=C`):
 
 | Benchmark | dash | luish | bash | zsh |
 |---|--:|--:|--:|--:|
-| `sh -c true` | 0.31 ms | 0.52 ms | 0.52 ms | 0.75 ms |
-| `sh -c /bin/true` | 0.60 ms | 0.79 ms | 0.79 ms | 1.00 ms |
-| `while` loop, 100,000 iterations of `$((i+1))` | 80 ms | 42 ms | 174 ms | 138 ms |
-| Loop running `/bin/true` 3000 times | 0.89 s | 0.90 s | 1.19 s | 1.31 s |
-| Loop running `x=$(f)` 3000 times, `f` a function that runs `echo hi` | 0.23 s | 0.32 s | 0.52 s | 0.44 s |
-| Loop running `x=$(echo hi)` 3000 times | 0.24 s | 0.002 s | 0.49 s | 0.39 s |
+| `sh -c true` | 0.42 ms | 0.62 ms | 0.65 ms | 0.87 ms |
+| `sh -c /bin/true` | 0.79 ms | 0.95 ms | 0.98 ms | 1.21 ms |
+| `while` loop, 100,000 iterations of `$((i+1))` | 68 ms | 36 ms | 151 ms | 139 ms |
+| Loop running `/bin/true` 3000 times | 1.30 s | 1.30 s | 1.64 s | 1.77 s |
+| Loop running `x=$(f)` 3000 times, `f` a function that runs `echo hi` | 0.23 s | 0.30 s | 0.49 s | 0.42 s |
+| Loop running `x=$(echo hi)` 3000 times | 0.23 s | 0.002 s | 0.46 s | 0.38 s |
 
-Starting luish takes about 0.2 ms longer than dash, as luish is a larger program (5.8 MB, with the plugin support
+Starting luish takes about 0.2 ms longer than dash, as luish is a larger program (5.9 MB, with the plugin support
 built in): it loads more libraries and touches more memory (180 page faults to dash's 100). Starting a program costs
-about the same as in dash. A command substitution that forks takes about 1.4 times as long as in dash: it makes the
+about the same as in dash. A command substitution that forks takes about 1.3 times as long as in dash: it makes the
 same system calls, but forking a larger process costs more. One that is only `echo`, `printf`, `pwd`, `command -v`
 or `type` with plain words (or `basename`, `dirname`, `expr`, `seq`, `id` or `uname`, see
 [Shell language extensions](usage.md#shell-language-extensions)) doesn't fork at all, and takes about 1% as long.
@@ -124,16 +126,17 @@ arrays and associative arrays) and as an extension's built-ins (`ext.rhai`), whi
 | urlencode | 8,000 calls from a shell loop, each percent-encoding a 60-character string into `REPLY` (the shell function with a `case` table, not a `$(printf)` per character) |
 | calls | 300,000 calls from a shell loop of a command that adds two numbers into `REPLY`: the cost of a call |
 
-The fastest of 10 runs of `bench/extensions/run.sh -r 10`, on 2026-09-29, on a machine with 16 cores:
+The fastest of 10 runs of `bench/extensions/run.sh -r 10`, on 2026-11-01, on the laptop and core of the script
+measurements above:
 
 | Task | Shell functions (ms) | Rhai built-ins (ms) | Shell / Rhai |
 |---|--:|--:|--:|
-| collatz | 834 | 380 | 2.2 |
-| wordfreq | 550 | 189 | 2.9 |
-| urlencode | 673 | 332 | 2.0 |
-| calls | 472 | 758 | 0.6 |
+| collatz | 667 | 315 | 2.1 |
+| wordfreq | 539 | 156 | 3.5 |
+| urlencode | 568 | 273 | 2.1 |
+| calls | 392 | 756 | 0.5 |
 
-Work inside a command (loops, arithmetic, strings, maps) runs two to three times as fast in Rhai. Rhai evaluates its
+Work inside a command (loops, arithmetic, strings, maps) runs two to three and a half times as fast in Rhai. Rhai evaluates its
 syntax tree much as luish evaluates shell code, so the gain is not larger. A command that does almost nothing is
 faster as a shell function: calling into Rhai costs no more than calling a shell function (40,000 calls of an empty
 command added about 5 ms either way to a loop that took 47 ms), but each Rhai operation costs more than the shell
