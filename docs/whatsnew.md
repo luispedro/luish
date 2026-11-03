@@ -1,5 +1,72 @@
 # What's new
 
+## Version 0.8.0 (3 November 2026)
+
+This release adds bash's and zsh's arithmetic `for` loop, `$(<file)` and
+`=(cmd)`, bash's options of `read` and `wait`, and zsh's handling of jobs
+when an interactive shell exits.
+
+**Changed: jobs when the shell exits.** In an interactive shell:
+
+- `exit` (or Ctrl-D) with jobs still running warns `You have running jobs.`
+  and exits only if repeated right away, as for a stopped job and as zsh's
+  `checkrunningjobs` does.
+- When the shell exits, or the terminal hangs up, its jobs get SIGHUP (and
+  SIGCONT if they are stopped), as zsh's `hup` does; on a hangup the shell
+  saves its history and exits.
+- `disown` keeps a job running, and `disown -h` keeps it in the job table but
+  doesn't send it SIGHUP (and `exit` doesn't warn about it). `unsetopt
+  jobs.check_running` and `unsetopt jobs.hup` restore the earlier behaviour
+  (see `help setopt`).
+
+**Language.**
+
+- `for ((i = 0; i < n; i++)); do ...; done`, the arithmetic loop of bash and
+  zsh (also with a `{ ... }` body).
+- `$(<file)` is the file's contents, read by the shell itself, as in ksh,
+  bash and zsh.
+- `=(cmd)`, as in zsh, is the name of a temporary file holding the output of
+  `cmd`, removed when the command is over.
+- `setopt syntax.repeat` turns on zsh's `repeat 3 { ... }` loop, and `setopt
+  syntax.fd_vars` bash's and zsh's `exec {fd}>file`, which opens a new
+  descriptor and puts its number in `fd`. Both are off by default, as they
+  change what valid POSIX code means (see
+  [](usage.md#shell-language-extensions)).
+- `. -- file` and `source -- file` skip the `--`, as in dash, bash and zsh.
+
+**Built-ins.**
+
+- `read` takes bash's `-d`, `-n`, `-N`, `-t`, `-u`, `-s`, `-e` and `-i`.
+  Without a name, the line goes to `REPLY`, as in bash, and `read -A` without
+  one fills `reply`, as in zsh. Ctrl-C and signals with a trap now interrupt
+  `read`, as in dash (see `help read`).
+- `wait -n` waits for the next job to finish, `-p VAR` sets `VAR` to its
+  process id, and `-f` waits for stopped jobs too, as in bash (see `help
+  wait`).
+- In `jobs -i`, the menu is coloured, `s` continues a stopped job and `d`
+  disowns one (as `disown -h`; again to undo it).
+- `help [[` describes `[[ ... ]]`.
+
+**Interactive use.**
+
+- Lines typed ahead, or pasted together, all run; only the first did. In
+  SSH mode, keys typed as a command ends are no longer lost.
+- Colour schemes: `ui.ok`, `ui.warn`, `ui.bad`, `ui.dim` and `ui.strong`
+  colour the menus and plugins' output (`jobs.*`, `plugin.*` and so on)
+  unless those names are set themselves, so a scheme needs only these five
+  (see [](colour-schemes.md)).
+- `git log <Tab>` offers tracked files as well as revisions.
+
+**Fixes.**
+
+- `exit` without a status in a trap exits with the status from before the
+  trap, as POSIX says and dash does, also from a function or subshell run
+  by the trap.
+- A trap that interrupts `wait` sees `$?` as 128+n, and a signal that came
+  just as a child exited no longer goes unnoticed.
+- After `exec N>&-`, `>&N` is an error rather than reaching a descriptor the
+  shell keeps for itself.
+
 ## Version 0.7.1 (19 October 2026)
 
 The 0.7.0 release packages failed to build, so 0.7.0 was never published

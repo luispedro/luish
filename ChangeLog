@@ -1,4 +1,4 @@
-Unreleased
+Version 0.8.0 2026-11-03 by luispedro
     * Lines typed ahead together at the prompt all run (only the first did)
     * SSH mode: keys typed as a command ends are no longer lost
     * for ((i = 0; i < n; i++)): the arithmetic loop of bash and zsh

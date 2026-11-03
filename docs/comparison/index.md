@@ -1,7 +1,7 @@
 # luish, dash, bash and zsh
 
 This page compares luish with the three shells people most often choose between on Linux: dash (the usual `/bin/sh`
-on Debian and Ubuntu), bash and zsh. It describes luish 0.7.0 (October 2026), a young project that already
+on Debian and Ubuntu), bash and zsh. It describes luish 0.8.0 (November 2026), a young project that already
 replaces dash for scripts, and is meant to replace zsh as an interactive shell; [](../compatibility.md) has the details
 behind each claim here. Two further pages go into detail:
 [](language.md), on arrays, expansions, arithmetic, globbing and the rest of the language, and
@@ -22,7 +22,7 @@ behind each claim here. Two further pages go into detail:
 | | dash | bash | zsh | luish |
 |---|---|---|---|---|
 | POSIX `sh` | Yes | With `--posix` | With `--emulate sh` | Yes, matching dash where POSIX is ambiguous |
-| Speed of scripts (relative to dash) | 1× | 1.1 to 5.6× slower | 1.1 to 4.1× slower | 0.35 to 1.1× |
+| Speed of scripts (relative to dash) | 1× | 1.1 to 5.6× slower | 1.1 to 4.2× slower | 0.36 to 1.1× |
 | Arrays and associative arrays | No | Yes | Yes | Yes (indices from 0, as bash and zsh's `sh` mode) |
 | `[[ ... ]]`, `${x/a/b}`, `${x:1:2}`, `typeset` | No | Yes | Yes | Yes |
 | Process substitution `<(...)` | No | Yes | Yes | Yes |
@@ -64,16 +64,16 @@ start other programs) and 5.6 times as long (scripts that mostly run inside the 
 
 | Benchmark | dash | luish | bash | zsh |
 |---|---|---|---|---|
-| arith | 1.00 | 0.65 | 2.63 | 1.67 |
-| functions | 1.00 | 0.93 | 5.61 | 4.10 |
-| strings | 1.00 | 0.78 | 3.30 | 2.66 |
-| textproc | 1.00 | 1.01 | 2.56 | 3.10 |
-| configure | 1.00 | 1.08 | 1.31 | 1.23 |
-| build | 1.00 | 0.35 | 1.12 | 1.12 |
-| arrays (not POSIX, so relative to luish) | | 1.00 | 4.36 | 4.77 |
+| arith | 1.00 | 0.64 | 2.68 | 1.69 |
+| functions | 1.00 | 0.92 | 5.61 | 4.20 |
+| strings | 1.00 | 0.78 | 3.07 | 2.54 |
+| textproc | 1.00 | 1.00 | 2.19 | 2.75 |
+| configure | 1.00 | 1.07 | 1.26 | 1.24 |
+| build | 1.00 | 0.36 | 1.11 | 1.13 |
+| arrays (not POSIX, so relative to luish) | | 1.00 | 4.48 | 4.94 |
 
-Starting luish takes about 0.2 ms longer than dash (0.52 ms against 0.31 ms for `sh -c true`), and a command
-substitution that forks about 1.4 times as long, as it is a larger program; that is most of the 8% on `configure`.
+Starting luish takes about 0.2 ms longer than dash (0.62 ms against 0.42 ms for `sh -c true`), and a command
+substitution that forks about 1.3 times as long, as it is a larger program; that is most of the 7% on `configure`.
 `build` takes about a third as long, as luish runs `basename` and `dirname` in the shell where dash starts the
 programs, and `$(echo ...)`, `$(printf ...)` and the like don't fork at all. Everything luish adds beyond POSIX is
 opt-in or gives a meaning to what is a syntax error in dash, so POSIX scripts don't pay for it.
@@ -92,7 +92,7 @@ unchanged, about five times faster. luish has:
   `pipestatus`/`PIPESTATUS`, `path` ...).
 
 Brace expansion (`{a,b}`, `{1..10}`) needs `setopt expand.braces`. Not yet: `$'...'` strings, `select`, `coproc`,
-`extglob`, `mapfile`, `printf -v`, `local -n`, `${x^^}`, `wait -n`, the `ERR` trap, the `time` keyword, and
+`extglob`, `mapfile`, `printf -v`, `local -n`, `${x^^}`, the `ERR` trap, the `time` keyword, and
 `((...))` and floating-point arithmetic. Where bash and zsh disagree, luish documents which it follows (usually zsh's `sh`
 emulation, sometimes bash).
 

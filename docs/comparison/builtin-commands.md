@@ -5,7 +5,7 @@ It complements [](index.md); [](../builtins.md) documents luish's own built-ins 
 
 The lists are those of dash 0.5.12 (Debian and Ubuntu's), bash 5.2 (`compgen -b`), zsh 5.9 (`${(k)builtins}`
 with no startup files, which includes the built-ins of modules zsh loads on demand, such as `zstyle` and the
-completion system's) and luish 0.7.0. zsh's other modules, loaded with `zmodload` (such as `zsh/files`, `zsh/datetime`
+completion system's) and luish 0.8.0. zsh's other modules, loaded with `zmodload` (such as `zsh/files`, `zsh/datetime`
 or `zsh/system`), add more, and bash can load more with `enable -f`; those are not listed.
 
 | | dash | bash | zsh | luish |
@@ -62,12 +62,12 @@ speed.
 | `kill` | ✓ | ✓ | ✓ | ✓ | `-s`, `-SIGNAL`, `-l`, and jobs (`%1`) |
 | `printf` | ✓ | ✓ | ✓ | ✓ | `%b`; no `-v` or `%q` |
 | `pwd` | ✓ | ✓ | ✓ | ✓ | `-L`, `-P` |
-| `read` | ✓ | ✓ | ✓ | ✓ | `-r`, `-p`, and arrays with `-a` (bash) or `-A` (zsh); no `-t`, `-n`, `-s`, `-d`, `-u`, `-e` or zsh's `-k`, `-q` |
+| `read` | ✓ | ✓ | ✓ | ✓ | `-r`, and bash's `-p`, `-d`, `-n`, `-N`, `-t`, `-u`, `-s`, `-e`, `-i`; arrays with `-a` (bash) or `-A` (zsh); no zsh's `-k`, `-q` |
 | `type` | ✓ | ✓ | ✓ | ✓ | No options (bash's `-a`, `-t`, `-p`; zsh's `-a`, `-w` ...); names the plugin of a built-in that a plugin added |
 | `ulimit` | ✓ | ✓ | ✓ | ✓ | `-H`, `-S`, `-a` and dash's resource letters |
 | `umask` | ✓ | ✓ | ✓ | ✓ | `-S` |
 | `unalias` | ✓ | ✓ | ✓ | ✓ | `-a`, and zsh's `-m`, `-s` |
-| `wait` | ✓ | ✓ | ✓ | ✓ | Jobs and process ids; no `-n`, `-f` or `-p` (bash) |
+| `wait` | ✓ | ✓ | ✓ | ✓ | Jobs and process ids, and bash's `-n`, `-f` and `-p` |
 
 [^fc]: Debian's dash is built without a line editor, so it has no `fc`. Upstream dash built with libedit has one.
 

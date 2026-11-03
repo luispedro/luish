@@ -4,7 +4,7 @@ This page compares what the shell language of dash, bash, zsh and luish can do b
 quoting, parameter expansion, arrays, arithmetic, conditionals, globbing, redirections, control flow and the
 variables the shell sets. [](builtin-commands.md) compares the built-in commands.
 
-Each feature was tried in dash 0.5.12, bash 5.2, zsh 5.9 (started with `-f`) and luish 0.7.0. The zsh column is
+Each feature was tried in dash 0.5.12, bash 5.2, zsh 5.9 (started with `-f`) and luish 0.8.0. The zsh column is
 native zsh. Where luish takes a feature from zsh, it usually follows zsh's `sh` emulation (`zsh --emulate sh`), which
 turns some of zsh's features off and counts array indices from 0; the notes say where that matters.
 
@@ -135,7 +135,7 @@ All four have POSIX's `*`, `?` and `[...]`. luish sorts matches by bytes, where 
 | `&>`, `&>>` (stdout and stderr) | – | ✓ | ✓ | – | luish, as dash and POSIX, reads `cmd &> f` as `cmd &` then `> f`; write `> f 2>&1` |
 | `\|&` (pipe stdout and stderr) | – | ✓ | ✓ | ✓ | |
 | Process substitution, `<(cmd)`, `>(cmd)` | – | ✓ | ✓ | ✓ | |
-| zsh's `=(cmd)` (a temporary file) | – | – | ✓ | – | |
+| zsh's `=(cmd)` (a temporary file) | – | – | ✓ | ✓ | |
 | Allocated descriptors, `exec {fd}>f` | – | ✓ | ✓ | *opt* | luish: `setopt syntax.fd_vars` |
 | `$(<file)` | – | ✓ | ✓ | ✓ | |
 | Command substitution without a subshell, `${ list; }`, `${\| list; }` | – | – | – | ✓ | As in bash 5.3 and mksh |
@@ -149,7 +149,7 @@ All four have POSIX's `*`, `?` and `[...]`. luish sorts matches by bytes, where 
 | `local` | ✓ | ✓ | ✓ | ✓ | |
 | `case` fall-through, `;&` | – | ✓ | ✓ | ✓ | In POSIX since 2024 |
 | `case` continue, `;;&` (bash), `;\|` (zsh) | – | ✓ | ✓ | ✓ | luish takes both |
-| `for ((i=0; i<n; i++))` | – | ✓ | ✓ | – | `i=0; while [ $i -lt $n ]; do ...; i=$((i+1)); done` |
+| `for ((i=0; i<n; i++))` | – | ✓ | ✓ | ✓ | In dash: `i=0; while [ $i -lt $n ]; do ...; i=$((i+1)); done` |
 | `select` | – | ✓ | ✓ | – | |
 | `time` as a keyword (times pipelines and functions) | – | ✓ | ✓ | – | luish and dash run the `time` program |
 | `repeat N` | – | – | ✓ | *opt* | `setopt syntax.repeat`: `repeat 3 { ... }` or `repeat 3; do ... done` |

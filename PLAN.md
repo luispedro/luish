@@ -7,7 +7,7 @@ documentation is in `docs/`.
 ## Status (2026-10-25)
 
 luish has replaced zsh as the author's shell. Phases 0 to 10 (the POSIX shell and the interactive mode) and 13
-(replacing zsh, milestone M4) are done; the latest release is 0.7.1 (2026-10-19). Since the last status (2026-10-14):
+(replacing zsh, milestone M4) are done; the latest release is 0.8.0 (2026-11-03). Since the last status (2026-10-14):
 `basename`, `dirname`, `expr`, `seq`, `id` and `uname` run in the shell, and `$(echo ...)` and the like without a
 subshell (Phase 12); completers can hand the line to another command's completer, and plugins got `sh::glob` and a
 value cache (`sh::cache_get`, `sh::cache_put`); and new extensions: `${ list; }`, `$(<file)`, `shopt`,
