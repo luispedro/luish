@@ -10,6 +10,7 @@ use crate::expand::split::XChar;
 use crate::interactive::{bang, highlight, history::ShellHistory};
 use crate::lexer::{AliasMap, Parser, no_aliases};
 use crate::shell::Shell;
+use crate::unparse::Needs;
 use crate::{ast, cmdtext, stack, unparse};
 
 /// Aliases that exercise the lexer's splicing: one ending in a blank (so
@@ -34,11 +35,28 @@ fn aliases() -> Rc<AliasMap> {
     Rc::new(a)
 }
 
+/// No syntax options.
+const PLAIN: Needs = Needs {
+    globqual: false,
+    fd_vars: false,
+    repeat: false,
+};
+
+/// Every syntax option: `glob.bare_qualifiers`, `syntax.fd_vars` and
+/// `syntax.repeat`.
+const ALL: Needs = Needs {
+    globqual: true,
+    fd_vars: true,
+    repeat: true,
+};
+
 /// Parses all of `src`, and the job text of each command, as `cmdtext`
-/// writes it. Stops at the first error.
-fn parse_with(src: &[u8], aliases: &Rc<AliasMap>, source_eof: bool, bareglobqual: bool) -> Option<List> {
+/// writes it, with the syntax options in `opts`. Stops at the first error.
+fn parse_with(src: &[u8], aliases: &Rc<AliasMap>, source_eof: bool, opts: Needs) -> Option<List> {
     let mut p = Parser::new(src.to_vec(), 1, source_eof);
-    p.bareglobqual = bareglobqual;
+    p.bareglobqual = opts.globqual;
+    p.fd_vars = opts.fd_vars;
+    p.repeat = opts.repeat;
     let mut all = Vec::new();
     loop {
         match p.parse_next(aliases) {
@@ -65,12 +83,12 @@ fn parse_with(src: &[u8], aliases: &Rc<AliasMap>, source_eof: bool, bareglobqual
 
 /// The parser and lexer: on the whole input (as for `-c` and scripts), as
 /// the interactive loop parses it (where it may be incomplete), and with
-/// aliases and glob qualifiers.
+/// aliases and the syntax options.
 pub fn parse(data: &[u8]) {
     stack::init();
-    parse_with(data, &no_aliases(), true, false);
-    parse_with(data, &no_aliases(), false, false);
-    parse_with(data, &aliases(), true, true);
+    parse_with(data, &no_aliases(), true, PLAIN);
+    parse_with(data, &no_aliases(), false, PLAIN);
+    parse_with(data, &aliases(), true, ALL);
 }
 
 /// The functions defined in `list`, at its top level.
@@ -92,18 +110,26 @@ fn functions(list: &List) -> Vec<(Vec<u8>, Rc<ast::FunctionBody>)> {
 /// `unparse.rs`, which writes functions back as source text (`typeset -f`,
 /// the saved state): the text must parse back to the same tree, apart from
 /// line numbers, which the saved state records separately and must fit
-/// that tree. The input is made the body of a function.
+/// that tree, parsed with only the syntax options it says it needs. The
+/// input is made the body of a function, parsed without and with the
+/// options.
 pub fn unparse(data: &[u8]) {
     stack::init();
     let src = [&b"f() {\n"[..], data, b"\n}\n"].concat();
-    let Some(list) = parse_with(&src, &no_aliases(), true, false) else {
+    for opts in [PLAIN, ALL] {
+        unparse_with(&src, opts);
+    }
+}
+
+fn unparse_with(src: &[u8], opts: Needs) {
+    let Some(list) = parse_with(src, &no_aliases(), true, opts) else {
         return;
     };
     let aliases = AliasMap::default();
     for (name, body) in functions(&list) {
-        let (text, globqual) = unparse::function(&name, &body, &aliases);
+        let (text, needs) = unparse::function(&name, &body, &aliases);
         let shown = String::from_utf8_lossy(&text);
-        let Some(back) = parse_with(&text, &no_aliases(), true, globqual) else {
+        let Some(back) = parse_with(&text, &no_aliases(), true, needs) else {
             panic!("printed function doesn't parse:\n{shown}");
         };
         let back = functions(&back);
@@ -256,16 +282,23 @@ pub fn highlight(data: &[u8]) {
         1 if at_cursor => highlight::PATH_PREFIX,
         _ => 0,
     };
+    // The syntax options from the first byte, so that both settings are tried.
+    let (repeat, fd_vars) = match data.first() {
+        Some(b) => (b & 1 == 0, b & 2 == 0),
+        None => (false, false),
+    };
     let facts = highlight::Facts {
         command: &command,
         var: &var,
         braces: true,
+        repeat,
+        fd_vars,
         glob: true,
         path: Some(&path),
         home: Some(b"/home"),
     };
     let colors = highlight::Colors::default();
-    let error = highlight::syntax_error(data, &aliases(), false);
+    let error = highlight::syntax_error(data, &aliases(), false, repeat, fd_vars);
     for cursor in [None, Some(data.len()), Some(data.len() / 2)] {
         let mut cls = highlight::classify(data, cursor, &facts);
         assert_eq!(cls.len(), data.len());

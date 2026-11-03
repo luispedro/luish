@@ -1998,6 +1998,12 @@ It keeps what it finds in `fuzz/corpus/TARGET` and crashes in `fuzz/artifacts/TA
 `cargo +nightly fuzz tmin TARGET FILE` minimises a crash. Add each bug found as a test case (a differential case,
 or a unit test) when fixing it.
 
+`run.sh` turns off ASan's `detect_stack_use_after_return` (on by default), whose fake stack is on the heap, so that
+`stack.rs` sees the real stack and deep nesting is an error rather than a stack overflow. Some findings are expected:
+`arith` runs out of libFuzzer's 2 GB when an input assigns to arrays near `MAX_INDEX` (an array of 64M elements takes
+1.5 GB), and `unparse` fails when a bad substitution (`ParamOp::Bad`, kept as text) holds text that needs a syntax
+option to parse (`"${w$(f(Z))}"` with `glob.bare_qualifiers`): such code can only fail when it runs.
+
 luish is a binary crate, so the fuzz crate compiles its modules itself: `fuzz/build.rs` writes a `#[path]` module for
 each `mod NAME;` of `src/main.rs`, so the list needs no upkeep. The fuzz targets can use crate-private items, and
 code only they need is under `#[cfg(any(test, fuzzing))]` (`fuzzing` is set by cargo-fuzz, and by `fuzz/build.rs`).

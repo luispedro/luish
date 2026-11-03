@@ -19,4 +19,8 @@ parse | unparse | highlight) seeds=tests/cases ;;
 *) seeds=fuzz/seeds/$target ;;
 esac
 mkdir -p fuzz/corpus/$target
+# ASan's use-after-return check moves locals to a fake stack on the heap,
+# where stack.rs can't measure the stack: deep nesting would overflow.
+ASAN_OPTIONS=${ASAN_OPTIONS:+$ASAN_OPTIONS:}detect_stack_use_after_return=0
+export ASAN_OPTIONS
 exec cargo +nightly fuzz run "$target" fuzz/corpus/$target "$seeds" -- -max_len=4096 $time "$@"
