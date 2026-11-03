@@ -293,7 +293,6 @@ impl Shell {
         r
     }
 
-    /// Runs a compound command. `exit` is as for `run_list_exit`.
     /// One expression of `for ((...))`, expanded and evaluated. Unlike in
     /// `$((...))` (where dash keeps them), quotes are removed, as in bash and
     /// zsh. An empty expression is skipped, and as `cond` is true. `set -x`
@@ -320,6 +319,7 @@ impl Shell {
         })
     }
 
+    /// Runs a compound command. `exit` is as for `run_list_exit`.
     pub fn run_compound(&mut self, cc: &CompoundCommand, exit: bool) -> ExecResult {
         match cc {
             CompoundCommand::BraceGroup(list) => self.run_list_exit(list, exit),
