@@ -83,10 +83,35 @@ impl Shell {
 
     fn expand_command_words_into(&mut self, words: &[Word]) -> EResult<Vec<Vec<u8>>> {
         let mut out = Vec::with_capacity(words.len());
-        let mut decl = None;
+        let mut glob = true;
         let mut i = 0;
+        // `noglob CMD ARGS`, as in zsh: a first word that expands to
+        // `noglob` (also after `builtin`) goes, and the words after it
+        // aren't globbed (but those of a `$(...)` in them are).
+        let mut skip = 0;
+        while i < words.len() {
+            self.expand_arg_into(&words[i], glob, &mut out)?;
+            i += 1;
+            loop {
+                match &out[skip..] {
+                    [a, ..] if a == b"noglob" => skip += 1,
+                    [b, a, ..] if b == b"builtin" && a == b"noglob" => skip += 2,
+                    _ => break,
+                }
+                glob = false;
+            }
+            match &out[skip..] {
+                [] => {}
+                [b] if b == b"builtin" => {}
+                _ => break,
+            }
+        }
+        if skip > 0 {
+            out.drain(..skip);
+        }
+        let mut decl = declaration_command(&out);
         while decl.is_none() && i < words.len() {
-            self.expand_word_into(&words[i], &mut out)?;
+            self.expand_arg_into(&words[i], glob, &mut out)?;
             i += 1;
             decl = declaration_command(&out);
         }
@@ -125,10 +150,43 @@ impl Shell {
                 }
                 out.push(arg);
             } else {
-                self.expand_word_into(w, &mut out)?;
+                self.expand_arg_into(w, glob, &mut out)?;
             }
         }
         Ok(out)
+    }
+
+    /// A command word's fields, globbed or (after `noglob`) not.
+    fn expand_arg_into(&mut self, w: &Word, glob: bool, out: &mut Vec<Vec<u8>>) -> EResult<()> {
+        if glob {
+            return self.expand_word_into(w, out);
+        }
+        self.expand_word_noglob_into(w, out)
+    }
+
+    /// [`Self::expand_word_into`] without globbing, for `noglob`.
+    #[inline(never)]
+    fn expand_word_noglob_into(&mut self, w: &Word, out: &mut Vec<Vec<u8>>) -> EResult<()> {
+        let mut one = |sh: &mut Self, w: &Word| -> EResult<()> {
+            if let Some(lit) = w.as_literal() {
+                out.push(lit.to_vec());
+                return Ok(());
+            }
+            let mut f = Fields::new(Some(sh.ifs()));
+            sh.expand_parts(&w.0, false, false, &mut f)?;
+            out.extend(f.into_fields().iter().map(|field| bytes(field)));
+            Ok(())
+        };
+        if self.opt(Opt::BraceExpand)
+            && brace::has_brace(w)
+            && let Some(words) = brace::expand(w, &mut |w| self.expand_word_str(w))?
+        {
+            for w in &words {
+                one(self, w)?;
+            }
+            return Ok(());
+        }
+        one(self, w)
     }
 
     /// The common case of an argument of a declaration command, `name=value`

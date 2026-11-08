@@ -92,6 +92,8 @@ builtins! {
     (b"jobs", jobs::jobs, false),
     (b"kill", jobs::kill, false),
     (b"let", misc::let_, false),
+    // Not POSIX: as in zsh. What it does is in `expand_command_words`.
+    (b"noglob", misc::noglob, false),
     (b"popd", dirstack::popd, false),
     (b"printf", printf::printf, false),
     (b"pushd", dirstack::pushd, false),

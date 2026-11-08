@@ -86,6 +86,7 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 | `dirs`, `pushd`, `popd` | – | ✓ | ✓ | ✓ | As in zsh: `-q`, `-L`, `-P`, `+n`, `-n`; `dirs -l`, `-p`, `-v`, `-c` |
 | `help` | – | ✓ | – | *i* | Help for luish's built-ins, from the pages in [](../builtins.md) |
 | `let` | – | ✓ | ✓ | ✓ | As in zsh; integers only |
+| `noglob` | – | – | ✓ | ✓ | As in zsh: a precommand modifier, which `type` shows as a built-in |
 | `local` | ✓ | ✓ | ✓ | ✓ | Special, as in dash. Takes `typeset`'s options and arrays (`local a=(x y)`). Without a value, keeps the outer value, as in dash (in bash and zsh it starts unset or empty) |
 | `print` | – | – | ✓ | *i* | zsh's, with its options except `-p` (no coprocesses) and `-S` |
 | `setopt`, `unsetopt` | – | – | ✓ | ✓ | zsh's names for the options luish has, and luish's grouped names (`history.share`) and `NAME=VALUE` settings |
@@ -128,7 +129,6 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 | `getln`, `pushln` | The buffer stack | None |
 | `limit`, `unlimit` | csh-style resource limits | `ulimit` |
 | `log` | Report logins and logouts (`watch`) | None |
-| `noglob` | Run a command without globbing | `set -f`, or quoting |
 | `private` | Variables not seen by called functions | `local` (seen by called functions) |
 | `r` | Re-run a command | `fc -s` (`alias r='fc -s'`) |
 | `rehash` | Clear the command cache | Rarely needed (automatic); `hash -r` |

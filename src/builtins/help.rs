@@ -53,6 +53,7 @@ const TOPICS: &[(&[u8], &str)] = &[
     (b"kill", page!("kill")),
     (b"let", page!("let")),
     (b"local", page!("local")),
+    (b"noglob", page!("noglob")),
     (b"plugin", page!("plugin")),
     (b"popd", page!("dirs")),
     (b"print", page!("print")),

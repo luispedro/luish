@@ -495,6 +495,18 @@ pub fn builtin(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     }
 }
 
+/// `noglob command args`, as in zsh. When `noglob` is the first word of a
+/// command (or follows `builtin`), expansion leaves it out and doesn't glob
+/// the other words (`expand_command_words`), so this runs only when it is
+/// reached otherwise (`command noglob`): its arguments were globbed, and it
+/// runs them as a command, functions included.
+pub fn noglob(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
+    match argv.get(1) {
+        Some(_) => sh.run_argv(&argv[1..], true, None),
+        None => Ok(0),
+    }
+}
+
 /// `let`, as in zsh: evaluates each argument as `$((...))` does. The status
 /// is 0 if the last value is non-zero, 1 if it is zero or on an error, which
 /// stops at that argument.

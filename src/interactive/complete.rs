@@ -218,7 +218,7 @@ const BEFORE_COMMAND: &[&[u8]] = &[b"if", b"then", b"else", b"elif", b"do", b"wh
 
 /// Commands that take another command as their argument (after options).
 pub(super) const PRECOMMANDS: &[&[u8]] = &[
-    b"builtin", b"command", b"exec", b"nohup", b"sudo", b"doas", b"env", b"time", b"nice", b"xargs",
+    b"builtin", b"command", b"exec", b"noglob", b"nohup", b"sudo", b"doas", b"env", b"time", b"nice", b"xargs",
 ];
 
 /// Commands whose arguments can be assignments.

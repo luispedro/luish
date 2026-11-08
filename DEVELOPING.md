@@ -732,6 +732,11 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - `let` (`misc::let_`) evaluates each argument with `arith::eval`, as zsh does: status 1 if the last value is zero,
   or on an error, which stops at that argument (with the `$((...))` message, but no exit). No arguments is an error
   (status 1) and a leading `--` is skipped, as in zsh. Test: `builtins/let.sh` (zsh).
+- `noglob` is a precommand modifier, as in zsh: `expand_command_words_into` expands the first words one at a time,
+  drops those that expand to `noglob` (or `builtin` and `noglob`), and expands the rest with
+  `expand_word_noglob_into`, which makes every expansion but globbing. A `$(...)` in them runs as usual, globbing its
+  own words, since nothing is set on the shell. When it is reached otherwise (`command noglob`), the built-in
+  (`misc::noglob`) runs its arguments as a command. Test: `builtins/noglob.sh` (zsh).
 - `typeset` and `declare` (`vars::typeset`) share `vars::declare` with `local`, which differs in keeping the value
   (dash) where `typeset` starts a local unset (zsh and bash), in rejecting `-g`, and in being special. Outside a
   function, `typeset x` puts a `Var` without a value in the map, so `typeset -p` finds it. A local made by `typeset`
