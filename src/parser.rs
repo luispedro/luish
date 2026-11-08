@@ -1043,7 +1043,7 @@ fn parts_fork(parts: &[WordPart]) -> bool {
                     | ParamOp::Keys
                     | ParamOp::Names
                     | ParamOp::Modify(_)
-                    | ParamOp::Bad(_) => false,
+                    | ParamOp::Bad(..) => false,
                 }
         }
         _ => false,

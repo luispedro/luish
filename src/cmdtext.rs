@@ -356,7 +356,7 @@ fn push_param(out: &mut Vec<u8>, pe: &ParamExp) {
         ParamOp::RemoveLargestSuffix(w) => (b"%%", Some(w)),
         ParamOp::RemoveSmallestPrefix(w) => (b"#", Some(w)),
         ParamOp::RemoveLargestPrefix(w) => (b"##", Some(w)),
-        ParamOp::Bad(text) => {
+        ParamOp::Bad(text, _) => {
             if pe.colon {
                 out.push(b':');
             }

@@ -616,8 +616,32 @@ pub enum ParamOp {
     Modify(Vec<crate::expand::modify::Modifier>),
     /// Not a valid substitution (such as bash's `${x^^}`). As in dash,
     /// this is an error only when it is expanded; this is the rest of the
-    /// text up to `}`, as it was (it is read as a word, to find the `}`).
-    Bad(Vec<u8>),
+    /// text up to `}`, as it was (it is read as a word, to find the `}`),
+    /// and the syntax options it was read with, which reading it back may
+    /// need (a glob qualifier in a `$(...)` in it).
+    Bad(Vec<u8>, Needs),
+}
+
+/// Syntax options: those that printed text reads back only under
+/// (`unparse.rs`), or that a bad substitution was read with.
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub struct Needs {
+    /// A glob qualifier: `setopt glob.bare_qualifiers`.
+    pub globqual: bool,
+    /// `{name}>file`: `setopt syntax.fd_vars`.
+    pub fd_vars: bool,
+    /// A `repeat` loop: `setopt syntax.repeat`.
+    pub repeat: bool,
+}
+
+impl Needs {
+    pub fn union(self, o: Needs) -> Needs {
+        Needs {
+            globqual: self.globqual || o.globqual,
+            fd_vars: self.fd_vars || o.fd_vars,
+            repeat: self.repeat || o.repeat,
+        }
+    }
 }
 
 /// Which matches of the pattern `${x/pattern/replacement}` replaces.

@@ -362,11 +362,11 @@ pub fn is_valid_name(s: &[u8]) -> bool {
     !s.is_empty() && is_name_start(s[0]) && s.iter().all(|&c| is_name_char(c))
 }
 
-fn bad_param(name: ParamName, text: Vec<u8>, colon: bool) -> WordPart {
+fn bad_param(name: ParamName, text: Vec<u8>, opts: Needs, colon: bool) -> WordPart {
     WordPart::Param(Box::new(ParamExp {
         name,
         index: None,
-        op: ParamOp::Bad(text),
+        op: ParamOp::Bad(text, opts),
         colon,
         flags: None,
     }))
@@ -1096,7 +1096,7 @@ impl Parser {
             // Thrown away: any parameter will do.
             return r
                 .clone()
-                .map(|()| bad_param(ParamName::Var(Vec::new()), Vec::new(), false));
+                .map(|()| bad_param(ParamName::Var(Vec::new()), Vec::new(), Needs::default(), false));
         }
         let r = self.read_braced_param_uncached(ctx);
         if let Some(memo) = &mut self.param_memo {
@@ -1114,7 +1114,20 @@ impl Parser {
         let r = self.read_param_word(ctx);
         self.skim = skim;
         r?;
-        Ok(bad_param(name, self.src[start..self.pos - 1].to_vec(), colon))
+        let text = self.src[start..self.pos - 1].to_vec();
+        // The syntax options it was read with, for `unparse` to read it back
+        // with. Empty text needs none (and is read the same way as the
+        // other bad substitutions without text).
+        let opts = if text.is_empty() {
+            Needs::default()
+        } else {
+            Needs {
+                globqual: self.bareglobqual,
+                fd_vars: self.fd_vars,
+                repeat: self.repeat,
+            }
+        };
+        Ok(bad_param(name, text, opts, colon))
     }
 
     fn read_braced_param_uncached(&mut self, ctx: Ctx) -> PResult<WordPart> {
@@ -1471,7 +1484,7 @@ impl Parser {
                 None
             };
             if len.as_ref().is_some_and(|w| w.0.is_empty()) {
-                return Ok(bad_param(name, Vec::new(), true));
+                return Ok(bad_param(name, Vec::new(), Needs::default(), true));
             }
             return Ok(mk(name, ParamOp::Substring(offset, len), true));
         }

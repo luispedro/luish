@@ -9,6 +9,7 @@
 
 use std::cell::Cell;
 
+pub use crate::ast::Needs;
 use crate::ast::*;
 use crate::lexer::{AliasMap, is_name_char, is_valid_name};
 use crate::parser::is_reserved;
@@ -21,17 +22,6 @@ pub fn function(name: &[u8], body: &FunctionBody, aliases: &AliasMap) -> (Vec<u8
     let mut p = Printer::new(0, aliases, &needs);
     p.function(&[name], body);
     (p.finish(), needs.get())
-}
-
-/// The options that printed text reads back only under.
-#[derive(Clone, Copy, Default, Debug, PartialEq)]
-pub struct Needs {
-    /// A glob qualifier: `setopt glob.bare_qualifiers`.
-    pub globqual: bool,
-    /// `{name}>file`: `setopt syntax.fd_vars`.
-    pub fd_vars: bool,
-    /// A `repeat` loop: `setopt syntax.repeat`.
-    pub repeat: bool,
 }
 
 /// The text of a `__luish_cache` block, for the startup cache's key (so
@@ -582,7 +572,9 @@ impl<'a> Printer<'a> {
             ParamOp::RemoveLargestSuffix(w) => (b"%%", w),
             ParamOp::RemoveSmallestPrefix(w) => (b"#", w),
             ParamOp::RemoveLargestPrefix(w) => (b"##", w),
-            ParamOp::Bad(text) => {
+            ParamOp::Bad(text, opts) => {
+                // The text is read back as it was read, to find the `}`.
+                self.needs.set(self.needs.get().union(*opts));
                 if pe.colon {
                     self.w(b":");
                 }
@@ -699,8 +691,9 @@ impl<'a> Printer<'a> {
             self.w(b" ");
         }
         self.w(&text);
-        // `&` ends the last command as `;` would.
-        self.w(if text.ends_with(b"&") { b" }" } else { b"; }" });
+        // `&` (or `&|`) ends the last command as `;` would.
+        let bg = list.last().is_some_and(|cc| cc.async_ || cc.disown);
+        self.w(if bg { b" }" } else { b"; }" });
     }
 
     /// The text of the list of a substitution, one level further in.
@@ -838,7 +831,7 @@ fn part<V: LineVisitor>(p: &mut WordPart, v: &mut V) {
 
 fn param_op<V: LineVisitor>(op: &mut ParamOp, v: &mut V) {
     match op {
-        ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names | ParamOp::Modify(_) | ParamOp::Bad(_) => {}
+        ParamOp::Plain | ParamOp::Length | ParamOp::Keys | ParamOp::Names | ParamOp::Modify(_) | ParamOp::Bad(..) => {}
         ParamOp::Default(w)
         | ParamOp::Assign(w)
         | ParamOp::Error(w)
@@ -1090,6 +1083,11 @@ mod tests {
             round_trip("f() { x=${ a; if b; then c; fi; } y=${|\nREPLY=1\n}; }"),
             "f() {\n    x=${\n        a\n        if b; then\n            c\n        fi\n    } y=${|REPLY=1; }\n}\n"
         );
+        // `&|` ends the last command too, and an escaped `&` doesn't.
+        assert_eq!(
+            round_trip("f() { echo ${ a &! } ${ b \\&; }; }"),
+            "f() {\n    echo ${ a &| } ${ b \\&; }\n}\n"
+        );
     }
 
     #[test]
@@ -1193,6 +1191,30 @@ mod tests {
         round_trip("f() {\necho $(cat <<X\ninner\nX\n) after\n}");
         round_trip("f() {\ncat <<X >out; echo\nX\n} 2>err <<Y\nbody\nY");
         round_trip("f() {\ncat <<X\nX\n}");
+    }
+
+    /// A bad `${...}` keeps its text raw, but that text is still read as a
+    /// word to find the `}`, so a glob qualifier in it (here in `$(j(+))`)
+    /// needs `glob.bare_qualifiers` to read back. Found by the `unparse`
+    /// fuzz target.
+    #[test]
+    fn bad_substitution_needs() {
+        let mut p = Parser::new(b"f() {\n${c $(j(+))}\n}\n".to_vec(), 1, true);
+        p.bareglobqual = true;
+        let list = p.parse_all().expect("parses");
+        let Command::FunctionDef { names, body } = &list[0].list.first.cmds[0] else {
+            panic!("not a function");
+        };
+        let (text, needs) = function(&names[0], body, &AliasMap::default());
+        let mut q = Parser::new(text.clone(), 1, true);
+        q.bareglobqual = needs.globqual;
+        q.repeat = needs.repeat;
+        q.fd_vars = needs.fd_vars;
+        assert!(
+            q.parse_all().is_ok(),
+            "printed function doesn't parse with {needs:?}:\n{}",
+            String::from_utf8_lossy(&text)
+        );
     }
 
     #[test]

@@ -673,7 +673,7 @@ impl Shell {
             | ParamOp::Substring(..)
             | ParamOp::Replace(..)
             | ParamOp::Modify(_) => unreachable!(),
-            ParamOp::Bad(_) => {
+            ParamOp::Bad(..) => {
                 self.error("Bad substitution");
                 return Err(Flow::Error(2));
             }
@@ -685,7 +685,7 @@ impl Shell {
     /// by the value of `name` (or of the element `${!name[i]}`), which can
     /// be a variable, `name[index]`, a positional or a special parameter.
     fn expand_indirect(&mut self, pe: &ParamExp, base: &ParamName, quoted: bool, f: &mut Fields) -> EResult<()> {
-        if let ParamOp::Bad(_) = pe.op {
+        if let ParamOp::Bad(..) = pe.op {
             self.error("Bad substitution");
             return Err(Flow::Error(2));
         }
@@ -1051,7 +1051,7 @@ impl Shell {
                     push_list(&items, at, quoted, sep, f);
                 }
             }
-            ParamOp::Bad(_) => {
+            ParamOp::Bad(..) => {
                 self.error("Bad substitution");
                 return Err(Flow::Error(2));
             }

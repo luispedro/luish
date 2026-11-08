@@ -169,7 +169,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   it. zsh's version (in its development tree) differs: the `}` needs only a blank before it (braces inside must pair
   up), and the output keeps all but
   one trailing newline (all of them in double quotes) and isn't split; luish follows bash, so that it works as
-  `$(...)` does. Tests: `expand/nofork_subst.sh`, unit tests in `unparse.rs` and `highlight.rs`.
+  `$(...)` does. `unparse` writes no `;` before the `}` after a last command in the background (`&`, `&|`). Tests:
+  `expand/nofork_subst.sh`, unit tests in `unparse.rs` and `highlight.rs`.
 - As in dash, a bad `${...}` (such as `${x^^}`) is an error only when expanded, and `$(` in a here-doc delimiter
   is a syntax error. Test: `parse/dash_lenient.sh`. `ParamOp::Bad` keeps the text up to the `}` as it was
   (`read_bad_param`): it is read as a word only to find the `}`. A subscript with no `]` before the `}`, or one
@@ -181,7 +182,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   the second reading (`skim`) skips them, and `subst_memo` has what each `$(` read as (as one with a here-document
   with no end reads to the end of the input). A `$(...)` that doesn't parse leaves the parser as it was (the
   here-documents waiting for their bodies), as reading goes on. Tests: `parse/bad_subscript.sh`,
-  `parse/bad_subscript_cmdsubst.sh`, `parse/bad_subscript_heredoc.sh`.
+  `parse/bad_subscript_cmdsubst.sh`, `parse/bad_subscript_heredoc.sh`. As the raw text is read back as it was read
+  (`${c $(j(+))}` has a glob qualifier), `ParamOp::Bad` also keeps the syntax options it was read with (none for
+  empty text), which `unparse` reports as needed. Test: `bad_substitution_needs` in `unparse.rs`.
 - Arrays: `split_assignment_with` also takes `NAME+=` and `NAME[index]=` (the index up to the matching unquoted `]`,
   across parts), and `parse_simple` reads `(...)` right after an assignment's `=` (`array_follows` compares the
   token positions, so `a= (x)` stays an error) into a lone `WordPart::Array`. After `local`, `export`, `readonly`,
