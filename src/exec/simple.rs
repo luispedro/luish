@@ -11,6 +11,7 @@ use crate::shell::{ExecResult, Flow, Function, Shell};
 type EResult = Result<Vec<Assignment>, Flow>;
 use crate::sys;
 use crate::vars::{Item, Special, Subscript};
+use std::ffi::CString;
 
 /// An assignment after expansion.
 #[derive(Clone)]
@@ -507,15 +508,25 @@ impl Shell {
     /// Replaces the process with an external command. Never returns.
     pub fn exec_argv(&mut self, argv: &[Vec<u8>], alt_path: Option<&[u8]>) -> ! {
         let env = self.vars.environ();
-        let r: Result<(), i32> = self.with_command_path(&argv[0], alt_path, |sh, path| {
-            let mut e = sys::execve(path, argv, &env);
+        self.exec_named(&argv[0], argv, alt_path, &env)
+    }
+
+    /// Replaces the process with the external command `name`, run with
+    /// `argv` (whose first word may differ from `name`, as for `exec -a`)
+    /// and the environment `env`. Never returns.
+    pub fn exec_named(&mut self, name: &[u8], argv: &[Vec<u8>], alt_path: Option<&[u8]>, env: &[CString]) -> ! {
+        let r: Result<(), i32> = self.with_command_path(name, alt_path, |sh, path| {
+            let mut e = sys::execve(path, argv, env);
             if e == libc::ENOEXEC {
                 // A script without `#!`: run it with this shell.
-                e = sys::execve(&sh.self_exe(), &sh.script_args(path, argv), &env);
+                e = sys::execve(&sh.self_exe(), &sh.script_args(path, argv), env);
             }
             Err(e)
         });
-        let code = self.exec_error(argv, r.unwrap_err());
+        // The error names the command, not the `argv[0]` it was given.
+        let mut named = argv.to_vec();
+        named[0] = name.to_vec();
+        let code = self.exec_error(&named, r.unwrap_err());
         sys::exit(code)
     }
 

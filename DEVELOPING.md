@@ -486,6 +486,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   find out (`look_up_before_fork`, and `exec_error` after `posix_spawn` or `execve`), so the message is the same
   whether the shell spawns, forks or execs. This is the place for suggestions (such as similar command names); it
   runs only for a missing command, so it costs nothing otherwise.
+- The `exec` built-in parses `-c`, `-l` and `-a NAME` itself (`-a` takes the rest of its word or the next one), and
+  calls `exec_named`, which looks the command up by its name but runs it with the `argv` given (`argv[0]` from
+  `-a`, or with `-` before it for `-l`, which zsh ignores with `-a`) and an empty environment for `-c`; errors name
+  the command. `run_simple` makes the redirections permanent only for `exec` with nothing but `--` after it, so an
+  option without a command reaches the built-in, which makes it an error (`Flow::Error`), as zsh does. A lone `-` is a
+  command, as in bash and `zsh --emulate sh` (native zsh reads it as `-l`). Test: `exec/exec_options.sh` (zsh).
 - Exec errors other than EACCES give 127, as in Debian's dash (e.g. `ELOOP`). `wait_for` prints a message for deaths
   by signal except INT and PIPE.
 - `set -e`: as in dash, only simple commands, subshells and pipelines (and a compound command whose redirection
@@ -993,7 +999,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `line_editor_keys` in `tests/interactive.rs`, `builtins/internal_bindkey.sh`, `builtins/bindkey.sh`, unit tests in
   `keys.rs` and `history.rs`.
 - **Completion** (`complete.rs`): a rough tokenizer finds command position (quotes, operators, redirections,
-  assignments, `$(`, backquotes, reserved words, commands such as `sudo` that take a command) and records where each
+  assignments, `$(`, backquotes, reserved words, commands such as `sudo` that take a command, skipping the argument
+  of their options in `PRECOMMAND_ARG_OPTIONS`, such as `exec -a NAME`) and records where each
   unquoted byte ends in the line, so a non-prefix match can replace the text from where it stops matching. `PATH`
   executables are cached until `PATH` or one of its directories changes. rustyline's own listing is never used:
   `Completer::complete` returns 0 or 1 candidates (in `CompletionType::List`, one candidate is put in the line with
@@ -1028,7 +1035,8 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   check with `highlight.paths`). `ShellHelper::command_kind` finds a command's
   `CommandKind` in the order the shell would (alias, special built-in, function, built-in or extension's built-in,
   then `PATH`; autocd directories last), cached until the next prompt; a known name in `PRECOMMANDS` gets
-  `command.precommand` instead. Words in argument position, and array elements, get `arg` (`arg.option` if they start
+  `command.precommand` instead (the argument of one of its options, `exec -a NAME`, is an `arg`, with
+  `precommand_option_arg` as in completion; test: `command_roles`). Words in argument position, and array elements, get `arg` (`arg.option` if they start
   with `-`) after a pass over their bytes that have no role yet (so are unquoted and literal) for tildes (also after
   `=` and `:` in assignments), brace expansions (one pass, with a stack) and glob characters (also in `case`
   patterns). `<(` and `>(` start a word's process substitution anywhere in it, as in the lexer (so `2<(ls)` is not a
@@ -1116,7 +1124,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `FOUND`); restoring sends that back (as `#rrggbb`, so at 8 bits per channel), or resets the key (OSC 110, 111, 112, `104;N`). Answering with the
   original rather than resetting is what makes a nested shell give back its parent's colours. `termcolors::restore`
   puts back everything: from `Shell::exit` (not in subshells), the `exec` built-in (not in subshells, before
-  `exec_argv`), and `ask_background` (so `style --detect` and a later pair see the terminal's own background); it
+  `exec_named`), and `ask_background` (so `style --detect` and a later pair see the terminal's own background); it
   clears `SEEN`, so the next prompt sets them again. `terminal-colors = false` (`Styles::no_terminal_colors`) is in the
   saved state as `style --terminal-colors off`. Tests: unit tests in `style.rs` (`terminal_colors`), `tty.rs`
   (`color_answers`) and `termcolors.rs`, `terminal_colors` and `terminal_colors_exec` in `tests/interactive.rs`,
@@ -1886,6 +1894,7 @@ truncates when it relocates the package.
 | `$LINENO` | `misc/lineno.sh` |
 | fd numbers in redirections | `exec/redirect_big_fd.sh` |
 | `exec -- cmd` | `exec/exec_dashdash.sh` |
+| `exec -c`, `-a NAME`, `-l` | `exec/exec_options.sh` (zsh) |
 | `cd -e` | `builtins/cd_e.sh` |
 | `[[ ... ]]` | `parse/cond.sh` (zsh), `parse/cond_regex_match.sh` (zsh), `parse/cond_regex_rematch.sh` (zsh), `parse/cond_regex_bash.sh`, `parse/cond_xtrace.sh`, `parser::tests::cond` |
 | `for ((init; cond; step))` | `parse/arith_for.sh` (zsh), `parse/arith_for_bash.sh` |

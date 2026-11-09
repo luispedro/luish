@@ -274,18 +274,70 @@ fn eval(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     sh.run_string(&text)
 }
 
+/// `exec`, with zsh's (and bash's) options: `-c` clears the environment,
+/// `-a NAME` gives the command `NAME` as `argv[0]`, and `-l` prepends `-` to
+/// it, as for a login shell, unless `-a` is given (as in zsh; bash prepends it
+/// to `NAME`). A lone `-` is a command, as in bash and `zsh --emulate sh`.
+/// Without a command, `run_simple` makes the redirections permanent, unless
+/// an option is given, which is an error then (as in zsh).
 fn exec(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    let mut args = &argv[1..];
-    if args.first().is_some_and(|a| a == b"--") {
-        args = &args[1..];
+    let mut clear = false;
+    let mut login = false;
+    let mut argv0: Option<&[u8]> = None;
+    let mut i = 1;
+    while let Some(a) = argv.get(i) {
+        i += 1;
+        if a == b"--" {
+            break;
+        } else if a.len() < 2 || a[0] != b'-' {
+            i -= 1;
+            break;
+        }
+        for (j, &c) in a.iter().enumerate().skip(1) {
+            match c {
+                b'c' => clear = true,
+                b'l' => login = true,
+                b'a' => {
+                    let value = if j + 1 < a.len() {
+                        &a[j + 1..]
+                    } else if let Some(v) = argv.get(i) {
+                        i += 1;
+                        v
+                    } else {
+                        sh.berr(&argv[0], "-a: option requires an argument");
+                        return Err(Flow::Error(2));
+                    };
+                    argv0 = Some(value);
+                    break;
+                }
+                _ => {
+                    sh.berr(&argv[0], format!("Illegal option -{}", c as char));
+                    return Err(Flow::Error(2));
+                }
+            }
+        }
     }
-    if args.is_empty() {
+    let args = &argv[i..];
+    let Some(name) = args.first() else {
+        if clear || login || argv0.is_some() {
+            sh.berr(&argv[0], "the options need a command");
+            return Err(Flow::Error(2));
+        }
         return Ok(0);
-    }
+    };
     if !sh.in_subshell {
         crate::interactive::restore_terminal_colors();
     }
-    sh.exec_argv(args, None)
+    let env = if clear { Vec::new() } else { sh.vars.environ() };
+    let first = match argv0 {
+        Some(a) => a.to_vec(),
+        None if login => [b"-", &name[..]].concat(),
+        None => name.clone(),
+    };
+    let mut cmd = Vec::with_capacity(args.len());
+    cmd.push(first);
+    cmd.extend_from_slice(&args[1..]);
+    sh.exec_named(name, &cmd, None, &env)
 }
 
 fn exit_status_arg(sh: &Shell, argv: &[Vec<u8>]) -> Result<i32, Flow> {

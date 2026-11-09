@@ -34,7 +34,7 @@ use std::rc::Rc;
 
 use rustyline::highlight::{CmdKind, Highlighter};
 
-use super::complete::{PRECOMMANDS, RESERVED, ShellHelper, is_executable};
+use super::complete::{PRECOMMANDS, RESERVED, ShellHelper, is_executable, precommand_option_arg};
 use crate::lexer::{AliasMap, Parser};
 use crate::style::{ROLES, Role, Style};
 use crate::sys;
@@ -390,6 +390,10 @@ struct Scan<'a> {
     /// Whether the arguments of the current command define aliases (it is
     /// `alias`, with no options so far).
     alias_args: bool,
+    /// The precommand of the current command (`exec`, `sudo` ...), and
+    /// whether the next word is the argument of one of its options.
+    precommand_name: &'static [u8],
+    option_arg: bool,
     /// How many compound commands (`if`, `while`, `{` ...) are open.
     depth: usize,
     /// The depths at which the `{ ... }` bodies of `repeat` are open: in
@@ -751,7 +755,12 @@ impl Scan<'_> {
             *cmd = true;
             return e;
         }
-        if !*cmd || (*precommand && raw.starts_with(b"-")) {
+        // `exec -a NAME`: NAME is an argument, not the command.
+        let option_arg = *precommand && std::mem::take(&mut self.option_arg);
+        if *precommand && !option_arg && raw.starts_with(b"-") {
+            self.option_arg = precommand_option_arg(self.precommand_name, text);
+        }
+        if !*cmd || option_arg || (*precommand && raw.starts_with(b"-")) {
             if self.alias_args {
                 if raw.starts_with(b"-") || raw.starts_with(b"+") {
                     self.alias_args = false;
@@ -820,6 +829,10 @@ impl Scan<'_> {
             };
             let known = kind != CommandKind::Unknown;
             *precommand = known && !definition && PRECOMMANDS.contains(&text);
+            if *precommand {
+                self.precommand_name = PRECOMMANDS.iter().find(|&&p| p == text).copied().unwrap_or_default();
+                self.option_arg = false;
+            }
             let r = if *precommand { role::PRECOMMAND } else { kind.role() };
             if known || !self.cursor.is_some_and(|c| (start..=e).contains(&c)) {
                 self.paint_plain(start, e, r);
@@ -1333,6 +1346,8 @@ pub fn classify(text: &[u8], cursor: Option<usize>, facts: &Facts) -> Vec<Cell> 
         aliases: Vec::new(),
         new_aliases: Vec::new(),
         alias_args: false,
+        precommand_name: b"",
+        option_arg: false,
         depth: 0,
         brace_bodies: Vec::new(),
         nested: 0,
@@ -1890,6 +1905,16 @@ mod tests {
         assert_eq!(
             roles("sudo -E ls --all -"),
             "sudo:command.precommand -E:arg.option ls:command.external --all:arg.option -:arg"
+        );
+        // The argument of an option (`exec -a NAME`, `sudo -u USER`) is not the command.
+        assert_eq!(
+            roles("sudo -Eu ls ls -u x"),
+            "sudo:command.precommand -Eu:arg.option ls:arg ls:command.external -u:arg.option x:arg"
+        );
+        assert_eq!(
+            roles("sudo -uls ls; sudo -u"),
+            "sudo:command.precommand -uls:arg.option ls:command.external ;:op.control sudo:command.precommand \
+-u:arg.option"
         );
         assert_eq!(
             roles("f; ll; cd x"),

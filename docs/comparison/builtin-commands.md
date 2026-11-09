@@ -28,7 +28,7 @@ assignments before one stay set; luish follows dash in both.
 | `break` | ✓ | ✓ | ✓ | ✓ | |
 | `continue` | ✓ | ✓ | ✓ | ✓ | |
 | `eval` | ✓ | ✓ | ✓ | ✓ | |
-| `exec` | ✓ | ✓ | ✓ | ✓ | No `-a`, `-c` or `-l` |
+| `exec` | ✓ | ✓ | ✓ | ✓ | `-a`, `-c` and `-l` as in zsh (`-l` does nothing with `-a`) |
 | `exit` | ✓ | ✓ | ✓ | ✓ | |
 | `export` | ✓ | ✓ | ✓ | ✓ | Takes arrays (`export a=(x y)` sets and exports `a`); no `-n` or `-f` (bash) |
 | `readonly` | ✓ | ✓ | ✓ | ✓ | Takes arrays; no `-f` (bash) |

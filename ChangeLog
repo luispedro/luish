@@ -2,6 +2,7 @@ Unreleased
     * Saved state: functions with ${ a &! }, ${ echo \&; } or a bad ${...}
       holding a glob qualifier read back
     * noglob cmd args: runs cmd without globbing its arguments, as in zsh
+    * exec -c, -a NAME and -l, as in zsh and bash
 
 Version 0.8.0 2026-11-03 by luispedro
     * Lines typed ahead together at the prompt all run (only the first did)

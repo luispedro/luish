@@ -221,7 +221,29 @@ pub(super) const PRECOMMANDS: &[&[u8]] = &[
     b"builtin", b"command", b"exec", b"noglob", b"nohup", b"sudo", b"doas", b"env", b"time", b"nice", b"xargs",
 ];
 
-/// Commands whose arguments can be assignments.
+/// The options of precommands that take the next word as their argument
+/// (when last in their word, as in `exec -la NAME`).
+const PRECOMMAND_ARG_OPTIONS: &[(&[u8], &[u8])] = &[
+    (b"exec", b"a"),
+    (b"nice", b"n"),
+    (b"env", b"uCS"),
+    (b"sudo", b"ugCDprtTU"),
+    (b"doas", b"uC"),
+];
+
+/// Whether the word `opt` of the precommand `cmd` is an option whose
+/// argument is the next word.
+pub(super) fn precommand_option_arg(cmd: &[u8], opt: &[u8]) -> bool {
+    let Some(&(_, letters)) = PRECOMMAND_ARG_OPTIONS.iter().find(|p| p.0 == cmd) else {
+        return false;
+    };
+    if opt.len() < 2 || opt[0] != b'-' || opt[1] == b'-' {
+        return false;
+    }
+    // The first letter that takes an argument takes the rest of the word.
+    opt[1..].iter().position(|c| letters.contains(c)) == Some(opt.len() - 2)
+}
+
 /// The name under which an extension registers the completer for commands
 /// that have none (as in zsh's `compdef -default-`).
 pub const DEFAULT_COMPLETER: &[u8] = b"-default-";
@@ -395,6 +417,9 @@ struct Scan<'a> {
     /// Whether the next word is left out of `words` (the rest of the word
     /// under the cursor).
     skip: bool,
+    /// Whether the next word is the argument of a precommand's option
+    /// (`exec -a NAME`).
+    option_arg: bool,
     /// Whether a comment started.
     comment: bool,
     /// Whether to stop scanning.
@@ -422,6 +447,7 @@ impl<'a> Scan<'a> {
             alias_next: false,
             after: false,
             skip: false,
+            option_arg: false,
             comment: false,
             done: false,
         }
@@ -465,9 +491,16 @@ impl<'a> Scan<'a> {
             self.redirect = false;
         } else if let Some((key, value, blank)) = self.alias(&w, cmd).filter(|_| alias) {
             self.expand_alias(key, &value, blank);
+        } else if std::mem::take(&mut self.option_arg) {
+            self.cmd_pos = true;
         } else if !self.cmd_pos {
             self.words.push(w);
-        } else if is_assignment(&w) || (self.precommand && w.starts_with(b"-")) {
+        } else if self.precommand && w.starts_with(b"-") {
+            if precommand_option_arg(&self.words[0], &w) {
+                self.option_arg = true;
+                self.cmd_pos = false;
+            }
+        } else if is_assignment(&w) {
             // no change
         } else if BEFORE_COMMAND.contains(&&w[..]) {
             self.precommand = false;
@@ -521,6 +554,7 @@ impl<'a> Scan<'a> {
         }
         self.cmd_pos = true;
         self.precommand = false;
+        self.option_arg = false;
         self.redirect = false;
         self.words.clear();
     }
@@ -544,6 +578,7 @@ impl<'a> Scan<'a> {
         self.quote = Quote::None;
         self.cmd_pos = true;
         self.precommand = false;
+        self.option_arg = false;
         self.redirect = false;
     }
 
@@ -1754,6 +1789,10 @@ mod tests {
         assert_eq!(kind("echo $(ca"), (Command, "ca".into()));
         assert_eq!(kind("echo \"`ca"), (Command, "ca".into()));
         assert_eq!(kind("sudo -E vi"), (Command, "vi".into()));
+        assert_eq!(kind("exec -la vi"), (Arg, "vi".into()));
+        assert_eq!(kind("exec -la vi g"), (Command, "g".into()));
+        assert_eq!(kind("exec -al g"), (Command, "g".into()));
+        assert_eq!(kind("exec -a; g"), (Command, "g".into()));
         assert_eq!(kind("(cd"), (Command, "cd".into()));
         assert_eq!(kind("cat <fo"), (File, "fo".into()));
         assert_eq!(kind("2>fo"), (File, "fo".into()));
@@ -1788,6 +1827,8 @@ mod tests {
     fn command_words() {
         assert_eq!(words("git -C 'my dir' ad"), ["git", "-C", "my dir"]);
         assert_eq!(words("sudo -E git ad"), ["git"]);
+        assert_eq!(words("sudo -u root -- git ad"), ["git"]);
+        assert_eq!(words("exec -a me git ad"), ["git"]);
         assert_eq!(words("x=1 git >out ad"), ["git"]);
         assert_eq!(words("echo $(git ad"), ["git"]);
         assert_eq!(words("a; git ad"), ["git"]);
