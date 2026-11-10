@@ -1564,7 +1564,7 @@ fn tab_completion() {
     sh.expect("$ ");
     // A second tab opens the menu.
     sh.send("echo alp\t\t");
-    sh.expect("alpha1  alpha2");
+    sh.expect("\x1b[90malpha\x1b[0m1  \x1b[90malpha\x1b[0m2");
     sh.send("\x03");
     // The new prompt (not the line redrawn under the menu).
     sh.expect("\x1b[K$ ");
@@ -1574,8 +1574,8 @@ fn tab_completion() {
     sh.expect("started\n");
     sh.expect("\x1b[?2004h");
     sh.send("fg %\t");
-    sh.expect("%1  \x1b[90m-- : | sleep 100\x1b[0m");
-    sh.expect("%2  \x1b[90m-- : | sleep 101\x1b[0m");
+    sh.expect("\x1b[90m%\x1b[0m1  \x1b[90m-- : | sleep 100\x1b[0m");
+    sh.expect("\x1b[90m%\x1b[0m2  \x1b[90m-- : | sleep 101\x1b[0m");
     sh.send("\x03");
     // The next prompt: input sent before it may be discarded.
     sh.expect("\x1b[?2004h");
@@ -1592,14 +1592,19 @@ fn completion_menu() {
         std::fs::write(sh.path(f), "").unwrap();
     }
     sh.expect("$ ");
+    // What the names listed have in common is shaded.
+    let shaded = |s: &str| format!("\x1b[90m{s}\x1b[0m");
+    let alpha = shaded("alpha");
     // The first Tab completes what the matches have in common, the second
     // opens the menu, and the third selects the first match, putting it in
     // the line.
-    sh.send("echo alp\t\t\t");
-    sh.expect("\x1b[7malpha1\x1b[0m  alpha2");
+    sh.send("echo alp\t\t");
+    sh.expect(&format!("{alpha}1  {alpha}2"));
+    sh.send("\t");
+    sh.expect(&format!("\x1b[7malpha1\x1b[0m  {alpha}2"));
     // Right moves to the next column, and Enter keeps the match.
     sh.send("\x1b[C");
-    sh.expect("alpha1  \x1b[7malpha2\x1b[0m");
+    sh.expect(&format!("{alpha}1  \x1b[7malpha2\x1b[0m"));
     sh.send("\rx\n");
     sh.expect("alpha2 x\n");
     sh.expect("$ ");
@@ -1609,7 +1614,7 @@ fn completion_menu() {
     sh.expect("$ ");
     // Shift-Tab goes backwards, and Ctrl-G puts back the text typed.
     sh.send("echo alp\t\t\x1b[Z");
-    sh.expect("alpha1  \x1b[7malpha2\x1b[0m");
+    sh.expect(&format!("{alpha}1  \x1b[7malpha2\x1b[0m"));
     sh.send("\x07\n");
     sh.expect("alpha\n");
     sh.expect("$ ");
@@ -1640,17 +1645,72 @@ fn completion_menu() {
     }
     sh.resize(30, 5);
     sh.send("echo c\t");
-    sh.expect("c00  c01  c02  c03  c04  c05\nc06");
-    sh.expect("rows 1-3 of 5");
+    let c = shaded("c");
+    sh.expect(&format!("{c}00  {c}01  {c}02  {c}03  {c}04  {c}05\n{c}06"));
+    sh.expect("rows 1-3 of 5, 30 matches");
     sh.send("\t\x1b[6~");
     sh.expect("\x1b[7mc18\x1b[0m");
-    sh.expect("rows 2-4 of 5");
+    sh.expect("rows 2-4 of 5, 30 matches");
+    // Ctrl-C erases the menu (its four rows), which the line editor leaves
+    // below the line.
     sh.send("\x03");
+    sh.expect("\x1b[4A\x1b[J");
+    sh.expect("\x1b[?2004h");
+    sh.resize(80, 24);
+    // While the menu lists the matches, it follows what is typed: the
+    // matches left are listed, and Backspace brings the others back.
+    sh.send("echo alp\t\t");
+    sh.expect(&format!("{alpha}1  {alpha}2"));
+    sh.send("2");
+    sh.expect("\nalpha2\x1b[");
+    sh.send("\x7f");
+    sh.expect(&format!("{alpha}1  {alpha}2"));
+    // Tab completes the one match left.
+    sh.send("1\tx\n");
+    sh.expect("alpha1 x\n");
+    sh.expect("$ ");
+    // Typing in a menu opened for nothing, then Tab for what the matches
+    // left have in common.
+    sh.send("echo \t");
+    sh.expect("beta2");
+    sh.send("b");
+    sh.expect(&format!("{0}1  {0}2", shaded("beta")));
+    sh.send("\t2\n");
+    sh.expect("beta2\n");
+    sh.expect("$ ");
+    // Directories and executables have their colours, and the kinds of
+    // commands their headings (when there are several).
+    std::fs::create_dir(sh.path("zdir")).unwrap();
+    write_script(&sh.path("zrun"), "");
+    std::fs::write(sh.path("zfile"), "").unwrap();
+    sh.send("echo z\t");
+    let z = shaded("z");
+    sh.expect(&format!("{z}\x1b[1;34mdir/\x1b[0m  {z}file  {z}\x1b[32mrun\x1b[0m"));
+    sh.send("\x03");
+    sh.expect("\x1b[?2004h");
+    sh.send("alias zzal=true; zzfn() { :; }\n");
+    sh.expect("\x1b[?2004h");
+    sh.send("zz\t");
+    let zz = shaded("zz");
+    sh.expect(&format!(
+        "\x1b[1maliases:\x1b[0m\n{zz}al\n\x1b[1mfunctions:\x1b[0m\n{zz}fn"
+    ));
+    sh.send("\x1b[B\x1b[B");
+    sh.expect("\x1b[7mzzfn\x1b[0m");
+    sh.send("\x03");
+    sh.expect("\x1b[?2004h");
+    // On a screen with more rows, the menu takes at most half of them
+    // (here its last row is cut to the width).
+    sh.resize(13, 24);
+    sh.send("echo c\t");
+    sh.expect("rows 1-11 o\u{2026}");
+    sh.send("\x03");
+    sh.expect("\x1b[12A\x1b[J");
     sh.expect("\x1b[?2004h");
     sh.resize(80, 24);
     // Enter runs the line if nothing is selected, and the menu is erased.
     sh.send("echo bet\t\t");
-    sh.expect("beta1  beta2");
+    sh.expect(&format!("{0}1  {0}2", shaded("beta")));
     sh.send("\r");
     sh.expect("\x1b[?2026h");
     let out = sh.expect("beta\n");
@@ -1828,7 +1888,8 @@ esac
     sh.expect("frob:status cobra.rhai\n");
     sh.expect("$ ");
     sh.send("frob \t\t");
-    sh.expect("serve   \x1b[90m-- Start the server\x1b[0m");
+    // (The `s` the two commands have in common is shaded.)
+    sh.expect("\x1b[90ms\x1b[0merve   \x1b[90m-- Start the server\x1b[0m");
     sh.send("\x03");
     sh.expect("\x1b[?2004h");
     sh.send("exit 0\n");
@@ -2674,7 +2735,7 @@ fn remote_editing() {
     sh.send("zqfa() { :; }; zqfb() { :; }\n");
     sh.expect("\x1b[?2004h");
     sh.send("zqf\t\t");
-    sh.expect("zqfa  zqfb");
+    sh.expect("\x1b[90mzqf\x1b[0ma  \x1b[90mzqf\x1b[0mb");
     sh.send("\x03");
     sh.expect("\x1b[?2004h");
     // The history is the server's, recalled by the client.

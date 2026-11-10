@@ -4,7 +4,7 @@ export GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=a GIT_AUTHOR_EMAIL=a@b GIT_COMMITTE
 __luish_internal plugin load "$STD_PLUGINS/completion"
 c() {
     echo "--- $1"
-    __luish_internal complete "$1"
+    __luish_internal complete -g "$1"
     echo "status $?"
 }
 g() { git "$@" >/dev/null 2>&1; }

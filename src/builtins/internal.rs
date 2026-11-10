@@ -64,17 +64,21 @@ fn style(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
     super::style::run(sh, b"__luish_internal style", &argv[1..])
 }
 
-/// `complete LINE`: prints the matches that Tab offers for the word at the
-/// end of `LINE`, one per line: the text that replaces the word (with the
-/// space or `/` that follows a single match), then a tab and the
-/// description, if there is one. Status 1 if there are none, or if a
-/// completer failed.
+/// `complete [-g] LINE`: prints the matches that Tab offers for the word at
+/// the end of `LINE`, one per line, in the menu's order: the text that
+/// replaces the word (with the space or `/` that follows a single match),
+/// then a tab and the description, if there is one. With `-g`, the heading
+/// of each group (`HEADING:`) comes before its matches, as in the menu
+/// (but also when there is only one group). Status 1 if there are no
+/// matches, or if a completer failed.
 fn complete(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
-    let Some(line) = argv.get(1) else {
+    let headings = argv.get(1).is_some_and(|a| a == b"-g");
+    let args = &argv[1 + usize::from(headings)..];
+    let Some(line) = args.first() else {
         sh.berr(b"__luish_internal complete", "missing line");
         return Ok(2);
     };
-    if let Some(a) = argv.get(2) {
+    if let Some(a) = args.get(1) {
         let msg = format!("too many arguments: {}", String::from_utf8_lossy(a));
         sh.berr(b"__luish_internal complete", msg);
         return Ok(2);
@@ -83,16 +87,24 @@ fn complete(sh: &mut Shell, argv: &[Vec<u8>]) -> ExecResult {
         return Ok(1);
     };
     let mut out = Vec::new();
-    for (text, desc) in &matches {
-        out.extend_from_slice(text.as_bytes());
-        if let Some(d) = desc {
+    let mut group = None;
+    for item in &matches.items {
+        if headings && group != Some(item.group) {
+            group = Some(item.group);
+            match matches.groups.get(item.group as usize) {
+                Some(h) if !h.is_empty() => out.extend_from_slice(format!("{h}:\n").as_bytes()),
+                _ => {}
+            }
+        }
+        out.extend_from_slice(item.replacement.as_bytes());
+        if let Some(d) = &item.desc {
             out.push(b'\t');
             out.extend_from_slice(d.as_bytes());
         }
         out.push(b'\n');
     }
     match sh.out_status(&out) {
-        0 if matches.is_empty() => Ok(1),
+        0 if matches.items.is_empty() => Ok(1),
         n => Ok(n),
     }
 }

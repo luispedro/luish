@@ -18,7 +18,7 @@
 //! the menu (`menu.rs`) to choose among them. rustyline is only ever given
 //! one candidate, which it puts in the line.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::os::unix::ffi::OsStrExt;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -32,7 +32,7 @@ use rustyline::{Context, Helper};
 
 use super::highlight::VarKind;
 use super::keys::Pending;
-use super::menu::{self, Item, Menu};
+use super::menu::{self, Item, Matches, Menu};
 use crate::hash::HashMap;
 use crate::lexer::{AliasMap, ends_in_blank};
 use crate::path::{DirStamp, dir_stamps};
@@ -108,7 +108,7 @@ pub enum Tab {
     /// Replaces the text from the index by the expansion of the word.
     Expand(usize, String),
     /// The matches for the text from the index.
-    Matches(usize, Vec<Item>),
+    Matches(usize, Matches),
 }
 
 #[derive(Default)]
@@ -124,6 +124,10 @@ pub struct ShellHelper {
     /// The prompt, as the line editor measures it (for the menu's height).
     pub prompt: String,
     pub menu: Arc<Mutex<Menu>>,
+    /// The rows of the menu as the line editor last drew it below the line
+    /// (none if it drew the line without the menu), which are left on the
+    /// screen when the line is interrupted.
+    pub menu_rows: Cell<usize>,
     /// Shared with the key bindings (see `keys.rs`).
     pub keys: Arc<Mutex<super::keys::State>>,
     /// Show autosuggestions (`setopt autosuggest`).
@@ -161,6 +165,12 @@ pub struct Candidate {
     pub desc: Option<Vec<u8>>,
     /// What follows the candidate when it is the only match.
     pub suffix: Suffix,
+    /// What it is, for its colour in the menu.
+    pub kind: menu::Kind,
+    /// The heading the menu lists it under, with the others of its group,
+    /// when the matches are of several groups (empty for none). The groups
+    /// come in the order of their first candidates.
+    pub group: Vec<u8>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -180,6 +190,16 @@ impl Candidate {
             display: None,
             desc: None,
             suffix: Suffix::Close(b" ".to_vec()),
+            kind: menu::Kind::Plain,
+            group: Vec::new(),
+        }
+    }
+
+    /// A candidate that ends the word, in the group `group`.
+    fn grouped(value: &[u8], group: &[u8]) -> Candidate {
+        Candidate {
+            group: group.to_vec(),
+            ..Candidate::word(value)
         }
     }
 }
@@ -953,31 +973,47 @@ impl Target<'_> {
     }
 }
 
-/// The candidates as the menu's items, sorted and without duplicates.
-/// Subscripts that are numbers come first, in numeric order (as zsh lists
-/// an array's indices).
-fn items(cands: &[Candidate], t: &Target) -> Vec<Item> {
+/// The candidates as the menu's items, without duplicates: the groups in the
+/// order of their first candidates, and each group's items sorted. Of the
+/// candidates that give the same text, the one of the earliest group is
+/// kept. Subscripts that are numbers come first, in numeric order (as zsh
+/// lists an array's indices).
+fn items(cands: &[Candidate], t: &Target) -> Matches {
+    let mut groups: Vec<&[u8]> = Vec::new();
     let mut out: Vec<(Option<&[u8]>, Item)> = (cands.iter())
         .filter_map(|c| {
             let number = t.w.kind == Kind::Subscript && !c.value.is_empty() && c.value.iter().all(u8::is_ascii_digit);
+            let group = groups.iter().position(|g| *g == c.group).unwrap_or_else(|| {
+                groups.push(&c.group);
+                groups.len() - 1
+            });
             let item = Item {
                 display: printable(c.display.as_ref().unwrap_or(&c.value)),
                 desc: c.desc.as_deref().map(printable),
                 replacement: String::from_utf8(t.replacement(c)).ok()?,
+                kind: c.kind,
+                group: u16::try_from(group).unwrap_or(u16::MAX),
             };
             Some((number.then_some(&c.value[..]), item))
         })
         .collect();
     // Numbers compare as (length, digits); the replacement breaks ties, so
-    // equal items are next to each other.
+    // equal items are next to each other, the earliest group's first.
     out.sort_unstable_by(|(a, x), (b, y)| {
         (a.is_none().cmp(&b.is_none()))
             .then_with(|| a.map(<[u8]>::len).cmp(&b.map(<[u8]>::len)))
             .then_with(|| a.cmp(b))
             .then_with(|| x.replacement.cmp(&y.replacement))
+            .then_with(|| x.group.cmp(&y.group))
     });
     out.dedup_by(|a, b| a.1.replacement == b.1.replacement);
-    out.into_iter().map(|(_, i)| i).collect()
+    if groups.len() > 1 {
+        out.sort_by_key(|(_, i)| i.group);
+    }
+    Matches {
+        items: out.into_iter().map(|(_, i)| i).collect(),
+        groups: groups.iter().map(|g| printable(g)).collect(),
+    }
 }
 
 /// `s` as text to show, with control characters as `?`.
@@ -989,21 +1025,7 @@ fn printable(s: &[u8]) -> String {
 
 /// The longest common prefix of the items' replacements.
 fn common_prefix(items: &[Item]) -> &str {
-    let first = &items[0].replacement;
-    let mut n = (items[1..].iter())
-        .map(|i| {
-            first
-                .bytes()
-                .zip(i.replacement.bytes())
-                .take_while(|(a, b)| a == b)
-                .count()
-        })
-        .min()
-        .unwrap_or(first.len());
-    while !first.is_char_boundary(n) {
-        n -= 1;
-    }
-    &first[..n]
+    menu::common_prefix(items.iter().map(|i| &i.replacement[..]))
 }
 
 pub(super) use crate::path::is_executable;
@@ -1071,9 +1093,9 @@ fn users(out: &mut Vec<Candidate>) {
         let value = [&b"~"[..], &u, b"/"].concat();
         out.push(Candidate {
             display: Some(value[..value.len() - 1].to_vec()),
-            desc: None,
             suffix: Suffix::None,
-            value,
+            kind: menu::Kind::Dir,
+            ..Candidate::word(&value)
         });
     }
 }
@@ -1131,7 +1153,7 @@ impl ShellHelper {
             let line = [b": ", before].concat();
             return match self.tab_line(&line, after) {
                 Tab::Expand(start, text) => Tab::Expand(start.saturating_sub(2), text),
-                Tab::Matches(start, items) => Tab::Matches(start.saturating_sub(2), items),
+                Tab::Matches(start, matches) => Tab::Matches(start.saturating_sub(2), matches),
             };
         }
         self.tab_line(before, after)
@@ -1141,37 +1163,37 @@ impl ShellHelper {
         if let Some((start, text)) = self.expansion(before, after) {
             return Tab::Expand(start, text);
         }
-        let (start, items) = self.complete_bytes(before, after);
-        Tab::Matches(start, items)
+        let (start, matches) = self.complete_bytes(before, after);
+        Tab::Matches(start, matches)
     }
 
     /// Completes the word that ends at the end of `line`. `after` is the
     /// text after the cursor.
-    fn complete_bytes(&self, line: &[u8], after: &[u8]) -> (usize, Vec<Item>) {
+    fn complete_bytes(&self, line: &[u8], after: &[u8]) -> (usize, Matches) {
         self.matches(line, after).unwrap_or_else(|start| {
             // The line is left as it is, but with one candidate rustyline
             // redraws it, below the error message.
             let typed = String::from_utf8_lossy(&line[start..]).into_owned();
             let item = Item {
                 display: typed.clone(),
-                desc: None,
                 replacement: typed,
+                ..Item::default()
             };
-            (start, vec![item])
+            (start, Matches::from(vec![item]))
         })
     }
 
     /// The matches for the word that ends at the end of `line` (for
     /// `__luish_internal complete`), or None if a completer failed. A word
     /// that expands gives its expansion, as Tab does.
-    pub fn completions(&self, line: &[u8]) -> Option<Vec<Item>> {
+    pub fn completions(&self, line: &[u8]) -> Option<Matches> {
         if let Some((_, text)) = self.expansion(line, b"") {
             let item = Item {
                 display: text.clone(),
-                desc: None,
                 replacement: text,
+                ..Item::default()
             };
-            return Some(vec![item]);
+            return Some(vec![item].into());
         }
         self.matches(line, b"").ok().map(|m| m.1)
     }
@@ -1219,7 +1241,7 @@ impl ShellHelper {
 
     /// Where the word that ends at the end of `line` starts, and its
     /// matches; or, if a completer failed, where the word starts.
-    fn matches(&self, line: &[u8], after: &[u8]) -> Result<(usize, Vec<Item>), usize> {
+    fn matches(&self, line: &[u8], after: &[u8]) -> Result<(usize, Matches), usize> {
         let w = analyze(line, &self.names.aliases);
         let (from, cands) = match self.ask_completer(&w, after) {
             Completion::Default => self.generate(&w),
@@ -1303,7 +1325,11 @@ impl ShellHelper {
             Kind::Command if !w.text.contains(&b'/') => {
                 self.commands(&mut out);
                 if self.names.autocd {
+                    let start = out.len();
                     self.cd_dirs(&w.text, &mut out);
+                    for c in &mut out[start..] {
+                        c.group = b"directories".to_vec();
+                    }
                 }
                 0
             }
@@ -1485,23 +1511,28 @@ impl ShellHelper {
         (from, out)
     }
 
-    /// Command names: built-ins, reserved words, functions, aliases and
-    /// the executables in `PATH`.
+    /// Command names, each kind a group: aliases, functions, built-ins,
+    /// reserved words and the executables in `PATH`. (Of the commands of
+    /// the same name the first is kept, which is nearly always the one that
+    /// runs.)
     fn commands(&self, out: &mut Vec<Candidate>) {
         let mut cache = self.path_cache.borrow_mut();
         cache.refresh(&self.names.path);
+        let mut add = |group: &[u8], names: &mut dyn Iterator<Item = &[u8]>| {
+            out.extend(names.map(|n| Candidate::grouped(n, group)));
+        };
+        add(b"aliases", &mut self.names.aliases.sorted().into_iter().map(|a| a.0));
+        add(b"functions", &mut self.names.functions.iter().map(|c| &c[..]));
         // (The `map` shortens the built-in names' `'static` lifetime.)
-        let aliases = self.names.aliases.sorted();
-        let all = crate::builtins::names()
-            .map(|b: &[u8]| b)
-            .chain(RESERVED.iter().copied())
-            // `repeat` is a reserved word only with `setopt syntax.repeat`.
-            .chain(self.names.repeat.then_some(&b"repeat"[..]))
-            .chain(self.names.builtins.iter().map(|c| &c[..]))
-            .chain(self.names.functions.iter().map(|c| &c[..]))
-            .chain(aliases.into_iter().map(|a| a.0))
-            .chain(cache.names.iter().map(|c| &c[..]));
-        out.extend(all.map(Candidate::word));
+        let builtins = crate::builtins::names().map(|b: &[u8]| b);
+        add(
+            b"built-ins",
+            &mut builtins.chain(self.names.builtins.iter().map(|c| &c[..])),
+        );
+        // `repeat` is a reserved word only with `setopt syntax.repeat`.
+        let repeat = self.names.repeat.then_some(&b"repeat"[..]);
+        add(b"reserved words", &mut RESERVED.iter().copied().chain(repeat));
+        add(b"commands", &mut cache.names.iter().map(|c| &c[..]));
     }
 
     /// Job specs, described by their commands: `%1`, or, if a name is
@@ -1610,18 +1641,22 @@ impl ShellHelper {
         for name in best_matches(names, |n| n, prefix) {
             let mut full = if dir.is_empty() { b"./".to_vec() } else { dir.clone() };
             full.extend_from_slice(&name);
-            let is_dir = sys::stat(&full).is_some_and(|st| st.st_mode & libc::S_IFMT == libc::S_IFDIR);
+            // (What the file is also gives its colour in the menu.)
+            let mode = sys::stat(&full).map_or(0, |st| st.st_mode);
+            let is_dir = mode & libc::S_IFMT == libc::S_IFDIR;
             if is_dir {
                 let display = [&name[..], b"/"].concat();
                 out.push(Candidate {
-                    value: [typed_dir, &display].concat(),
-                    display: Some(display),
-                    desc: None,
+                    display: Some(display.clone()),
                     suffix: Suffix::None,
+                    kind: menu::Kind::Dir,
+                    ..Candidate::word(&[typed_dir, &display].concat())
                 });
             } else if which == Files::All || (which == Files::Executables && is_executable(&full)) {
+                let runs = mode & libc::S_IFMT == libc::S_IFREG && mode & 0o111 != 0;
                 out.push(Candidate {
                     display: Some(name.clone()),
+                    kind: if runs { menu::Kind::Exec } else { menu::Kind::Plain },
                     ..Candidate::word(&[typed_dir, &name].concat())
                 });
             }
@@ -1665,21 +1700,21 @@ impl Completer for ShellHelper {
         // (Not held while an extension's completer runs.)
         drop(menu);
         let (before, after) = line.as_bytes().split_at(pos);
-        let (start, items) = match self.tab(before, after) {
+        let (start, matches) = match self.tab(before, after) {
             Tab::Expand(start, text) => return Ok((start, vec![pair(&text)])),
-            Tab::Matches(start, items) => (start, items),
+            Tab::Matches(start, matches) => (start, matches),
         };
-        if items.len() < 2 {
-            return Ok((start, items.iter().map(|i| pair(&i.replacement)).collect()));
+        if matches.items.len() < 2 {
+            return Ok((start, matches.items.iter().map(|i| pair(&i.replacement)).collect()));
         }
         let typed = line.get(start..pos).unwrap_or_default();
-        let prefix = common_prefix(&items);
+        let prefix = common_prefix(&matches.items);
         if prefix.len() > typed.len() {
             return Ok((start, vec![pair(prefix)]));
         }
         let typed = pair(typed);
         if let Ok(mut menu) = self.menu.lock() {
-            menu.open(line, start, pos, items);
+            menu.open(line, start, pos, matches);
         }
         Ok((start, vec![typed]))
     }
@@ -1708,8 +1743,10 @@ impl Hinter for ShellHelper {
         }
         let sgr = |role| String::from_utf8_lossy(self.highlight.colors.sgr(role)).into_owned();
         self.right.hint.set(0);
+        self.menu_rows.set(0);
         let mut m = self.menu.lock().ok()?;
-        if !m.is_open(line, pos) {
+        // (As the word is typed, the menu lists what still matches.)
+        if !m.is_open(line, pos) && !m.follow(line, pos) {
             drop(m);
             let rest = self.suggestion(line, pos, ctx.history())?;
             if self.right.is_set() {
@@ -1730,9 +1767,15 @@ impl Hinter for ShellHelper {
         let style = menu::Style {
             select: sgr(super::highlight::role::SELECTED),
             desc: sgr(super::highlight::role::DESCRIPTION),
+            prefix: sgr(super::highlight::role::PREFIX),
+            group: sgr(super::highlight::role::GROUP),
+            dir: sgr(super::highlight::role::MENU_DIRECTORY),
+            exec: sgr(super::highlight::role::MENU_EXECUTABLE),
         };
+        let display = m.draw(cols, menu::height(rows, used), &style);
+        self.menu_rows.set(display.matches('\n').count());
         Some(menu::Drawn {
-            display: m.draw(cols, rows.saturating_sub(used), &style),
+            display,
             completion: None,
         })
     }
@@ -1947,9 +1990,7 @@ mod tests {
     }
 
     fn complete(h: &ShellHelper, line: &str) -> Vec<String> {
-        h.complete_bytes(line.as_bytes(), b"")
-            .1
-            .into_iter()
+        (h.complete_bytes(line.as_bytes(), b"").1.items.into_iter())
             .map(|p| p.replacement)
             .collect()
     }
@@ -2142,7 +2183,7 @@ mod tests {
         assert_eq!(complete(&h, "fg %v"), ["%vi "]);
         assert_eq!(complete(&h, "kill %s"), ["%sleep "]);
         assert_eq!(complete(&h, "kill %2"), ["%2 "]);
-        let shown: Vec<_> = (h.complete_bytes(b"wait ", b"").1.into_iter())
+        let shown: Vec<_> = (h.complete_bytes(b"wait ", b"").1.items.into_iter())
             .map(|i| (i.display, i.desc.unwrap_or_default()))
             .collect();
         assert_eq!(
@@ -2220,7 +2261,7 @@ mod tests {
         // Through an alias, and with words after the cursor.
         Rc::make_mut(&mut h.names.aliases).insert(b"g".to_vec(), b"git".to_vec(), false);
         assert_eq!(complete(&h, "g c"), ["commit "]);
-        assert_eq!(h.complete_bytes(b"git ", b" x after").1.len(), 0);
+        assert_eq!(h.complete_bytes(b"git ", b" x after").1.items.len(), 0);
         // Candidates that complete the part after a prefix.
         assert_eq!(complete(&h, "git log --pretty=o"), ["--pretty=oneline "]);
         assert_eq!(complete(&h, "git log '--pretty=s"), ["'--pretty=short' "]);
@@ -2260,15 +2301,34 @@ mod tests {
             display: d.into(),
             desc: desc.map(Into::into),
             replacement: r.into(),
+            ..Item::default()
         };
         assert_eq!(
-            it,
+            it.items,
             [
                 item("add", None, "add "),
                 item("commit", Some("Record?changes"), "commit ")
             ]
         );
-        assert_eq!(common_prefix(&it), "");
+        assert_eq!(it.groups, [""]);
+        assert_eq!(common_prefix(&it.items), "");
+        // The groups come in the order of their first candidates, each
+        // with its items sorted; of the candidates that give the same
+        // text, the one of the earliest group is kept.
+        let g = |v: &str, group: &str| Candidate::grouped(v.as_bytes(), group.as_bytes());
+        let it = items(
+            &[
+                g("ls", "aliases"),
+                g("zz", "commands"),
+                g("la", "aliases"),
+                g("ls", "commands"),
+                c("x", None),
+            ],
+            &t,
+        );
+        let shown: Vec<_> = it.items.iter().map(|i| (&i.display[..], i.group)).collect();
+        assert_eq!(shown, [("la", 0), ("ls", 0), ("zz", 1), ("x", 2)]);
+        assert_eq!(it.groups, ["aliases", "commands", ""]);
         let it = [item("", None, "h\u{e9}t "), item("", None, "h\u{e8}t ")];
         assert_eq!(common_prefix(&it), "h");
     }
@@ -2304,12 +2364,14 @@ mod tests {
         // Nothing more in common: the menu is shown, nothing selected.
         tab(&h, &mut line);
         assert_eq!(line, "myfunc_");
-        assert_eq!(menu_shown(&h, &line).as_deref(), Some("\nmyfunc_a  myfunc_b"));
+        // (What the names have in common is shaded.)
+        let shaded = "\x1b[90mmyfunc_\x1b[0m";
+        assert_eq!(menu_shown(&h, &line), Some(format!("\n{shaded}a  {shaded}b")));
         tab(&h, &mut line);
         assert_eq!(line, "myfunc_a ");
         assert_eq!(
-            menu_shown(&h, &line).as_deref(),
-            Some("\n\x1b[7mmyfunc_a\x1b[0m  myfunc_b")
+            menu_shown(&h, &line),
+            Some(format!("\n\x1b[7mmyfunc_a\x1b[0m  {shaded}b"))
         );
         tab(&h, &mut line);
         assert_eq!(line, "myfunc_b ");
@@ -2327,6 +2389,48 @@ mod tests {
         assert_eq!(menu_shown(&h, &line), None);
         tab(&h, &mut line);
         assert_eq!(line, "myfunc_a /nonexistent/x");
+        // While the menu only lists the matches, it follows what is typed,
+        // and Tab completes the one match left.
+        let mut line = "myfunc_".to_string();
+        tab(&h, &mut line);
+        assert!(menu_shown(&h, &line).is_some());
+        assert_eq!(h.menu_rows.get(), 1);
+        line.push('b');
+        assert_eq!(menu_shown(&h, &line).as_deref(), Some("\nmyfunc_b"));
+        tab(&h, &mut line);
+        assert_eq!((&line[..], menu_shown(&h, &line)), ("myfunc_b ", None));
+        assert_eq!(h.menu_rows.get(), 0);
+    }
+
+    #[test]
+    fn command_groups() {
+        let mut aliases = AliasMap::default();
+        aliases.insert(b"gst".to_vec(), b"git status".to_vec(), false);
+        aliases.insert(b"gfn".to_vec(), b"true".to_vec(), false);
+        let h = ShellHelper {
+            names: Names {
+                functions: vec![b"gfn".to_vec(), b"groot".to_vec()],
+                aliases: Rc::new(aliases),
+                path: b"/nonexistent".to_vec(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        // Each kind of command is a group, and a name is listed once, as
+        // the first kind it is.
+        let (_, m) = h.complete_bytes(b"g", b"");
+        let shown: Vec<_> = (m.items.iter())
+            .map(|i| (&i.display[..], &m.groups[i.group as usize][..]))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                ("gfn", "aliases"),
+                ("gst", "aliases"),
+                ("groot", "functions"),
+                ("getopts", "built-ins")
+            ]
+        );
     }
 
     /// Expands as the shell would, for a few words.
@@ -2403,8 +2507,8 @@ mod tests {
         assert_eq!(all[..3], ["0]}", "1]}", "2]}"]);
         assert_eq!(all[9..], ["9]}", "10]}", "11]}"]);
         assert_eq!(complete(&h, "echo ${mixed["), ["9]}", "10]}", "1a]}", "a]}", "b]}"]);
-        let (_, items) = h.complete_bytes(b"echo ${a[1", b"");
-        assert_eq!(items[0].desc.as_deref(), Some("y"));
+        let (_, m) = h.complete_bytes(b"echo ${a[1", b"");
+        assert_eq!(m.items[0].desc.as_deref(), Some("y"));
         // Not a subscript: escaped, closed, or with a substitution.
         assert!(complete(&h, "echo ${nosuch[").is_empty());
         assert!(complete(&h, "echo \\${h[").is_empty());

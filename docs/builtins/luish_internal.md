@@ -4,7 +4,7 @@
 __luish_internal bindkey [arg...]
 __luish_internal check-cache [-q] [rc|login|startup]...
 __luish_internal clipcopy [file]
-__luish_internal complete line
+__luish_internal complete [-g] line
 __luish_internal default-config [--extra]
 __luish_internal function-file name file [lines [dir]]
 __luish_internal help [name...]
@@ -44,8 +44,10 @@ take names that scripts might use for something else.
   would complete it (with the completers of loaded plugins), one match per
   line: the text that replaces the word, with the space or `/` that ends a
   single match, then a tab and the match's description, if it has one. The
-  status is 1 if there are no matches, or if a completer failed. It works
-  in any shell, for example to test a completer from a script.
+  matches are in the menu's order; with `-g`, the heading of each group
+  (`HEADING:`) is printed before its matches. The status is 1 if there are
+  no matches, or if a completer failed. It works in any shell, for example
+  to test a completer from a script.
 
 `default-config`
 : Print the recommended `config.toml`, as luish offers to write it the

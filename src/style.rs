@@ -83,6 +83,10 @@ pub const ROLES: &[&str] = &[
     "menu",
     "menu.selected",
     "menu.description",
+    "menu.prefix",
+    "menu.group",
+    "menu.directory",
+    "menu.executable",
     "suggestion",
     "plugin.name",
     "plugin.ok",
@@ -110,6 +114,8 @@ pub const ROLES: &[&str] = &[
 /// all of them, and new names here add nothing for schemes to fill.
 const UI_FALLBACKS: &[(&str, &str)] = &[
     ("menu.description", "ui.dim"),
+    ("menu.prefix", "ui.dim"),
+    ("menu.group", "ui.strong"),
     ("suggestion", "ui.dim"),
     ("plugin.name", "ui.strong"),
     ("plugin.ok", "ui.ok"),
@@ -198,6 +204,8 @@ const BUILTIN: &[Builtin] = &[
             ("error", "red underline"),
             ("path", "underline"),
             ("menu.selected", "reverse"),
+            ("menu.directory", "bold blue"),
+            ("menu.executable", "green"),
             ("ui.ok", "green"),
             ("ui.warn", "yellow"),
             ("ui.bad", "bold red"),

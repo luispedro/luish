@@ -79,6 +79,10 @@ pub mod role {
     pub const COMMENT: Role = Role::of("comment");
     pub const SELECTED: Role = Role::of("menu.selected");
     pub const DESCRIPTION: Role = Role::of("menu.description");
+    pub const PREFIX: Role = Role::of("menu.prefix");
+    pub const GROUP: Role = Role::of("menu.group");
+    pub const MENU_DIRECTORY: Role = Role::of("menu.directory");
+    pub const MENU_EXECUTABLE: Role = Role::of("menu.executable");
     pub const SUGGESTION: Role = Role::of("suggestion");
 }
 
@@ -1633,6 +1637,10 @@ impl Highlighter for ShellHelper {
     /// it isn't drawn.
     fn highlight_char(&self, _line: &str, _pos: usize, kind: CmdKind) -> bool {
         self.right.accepting.set(kind == CmdKind::ForcedRefresh);
+        if kind == CmdKind::ForcedRefresh {
+            // (Drawn without the hint, so without the menu.)
+            self.menu_rows.set(0);
+        }
         if kind != CmdKind::Other {
             self.right.hint.set(0);
         }

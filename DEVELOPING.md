@@ -801,11 +801,12 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
 - `__luish_internal` (`internal.rs`) holds luish's own commands, so they don't take names from the command
   namespace; a missing or unknown subcommand is status 2. `print-git-rev` is set at compile time by `build.rs`
   (`-dirty` if `src/`, `build.rs`, `Cargo.toml` or `Cargo.lock` differ). Test: `builtins/internal_git_rev.sh`.
-- `complete LINE` (`interactive::completions`) builds a `ShellHelper` as `read_line` does (the `Names` snapshot, and
-  `ask` through the same `SHELL` pointer) and prints the matches Tab offers for the last word, one per line: the
-  replacement for the word (with the suffix of a single match), a tab and the description. It works in any shell,
-  so plugin cases can test completers. Status 1 if there are none or a completer failed. Test:
-  `tests/plugins/complete.sh`.
+- `complete [-g] LINE` (`interactive::completions`) builds a `ShellHelper` as `read_line` does (the `Names` snapshot,
+  and `ask` through the same `SHELL` pointer) and prints the matches Tab offers for the last word, one per line, in
+  the menu's order (by group): the replacement for the word (with the suffix of a single match), a tab and the
+  description. With `-g`, each group's heading (`HEADING:`) comes before its matches, also when there is only one
+  group. It works in any shell, so plugin cases can test completers. Status 1 if there are none or a completer
+  failed. Tests: `tests/plugins/complete.sh`, `tests/plugins/complete_groups.sh`.
 - `savestate` (`state.rs`): not `PPID`, `LINENO`, `SHLVL`, or the options `-i -s -m -n`. Functions are printed by
   `unparse.rs`, which keeps all quoting (unlike `cmdtext.rs`), and escapes a `$` before backquotes, which it writes as
   `$(...)` (`unparse::tests::dollar_before_backquotes`); `${x/pat}` is written without the last `/` (`${x//}` would be `//`,
@@ -1025,8 +1026,37 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   every change goes through rustyline's completion and undo. The menu is "open" only while `(line, pos)` equals what
   it last put there, so any other edit closes it. Handlers must be `Send + Sync`, hence `Arc<Mutex<Menu>>`; don't
   hold the lock while a plugin completer runs. Column widths are capped at the 90th percentile or a third of the
-  screen. rustyline's default `keyseq_timeout` is None (a lone Esc waits for the next key); luish sets 400 ms in
+  screen; before descriptions a longer name is shown whole, and only its own description moves right.
+  rustyline's default `keyseq_timeout` is None (a lone Esc waits for the next key); luish sets 400 ms in
   emacs mode (zsh's `KEYTIMEOUT`) and 100 ms in vi mode.
+  - **Narrowing**: while the menu only lists (nothing selected), the hinter calls `Menu::follow` for a line it isn't
+    open for: if the line differs only in the word typed, and that text starts with one the matches are known for
+    (`bases`: the text at opening, and what Tab added since), `listed` becomes the positions in `all` of the matches
+    for it (`narrowed`: exact prefixes of the replacements, or else the completer's smart case), and the menu is
+    open for the new line. Nothing is asked of the completer again, so it is instant with slow completers and in
+    the SSH mode's client. A failed `follow` leaves the menu as it was, so deleting back to a line it was open for
+    shows it again. Tab on a list then adds what the replacements listed have in common (as `complete` does before
+    it opens the menu) or completes the only one, and closes.
+  - **Groups**: `Candidate::group` is the heading (bytes, empty for none); `complete::items` numbers the groups in
+    the order of their first candidates, dedups by replacement keeping the earliest group's (so the generators list
+    groups in the order of what runs: `commands` gives aliases, functions, built-ins, reserved words, `PATH`), and
+    sorts the items by group. `Matches` carries the headings and each `Item` its group's index. `Layout` makes a
+    `Section` (heading, `Grid`) for each run of items of a group, with headings only when there are several runs;
+    `down`, `up` and `page` move across sections. All the grids go by column if all the rows fit, else by row.
+  - **Height**: `menu::height`, half the screen (at least 8 rows) or what is below the line.
+  - **Colours**: `Style` has the SGR parameters of `menu.selected`, `menu.description`, `menu.prefix` (the common
+    prefix of the names listed, computed at each draw), `menu.group`, `menu.directory` and `menu.executable`
+    (`Item::kind`, set from the `stat` that `files_in` already makes; plugins' candidates have no kind). With
+    `$NO_COLOR` only the selection is styled.
+  - **Ctrl-C**: rustyline leaves the hint on the screen when the line is interrupted, with the cursor at the start
+    of the row after it. `ShellHelper::menu_rows` holds the rows of the menu as last drawn (set by `hint`, zeroed
+    when the hint isn't the menu and by `highlight_char` on a forced refresh, which draws without hints), and
+    `read_line` moves up that many rows and erases to the end of the screen (`CSI n A`, `CSI J`).
+  - The SSH mode sends `Matches` whole (headings, kinds and groups; protocol version 4), and the client's menu does
+    the rest.
+  - Tests: unit tests in `menu.rs` (`grid`, `moves`, `draw`, `colours`, `groups`, `narrowing`, `menu_height`) and
+    `complete.rs` (`menu_items`, `tab_opens_the_menu`, `command_groups`), `completion_menu` in
+    `tests/interactive.rs`, `tests/plugins/complete_groups.sh` (`__luish_internal complete -g`).
 - **Highlighting** (`highlight.rs`): `classify` gives each byte a `Cell`, a role (`style::Role`, the position of a
   name in `style::ROLES`, made by the const fn `Role::of`, so a misspelt role doesn't compile) and a bitset of
   `MODIFIERS` (`error`, `path` and `path.prefix` are set so far). It needs no `Shell`: what it knows comes in `Facts`
@@ -1477,8 +1507,9 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   (lists commands from `LC_ALL=C git help -a` without the low-level and guide sections, options from
   `git CMD --git-completion-helper`, files from `ls-files`/`diff --cached`, collapsed to the next directory; `git diff`
   offers all tracked files once a revision or range is given, `git log` (and `shortlog`, `whatchanged`, `rev-list`)
-  revisions and tracked files, and only revisions within a range word; tested in
-  `tests/plugins/git_completion.sh`) and
+  revisions and tracked files, and only revisions within a range word; its candidates are in groups: `commands`
+  and `aliases`, `branches`, `tags`, `remote branches` (told apart by `%(refname:rstrip=-2)`) and `files`, with
+  `HEAD` in none; tested in `tests/plugins/git_completion.sh`) and
   `bash-completion/` (a default completer that runs bash-completion in bash through `bridge.bash`; about 50 ms per
   Tab, since bash sources `bash_completion` each time). Outside bash's own completion, compgen doesn't undo
   the quoting bash-completion gives the word (`~` as `\~`), so the bridge replaces the quoting functions; its
@@ -1942,7 +1973,8 @@ truncates when it relocates the package.
   nothing).
 - pty tests use `TERM=dumb` (rustyline does no editing), except completion and highlighting, which use `TERM=vt100`.
   After Ctrl-C, wait for `"\x1b[K$ "` (the fresh prompt), not `"$ "`, which also matches the line redrawn under the
-  completion menu. Ctrl-C at the prompt sets `$?` to 130.
+  completion menu. Ctrl-C at the prompt sets `$?` to 130. The menu's names have the SGR of `menu.prefix` around
+  what they have in common (`\x1b[90malpha\x1b[0m1`), so expect them with it.
 - A job notification is printed before the *next* prompt, so it shows up in the output of the command that caused
   it. With `stty -echo`, neither the command nor its newline is echoed; Ctrl-D isn't echoed as a newline.
 - The tests run in threads of one process, so anything one opens can end up in a process another forks. The pty's

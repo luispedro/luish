@@ -1,4 +1,15 @@
 Unreleased
+    * Completion menu: typing narrows the matches listed, and Backspace
+      brings them back
+    * Completion menu: group headings (aliases, functions, built-ins,
+      commands; git's branches, tags and files); `group` for candidates
+    * Completion menu: at most half the screen; Ctrl-C erases it
+    * Completion menu: the common start of the names is shaded, and
+      directories and executables are coloured (menu.prefix, menu.group,
+      menu.directory, menu.executable)
+    * Completion menu: a long name no longer pushes all the descriptions
+      to the right; the last row also counts the matches
+    * __luish_internal complete -g prints the groups' headings
     * Saved state: functions with ${ a &! }, ${ echo \&; } or a bad ${...}
       holding a glob qualifier read back
     * noglob cmd args: runs cmd without globbing its arguments, as in zsh

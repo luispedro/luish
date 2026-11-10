@@ -645,7 +645,7 @@ fn answer(r: Dynamic, word: &[u8]) -> RhaiResult<Answer> {
 
 /// Converts what a completer returned for the word `word`: `()` for the
 /// default completion, or an array of strings and of maps with a `value`
-/// and an optional `desc` and `suffix`, or a map with such an array
+/// and an optional `desc`, `suffix` and `group`, or a map with such an array
 /// (`candidates`) and the start of the word they leave alone (`prefix`).
 /// Gives the candidates and the length of the prefix.
 fn candidates(r: Dynamic, word: &[u8]) -> RhaiResult<Option<(usize, Vec<Candidate>)>> {
@@ -694,6 +694,9 @@ fn candidates(r: Dynamic, word: &[u8]) -> RhaiResult<Option<(usize, Vec<Candidat
         if let Some(s) = m.get("suffix") {
             let s = string(s, "suffix")?;
             c.suffix = if s.is_empty() { Suffix::None } else { Suffix::Close(s) };
+        }
+        if let Some(g) = m.get("group") {
+            c.group = string(g, "group")?;
         }
         out.push(c);
     }

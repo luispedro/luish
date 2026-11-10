@@ -58,20 +58,23 @@ Some names aren't parts of the line, and need setting in any scheme that doesn't
 | `error` | added to text with a syntax error | `red underline` |
 | `path`, `path.prefix` | added to words that name files, with `setopt highlight.paths` | `underline` |
 | `menu.selected` | the selection in the completion menu | `reverse` |
+| `menu.directory` | directories in the completion menu | `bold blue` |
+| `menu.executable` | executable files in the completion menu | `green` |
 
 `error`, `path` and `path.prefix` are added on top of the text's own style. An attribute such as `underline` keeps
 the text's colour; a colour replaces it.
 
-The rest of what the shell shows (the completion menu's descriptions, autosuggestions, the output of `plugin` and
-the menu of `jobs -i`) falls back to five names by what they mean, so these are enough for all of it:
+The rest of what the shell shows (the completion menu's descriptions, headings and shaded prefixes, autosuggestions,
+the output of `plugin` and the menu of `jobs -i`) falls back to five names by what they mean, so these are enough for
+all of it:
 
 | Name | For | In `default-dark` |
 |---|---|---|
 | `ui.ok` | what worked or runs: `plugin.ok`, `jobs.running` | `green` |
 | `ui.warn` | warnings, and what changed or stopped: `plugin.warn`, `plugin.update`, `jobs.stopped` | `yellow` (`136` in `default-light`) |
 | `ui.bad` | errors: `plugin.error` | `bold red` |
-| `ui.dim` | detail: `menu.description`, `suggestion`, `plugin.dim`, `jobs.pid`, `jobs.done` | `bright-black` |
-| `ui.strong` | names and keys: `plugin.name`, `jobs.number`, `jobs.key` | `bold` |
+| `ui.dim` | detail: `menu.description`, `menu.prefix`, `suggestion`, `plugin.dim`, `jobs.pid`, `jobs.done` | `bright-black` |
+| `ui.strong` | names and keys: `menu.group`, `plugin.name`, `jobs.number`, `jobs.key` | `bold` |
 
 Set a specific name only to make it differ from the others: `"jobs.stopped" = "bold yellow"`. A name's own parent
 comes before its `ui.*` name, so `jobs = "italic"` makes the whole `jobs -i` menu italic, in the `ui.*` colours.
@@ -80,7 +83,7 @@ comes before its `ui.*` name, so `jobs = "italic"` makes the whole `jobs -i` men
 
 A scheme starts empty: it has only what it sets and what it inherits. Without `inherits`, what it doesn't set has the
 terminal's default colours, including the completion menu's selection (which is then invisible: set
-`menu.selected`).
+`menu.selected`) and its directories and executables (`menu.directory`, `menu.executable`).
 
 Inheriting from `default-dark` is quicker, but its specific names win over your general ones: a name takes its
 value from the first scheme that sets it, and only then falls back to its parent. With the scheme above, aliases are

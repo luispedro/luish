@@ -1,0 +1,36 @@
+--- -g frob 
+tags:
+alpha 
+main 
+zeta 
+branches:
+dev 
+another 
+plain 
+status 0
+--- frob 
+alpha 
+main 
+zeta 
+dev 
+another 
+plain 
+status 0
+--- -g frob a
+tags:
+alpha 
+another 
+status 0
+--- -g frob d
+branches:
+dev 
+status 0
+--- -g frob nothing
+status 1
+--- -g zz
+aliases:
+zzalias 
+zzcmd 
+functions:
+zzfn 
+status 0

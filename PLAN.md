@@ -23,15 +23,17 @@ value cache (`sh::cache_get`, `sh::cache_put`); and new extensions: `${ list; }`
 
 ### Next steps, in priority order
 
-1. **Phase 13's follow-ups, in their order**: the rest of the generic completion bridge (needs a design note first) and typing to
-   narrow the menu; lazy function parsing of the startup cache.
+1. **Phase 13's follow-ups, in their order**: the rest of the generic completion bridge (needs a design note first);
+   lazy function parsing of the startup cache.
 2. **Startup cost** (deferred by the user for now; see Performance in `DEVELOPING.md`): the dynamic loader's share,
    and parsing large files (the rc cache, `nvm.sh`) about twice as slowly as dash.
 3. **More conformance**: larger `configure` scripts (coreutils), the smoosh and modernish suites. The Oils spec
    tests (all files, see Conformance in `DEVELOPING.md`) point at bash features worth having: `(( ))` (`for ((` is done),
    `typeset NAME+=value`, `[[ -v a[i] ]]` and `test -v`.
-4. **Completion polish** beyond those: group headings (as zsh's commands / files / ..., which needs a group on
-   `Candidate`, also for plugins), `LS_COLORS` for files, fuzzy matching.
+4. **Completion polish** beyond those: groups for more of what std's completers offer (only git's are grouped so
+   far), `LS_COLORS` for files (directories and executables have their own styles; plugins' file candidates have no
+   kind yet), narrowing the menu while a match is selected (zsh's `menu select interactive`; it follows the word
+   only while it lists the matches), fuzzy matching.
 5. **Plugins (Phase 11)**: time budgets for hooks, `plugin remove`, the example plugins of M5.
 
 ## Phase 11 — Plugin system
@@ -98,8 +100,6 @@ What replacing the author's zsh setup showed to be missing, in this order:
      complete themselves (clap's `COMPLETE=`, `argcomplete`, Typer's; Cobra, Click and nix are done),
      bash-completion scripts (as in `luish-std-plugins/bash-completion/`, but faster), and `--help` parsing for
      options only (as fish does). This needs a design note before building.
-   - **Typing to narrow the menu** (zsh's `menu select interactive`): while the menu is open, printable keys filter
-     the matches instead of closing the menu.
 2. **Lazy function parsing for the startup cache**, below.
 
 Not planned, because they aren't used or are easy to rewrite in POSIX sh: zsh's two-argument `cd old new`, `zed`,

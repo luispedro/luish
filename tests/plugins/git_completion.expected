@@ -1,37 +1,50 @@
 === revisions and modified files
 --- git diff 
 HEAD 
+branches:
 main 
+tags:
+v1 
+files:
 sub/
 tracked 
-v1 
 status 0
 --- git diff HEAD
 HEAD 
 status 0
 --- git diff --cached 
 HEAD 
+branches:
 main 
-tracked 
+tags:
 v1 
+files:
+tracked 
 status 0
 === a range
 --- git diff HEAD^..
 HEAD^..HEAD 
+branches:
 HEAD^..main 
+tags:
 HEAD^..v1 
 status 0
 --- git diff HEAD^...v
+tags:
 HEAD^...v1 
 status 0
 --- git log main..
 main..HEAD 
+branches:
 main..main 
+tags:
 main..v1 
 status 0
 --- git reset HEAD^..
 HEAD^..HEAD 
+branches:
 HEAD^..main 
+tags:
 HEAD^..v1 
 status 0
 === files after a revision or a range
@@ -44,10 +57,13 @@ sub/
 status 0
 --- git diff v1 
 HEAD 
+branches:
 main 
+tags:
+v1 
+files:
 sub/
 tracked 
-v1 
 status 0
 --- git diff v1 main 
 sub/
@@ -60,12 +76,16 @@ status 0
 === git log: revisions and tracked files
 --- git log 
 HEAD 
+branches:
 main 
+tags:
+v1 
+files:
 sub/
 tracked 
-v1 
 status 0
 --- git log v1 s
+files:
 sub/
 status 0
 --- git log -- 
@@ -74,8 +94,11 @@ tracked
 status 0
 --- git shortlog main.. 
 HEAD 
+branches:
 main 
+tags:
+v1 
+files:
 sub/
 tracked 
-v1 
 status 0

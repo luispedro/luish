@@ -268,8 +268,24 @@ of the command) come after it in the array.
 A completer should return an array of candidates or `()`.
 
 A candidate is a string, or a map with a `value` and optionally a `desc`, shown
-next to it in the completion menu, and a `suffix`, added after the value when
-it is the only match (a space by default; `""` for none).
+next to it in the completion menu, a `suffix`, added after the value when
+it is the only match (a space by default; `""` for none), and a `group`.
+
+Candidates with the same `group` are listed together in the menu, under the
+group's name as their heading, when the matches are of more than one group.
+The groups come in the order of their first candidates, and the candidates
+without a group are one more, without a heading:
+
+```rhai
+[
+    #{value: "main", group: "branches"},
+    #{value: "v1.0", group: "tags"},
+    "HEAD",
+]
+```
+
+A value that several candidates give is listed once, in the first of their
+groups.
 
 luish keeps the candidates that start with the word typed, and quotes what it
 adds. So a completer can simply return everything that could come next.
@@ -309,11 +325,18 @@ doesn't complete itself.
 To see what Tab offers for a command line without typing it, for example while
 writing a completer or in a test, use `__luish_internal complete LINE`, which
 prints each match on a line of its own (the text that replaces the word, then a
-tab and the description), in any shell:
+tab and the description), in the menu's order, in any shell. With `-g`, each
+group's heading comes before its matches:
 
 ```sh
 $ __luish_internal complete 'git sw'
 switch 	Switch branches
+$ __luish_internal complete -g 'git switch '
+branches:
+main 
+topic 
+remote branches:
+fix-typo 
 ```
 
 `__luish_internal list-completions` lists the commands that have completers,

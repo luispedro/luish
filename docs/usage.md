@@ -558,6 +558,9 @@ far:
 | `assign` | the `NAME=` of an assignment |
 | `menu.selected` | the selection in the completion menu |
 | `menu.description` | descriptions in the completion menu |
+| `menu.prefix` | the start of the names that the matches have in common |
+| `menu.group` | the headings of the groups |
+| `menu.directory`, `menu.executable` | directories and executable files |
 | `suggestion` | autosuggestions |
 | `plugin.name`, `plugin.ok`, `plugin.update`, `plugin.warn`, `plugin.error`, `plugin.dim` | the output of `plugin`, on a terminal |
 | `jobs.number`, `jobs.pid`, `jobs.running`, `jobs.stopped`, `jobs.done`, `jobs.key` | the menu of `jobs -i` |
@@ -572,8 +575,8 @@ to colour the menus and `plugin`'s output, and new ones like them:
 | `ui.ok` | `plugin.ok`, `jobs.running` |
 | `ui.warn` | `plugin.warn`, `plugin.update`, `jobs.stopped` |
 | `ui.bad` | `plugin.error` |
-| `ui.dim` | `menu.description`, `suggestion`, `plugin.dim`, `jobs.pid`, `jobs.done` |
-| `ui.strong` | `plugin.name`, `jobs.number`, `jobs.key` |
+| `ui.dim` | `menu.description`, `menu.prefix`, `suggestion`, `plugin.dim`, `jobs.pid`, `jobs.done` |
+| `ui.strong` | `menu.group`, `plugin.name`, `jobs.number`, `jobs.key` |
 
 A name's own parent comes first: `jobs.stopped` takes what it doesn't set from `jobs`, then from `ui.warn`. `error` is added to the
 style of the text with a syntax error, and `path` and `path.prefix` to that of a word that names a file (see
@@ -844,9 +847,30 @@ As in zsh, a word with a glob, a `$` or a command substitution in it is expanded
 ### The completion menu
 
 The menu shows the matches in columns, or one per line with their descriptions
-(such as the commands of jobs for `fg`). If it doesn't fit on the screen, it
-scrolls, and its last line says which rows are shown. The next Tab selects the
-first match and puts it in the line, and then:
+(such as the commands of jobs for `fg`). It takes at most half the screen (8
+rows on a small one); if the matches don't fit, it scrolls, and its last line
+says which rows are shown and how many matches there are.
+
+Matches of several kinds are listed in groups, each under its heading: for a
+command name, the aliases, functions, built-ins, reserved words and commands
+(and, with `setopt cd.auto`, the directories); for `git checkout` (with the
+`std.completion` plugin), the branches, tags, remote branches and files. A
+name that is several of them (an alias for a command) is listed once, as the
+first. There are no headings when all the matches are of one kind.
+
+The start of the names that all the matches have in common (what is typed, or
+what Tab would add to it) is shaded, so that what tells them apart stands out.
+Directories and executable files are in colours of their own. The colours are
+the `menu.*` styles (see [Styles](#styles)).
+
+While the menu lists the matches, it follows what you type: only the matches
+for the word as it is now are listed, and deleting brings the others back. Tab
+then completes what those left have in common, or the only one left. So `ls `
+Tab lists the files, `C` leaves `Cargo.lock` and `Cargo.toml`, and Tab makes
+it `ls Cargo.`.
+
+Once the menu lists what you want, the next Tab selects the first match and
+puts it in the line, and then:
 
 | Key | Action |
 |---|---|
@@ -856,11 +880,13 @@ first match and puts it in the line, and then:
 | Enter | Keep the match and close the menu |
 | Esc, Ctrl-G | Put back the text typed and close the menu |
 
+Down and Up go on to the next and the previous group at the end of a column.
 Any other key keeps the match, closes the menu and does what it usually does,
 so you can type on after it. Before a match is selected, Down, Ctrl-N and
 Shift-Tab also start selecting (Shift-Tab from the last match), but the other
-keys do what they usually do: Enter runs the command, and Up goes back in the
-history.
+keys do what they usually do: Enter runs the command, Up goes back in the
+history, and Esc or Ctrl-G closes the menu. Ctrl-C drops the line, and the
+menu with it.
 
 
 ## Settings in `config.toml`

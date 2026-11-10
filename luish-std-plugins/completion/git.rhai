@@ -58,13 +58,21 @@ fn commands(g) {
         desc.trim();
         out.push(#{value: s.sub_string(0, sp), desc: desc});
     }
+    let out = in_group(out, "commands");
     for line in git_lines(g, ["config", "--get-regexp", "^alias\\."]) {
         let sp = line.index_of(' ');
         if sp > 6 {
-            out.push(#{value: line.sub_string(6, sp - 6), desc: `alias for '${line.sub_string(sp + 1)}'`});
+            let desc = `alias for '${line.sub_string(sp + 1)}'`;
+            out.push(#{value: line.sub_string(6, sp - 6), desc: desc, group: "aliases"});
         }
     }
     out
+}
+
+// The candidates `names` (strings or maps), under the heading `group` in
+// the menu.
+fn in_group(names, group) {
+    names.map(|n| if type_of(n) == "map" { n.group = group; n } else { #{value: n, group: group} })
 }
 
 // What an alias stands for (its first word), or () for an alias that runs a
@@ -121,9 +129,20 @@ fn remote_names(g) {
     out
 }
 
+// `HEAD`, and the branches, tags and remote branches, each kind under its
+// heading in the menu.
 fn refs(g) {
-    let out = short_refs(g, ["refs/heads", "refs/tags", "refs/remotes"]);
-    out.insert(0, "HEAD");
+    let out = ["HEAD"];
+    let format = "--format=%(refname:rstrip=-2)%09%(refname:short)";
+    for l in git_lines(g, ["for-each-ref", format, "refs/heads", "refs/tags", "refs/remotes"]) {
+        let tab = l.index_of('\t');
+        let group = switch l.sub_string(0, tab) {
+            "refs/heads" => "branches",
+            "refs/tags" => "tags",
+            _ => "remote branches",
+        };
+        out.push(#{value: l.sub_string(tab + 1), group: group});
+    }
     out
 }
 
@@ -144,7 +163,7 @@ fn revisions(g, cur) {
 // Revisions, and when the word isn't a range, `other` (files) as well.
 fn revisions_and(g, cur, other) {
     let r = revisions(g, cur);
-    if type_of(r) == "map" { r } else { r + other }
+    if type_of(r) == "map" { r } else { r + in_group(other, "files") }
 }
 
 fn stashes(g) {
@@ -253,12 +272,8 @@ fn arguments(g, cmd, args, cur, depth) {
                 revisions(g, cur)
             } else {
                 let b = branches(g);
-                for r in remote_names(g) {
-                    if !(r in b) {
-                        b.push(r);
-                    }
-                }
-                b
+                let remote = remote_names(g).filter(|r| !(r in b));
+                in_group(b, "branches") + in_group(remote, "remote branches")
             }
         }
         "checkout" => {
@@ -267,13 +282,9 @@ fn arguments(g, cmd, args, cur, depth) {
             } else if prev in ["-b", "-B", "--orphan"] {
                 []
             } else {
-                let r = refs(g);
-                for n in remote_names(g) {
-                    if !(n in r) {
-                        r.push(n);
-                    }
-                }
-                r + modified(g, cur)
+                // (Of a branch and a remote one of the same name, luish
+                // keeps the first.)
+                refs(g) + in_group(remote_names(g), "remote branches") + in_group(modified(g, cur), "files")
             }
         }
         "branch" => {
@@ -331,7 +342,13 @@ fn arguments(g, cmd, args, cur, depth) {
                     .filter(|r| r != "HEAD")
             }
         }
-        "push" => if pos == 0 { remotes(g) } else { branches(g) + short_refs(g, ["refs/tags"]) },
+        "push" => {
+            if pos == 0 {
+                remotes(g)
+            } else {
+                in_group(branches(g), "branches") + in_group(short_refs(g, ["refs/tags"]), "tags")
+            }
+        }
         "remote" => {
             if pos == 0 {
                 [

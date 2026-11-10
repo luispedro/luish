@@ -1,6 +1,6 @@
 --- git z
-zg 	alias for 'zz get'
 zz 
+zg 	alias for 'zz get'
 status 0
 --- git zz 
 zz:\[\"git-zz\",\ \"\"]:1 

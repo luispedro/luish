@@ -482,14 +482,12 @@ fn subscripts(name: &[u8]) -> Option<Vec<(Vec<u8>, Vec<u8>)>> {
     Some(indices.zip(elements).collect())
 }
 
-/// A match for the word under the cursor: the text that replaces the word
-/// in the line, and its description.
-pub type Match = (String, Option<String>);
+pub use menu::Matches;
 
 /// The matches Tab offers for the word at the end of `line`, as the line
 /// editor would complete it (for `__luish_internal complete`). None if a
 /// completer failed (it printed why).
-pub fn completions(sh: &mut Shell, line: &[u8]) -> Result<Option<Vec<Match>>, Flow> {
+pub fn completions(sh: &mut Shell, line: &[u8]) -> Result<Option<Matches>, Flow> {
     let mut helper = ShellHelper::default();
     helper.names = names(sh);
     helper.ask = Some(ask);
@@ -501,7 +499,7 @@ pub fn completions(sh: &mut Shell, line: &[u8]) -> Result<Option<Vec<Match>>, Fl
     if let Some(n) = EXIT.take() {
         return Err(Flow::Exit(n));
     }
-    Ok(r.map(|items| items.into_iter().map(|i| (i.replacement, i.desc)).collect()))
+    Ok(r)
 }
 
 /// Colours resolved from the styles: the generation of the styles, the
@@ -761,6 +759,7 @@ fn edit(req: Request) -> Line {
             if let Ok(mut m) = h.menu.lock() {
                 m.close();
             }
+            h.menu_rows.set(0);
             h.highlight.colors = colors;
             h.highlight.on = highlight_on;
             h.suggest = suggest;
@@ -816,7 +815,15 @@ fn edit(req: Request) -> Line {
                 l.push('\n');
                 Line::Text(l.into_bytes())
             }
-            Err(ReadlineError::Interrupted) => Line::Interrupted,
+            Err(ReadlineError::Interrupted) => {
+                // The line editor leaves the completion menu below the
+                // line, and the cursor at the start of the row after it.
+                let menu = ed.helper().map_or(0, |h| h.menu_rows.take());
+                if menu > 0 {
+                    sys::write_all(1, format!("\r\x1b[{menu}A\x1b[J").as_bytes());
+                }
+                Line::Interrupted
+            }
             Err(_) => Line::Eof,
         }
     })

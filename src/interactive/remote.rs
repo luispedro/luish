@@ -14,7 +14,7 @@ use rustyline::{Cmd, KeyCode, KeyEvent, Modifiers};
 use super::complete::{Names, ShellHelper, Tab};
 use super::highlight::{Colors, Found, Query, VarKind};
 use super::history::{Changes, Sent};
-use super::menu::Item;
+use super::menu::{Item, Kind, Matches};
 use super::{EDITOR, EXIT, Request, SHELL};
 use crate::hash::HashMap;
 use crate::input::Line;
@@ -126,7 +126,7 @@ pub fn serve_line(sh: &mut Shell, req: Request) -> Line {
                 };
                 let tab = EDITOR.with_borrow(|e| Some(e.as_ref()?.helper()?.tab(&before, &after)));
                 let mut e = Enc::default();
-                encode_tab(&mut e, &tab.unwrap_or(Tab::Matches(before.len(), Vec::new())));
+                encode_tab(&mut e, &tab.unwrap_or(Tab::Matches(before.len(), Matches::default())));
                 crate::remote::write_frame(fd, msg::TAB_REPLY, &e.buf);
             }
             msg::LOOKUP => {
@@ -345,7 +345,7 @@ pub fn escape_key(key: KeyEvent, line: &str, pos: usize) -> Option<Cmd> {
 
 /// Tab, in the client: the server works out what it does.
 fn remote_tab(before: &[u8], after: &[u8]) -> Tab {
-    let none = || Tab::Matches(before.len(), Vec::new());
+    let none = || Tab::Matches(before.len(), Matches::default());
     LINK.with_borrow(|link| {
         let Some(link) = link else { return none() };
         let mut e = Enc::default();
@@ -445,9 +445,13 @@ fn encode_tab(e: &mut Enc, tab: &Tab) {
         Tab::Expand(start, text) => {
             e.u8(0).usize(*start).str(text);
         }
-        Tab::Matches(start, items) => {
-            e.u8(1).usize(*start).list(items, |e, i| {
+        Tab::Matches(start, m) => {
+            e.u8(1).usize(*start).list(&m.groups, |e, g| {
+                e.str(g);
+            });
+            e.list(&m.items, |e, i| {
                 e.str(&i.display).opt_str(i.desc.as_deref()).str(&i.replacement);
+                e.u8(i.kind as u8).usize(i.group as usize);
             });
         }
     }
@@ -458,14 +462,21 @@ fn decode_tab(d: &mut Dec) -> Option<Tab> {
         0 => Tab::Expand(d.usize()?, d.string()?),
         _ => {
             let start = d.usize()?;
+            let groups = d.list(Dec::string)?;
             let items = d.list(|d| {
                 Some(Item {
                     display: d.string()?,
                     desc: d.opt_string()?,
                     replacement: d.string()?,
+                    kind: match d.u8()? {
+                        0 => Kind::Plain,
+                        1 => Kind::Dir,
+                        _ => Kind::Exec,
+                    },
+                    group: u16::try_from(d.usize()?).ok()?,
                 })
             })?;
-            Tab::Matches(start, items)
+            Tab::Matches(start, Matches { items, groups })
         }
     })
 }
@@ -772,11 +783,17 @@ mod tests {
             display: "file".into(),
             desc: Some("d".into()),
             replacement: "dir/file".into(),
+            kind: Kind::Exec,
+            group: 1,
+        };
+        let matches = Matches {
+            items: vec![item],
+            groups: vec![String::new(), "files".into()],
         };
         let mut e = Enc::default();
-        encode_tab(&mut e, &Tab::Matches(4, vec![item.clone()]));
+        encode_tab(&mut e, &Tab::Matches(4, matches.clone()));
         match decode_tab(&mut Dec::new(&e.buf)) {
-            Some(Tab::Matches(4, items)) => assert_eq!(items, [item]),
+            Some(Tab::Matches(4, m)) => assert_eq!(m, matches),
             _ => panic!(),
         }
         let mut e = Enc::default();
