@@ -16,6 +16,11 @@
 //! the end, except while the word with the error is the one being typed.
 //! Incomplete text, which would get a `PS2` prompt, has no error.
 //!
+//! The `warning` modifier marks what is valid but most likely a mistake:
+//! `mapfile` (or `readarray`) as a command of a pipeline, where it fills its
+//! array in a subshell, which is then lost (unless it has a callback, `-C`,
+//! which may be what it is run for).
+//!
 //! With `setopt highlight.paths`, the `path` modifier marks arguments and
 //! redirection targets that name existing files, and `path.prefix` the
 //! word under the cursor if it begins the name of one. What is looked up
@@ -88,11 +93,12 @@ pub mod role {
 
 /// The modifiers, as bits of [`Cell::mods`] by their position here. Their
 /// styles are added to the role's.
-pub const MODIFIERS: [Role; 4] = [
+pub const MODIFIERS: [Role; 5] = [
     Role::of("error"),
     Role::of("path"),
     Role::of("path.prefix"),
     Role::of("match"),
+    Role::of("warning"),
 ];
 
 /// The bit of the `error` modifier.
@@ -101,6 +107,8 @@ pub const ERROR: u8 = 1;
 pub const PATH: u8 = 2;
 /// The bit of the `path.prefix` modifier.
 pub const PATH_PREFIX: u8 = 4;
+/// The bit of the `warning` modifier.
+pub const WARNING: u8 = 16;
 
 /// What a byte of the line is.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
@@ -410,6 +418,19 @@ struct Scan<'a> {
     /// Pending here-documents: the delimiter, and whether tabs are stripped.
     heredocs: Vec<(Vec<u8>, bool)>,
     in_backquote: bool,
+    /// The command being scanned comes after a `|`, with only assignments,
+    /// `builtin` or `command` before its name.
+    piped: bool,
+    /// The `mapfile` with a warning whose options are being scanned.
+    mapfile: Option<Mapfile>,
+}
+
+/// A `mapfile` after a `|`, marked with a warning, while its options are
+/// scanned (for `-C`, which takes the warning away).
+struct Mapfile {
+    name: Range<usize>,
+    /// The next word is the argument of an option.
+    arg: bool,
 }
 
 /// A scanned word: its unquoted text, and whether it had quotes or
@@ -506,7 +527,10 @@ impl Scan<'_> {
     fn list(&mut self, i: usize, end: Option<u8>) -> usize {
         let nest = end.is_some() as usize;
         self.nested += nest;
+        // The first command of the list isn't the one after an outer `|`.
+        let piped = std::mem::take(&mut self.piped);
         let e = self.commands(i, end);
+        self.piped = piped;
         self.nested -= nest;
         e
     }
@@ -579,6 +603,7 @@ impl Scan<'_> {
                     if pattern && c == b'|' && len == 1 {
                         continue;
                     }
+                    self.piped = !pattern && !case_term && ((c == b'|' && len == 1) || pipe_amp);
                     pattern = case_term;
                     cmd = !pattern;
                     precommand = false;
@@ -610,6 +635,7 @@ impl Scan<'_> {
                             i += 1;
                         }
                         cmd = false;
+                        self.piped = false;
                     }
                 }
                 b')' => {
@@ -657,6 +683,8 @@ impl Scan<'_> {
         after: &mut After,
         pattern: &mut bool,
     ) -> usize {
+        // Taken before the word is scanned, as a command in it has its own.
+        let mapfile = self.mapfile.take();
         let w = self.word(start);
         let e = w.end;
         let plain = !w.quoted && !w.expanded;
@@ -765,6 +793,11 @@ impl Scan<'_> {
             self.option_arg = precommand_option_arg(self.precommand_name, text);
         }
         if !*cmd || option_arg || (*precommand && raw.starts_with(b"-")) {
+            if *cmd {
+                // `command -v mapfile` runs nothing.
+                self.piped = false;
+            }
+            self.mapfile = mapfile.and_then(|m| self.mapfile_option(m, text));
             if self.alias_args {
                 if raw.starts_with(b"-") || raw.starts_with(b"+") {
                     self.alias_args = false;
@@ -782,6 +815,9 @@ impl Scan<'_> {
             return e;
         }
         self.alias_args = false;
+        // An assignment leaves the command to come.
+        let piped = assign.is_some() && self.piped;
+        let was_piped = std::mem::replace(&mut self.piped, piped);
         if plain && text == b"__luish_cache" {
             self.paint(start, e, role::KEYWORD);
             *after = After::Cache;
@@ -843,8 +879,53 @@ impl Scan<'_> {
             }
             *cmd = *precommand;
             self.alias_args = text == b"alias";
+            if *precommand {
+                // After these, the built-in still runs in the pipeline.
+                self.piped = was_piped && matches!(text, b"builtin" | b"command");
+            } else if was_piped && kind == CommandKind::Builtin && matches!(text, b"mapfile" | b"readarray") {
+                for c in &mut self.cls[start..e] {
+                    c.mods |= WARNING;
+                }
+                self.mapfile = Some(Mapfile {
+                    name: start..e,
+                    arg: false,
+                });
+            }
         }
         e
+    }
+
+    /// Follows the options of a `mapfile` with a warning, given the next
+    /// word of the command, unquoted: `-C` takes the warning away, as the
+    /// callback may be what `mapfile` is run for. Returns what is left to
+    /// follow, or None when the options are over.
+    fn mapfile_option(&mut self, m: Mapfile, word: &[u8]) -> Option<Mapfile> {
+        if m.arg {
+            return Some(Mapfile { arg: false, ..m });
+        }
+        if word.len() < 2 || word[0] != b'-' || word == b"--" {
+            return None;
+        }
+        for (k, &c) in word.iter().enumerate().skip(1) {
+            match c {
+                b't' => {}
+                b'C' => {
+                    for c in &mut self.cls[m.name] {
+                        c.mods &= !WARNING;
+                    }
+                    return None;
+                }
+                // The rest of the word, or the next one, is its argument.
+                b'd' | b'n' | b'O' | b's' | b'u' | b'c' => {
+                    return Some(Mapfile {
+                        arg: k + 1 == word.len(),
+                        ..m
+                    });
+                }
+                _ => return None,
+            }
+        }
+        Some(m)
     }
 
     fn define_function(&mut self, name: Vec<u8>) {
@@ -1358,6 +1439,8 @@ pub fn classify(text: &[u8], cursor: Option<usize>, facts: &Facts) -> Vec<Cell> 
         cursor,
         heredocs: Vec::new(),
         in_backquote: false,
+        piped: false,
+        mapfile: None,
     };
     let mut i = 0;
     while i < text.len() {
@@ -1689,7 +1772,7 @@ mod tests {
 
     fn known(n: &[u8]) -> CommandKind {
         match n {
-            b"echo" | b"cd" | b":" => CommandKind::Builtin,
+            b"echo" | b"cd" | b":" | b"mapfile" | b"readarray" | b"builtin" | b"command" => CommandKind::Builtin,
             b"cat" | b"ls" | b"sudo" => CommandKind::External,
             b"f" => CommandKind::Function,
             b"ll" => CommandKind::Alias,
@@ -2223,6 +2306,62 @@ mod tests {
         );
     }
 
+    /// The text with the `warning` modifier, its runs separated by a space.
+    fn warned(text: &str) -> String {
+        let cls = cells(text, None);
+        let runs = cls.chunk_by(|a, b| a.mods == b.mods);
+        let mut at = 0;
+        let mut out = Vec::new();
+        for run in runs {
+            if run[0].mods == WARNING {
+                out.push(&text[at..at + run.len()]);
+            }
+            at += run.len();
+        }
+        out.join(" ")
+    }
+
+    #[test]
+    fn mapfile_in_a_pipeline() {
+        // After a `|`, the array is filled in a subshell, and lost.
+        assert_eq!(warned("ls | mapfile a"), "mapfile");
+        assert_eq!(warned("ls | mapfile -t -n 3 -u4 a; echo"), "mapfile");
+        assert_eq!(warned("ls |& readarray -t a"), "readarray");
+        assert_eq!(warned("ls |\n  mapfile"), "mapfile");
+        assert_eq!(warned("ls | cat | mapfile a | cat"), "mapfile");
+        assert_eq!(warned("ls | X=1 builtin mapfile a"), "mapfile");
+        assert_eq!(warned("ls | command mapfile a"), "mapfile");
+        assert_eq!(warned("echo $(ls | mapfile a)"), "mapfile");
+        assert_eq!(warned("ls | mapfile a; ls | mapfile b"), "mapfile mapfile");
+        // Not otherwise.
+        assert_eq!(warned("mapfile a < f"), "");
+        assert_eq!(warned("ls | cat; mapfile a"), "");
+        assert_eq!(warned("ls || mapfile a"), "");
+        assert_eq!(warned("ls | cat\nmapfile a"), "");
+        assert_eq!(warned("ls | { mapfile a; echo \"${a[@]}\"; }"), "");
+        assert_eq!(warned("ls | (mapfile a; echo)"), "");
+        assert_eq!(warned("ls | while :; do mapfile a; done"), "");
+        assert_eq!(warned("ls | cat $(mapfile a)"), "");
+        assert_eq!(warned("ls | $(mapfile a)"), "");
+        assert_eq!(warned("ls | echo mapfile"), "");
+        assert_eq!(warned("ls | command -v mapfile"), "");
+        assert_eq!(warned("ls | sudo mapfile a"), "");
+        assert_eq!(warned("case x in a|mapfile) ;; esac"), "");
+        // An alias of that name is something else.
+        assert_eq!(warned("alias readarray=cat\nls | readarray a"), "");
+        // With a callback, it may be run for that.
+        assert_eq!(warned("ls | mapfile -C cb a"), "");
+        assert_eq!(warned("ls | mapfile -t -c 1 -C cb"), "");
+        assert_eq!(warned("ls | mapfile -tC cb"), "");
+        assert_eq!(warned("ls | mapfile -n $(echo 3) '-C' cb"), "");
+        assert_eq!(warned("ls | mapfile -c1 -Ccb"), "");
+        // But not when `C` is an option's argument, or after the options.
+        assert_eq!(warned("ls | mapfile -d C a"), "mapfile");
+        assert_eq!(warned("ls | mapfile -dC a"), "mapfile");
+        assert_eq!(warned("ls | mapfile -t -- -C"), "mapfile");
+        assert_eq!(warned("ls | mapfile a -C cb"), "mapfile");
+    }
+
     #[test]
     fn colors() {
         let mut st = crate::style::Styles::default();
@@ -2247,6 +2386,12 @@ mod tests {
         assert_eq!(
             render(b"if ls", &cls, &c),
             b"\x1b[4mi\x1b[0m\x1b[4;41mf\x1b[0m\x1b[41m ls\x1b[0m"
+        );
+        // `warning` is `ui.warn`, unless it is set.
+        let cls = cells("ls | mapfile", None);
+        assert_eq!(
+            render(b"ls | mapfile", &cls, &c),
+            b"ls \x1b[1m|\x1b[0m \x1b[33mmapfile\x1b[0m"
         );
     }
 }

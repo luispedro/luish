@@ -508,6 +508,11 @@ the cursor is at its end, as it may still be being typed (`do` on the way to `do
 what follows it while the cursor is after it (`ls >` before the file name). Lines over 64 KiB (such as a long
 paste) aren't checked.
 
+What is valid but most likely a mistake is marked in the style `warning` (yellow by default, as `ui.warn`). So
+far that is `mapfile` (or `readarray`) in a pipeline, `cmd | mapfile lines`: it fills the array in a subshell, as
+every command of a pipeline runs in one, so the array is lost (use `mapfile lines < <(cmd)`). It isn't marked
+inside a group that can use the array (`cmd | { mapfile lines; ...; }`), nor with a callback (`-C`).
+
 With `setopt highlight.paths`, an argument or a redirection's target that names a file that exists is marked, in
 the style `path` (underlined by default), and so is the word under the cursor if it begins the name of one, in the
 style `path.prefix` (by default as `path`). Only words with no expansions count, except a leading `~` for `$HOME`
@@ -565,7 +570,8 @@ far:
 | `suggestion` | autosuggestions |
 | `plugin.name`, `plugin.ok`, `plugin.update`, `plugin.warn`, `plugin.error`, `plugin.dim` | the output of `plugin`, on a terminal |
 | `jobs.number`, `jobs.pid`, `jobs.running`, `jobs.stopped`, `jobs.done`, `jobs.key` | the menu of `jobs -i` |
-| `ui.ok`, `ui.warn`, `ui.bad`, `ui.dim`, `ui.strong` | what the six rows above fall back to, by what they mean (see below) |
+| `warning` | added to a likely mistake (`cmd \| mapfile a`) |
+| `ui.ok`, `ui.warn`, `ui.bad`, `ui.dim`, `ui.strong` | what the seven rows above fall back to, by what they mean (see below) |
 
 So `command` sets all the kinds of command at once, `string` all the strings, and so on. The names that aren't
 parts of the line then fall back to a `ui.*` name, by what they mean, so that a colour scheme needs only those five
@@ -574,13 +580,13 @@ to colour the menus and `plugin`'s output, and new ones like them:
 | Name | Falls back to it |
 |---|---|
 | `ui.ok` | `plugin.ok`, `jobs.running` |
-| `ui.warn` | `plugin.warn`, `plugin.update`, `jobs.stopped` |
+| `ui.warn` | `warning`, `plugin.warn`, `plugin.update`, `jobs.stopped` |
 | `ui.bad` | `plugin.error` |
 | `ui.dim` | `menu.description`, `menu.prefix`, `suggestion`, `plugin.dim`, `jobs.pid`, `jobs.done` |
 | `ui.strong` | `menu.group`, `plugin.name`, `jobs.number`, `jobs.key` |
 
 A name's own parent comes first: `jobs.stopped` takes what it doesn't set from `jobs`, then from `ui.warn`. `error` is added to the
-style of the text with a syntax error, and `path` and `path.prefix` to that of a word that names a file (see
+style of the text with a syntax error, `warning` to that of a likely mistake, and `path` and `path.prefix` to that of a word that names a file (see
 above). More names exist already, for distinctions the highlighter doesn't make yet (`style` lists them). Other names, such as `git.branch` or `prompt.dir`, are free for plugins and prompts (`%[style:prompt.dir]`, see
 [Prompts](#prompts)) to use, but not those that start like a name of luish's (`command.nosuch` is an error).
 

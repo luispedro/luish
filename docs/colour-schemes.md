@@ -61,7 +61,7 @@ Some names aren't parts of the line, and need setting in any scheme that doesn't
 | `menu.directory` | directories in the completion menu | `bold blue` |
 | `menu.executable` | executable files in the completion menu | `green` |
 
-`error`, `path` and `path.prefix` are added on top of the text's own style. An attribute such as `underline` keeps
+`error`, `warning`, `path` and `path.prefix` are added on top of the text's own style. An attribute such as `underline` keeps
 the text's colour; a colour replaces it.
 
 The rest of what the shell shows (the completion menu's descriptions, headings and shaded prefixes, autosuggestions,
@@ -71,7 +71,7 @@ all of it:
 | Name | For | In `default-dark` |
 |---|---|---|
 | `ui.ok` | what worked or runs: `plugin.ok`, `jobs.running` | `green` |
-| `ui.warn` | warnings, and what changed or stopped: `plugin.warn`, `plugin.update`, `jobs.stopped` | `yellow` (`136` in `default-light`) |
+| `ui.warn` | warnings, and what changed or stopped: `warning` (added to a likely mistake on the line, such as `cmd \| mapfile a`), `plugin.warn`, `plugin.update`, `jobs.stopped` | `yellow` (`136` in `default-light`) |
 | `ui.bad` | errors: `plugin.error` | `bold red` |
 | `ui.dim` | detail: `menu.description`, `menu.prefix`, `suggestion`, `plugin.dim`, `jobs.pid`, `jobs.done` | `bright-black` |
 | `ui.strong` | names and keys: `menu.group`, `plugin.name`, `jobs.number`, `jobs.key` | `bold` |

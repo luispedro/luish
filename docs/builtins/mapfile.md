@@ -48,8 +48,9 @@ The exit status is 0 unless an option or the name is invalid, or the array
 is read-only or an associative one.
 
 Run it in the shell itself for the array to stay: in `cmd | mapfile lines`
-it is set in a subshell and lost. Use a redirection, such as a
-here-document or a process substitution:
+it is set in a subshell and lost (the line editor marks such a `mapfile`
+as a warning). Use a redirection, such as a here-document or a process
+substitution:
 
 ```sh
 mapfile -t lines < file

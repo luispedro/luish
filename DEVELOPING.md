@@ -1069,7 +1069,7 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
     `tests/interactive.rs`, `tests/plugins/complete_groups.sh` (`__luish_internal complete -g`).
 - **Highlighting** (`highlight.rs`): `classify` gives each byte a `Cell`, a role (`style::Role`, the position of a
   name in `style::ROLES`, made by the const fn `Role::of`, so a misspelt role doesn't compile) and a bitset of
-  `MODIFIERS` (`error`, `path` and `path.prefix` are set so far). It needs no `Shell`: what it knows comes in `Facts`
+  `MODIFIERS` (`error`, `warning`, `path` and `path.prefix` are set so far). It needs no `Shell`: what it knows comes in `Facts`
   (the kind of a command name, whether a variable is set, `expand.braces`, `syntax.repeat`, `syntax.fd_vars`,
   `set -f`, and the path
   check with `highlight.paths`). `ShellHelper::command_kind` finds a command's
@@ -1109,11 +1109,18 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   `path` if `lstat` finds it (so a dangling symlink counts), else, for the word under the cursor, `path.prefix` if a
   name in its directory begins with its last component (the listing is sorted and binary-searched). Both are cached
   until the next prompt (`State::paths`, `State::dirs`), and each redraw may make `PATH_BUDGET` (16) uncached lookups;
-  words past it stay unmarked until a later redraw. There is no thread, since subshells fork without exec. Unit tests
+  words past it stay unmarked until a later redraw. There is no thread, since subshells fork without exec. The
+  `warning` modifier (which falls back to `ui.warn`) marks a `mapfile` or `readarray` built-in that is a command
+  of a pipeline after a `|` or `|&`, whose array is lost with its subshell: `Scan::piped` is set by the pipe and
+  survives only assignments, `builtin` and `command` (not a `{`, a `(` or another keyword, where the array may be
+  used, nor a nested list, which `list` gives its own), and `Scan::mapfile_option` then follows the options, as
+  `-C` takes the mark away (a callback may be what it is run for). Nothing warns at run time, where bash is silent.
+  Unit tests
   compare one letter
   per byte for the top-level role (`classes`), or the runs with their full role (`roles`). Tests: `highlight.rs`
   (`command_roles`, `string_and_var_roles`, `var_roles`, `defined_on_the_line`, `expansion_roles`,
-  `unset_variables`, `syntax_errors`, `syntax_errors_at_the_cursor`, `path_words`, `path_lookups` and others), the kinds in `candidates` in `complete.rs`, `syntax_highlighting` in
+  `unset_variables`, `syntax_errors`, `syntax_errors_at_the_cursor`, `path_words`, `path_lookups`,
+  `mapfile_in_a_pipeline` and others), the kinds in `candidates` in `complete.rs`, `syntax_highlighting` in
   `tests/interactive.rs`.
 - **Styles** (`style.rs`, `builtins/style.rs`): a `Style` has optional colours, attributes on and off (bits by
   `ATTRS`), `plain` and raw SGR; `inherit` fills what one leaves out from its parent. `Styles` (on `Shell`, empty

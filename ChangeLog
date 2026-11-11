@@ -1,5 +1,7 @@
 Unreleased
     * mapfile (and readarray): lines into an array, as in bash
+    * cmd | mapfile a, which loses the array, is highlighted as a warning
+      (the new style `warning`, as ui.warn)
     * Completion menu: typing narrows the matches listed, and Backspace
       brings them back
     * Completion menu: group headings (aliases, functions, built-ins,

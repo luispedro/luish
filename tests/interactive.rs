@@ -1098,6 +1098,16 @@ fn syntax_highlighting() {
     sh.expect("> \x1b[1;4;31mfi\x1b[0m\x1b[4;31m x\x1b[0m");
     sh.send("\x03");
     sh.expect("$ ");
+    // `mapfile` in a pipeline loses its array: a warning, unless it has a
+    // callback.
+    sh.send(": | mapfile a");
+    sh.expect("\x1b[1m|\x1b[0m \x1b[33mmapfile\x1b[0m a");
+    sh.send("\x03");
+    sh.expect("$ ");
+    sh.send(": | mapfile -C cb");
+    sh.expect("\x1b[1m|\x1b[0m \x1b[32mmapfile\x1b[0m -C cb");
+    sh.send("\x03");
+    sh.expect("$ ");
     // With `setopt highlight.paths`, a word that names a file is
     // underlined, and so is the word being typed if it begins a name.
     sh.send("setopt highlight.paths; : >afile\n");
