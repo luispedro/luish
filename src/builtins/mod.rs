@@ -8,6 +8,7 @@ mod fc;
 pub(crate) mod help;
 pub mod internal;
 mod jobs;
+mod mapfile;
 pub(crate) mod misc;
 mod print;
 mod printf;
@@ -92,6 +93,8 @@ builtins! {
     (b"jobs", jobs::jobs, false),
     (b"kill", jobs::kill, false),
     (b"let", misc::let_, false),
+    // Not POSIX: as in bash.
+    (b"mapfile", mapfile::mapfile, false),
     // Not POSIX: as in zsh. What it does is in `expand_command_words`.
     (b"noglob", misc::noglob, false),
     (b"popd", dirstack::popd, false),
@@ -99,6 +102,8 @@ builtins! {
     (b"pushd", dirstack::pushd, false),
     (b"pwd", cd::pwd, false),
     (b"read", read::read, false),
+    // Not POSIX: as in bash, another name for `mapfile`.
+    (b"readarray", mapfile::mapfile, false),
     // Not POSIX: as in zsh.
     (b"setopt", vars::setopt, false),
     // Not POSIX: as in bash.

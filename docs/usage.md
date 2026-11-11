@@ -118,7 +118,7 @@ conf=$(<~/.config/app)                     # a file's contents, read without a s
   newline (`${ echo a }` goes on, as `echo a }`).
 - `$(<file)` is replaced by the contents of `file`, as `$(cat file)` would be, but the shell reads the file itself,
   without a subshell or `cat`, as in ksh, bash and zsh (in dash it is empty).
-- [Arrays](#arrays), including associative ones, with `typeset`, `read -A` and zsh's parameter flags.
+- [Arrays](#arrays), including associative ones, with `typeset`, `read -A`, `mapfile` and zsh's parameter flags.
 - [Parameter expansion](#parameter-expansion): `${x:offset:length}`, `${x/pattern/replacement}`, `${!name}`, zsh's
   modifiers (`${x:t}`, `${BASH_SOURCE:A:h}`) and more.
 - [Special variables](#special-variables): `RANDOM`, `SECONDS`, `UID`, `pipestatus`, `path` and others.
@@ -207,6 +207,7 @@ echo "${#files[@]}"                  # the number of elements
 local list=(a b c)                   # also with local, export, readonly and typeset
 typeset -a empty                     # an empty array (typeset -p prints variables)
 read -A words                        # read the fields of a line (bash: read -a words)
+mapfile -t lines < file              # read the lines of a file (bash's; see help mapfile)
 ```
 
 | Form | Value |

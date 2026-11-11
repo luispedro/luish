@@ -798,6 +798,16 @@ luish-std-plugins/      # a collection of plugins (completion, bash-completion, 
   used; the edited line goes through `Text::add` too, so backslashes and splitting are as without it. Tests:
   `builtins/read_bash.sh` (bash's output), `read_terminal_modes` and `read_line_editor` in `tests/interactive.rs`
   (which wait for the pty's modes to change, read from the master side).
+- `mapfile` and `readarray` (`mapfile.rs`) are bash's, with all its options. The input is read 64 KiB at a time
+  when reading ahead does no harm: from a file (what is left over is given back with `lseek`, at the end and before a
+  callback, as bash's `zsyncfd`), and from anything else when all of it is read anyway (no `-n` and no `-C`), where
+  bash reads a pipe a byte at a time. Otherwise a byte at a time, as `read`, so that `-n` leaves the rest of a pipe to
+  read and a callback can read from it. The lines are assigned together (`Pending::store`): once at the end, and
+  before each callback, which may look at the array; without `-O` the first assignment replaces the array, and with
+  it the lines go in as `a+=([origin]=x y)` does, so missing elements before it are empty where bash has holes. NUL
+  bytes are dropped (a NUL delimiter too, also without `-t`). Signals' traps run while it reads, and it goes on, as
+  in bash. Read-only and associative arrays are refused before anything is read, with status 1 and without the exit
+  that a `Flow::Error` is. Tests: `builtins/mapfile.sh` (bash's output), `builtins/mapfile_luish.sh`.
 - `__luish_internal` (`internal.rs`) holds luish's own commands, so they don't take names from the command
   namespace; a missing or unknown subcommand is status 2. `print-git-rev` is set at compile time by `build.rs`
   (`-dirty` if `src/`, `build.rs`, `Cargo.toml` or `Cargo.lock` differ). Test: `builtins/internal_git_rev.sh`.
@@ -1917,6 +1927,7 @@ truncates when it relocates the package.
 | Parameter flags, `${(o)a[@]}` | `expand/param_flags.sh` (zsh), `expand/param_flags_luish.sh` |
 | `typeset`, `declare` | `builtins/typeset.sh` (zsh), `builtins/typeset_luish.sh`, `builtins/typeset_special.sh`, `builtins/typeset_integer.sh` (zsh), `builtins/typeset_integer_luish.sh`, `builtins/typeset_case.sh` (zsh), `builtins/typeset_unique.sh` (zsh), `builtins/typeset_case_luish.sh`, `builtins/typeset_functions.sh` (zsh), `builtins/typeset_functions_luish.sh` |
 | `read` options, `read -A`, `read -a` | `builtins/read_bash.sh`, `builtins/read_array.sh` (zsh), `builtins/read_array_luish.sh`, `read_terminal_modes` and `read_line_editor` in `tests/interactive.rs` |
+| `mapfile`, `readarray` | `builtins/mapfile.sh`, `builtins/mapfile_luish.sh` |
 | `${x:offset:length}`, `${x/pattern/replacement}` | `expand/substring.sh` (zsh), `expand/substring_error.sh` (zsh), `expand/replace.sh` (zsh), `expand/substring_bad.sh` (same as dash) |
 | Modifiers, `${x:h}` | `expand/modifiers.sh` (zsh), `expand/modifiers_luish.sh`, `parse/dash_lenient.sh` |
 | `SHLVL` | `misc/shlvl.sh`, `histcmd_shlvl` in `tests/interactive.rs` |

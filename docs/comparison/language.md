@@ -57,7 +57,7 @@ All four have POSIX's forms: `${x:-word}`, `${x:=word}`, `${x:?word}`, `${x:+wor
 | On each element, `${a[@]/x/y}`, `${a[@]#p}` | – | ✓ | ✓ | ✓ | |
 | `local a=(x y)`, `typeset -a` | – | ✓ | ✓ | ✓ | |
 | Read into an array, `read -a` (bash), `read -A` (zsh) | – | ✓ | ✓ | ✓ | luish takes both |
-| `mapfile`, `readarray` | – | ✓ | – | – | |
+| `mapfile`, `readarray` | – | ✓ | – | ✓ | |
 | Exported arrays | – | – | – | – | None of them export arrays |
 
 ### Associative arrays

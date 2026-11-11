@@ -86,6 +86,7 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 | `dirs`, `pushd`, `popd` | – | ✓ | ✓ | ✓ | As in zsh: `-q`, `-L`, `-P`, `+n`, `-n`; `dirs -l`, `-p`, `-v`, `-c` |
 | `help` | – | ✓ | – | *i* | Help for luish's built-ins, from the pages in [](../builtins.md) |
 | `let` | – | ✓ | ✓ | ✓ | As in zsh; integers only |
+| `mapfile`, `readarray` | – | ✓ | – | ✓ | bash's, with all its options; arrays have no holes, so `-O` past the end makes the elements before it empty |
 | `noglob` | – | – | ✓ | ✓ | As in zsh: a precommand modifier, which `type` shows as a built-in |
 | `local` | ✓ | ✓ | ✓ | ✓ | Special, as in dash. Takes `typeset`'s options and arrays (`local a=(x y)`). Without a value, keeps the outer value, as in dash (in bash and zsh it starts unset or empty) |
 | `print` | – | – | ✓ | *i* | zsh's, with its options except `-p` (no coprocesses) and `-S` |
@@ -111,7 +112,6 @@ Built-ins outside POSIX that luish has, mostly as zsh has them.
 |---|---|---|
 | `bind` | readline key bindings | `bindkey`, or `[bindkey]` in `config.toml` |
 | `compgen`, `complete`, `compopt` | Programmable completion | Completers in Rhai, from [plugins](../plugins.md); `std.bash-completion` runs bash's completion scripts |
-| `mapfile`, `readarray` | Read lines into an array | A loop: `while IFS= read -r l; do a+=("$l"); done` |
 
 ### zsh only
 
